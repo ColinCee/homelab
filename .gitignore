@@ -13,7 +13,9 @@ __pycache__/
 # mise
 .mise/local.toml
 
-# Stack runtime data and secrets
+# Secrets and credentials
+.env
+credentials.md
 stacks/*/.env
 stacks/*/config/
 stacks/*/data/
