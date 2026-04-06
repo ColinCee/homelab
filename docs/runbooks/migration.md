@@ -4,69 +4,75 @@ Step-by-step guide for migrating from Dockge/Tugtainer to Dokploy.
 
 **Requirements:** R1, R2, R3, R5, R6, R7
 **Decision:** [ADR-001](../decisions/001-dokploy.md)
+**Status:** ✅ Complete
 
-## Pre-Migration Checklist
+## What Was Done
 
-- [ ] Back up all compose files and `.env` files from `/opt/stacks/`
-- [ ] Note current container resource usage as baseline
-- [ ] Ensure Tailscale and Cloudflare Tunnel are working
+### Installation
 
-## Installation
+- [x] Installed Dokploy manually (official script fails due to Tailscale on port 443)
+- [x] Docker Swarm initialised with `--advertise-addr` on Tailscale IP
+- [x] Dokploy dashboard accessible at `http://beelink:3000` (Tailscale only)
+- [x] No Traefik — not needed behind Tailscale
 
-- [ ] Install Dokploy on Beelink
-- [ ] Bind Dokploy dashboard to Tailscale IP only
-- [ ] Verify dashboard accessible via Tailscale
+### GitHub Integration
 
-## GitHub Integration
+- [x] Connected GitHub account (Dokploy GitHub App installed)
+- [x] Flight tracker builds from source (Dockerfile), not GHCR images
 
-- [ ] Connect GitHub account (install Dokploy GitHub App)
-- [ ] Add GHCR registry credentials
+### Service Migration
 
-## Service Migration
+#### Flight Tracker Backend
+- [x] Created as Dokploy application (GitHub source, dockerfile build)
+- [x] CORS_ORIGINS env var configured
+- [x] Cloudflared deployed as separate Dokploy app (docker image source)
+- [x] Cloudflare tunnel routing updated to Dokploy service name
+- [x] Public endpoint verified: `https://api.colincheung.dev/docs` ✅
+- [x] Auto-deploy via CI: Tailscale GitHub Action → Dokploy API (PR #50 on flight-tracker repo)
 
-### Flight Tracker Backend
-
-```
-Push to main
-  → GitHub Actions builds Docker image
-  → Pushes to GHCR (ghcr.io/colincee/flight-tracker-at-home/backend)
-  → Calls Dokploy API (via official GitHub Action) to trigger deploy
-  → Dokploy pulls new image and restarts container
-```
-
-- [ ] Create Dokploy application from GHCR image
-- [ ] Configure auto-deploy webhook
-- [ ] Update flight-tracker CI to use [Dokploy Deployment GitHub Action](https://github.com/marketplace/actions/dokploy-deployment) instead of Tugtainer
-- [ ] Verify Cloudflare Tunnel still routes to backend
-
-### Flight Tracker Frontend
-
+#### Flight Tracker Frontend
 Frontend deploys to Cloudflare Pages (unchanged) — Dokploy doesn't manage it.
 
-### Home Assistant
+#### Home Assistant
+- [x] Compose moved to `~/code/homelab/stacks/home-assistant/`
+- [x] Data moved from `/opt/stacks/` to repo stacks directory
+- [ ] Optional: migrate to Dokploy-managed compose service
 
-- [ ] Migrate as Docker Compose service within Dokploy
-- [ ] Preserve `network_mode: host` and Bluetooth capabilities (`NET_ADMIN`, `NET_RAW`)
-- [ ] Verify Bluetooth and mDNS still work after migration
+#### MQTT (Mosquitto)
+- [x] Compose moved to `~/code/homelab/stacks/mqtt/`
+- [x] Data moved from `/opt/stacks/` to repo stacks directory
+- [x] Port bindings use `${TAILSCALE_IP}` env var
+- [ ] Optional: migrate to Dokploy-managed compose service
 
-### MQTT (Mosquitto)
+### Observability
 
-- [ ] Migrate as Docker Compose service within Dokploy
-- [ ] Verify port bindings remain on Tailscale IP only
+- [x] Discord webhook configured for all alert types (build errors, deploys, restarts, thresholds)
 
-## Observability Setup
+### Cleanup
 
-- [ ] Configure Discord webhook for alerts
-- [ ] Set CPU/RAM alert thresholds (CPU > 80%, RAM > 90%)
-- [ ] Verify per-container logs and metrics are visible in dashboard
+- [x] Dockge stopped and removed (`/opt/dockge/` deleted)
+- [x] Tugtainer removed (container + volume deleted)
+- [x] Old flight-tracker compose stopped
+- [x] `/opt/stacks/` removed entirely
+- [x] All services verified healthy
 
-## Cleanup
+### Security Hardening (done alongside migration)
 
-- [ ] Remove Dockge (`/opt/dockge/`)
-- [ ] Remove Tugtainer from flight-tracker compose
-- [ ] Verify all services healthy for 24 hours
-- [ ] Update this doc with any issues encountered
+- [x] Tailscale ACLs tightened to least-privilege (desktop=full, mobile=HA only, CI=Dokploy only)
+- [x] Git history squashed to remove leaked Tailscale IP
+- [x] MQTT compose uses `${TAILSCALE_IP:?}` (fails fast if unset)
+
+## Final State
+
+| Service | Managed By | How It Deploys |
+|---------|-----------|----------------|
+| Flight tracker backend | Dokploy (Swarm service) | CI → Tailscale → Dokploy API |
+| Cloudflared | Dokploy (Swarm service) | Manual via Dokploy dashboard |
+| Home Assistant | Docker Compose (repo) | `mise run deploy:all` on server |
+| MQTT | Docker Compose (repo) | `mise run deploy:all` on server |
+| Dokploy + Postgres + Redis | Docker Swarm | Self-managed |
 
 ## Rollback Plan
 
-If Dokploy fails, the original compose files are still in `/opt/stacks/` and `~/code/`. Run `docker compose up -d` in each project directory to restore the previous setup.
+HA and MQTT compose files are in `stacks/` — run `docker compose up -d` to restore.
+Flight tracker can be redeployed from GHCR by reverting the CI workflow changes.

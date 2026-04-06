@@ -6,12 +6,12 @@ Living document — the "north star" for what this homelab should do and why. Ev
 
 | ID | Problem | Status |
 |----|---------|--------|
-| P1 | No centralised management — `cd` into each project, `docker compose up/down` manually | 🔄 Solving via [Dokploy](decisions/001-dokploy.md) |
-| P2 | No logging — container stdout disappears; no way to search or retain logs | 🔄 Solving via Dokploy built-in logs |
-| P3 | No metrics — no visibility into CPU, RAM, or disk usage per container | 🔄 Solving via Dokploy built-in metrics |
-| P4 | No alerting — if something crashes at 3am, nobody knows | 🔄 Solving via Dokploy → Discord alerts |
-| P5 | No clean deploy pipeline — Tugtainer polls GHCR on 2-min cron with stagger hacks | 🔄 Solving via Dokploy webhook deploys |
-| P6 | Dockge friction — requires compose files in `/opt/stacks/`, doesn't work with `~/code/` | 🔄 Solving via Dokploy |
+| P1 | No centralised management — `cd` into each project, `docker compose up/down` manually | ✅ Solved — [Dokploy](decisions/001-dokploy.md) dashboard on port 3000 |
+| P2 | No logging — container stdout disappears; no way to search or retain logs | ✅ Solved — Dokploy built-in per-container logs |
+| P3 | No metrics — no visibility into CPU, RAM, or disk usage per container | ✅ Solved — Dokploy built-in metrics |
+| P4 | No alerting — if something crashes at 3am, nobody knows | ✅ Solved — Dokploy → Discord alerts (build errors, deploys, threshold) |
+| P5 | No clean deploy pipeline — Tugtainer polls GHCR on 2-min cron with stagger hacks | ✅ Solved — CI → Tailscale → Dokploy API deploy |
+| P6 | Dockge friction — requires compose files in `/opt/stacks/`, doesn't work with `~/code/` | ✅ Solved — Dockge removed, stacks in repo |
 | P7 | No security visibility — no firewall, no intrusion detection, no audit trail | ✅ Partially solved — see [security.md](private/security.md) |
 | P8 | No network traffic monitoring — can't see what's hitting services or from where | 🔲 Planned — see [network.md](private/network.md) |
 
@@ -21,18 +21,18 @@ Living document — the "north star" for what this homelab should do and why. Ev
 
 | ID | Requirement | Priority | Status |
 |----|-------------|----------|--------|
-| R1 | Single dashboard for all services, status, logs, resource usage | Must | 🔄 Dokploy |
-| R2 | Git push → webhook → deploy (not polling) | Must | 🔄 Dokploy |
-| R3 | Add, remove, restart services from a web UI | Must | 🔄 Dokploy |
+| R1 | Single dashboard for all services, status, logs, resource usage | Must | ✅ Dokploy |
+| R2 | Git push → webhook → deploy (not polling) | Must | ✅ Tailscale CI → Dokploy API |
+| R3 | Add, remove, restart services from a web UI | Must | ✅ Dokploy |
 | R4 | Keep existing network topology (Tailscale admin, CF Tunnel public) | Must | ✅ |
 
 ### Observability
 
 | ID | Requirement | Priority | Status |
 |----|-------------|----------|--------|
-| R5 | Per-container real-time logs with search | Must | 🔄 Dokploy built-in |
-| R6 | CPU, RAM, disk metrics per container | Must | 🔄 Dokploy built-in |
-| R7 | Alert thresholds → Discord (e.g. CPU > 80%, RAM > 90%) | Must | 🔄 Dokploy built-in |
+| R5 | Per-container real-time logs with search | Must | ✅ Dokploy built-in |
+| R6 | CPU, RAM, disk metrics per container | Must | ✅ Dokploy built-in |
+| R7 | Alert thresholds → Discord (e.g. CPU > 80%, RAM > 90%) | Must | ✅ Dokploy → Discord |
 | R8 | Historical log retention and search | Nice | 🔲 Grafana + Loki (later) |
 | R9 | Long-term host metrics and trending | Nice | 🔲 Prometheus + node_exporter (later) |
 | R10 | Endpoint uptime monitoring + status page | Nice | 🔲 Uptime Kuma (later) |

@@ -1,6 +1,6 @@
 # Homelab
 
-Infrastructure-as-code and documentation for Colin's homelab — a single Beelink mini-PC running containerised services behind Tailscale and Cloudflare Tunnel.
+Infrastructure-as-code and documentation for Colin's homelab — a single Beelink mini-PC running containerised services behind Tailscale and Cloudflare Tunnel, managed by Dokploy.
 
 ## Quickstart
 
@@ -24,12 +24,13 @@ mise run setup               # Bootstrap a fresh server
 
 ## Current Services
 
-| Service | Purpose | Stack |
-|---------|---------|-------|
-| [Flight Tracker](https://github.com/colincee/flight-tracker-at-home) | Real-time aviation dashboard (FastAPI + React) | Own repo |
-| Home Assistant | Home automation (Bluetooth, mDNS) | `stacks/home-assistant/` |
-| MQTT (Mosquitto) | Message broker for HA sensors | `stacks/mqtt/` |
-| Cloudflare Tunnel | Public ingress without open ports | Flight tracker repo |
+| Service | Purpose | Managed By |
+|---------|---------|------------|
+| [Flight Tracker](https://github.com/colincee/flight-tracker-at-home) | Real-time aviation dashboard (FastAPI + React) | Dokploy (auto-deploy from GitHub) |
+| [Cloudflared](https://github.com/cloudflare/cloudflared) | Public ingress via Cloudflare Tunnel | Dokploy |
+| Home Assistant | Home automation (Bluetooth, mDNS) | Docker Compose (`stacks/home-assistant/`) |
+| MQTT (Mosquitto) | Message broker for HA sensors | Docker Compose (`stacks/mqtt/`) |
+| Dokploy | PaaS dashboard, logs, metrics, alerts | Docker Swarm (self-managed) |
 
 ## Hardware
 
@@ -41,9 +42,21 @@ mise run setup               # Bootstrap a fresh server
 ```
 Internet
   │
-  ├─ Cloudflare Tunnel ──→ Public services (flight-tracker)
+  ├─ Cloudflare Tunnel ──→ Public services (flight-tracker API)
   │
   └─ Tailscale ──→ Admin access (SSH, Dokploy, Home Assistant)
+         │
+         └─ ACLs: desktop=full, mobile=HA only, CI=Dokploy only
+```
+
+## Deploy Flow
+
+```
+Push to main (flight-tracker repo)
+  → GitHub Actions CI (lint, test, build)
+  → Tailscale GitHub Action joins tailnet as tag:ci
+  → curl → Dokploy API triggers rebuild + deploy
+  → Discord notification on success/failure
 ```
 
 ## Tooling
@@ -60,7 +73,7 @@ Internet
 
 ## Security
 
-UFW firewall active (deny all except Tailscale), fail2ban monitoring SSH, automatic security patches enabled. Full audit and hardening details in [security.md](docs/private/security.md) (encrypted — clone + `git-crypt unlock` to read).
+UFW firewall active (deny all except Tailscale), fail2ban monitoring SSH, automatic security patches enabled, Tailscale ACLs enforcing least-privilege access. Full audit and hardening details in [security.md](docs/private/security.md) (encrypted — clone + `git-crypt unlock` to read).
 
 ## Documentation
 
@@ -77,4 +90,4 @@ All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 
 ### Runbooks
 
-- **[Migration: Dokploy](docs/runbooks/migration.md)** — step-by-step migration from Dockge/Tugtainer
+- **[Migration: Dokploy](docs/runbooks/migration.md)** — completed migration from Dockge/Tugtainer (reference)
