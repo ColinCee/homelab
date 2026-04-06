@@ -36,6 +36,8 @@ jobs:
         run: actionlint
 
       - name: Validate compose files
+        env:
+          TAILSCALE_IP: 127.0.0.1
         run: |
           for f in stacks/*/compose.yaml; do
             echo "Validating $f..."

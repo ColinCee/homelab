@@ -72,6 +72,7 @@ done
 [tasks."validate:compose"]
 description = "Validate all compose files"
 run = """
+export TAILSCALE_IP="${TAILSCALE_IP:-127.0.0.1}"
 for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
   docker compose -f "$f" config --quiet || exit 1
