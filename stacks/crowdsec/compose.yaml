@@ -1,0 +1,22 @@
+services:
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.6.8
+    restart: unless-stopped
+    environment:
+      COLLECTIONS: "crowdsecurity/linux crowdsecurity/sshd"
+      GID: "${DOCKER_GID:-999}"
+    volumes:
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+    ports:
+      # Prometheus metrics endpoint for Alloy to scrape
+      - "127.0.0.1:6060:6060"
+      # CrowdSec API for bouncers
+      - "127.0.0.1:8080:8080"
+
+volumes:
+  crowdsec-config:
+  crowdsec-data:

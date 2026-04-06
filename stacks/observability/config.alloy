@@ -110,3 +110,17 @@ loki.write "default" {
     url = "http://loki:3100/loki/api/v1/push"
   }
 }
+
+// ================================
+// CrowdSec Metrics
+// ================================
+
+prometheus.scrape "crowdsec" {
+  targets = [{
+    __address__ = "host.docker.internal:6060",
+  }]
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "30s"
+  job_name        = "crowdsec"
+  metrics_path    = "/metrics"
+}

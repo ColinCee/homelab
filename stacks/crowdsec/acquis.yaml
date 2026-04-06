@@ -1,0 +1,18 @@
+# Host log sources
+filenames:
+  - /var/log/auth.log
+  - /var/log/syslog
+labels:
+  type: syslog
+---
+# SSH authentication logs
+filenames:
+  - /var/log/auth.log
+labels:
+  type: sshd
+---
+# Docker container logs (JSON format)
+filenames:
+  - /var/lib/docker/containers/*/*.log
+labels:
+  type: docker
