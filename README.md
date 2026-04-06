@@ -84,14 +84,14 @@ Grafana (:3001) ← Prometheus (metrics) ← Alloy (host + container scraping)
                                         ← CrowdSec (security metrics)
 ```
 
-- **Dashboards:** Host Overview, Container Overview (pre-provisioned)
+- **Dashboards:** Host Overview, Container Overview, Security (pre-provisioned)
 - **Alerting:** CPU >80%, RAM >90%, Disk >80% → private Discord channel
 - **Security:** CrowdSec IDS with collaborative threat intel + UFW firewall bouncer
 - **External:** Healthchecks.io heartbeat (alerts on full server outage)
 
 ## Security
 
-UFW firewall active (deny all except Tailscale), fail2ban monitoring SSH, automatic security patches enabled, Tailscale ACLs enforcing least-privilege access. Full audit and hardening details in [security.md](docs/private/security.md) (encrypted — clone + `git-crypt unlock` to read).
+UFW firewall active (deny all except Tailscale), CrowdSec IDS with collaborative threat intel and UFW firewall bouncer, automatic security patches enabled, Tailscale ACLs enforcing least-privilege access. Full audit and hardening details in [security.md](docs/private/security.md) (encrypted — clone + `git-crypt unlock` to read).
 
 ## Documentation
 
@@ -105,6 +105,7 @@ All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 
 - **[ADR-001: Dokploy](docs/decisions/001-dokploy.md)** — why Dokploy, what was considered, feature comparison
 - **[ADR-002: Repo Tooling](docs/decisions/002-repo-tooling.md)** — why mise + uv + Python
+- **[ADR-003: Observability](docs/decisions/003-observability.md)** — why GPAL stack, CrowdSec, Healthchecks.io
 
 ### Runbooks
 

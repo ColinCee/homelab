@@ -14,7 +14,7 @@ For services with their own GitHub repo (e.g., flight-tracker). Dokploy pulls th
 
 ```bash
 # Source credentials
-source <(grep DOKPLOY_API_KEY credentials.md | head -1 | sed 's/.*`\(.*\)`.*/DOKPLOY_API_KEY=\1/')
+source <(grep DOKPLOY_API_KEY access.md | head -1 | sed 's/.*`\(.*\)`.*/DOKPLOY_API_KEY=\1/')
 
 # Create compose service in the flight-tracker project
 curl -sf -X POST 'http://beelink:3000/api/trpc/compose.create' \

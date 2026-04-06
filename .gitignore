@@ -15,7 +15,7 @@ __pycache__/
 
 # Secrets and credentials
 .env
-credentials.md
+access.md
 stacks/*/.env
 stacks/*/config/
 stacks/*/data/

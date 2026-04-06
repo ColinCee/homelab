@@ -66,10 +66,11 @@ Frontend deploys to Cloudflare Pages (unchanged) — Dokploy doesn't manage it.
 
 | Service | Managed By | How It Deploys |
 |---------|-----------|----------------|
-| Flight tracker backend | Dokploy (Swarm service) | CI → Tailscale → Dokploy API |
-| Cloudflared | Dokploy (Swarm service) | Manual via Dokploy dashboard |
+| Flight tracker backend + cloudflared | Dokploy (Compose) | CI → Tailscale → Dokploy API |
 | Home Assistant | Docker Compose (repo) | `mise run deploy:all` on server |
 | MQTT | Docker Compose (repo) | `mise run deploy:all` on server |
+| Observability (Grafana, Prometheus, Loki, Alloy) | Docker Compose (repo) | `mise run deploy:all` on server |
+| CrowdSec | Docker Compose (repo) | `mise run deploy:all` on server |
 | Dokploy + Postgres + Redis | Docker Swarm | Self-managed |
 
 ## Rollback Plan
