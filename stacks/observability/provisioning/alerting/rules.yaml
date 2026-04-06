@@ -13,7 +13,7 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: ""
+            datasourceUid: "PBFA97CFB590B2093"
             model:
               expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle",job="node"}[5m]))
               instant: true
@@ -45,7 +45,7 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: ""
+            datasourceUid: "PBFA97CFB590B2093"
             model:
               expr: 1 - (node_memory_AvailableBytes{job="node"} / node_memory_MemTotal_bytes{job="node"})
               instant: true
@@ -77,7 +77,7 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: ""
+            datasourceUid: "PBFA97CFB590B2093"
             model:
               expr: 1 - (node_filesystem_avail_bytes{mountpoint="/",job="node"} / node_filesystem_size_bytes{mountpoint="/",job="node"})
               instant: true
