@@ -1,0 +1,17 @@
+services:
+  homeassistant:
+    container_name: homeassistant
+    image: ghcr.io/home-assistant/home-assistant:stable
+    volumes:
+      - ./config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro # Required for Bluetooth communication
+    environment:
+      - TZ=Europe/London
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN # Required for Bluetooth management
+      - NET_RAW # Required for Bluetooth management
+    security_opt:
+      - apparmor:unconfined # Required for host device access
+    network_mode: host

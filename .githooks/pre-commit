@@ -1,0 +1,23 @@
+#!/bin/sh
+# Pre-commit hook: prevent committing unencrypted files in docs/private/
+#
+# Install: git config core.hooksPath .githooks
+#
+# Checks the actual staged blob for the GITCRYPT magic header.
+# Any file under docs/private/ that isn't encrypted gets blocked.
+
+for f in $(git diff --cached --name-only | grep '^docs/private/'); do
+  blob=$(git ls-files -s "$f" 2>/dev/null | awk '{print $2}')
+  if [ -n "$blob" ]; then
+    header=$(git cat-file -p "$blob" | head -c 10)
+    case "$header" in
+      *GITCRYPT*)
+        ;; # encrypted, good
+      *)
+        echo "ERROR: ${f} would be committed in PLAINTEXT!"
+        echo "Check that .gitattributes has: docs/private/** filter=git-crypt diff=git-crypt"
+        exit 1
+        ;;
+    esac
+  fi
+done

@@ -1,0 +1,120 @@
+[tools]
+python = "3.12"
+uv = "latest"
+shellcheck = "latest"
+actionlint = "latest"
+trivy = "latest"
+
+[env]
+COMPOSE_PROJECT_DIR = "{{config_root}}/stacks"
+
+# ── Dev ────────────────────────────────────────────
+[tasks.lint]
+description = "Lint Python, bash, YAML, and GitHub Actions"
+run = [
+  "uv run ruff check src/ tests/",
+  "shellcheck .githooks/*",
+  "uv run yamllint -c .yamllint.yaml stacks/",
+  "if [ -d .github/workflows ]; then actionlint; else echo 'No workflows to lint'; fi",
+]
+
+[tasks.format]
+description = "Format Python code"
+run = "uv run ruff format src/ tests/"
+
+[tasks.typecheck]
+description = "Type-check Python code"
+run = "uv run ty check src/"
+
+[tasks.test]
+description = "Run Python tests"
+run = "uv run pytest tests/ -v"
+
+[tasks.ci]
+description = "Full CI check (lint + typecheck + test + validate)"
+depends = ["lint", "typecheck", "test", "validate:compose"]
+
+# ── Deploy ─────────────────────────────────────────
+[tasks."deploy:all"]
+description = "Deploy all stacks"
+depends = ["deploy:ha", "deploy:mqtt"]
+
+[tasks."deploy:ha"]
+description = "Deploy Home Assistant"
+run = "docker compose -f stacks/home-assistant/compose.yaml up -d"
+
+[tasks."deploy:mqtt"]
+description = "Deploy MQTT broker"
+run = "docker compose -f stacks/mqtt/compose.yaml up -d"
+
+# ── Check ──────────────────────────────────────────
+[tasks."check:health"]
+description = "Run health checks against all services"
+run = "uv run python -m homelab.health"
+
+[tasks."check:security"]
+description = "Run security posture audit"
+run = "uv run python -m homelab.security"
+
+[tasks."check:vulnerabilities"]
+description = "Scan Docker images for CVEs"
+run = """
+for f in stacks/*/compose.yaml; do
+  images=$(docker compose -f "$f" config --images 2>/dev/null)
+  for img in $images; do
+    echo "Scanning $img..."
+    trivy image --severity HIGH,CRITICAL "$img"
+  done
+done
+"""
+
+# ── Validate ───────────────────────────────────────
+[tasks."validate:compose"]
+description = "Validate all compose files"
+run = """
+for f in stacks/*/compose.yaml; do
+  echo "Validating $f..."
+  docker compose -f "$f" config --quiet || exit 1
+done
+echo "All compose files valid ✅"
+"""
+
+# ── Setup (bootstrap) ─────────────────────────────
+[tasks.setup]
+description = "Full server bootstrap"
+depends = ["setup:docker", "setup:ufw", "setup:fail2ban", "setup:dokploy"]
+
+[tasks."setup:docker"]
+description = "Install Docker if not present"
+run = """
+if command -v docker &>/dev/null; then
+  echo "Docker already installed ✅"
+else
+  curl -fsSL https://get.docker.com | sh
+  sudo usermod -aG docker "$USER"
+  echo "Docker installed ✅ — log out and back in for group changes"
+fi
+"""
+
+[tasks."setup:ufw"]
+description = "Configure UFW firewall"
+run = """
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow in on tailscale0
+sudo ufw allow in on lo
+sudo ufw --force enable
+echo "UFW configured ✅"
+"""
+
+[tasks."setup:fail2ban"]
+description = "Install and enable fail2ban"
+run = """
+sudo apt-get install -y fail2ban
+sudo systemctl enable --now fail2ban
+echo "fail2ban active ✅"
+"""
+
+[tasks."setup:dokploy"]
+description = "Install Dokploy"
+run = "curl -sSL https://dokploy.com/install.sh | sh"

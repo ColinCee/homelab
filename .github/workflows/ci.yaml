@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v2
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Lint (ruff)
+        run: uv run ruff check src/ tests/
+
+      - name: Format check (ruff)
+        run: uv run ruff format --check src/ tests/
+
+      - name: Type check (ty)
+        run: uv run ty check src/
+
+      - name: Tests (pytest)
+        run: uv run pytest tests/ -v
+
+      - name: Lint YAML
+        run: uv run yamllint -c .yamllint.yaml stacks/
+
+      - name: Lint GitHub Actions
+        run: actionlint
+
+      - name: Validate compose files
+        run: |
+          for f in stacks/*/compose.yaml; do
+            echo "Validating $f..."
+            docker compose -f "$f" config --quiet || exit 1
+          done

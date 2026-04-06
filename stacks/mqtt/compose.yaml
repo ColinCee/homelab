@@ -1,0 +1,14 @@
+services:
+  mqtt:
+    container_name: mqtt
+    image: eclipse-mosquitto:latest
+    restart: unless-stopped
+    ports:
+      - "${TAILSCALE_IP:?Set TAILSCALE_IP env var}:1883:1883"
+      - "${TAILSCALE_IP}:9001:9001"
+    volumes:
+      - ./config:/mosquitto/config
+      - ./data:/mosquitto/data
+      - ./log:/mosquitto/log
+    environment:
+      - TZ=Europe/London

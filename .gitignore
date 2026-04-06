@@ -1,0 +1,23 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# pytest
+.pytest_cache/
+
+# ruff
+.ruff_cache/
+
+# mise
+.mise/local.toml
+
+# Stack runtime data and secrets
+stacks/*/.env
+stacks/*/config/
+stacks/*/data/
+stacks/*/log/
+
+# OS
+.DS_Store
