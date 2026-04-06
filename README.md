@@ -30,6 +30,11 @@ mise run setup               # Bootstrap a fresh server
 | [Cloudflared](https://github.com/cloudflare/cloudflared) | Public ingress via Cloudflare Tunnel | Dokploy |
 | Home Assistant | Home automation (Bluetooth, mDNS) | Docker Compose (`stacks/home-assistant/`) |
 | MQTT (Mosquitto) | Message broker for HA sensors | Docker Compose (`stacks/mqtt/`) |
+| Grafana | Dashboards — metrics, logs, alerts | Docker Compose (`stacks/observability/`) |
+| Prometheus | Metrics storage (30d retention) | Docker Compose (`stacks/observability/`) |
+| Loki | Log aggregation (30d retention) | Docker Compose (`stacks/observability/`) |
+| Grafana Alloy | Unified collector (host + container metrics/logs) | Docker Compose (`stacks/observability/`) |
+| CrowdSec | Collaborative IDS + firewall bouncer | Docker Compose (`stacks/crowdsec/`) |
 | Dokploy | PaaS dashboard, logs, metrics, alerts | Docker Swarm (self-managed) |
 
 ## Hardware
@@ -71,6 +76,19 @@ Push to main (flight-tracker repo)
 | [trivy](https://trivy.dev) | Docker image CVE scanning |
 | [Renovate](https://docs.renovatebot.com) | Automated dependency PRs |
 
+## Observability
+
+```
+Grafana (:3001) ← Prometheus (metrics) ← Alloy (host + container scraping)
+                ← Loki (logs)          ← Alloy (Docker log collection)
+                                        ← CrowdSec (security metrics)
+```
+
+- **Dashboards:** Host Overview, Container Overview (pre-provisioned)
+- **Alerting:** CPU >80%, RAM >90%, Disk >80% → private Discord channel
+- **Security:** CrowdSec IDS with collaborative threat intel + UFW firewall bouncer
+- **External:** Healthchecks.io heartbeat (alerts on full server outage)
+
 ## Security
 
 UFW firewall active (deny all except Tailscale), fail2ban monitoring SSH, automatic security patches enabled, Tailscale ACLs enforcing least-privilege access. Full audit and hardening details in [security.md](docs/private/security.md) (encrypted — clone + `git-crypt unlock` to read).
@@ -91,3 +109,4 @@ All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 ### Runbooks
 
 - **[Migration: Dokploy](docs/runbooks/migration.md)** — completed migration from Dockge/Tugtainer (reference)
+- **[Deploying Services](docs/runbooks/deploying-services.md)** — how to add new services (Dokploy Compose or local stack)

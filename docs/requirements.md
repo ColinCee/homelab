@@ -12,8 +12,8 @@ Living document — the "north star" for what this homelab should do and why. Ev
 | P4 | No alerting — if something crashes at 3am, nobody knows | ✅ Solved — Dokploy → Discord alerts (build errors, deploys, threshold) |
 | P5 | No clean deploy pipeline — Tugtainer polls GHCR on 2-min cron with stagger hacks | ✅ Solved — CI → Tailscale → Dokploy API deploy |
 | P6 | Dockge friction — requires compose files in `/opt/stacks/`, doesn't work with `~/code/` | ✅ Solved — Dockge removed, stacks in repo |
-| P7 | No security visibility — no firewall, no intrusion detection, no audit trail | ✅ Partially solved — see [security.md](private/security.md) |
-| P8 | No network traffic monitoring — can't see what's hitting services or from where | 🔲 Planned — see [network.md](private/network.md) |
+| P7 | No security visibility — no firewall, no intrusion detection, no audit trail | ✅ Solved — CrowdSec IDS + Grafana security dashboard + UFW bouncer |
+| P8 | No network traffic monitoring — can't see what's hitting services or from where | ✅ Solved — Grafana + Prometheus + Loki + Alloy |
 
 ## Requirements
 
@@ -33,9 +33,9 @@ Living document — the "north star" for what this homelab should do and why. Ev
 | R5 | Per-container real-time logs with search | Must | ✅ Dokploy built-in |
 | R6 | CPU, RAM, disk metrics per container | Must | ✅ Dokploy built-in |
 | R7 | Alert thresholds → Discord (e.g. CPU > 80%, RAM > 90%) | Must | ✅ Dokploy → Discord |
-| R8 | Historical log retention and search | Nice | 🔲 Grafana + Loki (later) |
-| R9 | Long-term host metrics and trending | Nice | 🔲 Prometheus + node_exporter (later) |
-| R10 | Endpoint uptime monitoring + status page | Nice | 🔲 Uptime Kuma (later) |
+| R8 | Historical log retention and search | Nice | ✅ Loki (30d retention) + Grafana Explore |
+| R9 | Long-term host metrics and trending | Nice | ✅ Prometheus (30d retention) + Grafana dashboards |
+| R10 | Endpoint uptime monitoring + status page | Nice | ✅ Healthchecks.io (external heartbeat) |
 
 ### Security
 
@@ -44,8 +44,8 @@ Living document — the "north star" for what this homelab should do and why. Ev
 | R11 | Host firewall — deny all except Tailscale | Must | ✅ UFW enabled |
 | R12 | Automatic security patches | Must | ✅ unattended-upgrades fixed |
 | R13 | Brute-force protection | Must | ✅ fail2ban active |
-| R14 | Intrusion detection — know if someone gains access | Must | 🔲 Planned (CrowdSec / auditd) |
-| R15 | Network request stats — see what's hitting services | Should | 🔲 Planned — see [network.md](private/network.md) |
+| R14 | Intrusion detection — know if someone gains access | Must | ✅ CrowdSec (collaborative IDS) + UFW firewall bouncer |
+| R15 | Network request stats — see what's hitting services | Should | ✅ Alloy → Prometheus/Loki → Grafana dashboards |
 | R16 | Docker socket hardening | Should | 🔲 Planned |
 
 ### Operational
