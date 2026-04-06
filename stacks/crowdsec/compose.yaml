@@ -12,10 +12,15 @@ services:
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./acquis.yaml:/etc/crowdsec/acquis.yaml:ro
     ports:
-      # Prometheus metrics endpoint for Alloy to scrape
-      - "127.0.0.1:6060:6060"
       # CrowdSec API for bouncers
       - "127.0.0.1:8080:8080"
+    networks:
+      - default
+      - monitoring
+
+networks:
+  monitoring:
+    external: true
 
 volumes:
   crowdsec-config:

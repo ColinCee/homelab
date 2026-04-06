@@ -117,7 +117,7 @@ loki.write "default" {
 
 prometheus.scrape "crowdsec" {
   targets = [{
-    __address__ = "host.docker.internal:6060",
+    __address__ = "crowdsec:6060",
   }]
   forward_to      = [prometheus.remote_write.default.receiver]
   scrape_interval = "30s"
