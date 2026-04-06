@@ -37,7 +37,7 @@ depends = ["lint", "typecheck", "test", "validate:compose"]
 # ── Deploy ─────────────────────────────────────────
 [tasks."deploy:all"]
 description = "Deploy all stacks"
-depends = ["deploy:ha", "deploy:mqtt"]
+depends = ["deploy:ha", "deploy:mqtt", "deploy:observability"]
 
 [tasks."deploy:ha"]
 description = "Deploy Home Assistant"
@@ -46,6 +46,10 @@ run = "docker compose -f stacks/home-assistant/compose.yaml up -d"
 [tasks."deploy:mqtt"]
 description = "Deploy MQTT broker"
 run = "docker compose -f stacks/mqtt/compose.yaml up -d"
+
+[tasks."deploy:observability"]
+description = "Deploy observability stack (Grafana, Prometheus, Loki, Alloy)"
+run = "docker compose -f stacks/observability/compose.yaml up -d"
 
 # ── Check ──────────────────────────────────────────
 [tasks."check:health"]

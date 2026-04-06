@@ -1,0 +1,61 @@
+services:
+  grafana:
+    image: grafana/grafana:11.5.2
+    restart: unless-stopped
+    ports:
+      - "${TAILSCALE_IP:?}:3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SERVER_ROOT_URL=http://beelink:3001
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+      - ./dashboards:/var/lib/grafana/dashboards:ro
+
+  prometheus:
+    image: prom/prometheus:v3.10.0
+    restart: unless-stopped
+    command:
+      - --web.enable-remote-write-receiver
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+      - --storage.tsdb.retention.size=2GB
+    volumes:
+      - prometheus-data:/prometheus
+
+  loki:
+    image: grafana/loki:3.6.1
+    restart: unless-stopped
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.14.0
+    restart: unless-stopped
+    privileged: true
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    environment:
+      ALLOY_DEPLOY_MODE: docker
+    volumes:
+      - ./config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc:/rootproc:ro
+      - /sys:/sys:ro
+      - /:/rootfs:ro
+      - /dev/disk:/dev/disk:ro
+      - /var/lib/docker:/var/lib/docker:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    devices:
+      - /dev/kmsg
+    depends_on:
+      - prometheus
+      - loki
+
+volumes:
+  grafana-data:
+  prometheus-data:
+  loki-data:

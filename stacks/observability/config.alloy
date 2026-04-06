@@ -1,0 +1,112 @@
+// ================================
+// Host Metrics (node_exporter)
+// ================================
+
+prometheus.exporter.unix "host" {
+  procfs_path = "/rootproc"
+  sysfs_path  = "/sys"
+  rootfs_path = "/rootfs"
+}
+
+prometheus.scrape "host" {
+  targets    = prometheus.exporter.unix.host.targets
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  scrape_interval = "15s"
+  job_name        = "node"
+}
+
+// ================================
+// Container Metrics (cAdvisor)
+// ================================
+
+prometheus.exporter.cadvisor "docker" {
+  docker_only = true
+}
+
+discovery.relabel "cadvisor" {
+  targets = prometheus.exporter.cadvisor.docker.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "docker"
+  }
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "cadvisor" {
+  targets    = discovery.relabel.cadvisor.output
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  scrape_interval = "15s"
+}
+
+// ================================
+// Metrics Destination (Prometheus)
+// ================================
+
+prometheus.remote_write "default" {
+  endpoint {
+    url = "http://prometheus:9090/api/v1/write"
+  }
+}
+
+// ================================
+// Container Log Discovery
+// ================================
+
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+discovery.relabel "docker_logs" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_image_name"]
+    target_label  = "image"
+  }
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+// ================================
+// Container Logs (Docker)
+// ================================
+
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.docker_logs.rules
+  forward_to    = [loki.process.docker.receiver]
+}
+
+loki.process "docker" {
+  forward_to = [loki.write.default.receiver]
+
+  // Drop noisy observability stack logs to avoid feedback loops
+  stage.drop {
+    source     = "container_name"
+    expression = "(alloy|loki)"
+  }
+}
+
+// ================================
+// Logs Destination (Loki)
+// ================================
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
