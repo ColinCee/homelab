@@ -1,0 +1,15 @@
+apiVersion: 1
+contactPoints:
+  - orgId: 1
+    name: Discord Private
+    receivers:
+      - uid: discord-private
+        type: discord
+        settings:
+          url: ${DISCORD_PRIVATE_WEBHOOK_URL}
+          use_discord_username: true
+          message: |
+            {{ range .Alerts }}
+            **{{ .Labels.alertname }}** {{ if eq .Status "firing" }}🔴{{ else }}🟢{{ end }}
+            {{ .Annotations.summary }}
+            {{ end }}

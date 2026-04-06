@@ -1,0 +1,102 @@
+apiVersion: 1
+groups:
+  - orgId: 1
+    name: Infrastructure
+    folder: Homelab
+    interval: 1m
+    rules:
+      - uid: high-cpu
+        title: High CPU Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: ""
+            model:
+              expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle",job="node"}[5m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.8]
+              refId: C
+        for: 5m
+        annotations:
+          summary: "CPU usage above 80% for 5 minutes (current: {{ humanizePercentage $value }})"
+        labels:
+          severity: warning
+
+      - uid: high-ram
+        title: High RAM Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: ""
+            model:
+              expr: 1 - (node_memory_AvailableBytes{job="node"} / node_memory_MemTotal_bytes{job="node"})
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.9]
+              refId: C
+        for: 5m
+        annotations:
+          summary: "RAM usage above 90% for 5 minutes (current: {{ humanizePercentage $value }})"
+        labels:
+          severity: warning
+
+      - uid: high-disk
+        title: High Disk Usage
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: ""
+            model:
+              expr: 1 - (node_filesystem_avail_bytes{mountpoint="/",job="node"} / node_filesystem_size_bytes{mountpoint="/",job="node"})
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.8]
+              refId: C
+        for: 10m
+        annotations:
+          summary: "Disk usage above 80% (current: {{ humanizePercentage $value }})"
+        labels:
+          severity: critical
