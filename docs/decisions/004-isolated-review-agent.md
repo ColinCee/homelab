@@ -77,7 +77,7 @@ Review agent container (async):
 
 | Credential | Purpose | Scope |
 |---|---|---|
-| `~/.copilot/` credentials | Copilot CLI LLM access | Copilot API calls only (via `copilot login`) |
+| `COPILOT_GITHUB_TOKEN` (fine-grained PAT) | Copilot CLI LLM access | "Copilot Requests" permission only |
 | GitHub App private key | Post reviews, read PR contents | Pull Requests (write), Contents (read) |
 
 What the container does NOT get:

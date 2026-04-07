@@ -18,13 +18,13 @@ services:
       - GITHUB_APP_ID=${GITHUB_APP_ID:?}
       - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
       - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
       - HTTPS_PROXY=http://proxy:3128
       - HTTP_PROXY=http://proxy:3128
       - NO_PROXY=localhost,127.0.0.1
     volumes:
       - repo-cache:/repo.git
       - ${GITHUB_APP_KEY_FILE:?}:/secrets/github-app.pem:ro
-      - ${COPILOT_CONFIG_DIR:?}:/home/agent/.copilot:ro
     tmpfs:
       - /reviews:size=512m
       - /tmp:size=64m

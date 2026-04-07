@@ -23,27 +23,19 @@ Manual steps to activate the isolated review agent ([ADR-004](../decisions/004-i
 2. Select **Only select repositories** → `ColinCee/homelab`
 3. Note the **Installation ID** from the URL (`/installations/<ID>`)
 
-## 3. Authenticate Copilot CLI
+## 3. Create Fine-Grained PAT for Copilot CLI
 
-Run `copilot login` once on the Beelink to create a dedicated Copilot token:
+1. Go to **Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens**
+   https://github.com/settings/personal-access-tokens/new
+2. Configure:
+   - **Name:** `homelab-copilot-cli`
+   - **Expiration:** 1 year (rotate before expiry)
+   - **Resource owner:** `ColinCee`
+   - **Repository access:** Public repositories (read-only)
+   - **Account permissions → Copilot Requests:** Read-only
+3. Click **Generate token** and copy the value
 
-```bash
-ssh beelink
-
-# Install Copilot CLI if not present
-curl -fsSL https://gh.io/copilot-install | bash
-
-# Create a dedicated config directory for the agent
-mkdir -p /home/colin/copilot-agent-config
-
-# Log in — follow the device flow in your browser
-COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config copilot login
-
-# Verify it works
-COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config copilot -p "Say hello" -s
-```
-
-This creates credentials in `/home/colin/copilot-agent-config/` that are **separate** from your main `~/.copilot/` — they can only make Copilot API calls, not modify repos.
+This token only grants Copilot LLM API access — it cannot modify repos or access GitHub APIs.
 
 ## 4. Deploy Secrets to Beelink
 
@@ -52,21 +44,19 @@ This creates credentials in `/home/colin/copilot-agent-config/` that are **separ
 scp ~/Downloads/homelab-review-bot.*.private-key.pem \
   beelink:/home/colin/secrets/github-app.pem
 
-# Set environment variables (add to ~/.bashrc or systemd env file)
+# Create the compose .env file (auto-loaded by docker compose, gitignored)
 ssh beelink
-cat >> ~/.env.agents <<'EOF'
+cat > ~/code/homelab/stacks/agents/.env <<'EOF'
 GITHUB_APP_ID=3309597
 GITHUB_APP_INSTALLATION_ID=122226454
 GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
-COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config
+COPILOT_GITHUB_TOKEN=github_pat_YOUR_TOKEN_HERE
 EOF
 ```
 
 ## 5. Deploy the Stack
 
 ```bash
-# Source the env vars and deploy
-set -a && source ~/.env.agents && set +a
 mise run deploy:agents
 ```
 
