@@ -56,36 +56,31 @@ This repo has an automated AI code review system. Follow this process:
 
 ### Creating PRs
 
-1. **Always create PRs as drafts first** — use `gh pr create --draft`
-2. Work on the branch, push commits, iterate until ready
-3. When ready, mark as ready for review: `gh pr ready <number>`
+1. **Create PRs as drafts** — `gh pr create --draft`
+2. Push commits, iterate until ready
+3. Mark ready: `gh pr ready <number>` → triggers first AI review
 
 ### Review cycle
 
-1. When a PR is marked ready (or opened as non-draft), the `code-review.yaml`
-   workflow triggers automatically
-2. The AI reviewer (GPT-5.4 on the Beelink agent) posts a structured review
-   as `github-actions[bot]` with:
-   - **APPROVE** — no issues found, PR can be merged
-   - **REQUEST_CHANGES** — must-fix or security issues found, blocks merge
-   - **COMMENT** — nitpicks only, doesn't block merge
-3. Reviews include inline comments on specific lines with severity tags:
-   - 🔧 **Must Fix** — blocks merge
-   - 💡 **Nitpick** — optional improvement
-   - 🔒 **Security** — always blocks merge
-4. Fix any must-fix/security issues, push new commits
-5. Comment `/review` to re-trigger the AI review
-6. Repeat steps 4-5 until the bot APPROVEs
-7. The repo owner merges — **never merge PRs yourself**
+1. When a PR is opened or marked ready, `code-review.yaml` auto-triggers
+2. GPT-5.4 on the Beelink agent posts a structured review as
+   `github-actions[bot]` with inline comments and a verdict:
+   - **APPROVE** — no issues, can merge
+   - **REQUEST_CHANGES** — must-fix or security issues block merge
+   - **COMMENT** — nitpicks only, doesn't block
+3. Inline comments use severity tags:
+   - 🚫 **Blocker** — blocks merge (bugs, security, breaking changes)
+   - 💡 **Suggestion** — non-blocking improvement, author decides
+   - ❓ **Question** — non-blocking, seeks clarification
+4. Fix any must-fix/security findings, push new commits
+5. Comment `/review` to re-trigger — the model receives its previous
+   review and checks if issues were resolved
+6. Repeat until APPROVE
+7. Repo owner merges — **never merge PRs yourself**
 
-### Branch protection
+### Important
 
-- 1 approving review required (from `github-actions[bot]`)
-- CI (`check` job) must pass
-- Stale reviews are dismissed on new pushes
-
-### Security
-
-- Fork PRs are blocked from triggering reviews (defense-in-depth)
-- `/review` command restricted to OWNER/MEMBER/COLLABORATOR roles
+- **No `synchronize` trigger** — pushes don't auto-review. Use `/review`.
+- Stale reviews are dismissed on new pushes (branch protection)
 - Never use `--admin` to bypass branch protection
+- Fork PRs are blocked from triggering reviews

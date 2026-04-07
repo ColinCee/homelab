@@ -5,6 +5,7 @@ import subprocess
 from dataclasses import dataclass
 
 import httpx
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,13 @@ async def chat(
     user: str,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
+    response_schema: type[BaseModel] | None = None,
 ) -> ChatResult:
-    """Send a chat completion request to the Copilot API."""
+    """Send a chat completion request to the Copilot API.
+
+    If response_schema is provided, uses structured output (response_format)
+    to guarantee the response matches the Pydantic model's JSON schema.
+    """
     token = get_token()
     payload: dict = {
         "model": model,
@@ -54,6 +60,19 @@ async def chat(
     if reasoning_effort:
         payload["reasoning"] = {"effort": reasoning_effort}
 
+    if response_schema is not None:
+        schema = response_schema.model_json_schema()
+        # Strict mode requires additionalProperties: false at all levels
+        _set_additional_properties_false(schema)
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_schema.__name__,
+                "strict": True,
+                "schema": schema,
+            },
+        }
+
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
             API_URL,
@@ -61,7 +80,6 @@ async def chat(
             json=payload,
         )
         resp.raise_for_status()
-        # Log the raw response for debugging
         logger.debug("Copilot API response: %s", resp.text)
 
     data = resp.json()
@@ -77,3 +95,18 @@ async def chat(
         reasoning_tokens=usage.get("reasoning_tokens", 0),
         cached_tokens=prompt_details.get("cached_tokens", 0),
     )
+
+
+def _set_additional_properties_false(schema: dict) -> None:
+    """Recursively set additionalProperties: false for strict mode."""
+    if schema.get("type") == "object":
+        schema["additionalProperties"] = False
+        for prop in schema.get("properties", {}).values():
+            _set_additional_properties_false(prop)
+    if "items" in schema:
+        _set_additional_properties_false(schema["items"])
+    for variant in schema.get("anyOf", []):
+        _set_additional_properties_false(variant)
+    # Handle $defs (Pydantic v2 puts nested models here)
+    for defn in schema.get("$defs", {}).values():
+        _set_additional_properties_false(defn)
