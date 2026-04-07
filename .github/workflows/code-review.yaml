@@ -1,0 +1,99 @@
+name: Code Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review]
+  issue_comment:
+    types: [created]
+
+jobs:
+  review:
+    if: >
+      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.body == '/review')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Get PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            PR_NUMBER=${{ github.event.issue.number }}
+          else
+            PR_NUMBER=${{ github.event.pull_request.number }}
+          fi
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.title' > /tmp/pr_title.txt
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}" --jq '.body // ""' > /tmp/pr_body.txt
+          # shellcheck disable=SC2016
+          gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --jq '
+            .[] | "### \(.filename) (\(.status))\n```diff\n\(.patch // "(binary)")\n```\n"
+          ' > /tmp/pr_diff.txt
+
+          # Truncate very large diffs
+          head -c 80000 /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+
+      - name: Review with GPT-5.4
+        id: review
+        env:
+          GITHUB_MODELS_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        run: |
+          PR_TITLE=$(cat /tmp/pr_title.txt)
+          PR_BODY=$(cat /tmp/pr_body.txt)
+          DIFF=$(cat /tmp/pr_diff_truncated.txt)
+
+          # Build the prompt
+          cat > /tmp/prompt.json << 'PROMPT_EOF'
+          {
+            "model": "openai/gpt-5.4",
+            "reasoning": {"effort": "high"},
+            "messages": [
+              {
+                "role": "system",
+                "content": "You are a senior engineer reviewing a pull request. Review the diff for:\n\n- **Bugs**: Logic errors, off-by-one, null/undefined issues, race conditions\n- **Security**: Injection, secrets in code, unsafe deserialization, path traversal\n- **Breaking changes**: API contract changes, config format changes\n- **Missing edge cases**: Error handling, empty inputs, boundary conditions\n\n## Rules\n\n- Only comment on things that genuinely matter\n- Never comment on style, formatting, naming conventions, or trivial issues\n- If the PR looks good, say so briefly — don't invent problems\n- Group related issues together rather than commenting line-by-line\n- Be specific: quote the problematic code and explain why it's wrong\n- Suggest a fix when possible\n- Keep the review concise and actionable\n- End with which model you are, e.g. 🤖 Reviewed by <your model name>"
+              },
+              {
+                "role": "user",
+                "content": "PLACEHOLDER"
+              }
+            ]
+          }
+          PROMPT_EOF
+
+          # Inject the actual diff content via jq to handle escaping
+          USER_CONTENT=$(printf "## PR: %s\n\n%s\n\n## Diff\n\n%s" "$PR_TITLE" "$PR_BODY" "$DIFF")
+          jq --arg content "$USER_CONTENT" '.messages[1].content = $content' /tmp/prompt.json > /tmp/request.json
+
+          # Call GitHub Models API
+          RESPONSE=$(curl -sS --fail-with-body \
+            -X POST "https://models.github.ai/inference/chat/completions" \
+            -H "Authorization: Bearer $GITHUB_MODELS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/request.json)
+
+          echo "$RESPONSE" | jq -r '.choices[0].message.content' > /tmp/review.txt
+
+          if [ ! -s /tmp/review.txt ] || [ "$(cat /tmp/review.txt)" = "null" ]; then
+            echo "::error::Empty response from API"
+            echo "$RESPONSE" | jq .
+            exit 1
+          fi
+
+          echo "Review generated successfully"
+
+      - name: Post review comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REVIEW=$(cat /tmp/review.txt)
+          PR_NUMBER=${{ steps.diff.outputs.pr_number }}
+
+          gh pr comment "$PR_NUMBER" \
+            --repo "${{ github.repository }}" \
+            --body "$REVIEW"
