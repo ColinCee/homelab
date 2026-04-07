@@ -79,7 +79,9 @@ groups:
               to: 0
             datasourceUid: "PBFA97CFB590B2093"
             model:
-              expr: 1 - (node_filesystem_avail_bytes{mountpoint="/",job="node"} / node_filesystem_size_bytes{mountpoint="/",job="node"})
+              expr: >-
+                1 - (node_filesystem_avail_bytes{mountpoint="/",job="node"}
+                / node_filesystem_size_bytes{mountpoint="/",job="node"})
               instant: true
               refId: A
           - refId: C
