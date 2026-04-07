@@ -57,7 +57,6 @@ def test_review_result_with_inline_comments():
                 line=42,
                 severity="blocker",
                 body="This will crash on None input",
-                suggestion="if value is not None:",
             ),
             ReviewComment(
                 path="src/utils.py",
@@ -75,7 +74,6 @@ def test_review_result_with_inline_comments():
     assert gh["comments"][0]["path"] == "src/main.py"
     assert gh["comments"][0]["line"] == 42
     assert "Blocker" in gh["comments"][0]["body"]
-    assert "```suggestion" in gh["comments"][0]["body"]
     assert gh["comments"][1]["start_line"] == 8
     assert "Suggestion" in gh["comments"][1]["body"]
 

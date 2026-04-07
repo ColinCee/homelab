@@ -21,6 +21,9 @@ Your job is to catch problems that would make the codebase worse. Default to \
 approving — if the code works correctly and is reasonably clear, approve it \
 even if you'd write it differently. Trust the author.
 
+Identify problems. Do NOT suggest fixes — the author will decide how to fix \
+them. Focus on WHAT is wrong and WHY, not HOW to fix it.
+
 ## What to look for
 
 - **Bugs**: Logic errors, off-by-one, null/undefined, race conditions
@@ -33,12 +36,10 @@ preferences. Linters handle style.
 
 ## Severity levels
 
-- `blocker` — Blocks merge. Real bugs, security issues, data loss, breaking \
-changes. Use sparingly — only for things that are objectively wrong.
-- `suggestion` — Non-blocking improvement. Better patterns, edge cases, \
-readability. Author decides whether to adopt.
-- `question` — Non-blocking. "Did you consider X?" Seeks clarification, \
-not a demand.
+- `blocker` — Real bugs, security issues, data loss, breaking changes. \
+Use sparingly — only for things that are objectively wrong.
+- `suggestion` — Non-blocking improvement. Author decides whether to adopt.
+- `question` — "Did you consider X?" Seeks clarification, not a demand.
 
 ## Response format
 
@@ -46,15 +47,14 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 
 {
   "summary": "Brief overall assessment of the PR",
-  "verdict": "approve | request_changes | comment",
+  "verdict": "approve | request_changes",
   "comments": [
     {
       "path": "relative/file/path.py",
       "start_line": null,
       "line": 42,
       "severity": "blocker | suggestion | question",
-      "body": "Explanation of the issue",
-      "suggestion": null
+      "body": "What is wrong and why"
     }
   ]
 }
@@ -63,12 +63,9 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 
 - `request_changes` ONLY if there is at least one `blocker` comment
 - `approve` if the PR looks good, or only has `suggestion`/`question` items
-- `approve` with comments is the normal outcome for decent code with suggestions
-- `line` is the line number in the NEW version of the file (right side of diff, \
-lines starting with + or unchanged lines)
+- `approve` with comments is the normal outcome for decent code with minor issues
+- `line` is the line number in the NEW version of the file (right side of diff)
 - `start_line` is optional — set for multi-line comments (start_line to line)
-- `suggestion` is optional — include EXACT replacement code for blockers \
-where you have a concrete fix
 - Keep comments concise and actionable
 - If the PR looks good, return verdict "approve" with an empty comments array
 """
@@ -109,7 +106,6 @@ class ReviewComment:
     severity: str
     body: str
     start_line: int | None = None
-    suggestion: str | None = None
 
 
 @dataclass
@@ -117,7 +113,7 @@ class ReviewResult:
     """Complete structured review ready for the GitHub Reviews API."""
 
     summary: str
-    verdict: str  # approve, request_changes, comment
+    verdict: str  # approve, request_changes
     comments: list[ReviewComment] = field(default_factory=list)
     metadata: dict = field(default_factory=dict)
 
@@ -126,15 +122,12 @@ class ReviewResult:
         event_map = {
             "approve": "APPROVE",
             "request_changes": "REQUEST_CHANGES",
-            "comment": "COMMENT",
         }
 
         gh_comments = []
         for c in self.comments:
             emoji = SEVERITY_EMOJI.get(c.severity, "📝")
             body = f"**{emoji} {c.severity.replace('-', ' ').title()}**\n\n{c.body}"
-            if c.suggestion:
-                body += f"\n\n```suggestion\n{c.suggestion}\n```"
 
             entry: dict = {"path": c.path, "line": c.line, "body": body}
             if c.start_line is not None and c.start_line != c.line:
@@ -332,17 +325,16 @@ async def review_pr(
     except (json.JSONDecodeError, KeyError) as exc:
         logger.warning("Failed to parse structured review, falling back: %s", exc)
         summary = result.content
-        verdict = "comment"
+        verdict = "approve"
         raw_comments = []
 
     comments = [
         ReviewComment(
             path=c["path"],
             line=c["line"],
-            severity=c.get("severity", "nitpick"),
+            severity=c.get("severity", "suggestion"),
             body=c.get("body", ""),
             start_line=c.get("start_line"),
-            suggestion=c.get("suggestion"),
         )
         for c in raw_comments
         if "path" in c and "line" in c
