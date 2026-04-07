@@ -36,6 +36,25 @@ def _format_tokens(n: int) -> str:
     return f"{n:,}"
 
 
+# Premium request multipliers per model (source: GitHub Copilot docs)
+# 0 = unlimited/included on paid plans, not counted as premium
+MODEL_MULTIPLIERS: dict[str, float] = {
+    "gpt-5-mini": 0,
+    "gpt-4.1": 0,
+    "gpt-4o": 0,
+    "claude-haiku-4.5": 0.33,
+    "o3-mini": 0.33,
+    "o4-mini": 0.33,
+    "gemini-2.0-flash": 0.25,
+    "claude-sonnet-4.6": 1,
+    "gpt-5.4": 1,
+    "gpt-5.2-codex": 1,
+    "gemini-pro-2.5": 1,
+    "claude-opus-4.6": 3,
+}
+OVERAGE_COST_PER_REQUEST = 0.04  # USD
+
+
 async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
     """Fetch PR title, body, and diff from GitHub API."""
     headers = {
@@ -96,6 +115,14 @@ async def review_pr(
     if result.cached_tokens > 0:
         stats.append(f"💾 {_format_tokens(result.cached_tokens)} cached tokens")
     stats.append(f"⚡ reasoning: {reasoning_effort}")
+
+    # Premium request cost
+    multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
+    if multiplier > 0:
+        cost = multiplier * OVERAGE_COST_PER_REQUEST
+        stats.append(f"💰 {multiplier}x premium request (${cost:.2f})")
+    else:
+        stats.append("✅ included (0 premium requests)")
 
     footer = f"\n\n---\n🤖 *Reviewed by {result.model}* · {' · '.join(stats)}"
     comment_body = result.content + footer
