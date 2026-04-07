@@ -15,7 +15,7 @@ run = [
   "uv run ruff check src/ tests/",
   "shellcheck .githooks/*",
   "uv run yamllint -c .yamllint.yaml stacks/",
-  "if [ -d .github/workflows ]; then actionlint; else echo 'No workflows to lint'; fi",
+  "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
 ]
 
 [tasks.format]
