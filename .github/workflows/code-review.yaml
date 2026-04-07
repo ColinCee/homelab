@@ -39,7 +39,7 @@ jobs:
 
       - name: Review with AI
         env:
-          GITHUB_MODELS_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
         run: bash scripts/review-pr.sh
 
       - name: Post review
