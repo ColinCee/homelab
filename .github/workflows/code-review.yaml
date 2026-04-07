@@ -9,9 +9,11 @@ on:
 jobs:
   review:
     # Security gates:
-    # - pull_request: skip drafts, block forks (defense-in-depth;
-    #   GitHub also requires admin approval for fork workflows)
-    # - issue_comment /review: trusted roles only (OWNER/MEMBER/COLLABORATOR)
+    # - pull_request: skip drafts, block forks via if-condition
+    # - issue_comment /review: role-gated (OWNER/MEMBER/COLLABORATOR);
+    #   fork PRs blocked by the "Block fork PRs" step below (can't
+    #   check head.repo in the if-condition — issue_comment events
+    #   don't include PR metadata)
     if: >
       (github.event_name == 'pull_request' &&
       github.event.pull_request.draft == false &&
