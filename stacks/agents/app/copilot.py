@@ -46,14 +46,27 @@ async def chat(
 ) -> ChatResult:
     """Send a chat completion request to the Copilot API.
 
-    If response_schema is provided, uses structured output (response_format)
-    to guarantee the response matches the Pydantic model's JSON schema.
+    If response_schema is provided, enables JSON mode and appends the
+    schema to the system prompt so the model knows the expected format.
+    Response is validated with Pydantic after parsing.
     """
     token = get_token()
+
+    effective_system = system
+    if response_schema is not None:
+        import json
+
+        schema = response_schema.model_json_schema()
+        effective_system += (
+            "\n\n## Output Format\n\n"
+            "Respond with a single JSON object matching this schema:\n"
+            f"```json\n{json.dumps(schema, indent=2)}\n```"
+        )
+
     payload: dict = {
         "model": model,
         "messages": [
-            {"role": "system", "content": system},
+            {"role": "system", "content": effective_system},
             {"role": "user", "content": user},
         ],
     }
@@ -61,17 +74,7 @@ async def chat(
         payload["reasoning"] = {"effort": reasoning_effort}
 
     if response_schema is not None:
-        schema = response_schema.model_json_schema()
-        # Strict mode requires additionalProperties: false at all levels
-        _set_additional_properties_false(schema)
-        payload["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": response_schema.__name__,
-                "strict": True,
-                "schema": schema,
-            },
-        }
+        payload["response_format"] = {"type": "json_object"}
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
@@ -79,6 +82,8 @@ async def chat(
             headers={**HEADERS, "Authorization": f"Bearer {token}"},
             json=payload,
         )
+        if resp.status_code >= 400:
+            logger.error("Copilot API error %d: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         logger.debug("Copilot API response: %s", resp.text)
 
@@ -95,18 +100,3 @@ async def chat(
         reasoning_tokens=usage.get("reasoning_tokens", 0),
         cached_tokens=prompt_details.get("cached_tokens", 0),
     )
-
-
-def _set_additional_properties_false(schema: dict) -> None:
-    """Recursively set additionalProperties: false for strict mode."""
-    if schema.get("type") == "object":
-        schema["additionalProperties"] = False
-        for prop in schema.get("properties", {}).values():
-            _set_additional_properties_false(prop)
-    if "items" in schema:
-        _set_additional_properties_false(schema["items"])
-    for variant in schema.get("anyOf", []):
-        _set_additional_properties_false(variant)
-    # Handle $defs (Pydantic v2 puts nested models here)
-    for defn in schema.get("$defs", {}).values():
-        _set_additional_properties_false(defn)
