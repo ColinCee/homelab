@@ -1,5 +1,7 @@
 # Homelab
 
+[![CI](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml/badge.svg)](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml)
+
 Infrastructure-as-code and documentation for Colin's homelab — a single Beelink mini-PC running containerised services behind Tailscale and Cloudflare Tunnel, managed by Dokploy.
 
 ## Quickstart
