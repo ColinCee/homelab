@@ -116,15 +116,15 @@ async def review_pr(
         stats.append(f"💾 {_format_tokens(result.cached_tokens)} cached tokens")
     stats.append(f"⚡ reasoning: {reasoning_effort}")
 
-    # Premium request cost
+    # Premium request cost (Copilot bills per-request, not per-token)
     multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
     if multiplier > 0:
         cost = multiplier * OVERAGE_COST_PER_REQUEST
-        stats.append(f"💰 {multiplier}x premium request (${cost:.2f})")
+        stats.append(f"💰 {multiplier}x premium request (${cost:.2f} if over quota)")
     else:
         stats.append("✅ included (0 premium requests)")
 
-    footer = f"\n\n---\n🤖 *Reviewed by {result.model}* · {' · '.join(stats)}"
+    footer = f"\n\n---\n🤖 *Reviewed by {result.model}*\n" + " · ".join(stats)
     comment_body = result.content + footer
 
     comment_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
