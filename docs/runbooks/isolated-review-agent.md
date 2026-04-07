@@ -23,15 +23,27 @@ Manual steps to activate the isolated review agent ([ADR-004](../decisions/004-i
 2. Select **Only select repositories** → `ColinCee/homelab`
 3. Note the **Installation ID** from the URL (`/installations/<ID>`)
 
-## 3. Create Fine-Grained PAT
+## 3. Authenticate Copilot CLI
 
-1. Go to **Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens**
-2. Create token with:
-   - **Name:** `homelab-copilot-cli`
-   - **Resource owner:** `ColinCee`
-   - **Repository access:** `ColinCee/homelab`
-   - **Permissions:** `Copilot Requests: Read`
-   - **Expiration:** 1 year (rotate before expiry)
+Run `copilot login` once on the Beelink to create a dedicated Copilot token:
+
+```bash
+ssh beelink
+
+# Install Copilot CLI if not present
+curl -fsSL https://gh.io/copilot-install | bash
+
+# Create a dedicated config directory for the agent
+mkdir -p /home/colin/copilot-agent-config
+
+# Log in — follow the device flow in your browser
+COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config copilot login
+
+# Verify it works
+COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config copilot -p "Say hello" -s
+```
+
+This creates credentials in `/home/colin/copilot-agent-config/` that are **separate** from your main `~/.copilot/` — they can only make Copilot API calls, not modify repos.
 
 ## 4. Deploy Secrets to Beelink
 
@@ -43,10 +55,10 @@ scp ~/Downloads/homelab-review-bot.*.private-key.pem \
 # Set environment variables (add to ~/.bashrc or systemd env file)
 ssh beelink
 cat >> ~/.env.agents <<'EOF'
-GITHUB_TOKEN=github_pat_...         # Fine-grained PAT from step 3
-GITHUB_APP_ID=123456                # App ID from step 1
-GITHUB_APP_INSTALLATION_ID=78901   # Installation ID from step 2
+GITHUB_APP_ID=3309597
+GITHUB_APP_INSTALLATION_ID=122226454
 GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
+COPILOT_CONFIG_DIR=/home/colin/copilot-agent-config
 EOF
 ```
 

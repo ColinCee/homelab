@@ -28,5 +28,8 @@ ENV PATH="/app/.venv/bin:$PATH"
 # ENV HTTPS_PROXY=http://proxy:3128
 # ENV HTTP_PROXY=http://proxy:3128
 
+# Copilot CLI uses ~/.copilot/ for auth (mounted read-only at runtime)
+ENV COPILOT_CONFIG_DIR=/home/agent/.copilot
+
 EXPOSE 8585
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]

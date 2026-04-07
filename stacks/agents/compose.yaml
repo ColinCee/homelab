@@ -15,7 +15,6 @@ services:
     environment:
       - MODEL=${MODEL:-gpt-5.4}
       - REASONING_EFFORT=${REASONING_EFFORT:-high}
-      - GITHUB_TOKEN=${GITHUB_TOKEN:?}
       - GITHUB_APP_ID=${GITHUB_APP_ID:?}
       - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
       - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
@@ -25,10 +24,10 @@ services:
     volumes:
       - repo-cache:/repo.git
       - ${GITHUB_APP_KEY_FILE:?}:/secrets/github-app.pem:ro
+      - ${COPILOT_CONFIG_DIR:?}:/home/agent/.copilot:ro
     tmpfs:
       - /reviews:size=512m
       - /tmp:size=64m
-      - /home/agent/.copilot:size=64m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
