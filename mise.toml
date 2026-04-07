@@ -25,7 +25,7 @@ run = "uv run ruff format stacks/agents/app/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python code"
-run = "uv run ty check stacks/agents/app/"
+run = "cd stacks/agents/app && uv run ty check ."
 
 [tasks.test]
 description = "Run Python tests"

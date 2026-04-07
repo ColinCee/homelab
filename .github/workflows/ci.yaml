@@ -27,7 +27,7 @@ jobs:
         run: cd stacks/agents/app && uv run ruff format --check .
 
       - name: Type check (ty)
-        run: uv run ty check stacks/agents/app/
+        run: cd stacks/agents/app && uv run ty check .
 
       - name: Tests (pytest)
         run: cd stacks/agents/app && uv run pytest tests/ -v
