@@ -46,27 +46,15 @@ async def chat(
 ) -> ChatResult:
     """Send a chat completion request to the Copilot API.
 
-    If response_schema is provided, enables JSON mode and appends the
-    schema to the system prompt so the model knows the expected format.
-    Response is validated with Pydantic after parsing.
+    If response_schema is provided, uses strict structured output
+    (json_schema response_format) to guarantee valid JSON matching
+    the Pydantic model's schema.
     """
     token = get_token()
-
-    effective_system = system
-    if response_schema is not None:
-        import json
-
-        schema = response_schema.model_json_schema()
-        effective_system += (
-            "\n\n## Output Format\n\n"
-            "Respond with a single JSON object matching this schema:\n"
-            f"```json\n{json.dumps(schema, indent=2)}\n```"
-        )
-
     payload: dict = {
         "model": model,
         "messages": [
-            {"role": "system", "content": effective_system},
+            {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
     }
@@ -74,7 +62,15 @@ async def chat(
         payload["reasoning"] = {"effort": reasoning_effort}
 
     if response_schema is not None:
-        payload["response_format"] = {"type": "json_object"}
+        schema = _prepare_strict_schema(response_schema)
+        payload["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_schema.__name__,
+                "strict": True,
+                "schema": schema,
+            },
+        }
 
     async with httpx.AsyncClient(timeout=120) as client:
         resp = await client.post(
@@ -100,3 +96,41 @@ async def chat(
         reasoning_tokens=usage.get("reasoning_tokens", 0),
         cached_tokens=prompt_details.get("cached_tokens", 0),
     )
+
+
+def _prepare_strict_schema(model: type[BaseModel]) -> dict:
+    """Convert a Pydantic model to a strict-mode JSON schema.
+
+    Strict mode requires:
+    - additionalProperties: false on every object
+    - All properties listed in required (use anyOf with null for optionals)
+    - No default, title, or description fields
+    """
+    schema = model.model_json_schema()
+    _strip_for_strict(schema)
+    # Clean top-level metadata
+    for key in ("title", "description"):
+        schema.pop(key, None)
+    return schema
+
+
+def _strip_for_strict(schema: dict) -> None:
+    """Recursively transform a schema for strict mode compliance."""
+    if schema.get("type") == "object":
+        schema["additionalProperties"] = False
+        # All properties must be required
+        schema["required"] = list(schema.get("properties", {}).keys())
+        for prop in schema.get("properties", {}).values():
+            prop.pop("default", None)
+            prop.pop("title", None)
+            prop.pop("description", None)
+            _strip_for_strict(prop)
+    if "items" in schema:
+        _strip_for_strict(schema["items"])
+    for variant in schema.get("anyOf", []):
+        _strip_for_strict(variant)
+    # Pydantic v2 puts nested models in $defs
+    for defn in schema.get("$defs", {}).values():
+        defn.pop("title", None)
+        defn.pop("description", None)
+        _strip_for_strict(defn)
