@@ -1,7 +1,7 @@
 [project]
 name = "homelab"
 version = "0.1.0"
-description = "Infrastructure-as-code and tooling for Colin's homelab"
+description = "Infrastructure-as-code and tooling for Colin's homelab environment"
 readme = "README.md"
 authors = [
     { name = "Colin Cheung", email = "11246116+ColinCee@users.noreply.github.com" }
