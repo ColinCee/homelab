@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016  # $model, $system etc. are jq variables, not shell
 # Call GitHub Models API to review a PR diff.
 # Reads: /tmp/pr_title.txt, /tmp/pr_body.txt, /tmp/pr_diff_truncated.txt
 # Outputs: /tmp/review.txt
 #
 # Required env: GITHUB_MODELS_TOKEN
-# Optional env: MODEL (default: openai/gpt-5.4), REASONING_EFFORT (default: high)
+# Optional env: MODEL (default: openai/gpt-4.1), REASONING_EFFORT (only for gpt-5 models)
 set -euo pipefail
 
-MODEL="${MODEL:-openai/gpt-5.4}"
-REASONING_EFFORT="${REASONING_EFFORT:-high}"
+MODEL="${MODEL:-openai/gpt-4.1}"
+REASONING_EFFORT="${REASONING_EFFORT:-}"
 
 SYSTEM_PROMPT=$(cat <<'EOF'
 You are a senior engineer reviewing a pull request. Review the diff for:
@@ -38,21 +39,36 @@ DIFF=$(cat /tmp/pr_diff_truncated.txt)
 USER_CONTENT=$(printf "## PR: %s\n\n%s\n\n## Diff\n\n%s" "$PR_TITLE" "$PR_BODY" "$DIFF")
 
 # Build request JSON safely via jq
-jq -n \
-  --arg model "$MODEL" \
-  --arg effort "$REASONING_EFFORT" \
-  --arg system "$SYSTEM_PROMPT" \
-  --arg user "$USER_CONTENT" \
-  '{
+JQ_ARGS=(
+  --arg model "$MODEL"
+  --arg system "$SYSTEM_PROMPT"
+  --arg user "$USER_CONTENT"
+)
+JQ_FILTER='{
+  model: $model,
+  messages: [
+    { role: "system", content: $system },
+    { role: "user", content: $user }
+  ]
+}'
+
+if [ -n "$REASONING_EFFORT" ]; then
+  JQ_ARGS+=(--arg effort "$REASONING_EFFORT")
+  JQ_FILTER='{
     model: $model,
     reasoning: { effort: $effort },
     messages: [
       { role: "system", content: $system },
       { role: "user", content: $user }
     ]
-  }' > /tmp/request.json
+  }'
+fi
 
-echo "Calling ${MODEL} (reasoning: ${REASONING_EFFORT})..."
+jq -n "${JQ_ARGS[@]}" "$JQ_FILTER" > /tmp/request.json
+
+LABEL="${MODEL}"
+[ -n "$REASONING_EFFORT" ] && LABEL="${MODEL} (reasoning: ${REASONING_EFFORT})"
+echo "Calling ${LABEL}..."
 
 RESPONSE=$(curl -sS --fail-with-body \
   -X POST "https://models.github.ai/inference/chat/completions" \
