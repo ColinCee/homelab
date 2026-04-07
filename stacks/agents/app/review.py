@@ -120,9 +120,9 @@ async def review_pr(
     multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
     if multiplier > 0:
         cost = multiplier * OVERAGE_COST_PER_REQUEST
-        stats.append(f"💰 {multiplier}x premium request (${cost:.2f} if over quota)")
+        stats.append(f"💰 {multiplier}x premium (${cost:.2f}/req overage)")
     else:
-        stats.append("✅ included (0 premium requests)")
+        stats.append("💰 0x (included)")
 
     footer = f"\n\n---\n🤖 *Reviewed by {result.model}*\n" + " · ".join(stats)
     comment_body = result.content + footer
