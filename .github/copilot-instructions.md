@@ -69,9 +69,9 @@ This repo has an automated AI code review system. Follow this process:
    - **REQUEST_CHANGES** — must-fix or security issues block merge
    - **COMMENT** — nitpicks only, doesn't block
 3. Inline comments use severity tags:
-   - 🔧 **Must Fix** — blocks merge
-   - 💡 **Nitpick** — optional improvement
-   - 🔒 **Security** — always blocks merge
+   - 🚫 **Blocker** — blocks merge (bugs, security, breaking changes)
+   - 💡 **Suggestion** — non-blocking improvement, author decides
+   - ❓ **Question** — non-blocking, seeks clarification
 4. Fix any must-fix/security findings, push new commits
 5. Comment `/review` to re-trigger — the model receives its previous
    review and checks if issues were resolved

@@ -55,14 +55,14 @@ def test_review_result_with_inline_comments():
             ReviewComment(
                 path="src/main.py",
                 line=42,
-                severity="must-fix",
+                severity="blocker",
                 body="This will crash on None input",
                 suggestion="if value is not None:",
             ),
             ReviewComment(
                 path="src/utils.py",
                 line=10,
-                severity="nitpick",
+                severity="suggestion",
                 body="Consider using a constant here",
                 start_line=8,
             ),
@@ -74,10 +74,10 @@ def test_review_result_with_inline_comments():
     assert len(gh["comments"]) == 2
     assert gh["comments"][0]["path"] == "src/main.py"
     assert gh["comments"][0]["line"] == 42
-    assert "Must Fix" in gh["comments"][0]["body"]
+    assert "Blocker" in gh["comments"][0]["body"]
     assert "```suggestion" in gh["comments"][0]["body"]
     assert gh["comments"][1]["start_line"] == 8
-    assert "Nitpick" in gh["comments"][1]["body"]
+    assert "Suggestion" in gh["comments"][1]["body"]
 
 
 class TestFetchPreviousReviews:
