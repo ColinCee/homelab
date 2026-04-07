@@ -35,7 +35,7 @@ services:
       - loki-data:/loki
 
   alloy:
-    image: grafana/alloy:v1.14.0
+    image: grafana/alloy:v1.15.0
     restart: unless-stopped
     privileged: true
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
