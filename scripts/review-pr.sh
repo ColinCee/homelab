@@ -55,13 +55,21 @@ jq -n \
 
 echo "Calling ${MODEL} (reasoning: ${REASONING_EFFORT})..."
 
-RESPONSE=$(curl -sS --fail-with-body \
+HTTP_CODE=$(curl -sS -w "%{http_code}" -o /tmp/response.json \
   -X POST "https://api.githubcopilot.com/chat/completions" \
   -H "Authorization: Bearer ${COPILOT_TOKEN}" \
   -H "Content-Type: application/json" \
   -H "Copilot-Integration-Id: vscode-chat" \
   -H "Editor-Version: vscode/1.100.0" \
   -d @/tmp/request.json)
+
+if [ "$HTTP_CODE" -ge 400 ]; then
+  echo "::error::API returned HTTP ${HTTP_CODE}"
+  cat /tmp/response.json >&2
+  exit 1
+fi
+
+RESPONSE=$(cat /tmp/response.json)
 
 echo "$RESPONSE" | jq -r '.choices[0].message.content' > /tmp/review.txt
 
