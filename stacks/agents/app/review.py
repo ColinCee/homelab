@@ -1,6 +1,7 @@
 """PR review logic — fetch diff, call Copilot, post comment."""
 
 import logging
+import time
 
 import httpx
 
@@ -28,6 +29,11 @@ You are a senior engineer reviewing a pull request. Review the diff for:
 """
 
 MAX_DIFF_BYTES = 80_000
+
+
+def _format_tokens(n: int) -> str:
+    """Format token count with comma separators."""
+    return f"{n:,}"
 
 
 async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
@@ -68,15 +74,31 @@ async def review_pr(
     title, body, diff = await fetch_pr_diff(repo, pr_number)
     user_content = f"## PR: {title}\n\n{body}\n\n## Diff\n\n{diff}"
 
-    review_text, model_used = await chat(
+    start = time.monotonic()
+    result = await chat(
         system=SYSTEM_PROMPT,
         user=user_content,
         model=model,
         reasoning_effort=reasoning_effort,
     )
+    elapsed = time.monotonic() - start
 
-    footer = f"\n\n🤖 *Reviewed by {model_used}*"
-    comment_body = review_text + footer
+    # Build metadata footer
+    prompt = _format_tokens(result.prompt_tokens)
+    completion = _format_tokens(result.completion_tokens)
+    total = _format_tokens(result.total_tokens)
+    stats = [
+        f"⏱️ {elapsed:.1f}s",
+        f"📊 {total} tokens ({prompt} prompt → {completion} completion)",
+    ]
+    if result.reasoning_tokens > 0:
+        stats.append(f"🧠 {_format_tokens(result.reasoning_tokens)} reasoning tokens")
+    if result.cached_tokens > 0:
+        stats.append(f"💾 {_format_tokens(result.cached_tokens)} cached tokens")
+    stats.append(f"⚡ reasoning: {reasoning_effort}")
+
+    footer = f"\n\n---\n🤖 *Reviewed by {result.model}* · {' · '.join(stats)}"
+    comment_body = result.content + footer
 
     comment_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
     async with httpx.AsyncClient(timeout=15) as client:
@@ -90,5 +112,12 @@ async def review_pr(
         )
         resp.raise_for_status()
 
-    logger.info("Review posted on %s#%d (%d words)", repo, pr_number, len(review_text.split()))
+    logger.info(
+        "Review posted on %s#%d — %d words, %d tokens, %.1fs",
+        repo,
+        pr_number,
+        len(result.content.split()),
+        result.total_tokens,
+        elapsed,
+    )
     return comment_body

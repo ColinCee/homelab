@@ -1,6 +1,7 @@
 """Copilot API client — uses gh CLI OAuth token for authentication."""
 
 import subprocess
+from dataclasses import dataclass
 
 import httpx
 
@@ -10,6 +11,19 @@ HEADERS = {
     "Copilot-Integration-Id": "vscode-chat",
     "Editor-Version": "vscode/1.100.0",
 }
+
+
+@dataclass
+class ChatResult:
+    """Structured result from a Copilot API chat completion."""
+
+    content: str
+    model: str
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    reasoning_tokens: int
+    cached_tokens: int
 
 
 def get_token() -> str:
@@ -24,7 +38,7 @@ async def chat(
     user: str,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
-) -> tuple[str, str]:
+) -> ChatResult:
     """Send a chat completion request to the Copilot API."""
     token = get_token()
     payload: dict = {
@@ -46,6 +60,15 @@ async def chat(
         resp.raise_for_status()
 
     data = resp.json()
-    content = data["choices"][0]["message"]["content"]
-    model_used = data.get("model", model)
-    return content, model_used
+    usage = data.get("usage", {})
+    prompt_details = usage.get("prompt_tokens_details", {})
+
+    return ChatResult(
+        content=data["choices"][0]["message"]["content"],
+        model=data.get("model", model),
+        prompt_tokens=usage.get("prompt_tokens", 0),
+        completion_tokens=usage.get("completion_tokens", 0),
+        total_tokens=usage.get("total_tokens", 0),
+        reasoning_tokens=usage.get("reasoning_tokens", 0),
+        cached_tokens=prompt_details.get("cached_tokens", 0),
+    )
