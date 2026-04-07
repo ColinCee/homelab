@@ -1,0 +1,30 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Deploy via Dokploy
+        run: |
+          curl -sf --max-time 120 \
+            -X POST 'http://beelink:3000/api/trpc/compose.deploy' \
+            -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
+            -H 'Content-Type: application/json' \
+            -d '{"json":{"composeId":"JB-iTOVZwmPDMuywGcOAk"}}'
+          echo "✅ Deploy triggered"

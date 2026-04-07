@@ -12,24 +12,24 @@ COMPOSE_PROJECT_DIR = "{{config_root}}/stacks"
 [tasks.lint]
 description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
-  "uv run ruff check src/ tests/",
-  "shellcheck scripts/*.sh",
-  "shellcheck .githooks/*",
+  "cd stacks/agents/app && uv run ruff check .",
+  "if ls scripts/*.sh &>/dev/null; then shellcheck scripts/*.sh; else echo 'No scripts to lint'; fi",
+  "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
   "uv run yamllint -c .yamllint.yaml stacks/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
 ]
 
 [tasks.format]
 description = "Format Python code"
-run = "uv run ruff format src/ tests/"
+run = "uv run ruff format stacks/agents/app/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python code"
-run = "uv run ty check src/"
+run = "uv run ty check stacks/agents/app/"
 
 [tasks.test]
 description = "Run Python tests"
-run = "uv run pytest tests/ -v"
+run = "cd stacks/agents/app && uv run pytest tests/ -v"
 
 [tasks.ci]
 description = "Full CI check (lint + typecheck + test + validate)"
@@ -38,7 +38,7 @@ depends = ["lint", "typecheck", "test", "validate:compose"]
 # ── Deploy ─────────────────────────────────────────
 [tasks."deploy:all"]
 description = "Deploy all stacks"
-depends = ["deploy:ha", "deploy:mqtt", "deploy:observability", "deploy:crowdsec"]
+depends = ["deploy:ha", "deploy:mqtt", "deploy:observability", "deploy:crowdsec", "deploy:agents"]
 
 [tasks."deploy:ha"]
 description = "Deploy Home Assistant"
@@ -56,14 +56,18 @@ run = "docker compose -f stacks/observability/compose.yaml up -d"
 description = "Deploy CrowdSec IDS"
 run = "docker compose -f stacks/crowdsec/compose.yaml up -d"
 
+[tasks."deploy:agents"]
+description = "Deploy AI agent service"
+run = "docker compose -f stacks/agents/compose.yaml up -d --build"
+
 # ── Check ──────────────────────────────────────────
 [tasks."check:health"]
 description = "Run health checks against all services"
-run = "uv run python -m homelab.health"
+run = "curl -sf http://100.100.146.119:8585/health && echo ' Agent OK ✅'"
 
 [tasks."check:security"]
 description = "Run security posture audit"
-run = "uv run python -m homelab.security"
+run = "echo 'Security audit not yet implemented'"
 
 [tasks."check:vulnerabilities"]
 description = "Scan Docker images for CVEs"

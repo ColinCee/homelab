@@ -1,0 +1,19 @@
+services:
+  agent:
+    build:
+      context: app
+    restart: unless-stopped
+    user: "1000:1000"
+    ports:
+      - "${TAILSCALE_IP:-100.100.146.119}:8585:8585"
+    environment:
+      - MODEL=${MODEL:-gpt-5.4}
+      - REASONING_EFFORT=${REASONING_EFFORT:-high}
+    volumes:
+      - /home/colin/.config/gh:/home/colin/.config/gh:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
