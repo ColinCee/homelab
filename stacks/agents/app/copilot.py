@@ -1,9 +1,12 @@
 """Copilot API client — uses gh CLI OAuth token for authentication."""
 
+import logging
 import subprocess
 from dataclasses import dataclass
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 API_URL = "https://api.githubcopilot.com/chat/completions"
 HEADERS = {
@@ -58,6 +61,8 @@ async def chat(
             json=payload,
         )
         resp.raise_for_status()
+        # Log the raw response for debugging
+        logger.debug("Copilot API response: %s", resp.text)
 
     data = resp.json()
     usage = data.get("usage", {})
