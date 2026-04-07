@@ -3,16 +3,64 @@ services:
     build:
       context: app
     restart: unless-stopped
-    user: "1000:1000"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 2g
+    cpus: 2.0
     ports:
       - "${TAILSCALE_IP:-100.100.146.119}:8585:8585"
     environment:
       - MODEL=${MODEL:-gpt-5.4}
       - REASONING_EFFORT=${REASONING_EFFORT:-high}
+      - GITHUB_TOKEN=${GITHUB_TOKEN:?}
+      - GITHUB_APP_ID=${GITHUB_APP_ID:?}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
+      - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
+      - HTTPS_PROXY=http://proxy:3128
+      - HTTP_PROXY=http://proxy:3128
+      - NO_PROXY=localhost,127.0.0.1
     volumes:
-      - /home/colin/.config/gh:/home/colin/.config/gh:ro
+      - repo-cache:/repo.git
+      - ${GITHUB_APP_KEY_FILE:?}:/secrets/github-app.pem:ro
+    tmpfs:
+      - /reviews:size=512m
+      - /tmp:size=64m
+      - /home/agent/.copilot:size=64m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
       timeout: 5s
       retries: 3
+    networks:
+      - internal
+    depends_on:
+      proxy:
+        condition: service_started
+
+  proxy:
+    image: ubuntu/squid:6.10-24.04_edge
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 128m
+    volumes:
+      - ./squid.conf:/etc/squid/squid.conf:ro
+    tmpfs:
+      - /var/spool/squid:size=32m
+      - /var/log/squid:size=8m
+      - /run:size=8m
+    networks:
+      - internal
+
+networks:
+  internal:
+    internal: true
+
+volumes:
+  repo-cache:

@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-07
 **Status:** Accepted
-**Requirements:** R16 (Docker socket hardening), R14 (intrusion detection)
+**Requirements:** R21 (codebase context), R22 (credential isolation), R23 (network isolation), R16 (Docker socket hardening)
 
 ## Context
 
