@@ -7,7 +7,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from main import app
-from review import ReviewResult, fetch_previous_reviews
+from review import LLMComment, ReviewResult, Severity, Verdict, fetch_previous_reviews
 
 
 def _client():
@@ -24,7 +24,7 @@ def test_health():
 def test_review_returns_structured_result(mock_review):
     mock_review.return_value = ReviewResult(
         summary="Looks good",
-        verdict="approve",
+        verdict=Verdict.approve,
         comments=[],
         metadata={"model": "gpt-5.4", "elapsed_seconds": 1.5},
     )
@@ -46,22 +46,20 @@ def test_review_missing_fields():
 
 def test_review_result_with_inline_comments():
     """Test that inline comments are properly formatted for GitHub API."""
-    from review import ReviewComment
-
     result = ReviewResult(
         summary="Found issues",
-        verdict="request_changes",
+        verdict=Verdict.request_changes,
         comments=[
-            ReviewComment(
+            LLMComment(
                 path="src/main.py",
                 line=42,
-                severity="blocker",
+                severity=Severity.blocker,
                 body="This will crash on None input",
             ),
-            ReviewComment(
+            LLMComment(
                 path="src/utils.py",
                 line=10,
-                severity="suggestion",
+                severity=Severity.suggestion,
                 body="Consider using a constant here",
                 start_line=8,
             ),
@@ -86,7 +84,12 @@ class TestFetchPreviousReviews:
         reviews_resp = httpx.Response(
             200,
             json=[
-                {"user": {"login": "human-user"}, "id": 1, "state": "APPROVED", "body": "lgtm"},
+                {
+                    "user": {"login": "human-user"},
+                    "id": 1,
+                    "state": "APPROVED",
+                    "body": "lgtm",
+                },
             ],
         )
 
@@ -116,7 +119,11 @@ class TestFetchPreviousReviews:
         comments_resp = httpx.Response(
             200,
             json=[
-                {"path": "src/app.py", "line": 42, "body": "**🔧 Must Fix**\n\nNull check missing"},
+                {
+                    "path": "src/app.py",
+                    "line": 42,
+                    "body": "**🚫 Blocker**\n\nNull check missing",
+                },
             ],
         )
 

@@ -1,19 +1,18 @@
 """PR review logic — fetch diff, call Copilot, return structured review."""
 
-import json
 import logging
 import time
-from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 
 import httpx
+from pydantic import BaseModel, Field
 
 from copilot import chat, get_token
 
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a senior engineer reviewing a pull request. Analyze the diff and return \
-a structured JSON review.
+You are a senior engineer reviewing a pull request.
 
 ## Philosophy
 
@@ -41,24 +40,6 @@ Use sparingly — only for things that are objectively wrong.
 - `suggestion` — Non-blocking improvement. Author decides whether to adopt.
 - `question` — "Did you consider X?" Seeks clarification, not a demand.
 
-## Response format
-
-Return ONLY valid JSON (no markdown fences, no extra text):
-
-{
-  "summary": "Brief overall assessment of the PR",
-  "verdict": "approve | request_changes",
-  "comments": [
-    {
-      "path": "relative/file/path.py",
-      "start_line": null,
-      "line": 42,
-      "severity": "blocker | suggestion | question",
-      "body": "What is wrong and why"
-    }
-  ]
-}
-
 ## Verdict rules
 
 - `request_changes` ONLY if there is at least one `blocker` comment
@@ -67,13 +48,12 @@ Return ONLY valid JSON (no markdown fences, no extra text):
 - `line` is the line number in the NEW version of the file (right side of diff)
 - `start_line` is optional — set for multi-line comments (start_line to line)
 - Keep comments concise and actionable
-- If the PR looks good, return verdict "approve" with an empty comments array
+- If the PR looks good, return verdict `approve` with an empty comments array
 """
 
 MAX_DIFF_BYTES = 80_000
 
 # Premium request multipliers per model (source: GitHub Copilot docs)
-# 0 = unlimited/included on paid plans, not counted as premium
 MODEL_MULTIPLIERS: dict[str, float] = {
     "gpt-5-mini": 0,
     "gpt-4.1": 0,
@@ -97,44 +77,67 @@ SEVERITY_EMOJI = {
 }
 
 
-@dataclass
-class ReviewComment:
-    """A single inline review comment."""
+# -- Pydantic models for structured output --
+
+
+class Severity(StrEnum):
+    blocker = "blocker"
+    suggestion = "suggestion"
+    question = "question"
+
+
+class Verdict(StrEnum):
+    approve = "approve"
+    request_changes = "request_changes"
+
+
+class LLMComment(BaseModel):
+    """A single review comment from the model."""
 
     path: str
     line: int
-    severity: str
+    severity: Severity
     body: str
     start_line: int | None = None
 
 
-@dataclass
-class ReviewResult:
-    """Complete structured review ready for the GitHub Reviews API."""
+class LLMReview(BaseModel):
+    """Structured review output — schema sent to the API via response_format."""
 
     summary: str
-    verdict: str  # approve, request_changes
-    comments: list[ReviewComment] = field(default_factory=list)
-    metadata: dict = field(default_factory=dict)
+    verdict: Verdict
+    comments: list[LLMComment] = Field(default_factory=list)
+
+
+# -- Internal result types --
+
+
+class ReviewResult(BaseModel):
+    """Complete review with metadata, ready for GitHub Reviews API."""
+
+    summary: str
+    verdict: Verdict
+    comments: list[LLMComment] = Field(default_factory=list)
+    metadata: dict = Field(default_factory=dict)
 
     def to_github_review(self) -> dict:
         """Convert to GitHub PR Reviews API payload."""
         event_map = {
-            "approve": "APPROVE",
-            "request_changes": "REQUEST_CHANGES",
+            Verdict.approve: "APPROVE",
+            Verdict.request_changes: "REQUEST_CHANGES",
         }
 
         gh_comments = []
         for c in self.comments:
-            emoji = SEVERITY_EMOJI.get(c.severity, "📝")
-            body = f"**{emoji} {c.severity.replace('-', ' ').title()}**\n\n{c.body}"
+            emoji = SEVERITY_EMOJI.get(c.severity.value, "📝")
+            body = f"**{emoji} {c.severity.value.replace('_', ' ').title()}**\n\n{c.body}"
 
             entry: dict = {"path": c.path, "line": c.line, "body": body}
             if c.start_line is not None and c.start_line != c.line:
                 entry["start_line"] = c.start_line
             gh_comments.append(entry)
 
-        # Build metadata footer for the review body
+        # Build metadata footer
         meta = self.metadata
         stats_parts = []
         if "elapsed_seconds" in meta:
@@ -164,7 +167,7 @@ class ReviewResult:
             body += f"\n{stats_line}"
 
         return {
-            "event": event_map.get(self.verdict, "COMMENT"),
+            "event": event_map.get(self.verdict, "APPROVE"),
             "body": body,
             "comments": gh_comments,
         }
@@ -174,31 +177,14 @@ class ReviewResult:
         result = self.to_github_review()
         result["raw"] = {
             "summary": self.summary,
-            "verdict": self.verdict,
-            "comments": [asdict(c) for c in self.comments],
+            "verdict": self.verdict.value,
+            "comments": [c.model_dump() for c in self.comments],
             "metadata": self.metadata,
         }
         return result
 
 
-def _parse_review_json(content: str) -> tuple[str, str, list[dict]]:
-    """Parse the model's JSON response, handling markdown fences."""
-    text = content.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        end = len(lines)
-        for i in range(len(lines) - 1, 0, -1):
-            if lines[i].strip() == "```":
-                end = i
-                break
-        text = "\n".join(lines[1:end])
-
-    data = json.loads(text)
-    return (
-        data.get("summary", "No summary provided."),
-        data.get("verdict", "comment"),
-        data.get("comments", []),
-    )
+# -- GitHub API helpers --
 
 
 async def _github_get(client: httpx.AsyncClient, url: str, headers: dict) -> httpx.Response:
@@ -281,6 +267,9 @@ async def fetch_previous_reviews(repo: str, pr_number: int) -> str:
     return "\n".join(parts)
 
 
+# -- Main review function --
+
+
 async def review_pr(
     *,
     repo: str,
@@ -316,43 +305,27 @@ async def review_pr(
         user=user_content,
         model=model,
         reasoning_effort=reasoning_effort,
+        response_schema=LLMReview,
     )
     elapsed = time.monotonic() - start
 
-    # Parse structured response
-    try:
-        summary, verdict, raw_comments = _parse_review_json(result.content)
-    except (json.JSONDecodeError, KeyError) as exc:
-        logger.warning("Failed to parse structured review, falling back: %s", exc)
-        summary = result.content
-        verdict = "approve"
-        raw_comments = []
-
-    comments = [
-        ReviewComment(
-            path=c["path"],
-            line=c["line"],
-            severity=c.get("severity", "suggestion"),
-            body=c.get("body", ""),
-            start_line=c.get("start_line"),
-        )
-        for c in raw_comments
-        if "path" in c and "line" in c
-    ]
+    # Parse structured response — guaranteed valid by response_format
+    llm_review = LLMReview.model_validate_json(result.content)
 
     # Enforce verdict consistency
-    has_blocker = any(c.severity == "blocker" for c in comments)
-    if has_blocker and verdict == "approve":
-        verdict = "request_changes"
-    if not has_blocker and verdict == "request_changes":
-        verdict = "approve"
+    has_blocker = any(c.severity == Severity.blocker for c in llm_review.comments)
+    verdict = llm_review.verdict
+    if has_blocker and verdict == Verdict.approve:
+        verdict = Verdict.request_changes
+    if not has_blocker and verdict == Verdict.request_changes:
+        verdict = Verdict.approve
 
     multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
 
     review = ReviewResult(
-        summary=summary,
+        summary=llm_review.summary,
         verdict=verdict,
-        comments=comments,
+        comments=llm_review.comments,
         metadata={
             "model": result.model,
             "elapsed_seconds": elapsed,
@@ -370,8 +343,8 @@ async def review_pr(
         "Review complete for %s#%d — verdict=%s, %d comments, %d tokens, %.1fs",
         repo,
         pr_number,
-        verdict,
-        len(comments),
+        verdict.value,
+        len(llm_review.comments),
         result.total_tokens,
         elapsed,
     )
