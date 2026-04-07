@@ -11,7 +11,7 @@ from review import review_pr
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Homelab Agent Service", version="0.2.0")
+app = FastAPI(title="Homelab Agent Service", version="0.3.0")
 
 MODEL = os.environ.get("MODEL", "gpt-5.4")
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
