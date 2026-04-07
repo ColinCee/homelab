@@ -18,6 +18,7 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 ENV HOME=/home/colin
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8585
-CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]
