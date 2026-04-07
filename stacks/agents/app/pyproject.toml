@@ -1,20 +1,20 @@
 [project]
-name = "homelab"
+name = "homelab-agent"
 version = "0.1.0"
-description = "Infrastructure-as-code and tooling for Colin's homelab"
-readme = "README.md"
-authors = [
-    { name = "Colin Cheung", email = "11246116+ColinCee@users.noreply.github.com" }
-]
+description = "Self-hosted AI agent service for PR review and coding tasks"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "pydantic>=2",
+    "uvicorn[standard]>=0.34",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8",
     "ruff>=0.11",
     "ty>=0.0.1",
-    "yamllint>=1",
 ]
 
 [tool.ruff]
@@ -26,3 +26,4 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]

@@ -17,17 +17,20 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      - name: Install agent dependencies
+        run: cd stacks/agents/app && uv sync
+
       - name: Lint (ruff)
-        run: uv run ruff check src/ tests/
+        run: cd stacks/agents/app && uv run ruff check .
 
       - name: Format check (ruff)
-        run: uv run ruff format --check src/ tests/
+        run: cd stacks/agents/app && uv run ruff format --check .
 
       - name: Type check (ty)
-        run: uv run ty check src/
+        run: cd stacks/agents/app && uv run ty check .
 
       - name: Tests (pytest)
-        run: uv run pytest tests/ -v
+        run: cd stacks/agents/app && uv run pytest tests/ -v
 
       - name: Lint YAML
         run: uv run yamllint -c .yamllint.yaml stacks/
