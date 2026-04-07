@@ -46,8 +46,9 @@ async def chat(
 ) -> ChatResult:
     """Send a chat completion request to the Copilot API.
 
-    If response_schema is provided, uses structured output (response_format)
-    to guarantee the response matches the Pydantic model's JSON schema.
+    If response_schema is provided, uses strict structured output
+    (json_schema response_format) to guarantee valid JSON matching
+    the Pydantic model's schema.
     """
     token = get_token()
     payload: dict = {
@@ -61,9 +62,7 @@ async def chat(
         payload["reasoning"] = {"effort": reasoning_effort}
 
     if response_schema is not None:
-        schema = response_schema.model_json_schema()
-        # Strict mode requires additionalProperties: false at all levels
-        _set_additional_properties_false(schema)
+        schema = _prepare_strict_schema(response_schema)
         payload["response_format"] = {
             "type": "json_schema",
             "json_schema": {
@@ -79,6 +78,8 @@ async def chat(
             headers={**HEADERS, "Authorization": f"Bearer {token}"},
             json=payload,
         )
+        if resp.status_code >= 400:
+            logger.error("Copilot API error %d: %s", resp.status_code, resp.text)
         resp.raise_for_status()
         logger.debug("Copilot API response: %s", resp.text)
 
@@ -97,16 +98,39 @@ async def chat(
     )
 
 
-def _set_additional_properties_false(schema: dict) -> None:
-    """Recursively set additionalProperties: false for strict mode."""
+def _prepare_strict_schema(model: type[BaseModel]) -> dict:
+    """Convert a Pydantic model to a strict-mode JSON schema.
+
+    Strict mode requires:
+    - additionalProperties: false on every object
+    - All properties listed in required (use anyOf with null for optionals)
+    - No default, title, or description fields
+    """
+    schema = model.model_json_schema()
+    _strip_for_strict(schema)
+    # Clean top-level metadata
+    for key in ("title", "description"):
+        schema.pop(key, None)
+    return schema
+
+
+def _strip_for_strict(schema: dict) -> None:
+    """Recursively transform a schema for strict mode compliance."""
     if schema.get("type") == "object":
         schema["additionalProperties"] = False
+        # All properties must be required
+        schema["required"] = list(schema.get("properties", {}).keys())
         for prop in schema.get("properties", {}).values():
-            _set_additional_properties_false(prop)
+            prop.pop("default", None)
+            prop.pop("title", None)
+            prop.pop("description", None)
+            _strip_for_strict(prop)
     if "items" in schema:
-        _set_additional_properties_false(schema["items"])
+        _strip_for_strict(schema["items"])
     for variant in schema.get("anyOf", []):
-        _set_additional_properties_false(variant)
-    # Handle $defs (Pydantic v2 puts nested models here)
+        _strip_for_strict(variant)
+    # Pydantic v2 puts nested models in $defs
     for defn in schema.get("$defs", {}).values():
-        _set_additional_properties_false(defn)
+        defn.pop("title", None)
+        defn.pop("description", None)
+        _strip_for_strict(defn)

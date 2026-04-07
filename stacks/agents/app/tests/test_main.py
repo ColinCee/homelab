@@ -7,7 +7,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from main import app
-from review import LLMComment, ReviewResult, Severity, Verdict, fetch_previous_reviews
+from review import LLMComment, LLMReview, ReviewResult, Severity, Verdict, fetch_previous_reviews
 
 
 def _client():
@@ -147,3 +147,43 @@ class TestFetchPreviousReviews:
         assert "Null check missing" in result
         # Metadata footer should be stripped
         assert "metadata" not in result
+
+
+class TestPrepareStrictSchema:
+    """Tests for _prepare_strict_schema strict mode compliance."""
+
+    def test_schema_has_additional_properties_false(self):
+        from copilot import _prepare_strict_schema
+
+        schema = _prepare_strict_schema(LLMReview)
+        # Root level
+        assert schema["additionalProperties"] is False
+        # Nested LLMComment in $defs
+        comment_def = schema["$defs"]["LLMComment"]
+        assert comment_def["additionalProperties"] is False
+
+    def test_all_properties_are_required(self):
+        from copilot import _prepare_strict_schema
+
+        schema = _prepare_strict_schema(LLMReview)
+        # Root: summary, verdict, comments all required
+        assert set(schema["required"]) == {"summary", "verdict", "comments"}
+        # LLMComment: all fields including optional start_line
+        comment_def = schema["$defs"]["LLMComment"]
+        assert "start_line" in comment_def["required"]
+
+    def test_no_defaults_or_titles(self):
+        from copilot import _prepare_strict_schema
+
+        schema = _prepare_strict_schema(LLMReview)
+        # Root level cleaned
+        assert "title" not in schema
+        assert "description" not in schema
+        # Properties cleaned
+        for prop in schema["properties"].values():
+            assert "default" not in prop
+            assert "title" not in prop
+        # $defs cleaned
+        for defn in schema["$defs"].values():
+            assert "title" not in defn
+            assert "description" not in defn
