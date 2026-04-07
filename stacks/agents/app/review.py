@@ -219,6 +219,13 @@ def _parse_review_json(content: str) -> tuple[str, str, list[dict]]:
     )
 
 
+async def _github_get(client: httpx.AsyncClient, url: str, headers: dict) -> httpx.Response:
+    """GET with GitHub API headers."""
+    resp = await client.get(url, headers=headers)
+    resp.raise_for_status()
+    return resp
+
+
 async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
     """Fetch PR title, body, and diff from GitHub API."""
     headers = {
@@ -228,8 +235,7 @@ async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
     base = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        pr_resp = await client.get(base, headers=headers)
-        pr_resp.raise_for_status()
+        pr_resp = await _github_get(client, base, headers)
         pr_data = pr_resp.json()
 
         diff_resp = await client.get(
@@ -243,6 +249,54 @@ async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
     diff = diff_resp.text[:MAX_DIFF_BYTES]
 
     return title, body, diff
+
+
+async def fetch_previous_reviews(repo: str, pr_number: int) -> str:
+    """Fetch prior bot reviews to give the model context on what it already said."""
+    headers = {
+        "Authorization": f"Bearer {get_token()}",
+        "Accept": "application/vnd.github+json",
+    }
+    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await _github_get(client, url, headers)
+        reviews = resp.json()
+
+        # Filter to bot reviews only (github-actions[bot])
+        bot_reviews = [
+            r for r in reviews if r.get("user", {}).get("login") == "github-actions[bot]"
+        ]
+
+        if not bot_reviews:
+            return ""
+
+        # Get the latest bot review
+        latest = bot_reviews[-1]
+        review_id = latest["id"]
+        verdict = latest.get("state", "UNKNOWN")
+
+        # Fetch inline comments for this review
+        comments_url = (
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews/{review_id}/comments"
+        )
+        comments_resp = await _github_get(client, comments_url, headers)
+        comments = comments_resp.json()
+
+    parts = [f"Previous review verdict: {verdict}"]
+    if latest.get("body"):
+        # Strip the metadata footer
+        body = latest["body"].split("\n---\n")[0].strip()
+        if body:
+            parts.append(f"Summary: {body}")
+
+    for c in comments:
+        path = c.get("path", "?")
+        line = c.get("line") or c.get("original_line", "?")
+        comment_body = c.get("body", "")
+        parts.append(f"- {path}:{line} — {comment_body}")
+
+    return "\n".join(parts)
 
 
 async def review_pr(
@@ -262,7 +316,17 @@ async def review_pr(
     )
 
     title, body, diff = await fetch_pr_diff(repo, pr_number)
+    previous = await fetch_previous_reviews(repo, pr_number)
+
     user_content = f"## PR: {title}\n\n{body}\n\n## Diff\n\n{diff}"
+    if previous:
+        user_content += (
+            f"\n\n## Your Previous Review\n\n{previous}\n\n"
+            "Check whether your previous findings were addressed. "
+            "Do NOT repeat findings that have been fixed. "
+            "If all previous issues are resolved and no new issues exist, "
+            "set verdict to approve."
+        )
 
     start = time.monotonic()
     result = await chat(

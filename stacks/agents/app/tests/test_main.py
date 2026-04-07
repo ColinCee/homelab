@@ -1,11 +1,13 @@
 """Tests for the agent service."""
 
+import asyncio
 from unittest.mock import AsyncMock, patch
 
+import httpx
 from fastapi.testclient import TestClient
 
 from main import app
-from review import ReviewResult
+from review import ReviewResult, fetch_previous_reviews
 
 
 def _client():
@@ -76,3 +78,67 @@ def test_review_result_with_inline_comments():
     assert "```suggestion" in gh["comments"][0]["body"]
     assert gh["comments"][1]["start_line"] == 8
     assert "Nitpick" in gh["comments"][1]["body"]
+
+
+class TestFetchPreviousReviews:
+    """Tests for fetch_previous_reviews context loading."""
+
+    @patch("review.get_token", return_value="fake-token")
+    def test_returns_empty_when_no_bot_reviews(self, _mock_token):
+        reviews_resp = httpx.Response(
+            200,
+            json=[
+                {"user": {"login": "human-user"}, "id": 1, "state": "APPROVED", "body": "lgtm"},
+            ],
+        )
+
+        async def mock_get(_client, _url, _headers):
+            return reviews_resp
+
+        async def run():
+            with patch("review._github_get", side_effect=mock_get):
+                return await fetch_previous_reviews("owner/repo", 1)
+
+        result = asyncio.run(run())
+        assert result == ""
+
+    @patch("review.get_token", return_value="fake-token")
+    def test_includes_latest_bot_review_context(self, _mock_token):
+        reviews_resp = httpx.Response(
+            200,
+            json=[
+                {
+                    "user": {"login": "github-actions[bot]"},
+                    "id": 100,
+                    "state": "CHANGES_REQUESTED",
+                    "body": "Found a bug\n\n---\n🤖 metadata",
+                },
+            ],
+        )
+        comments_resp = httpx.Response(
+            200,
+            json=[
+                {"path": "src/app.py", "line": 42, "body": "**🔧 Must Fix**\n\nNull check missing"},
+            ],
+        )
+
+        call_count = 0
+
+        async def mock_get(_client, _url, _headers):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return reviews_resp
+            return comments_resp
+
+        async def run():
+            with patch("review._github_get", side_effect=mock_get):
+                return await fetch_previous_reviews("owner/repo", 1)
+
+        result = asyncio.run(run())
+        assert "CHANGES_REQUESTED" in result
+        assert "Found a bug" in result
+        assert "src/app.py:42" in result
+        assert "Null check missing" in result
+        # Metadata footer should be stripped
+        assert "metadata" not in result
