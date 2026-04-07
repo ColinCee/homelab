@@ -27,7 +27,7 @@ services:
       - prometheus-data:/prometheus
 
   loki:
-    image: grafana/loki:3.6.1
+    image: grafana/loki:3.7.1
     restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
