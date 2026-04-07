@@ -9,8 +9,11 @@ on:
 jobs:
   review:
     if: >
-      (github.event_name == 'pull_request' && github.event.pull_request.draft == false) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.comment.body == '/review')
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false) ||
+      (github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request &&
+      github.event.comment.body == '/review')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,10 +32,52 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Request review from Beelink agent
+      - name: Get AI review from Beelink agent
+        id: review
         run: |
-          curl -sf --max-time 180 \
+          RESPONSE=$(curl -sf --max-time 180 \
             -X POST "http://beelink:8585/review" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}"
-          echo "✅ Review requested"
+            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}")
+
+          # Extract fields for the GitHub Reviews API
+          EVENT=$(echo "$RESPONSE" | jq -r '.event')
+          BODY=$(echo "$RESPONSE" | jq -r '.body')
+          COMMENTS=$(echo "$RESPONSE" | jq -c '.comments')
+          HAS=$(echo "$RESPONSE" | jq '.comments | length > 0')
+
+          # Write to outputs (handle multiline body)
+          {
+            echo "event=$EVENT"
+            echo "body<<REVIEW_EOF"
+            echo "$BODY"
+            echo "REVIEW_EOF"
+            echo "comments=$COMMENTS"
+            echo "has_comments=$HAS"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post review on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const event = '${{ steps.review.outputs.event }}';
+            const body = `${{ steps.review.outputs.body }}`;
+            const hasComments = ${{ steps.review.outputs.has_comments }};
+            const comments = JSON.parse('${{ steps.review.outputs.comments }}');
+
+            const review = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: ${{ env.PR_NUMBER }},
+              event: event,
+              body: body,
+            };
+
+            // Only include comments array if there are inline comments
+            // (GitHub API rejects empty comments array with APPROVE/REQUEST_CHANGES)
+            if (hasComments) {
+              review.comments = comments;
+            }
+
+            await github.rest.pulls.createReview(review);
+            console.log(`✅ Review posted: ${event} with ${comments.length} inline comments`);

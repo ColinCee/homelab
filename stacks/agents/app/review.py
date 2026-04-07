@@ -1,7 +1,9 @@
-"""PR review logic — fetch diff, call Copilot, post comment."""
+"""PR review logic — fetch diff, call Copilot, return structured review."""
 
+import json
 import logging
 import time
+from dataclasses import asdict, dataclass, field
 
 import httpx
 
@@ -10,31 +12,64 @@ from copilot import chat, get_token
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
-You are a senior engineer reviewing a pull request. Review the diff for:
+You are a senior engineer reviewing a pull request. Analyze the diff and return \
+a structured JSON review.
+
+## What to look for
 
 - **Bugs**: Logic errors, off-by-one, null/undefined issues, race conditions
 - **Security**: Injection, secrets in code, unsafe deserialization, path traversal
 - **Breaking changes**: API contract changes, config format changes
 - **Missing edge cases**: Error handling, empty inputs, boundary conditions
 
+## Severity levels
+
+Use these severity tags for each finding:
+- `must-fix` — Blocks merge. Bugs, security issues, breaking changes.
+- `nitpick` — Optional improvement. Won't block merge.
+- `security` — Security vulnerability. Always blocks merge.
+
+## Response format
+
+Return ONLY valid JSON (no markdown fences, no extra text) matching this schema:
+
+{
+  "summary": "Brief overall assessment of the PR",
+  "verdict": "approve | request_changes | comment",
+  "comments": [
+    {
+      "path": "relative/file/path.py",
+      "start_line": null,
+      "line": 42,
+      "severity": "must-fix | nitpick | security",
+      "body": "Explanation of the issue",
+      "suggestion": null
+    }
+  ]
+}
+
 ## Rules
 
+- `verdict` MUST be `request_changes` if ANY comment has severity `must-fix` \
+or `security`
+- `verdict` should be `approve` if the PR looks good or only has `nitpick` items
+- `verdict` should be `comment` if you have nitpicks but want to leave it neutral
+- `line` is the line number in the NEW version of the file (right side of diff, \
+lines starting with + or unchanged lines). Use the line numbers shown after @@ \
+in the diff hunks.
+- `start_line` is optional — set it for multi-line comments (the range is \
+start_line to line inclusive)
+- `suggestion` is optional — when provided, include the EXACT replacement code \
+(the content that would go inside a ```suggestion block). Only for `must-fix` \
+items where you have a concrete fix.
 - Only comment on things that genuinely matter
 - Never comment on style, formatting, naming conventions, or trivial issues
-- If the PR looks good, say so briefly — don't invent problems
-- Group related issues together rather than commenting line-by-line
+- If the PR looks good, return verdict "approve" with an empty comments array
 - Be specific: quote the problematic code and explain why it's wrong
-- Suggest a fix when possible
-- Keep the review concise and actionable
+- Keep comments concise and actionable
 """
 
 MAX_DIFF_BYTES = 80_000
-
-
-def _format_tokens(n: int) -> str:
-    """Format token count with comma separators."""
-    return f"{n:,}"
-
 
 # Premium request multipliers per model (source: GitHub Copilot docs)
 # 0 = unlimited/included on paid plans, not counted as premium
@@ -54,6 +89,120 @@ MODEL_MULTIPLIERS: dict[str, float] = {
 }
 OVERAGE_COST_PER_REQUEST = 0.04  # USD
 
+SEVERITY_EMOJI = {
+    "must-fix": "🔧",
+    "nitpick": "💡",
+    "security": "🔒",
+}
+
+
+@dataclass
+class ReviewComment:
+    """A single inline review comment."""
+
+    path: str
+    line: int
+    severity: str
+    body: str
+    start_line: int | None = None
+    suggestion: str | None = None
+
+
+@dataclass
+class ReviewResult:
+    """Complete structured review ready for the GitHub Reviews API."""
+
+    summary: str
+    verdict: str  # approve, request_changes, comment
+    comments: list[ReviewComment] = field(default_factory=list)
+    metadata: dict = field(default_factory=dict)
+
+    def to_github_review(self) -> dict:
+        """Convert to GitHub PR Reviews API payload."""
+        event_map = {
+            "approve": "APPROVE",
+            "request_changes": "REQUEST_CHANGES",
+            "comment": "COMMENT",
+        }
+
+        gh_comments = []
+        for c in self.comments:
+            emoji = SEVERITY_EMOJI.get(c.severity, "📝")
+            body = f"**{emoji} {c.severity.replace('-', ' ').title()}**\n\n{c.body}"
+            if c.suggestion:
+                body += f"\n\n```suggestion\n{c.suggestion}\n```"
+
+            entry: dict = {"path": c.path, "line": c.line, "body": body}
+            if c.start_line is not None and c.start_line != c.line:
+                entry["start_line"] = c.start_line
+            gh_comments.append(entry)
+
+        # Build metadata footer for the review body
+        meta = self.metadata
+        stats_parts = []
+        if "elapsed_seconds" in meta:
+            stats_parts.append(f"⏱️ {meta['elapsed_seconds']:.1f}s")
+        if "total_tokens" in meta:
+            prompt = f"{meta.get('prompt_tokens', 0):,}"
+            completion = f"{meta.get('completion_tokens', 0):,}"
+            total = f"{meta['total_tokens']:,}"
+            stats_parts.append(f"📊 {total} tokens ({prompt} prompt → {completion} completion)")
+        if meta.get("reasoning_tokens", 0) > 0:
+            stats_parts.append(f"🧠 {meta['reasoning_tokens']:,} reasoning tokens")
+        if meta.get("cached_tokens", 0) > 0:
+            stats_parts.append(f"💾 {meta['cached_tokens']:,} cached tokens")
+        if "reasoning_effort" in meta:
+            stats_parts.append(f"⚡ reasoning: {meta['reasoning_effort']}")
+        if "premium_multiplier" in meta:
+            m = meta["premium_multiplier"]
+            if m > 0:
+                cost = m * OVERAGE_COST_PER_REQUEST
+                stats_parts.append(f"💰 {m}x premium (${cost:.2f}/req overage)")
+            else:
+                stats_parts.append("💰 0x (included)")
+
+        stats_line = " · ".join(stats_parts)
+        body = f"{self.summary}\n\n---\n🤖 *Reviewed by {meta.get('model', 'unknown')}*"
+        if stats_line:
+            body += f"\n{stats_line}"
+
+        return {
+            "event": event_map.get(self.verdict, "COMMENT"),
+            "body": body,
+            "comments": gh_comments,
+        }
+
+    def to_dict(self) -> dict:
+        """Serialize for JSON API response."""
+        result = self.to_github_review()
+        result["raw"] = {
+            "summary": self.summary,
+            "verdict": self.verdict,
+            "comments": [asdict(c) for c in self.comments],
+            "metadata": self.metadata,
+        }
+        return result
+
+
+def _parse_review_json(content: str) -> tuple[str, str, list[dict]]:
+    """Parse the model's JSON response, handling markdown fences."""
+    text = content.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        end = len(lines)
+        for i in range(len(lines) - 1, 0, -1):
+            if lines[i].strip() == "```":
+                end = i
+                break
+        text = "\n".join(lines[1:end])
+
+    data = json.loads(text)
+    return (
+        data.get("summary", "No summary provided."),
+        data.get("verdict", "comment"),
+        data.get("comments", []),
+    )
+
 
 async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
     """Fetch PR title, body, and diff from GitHub API."""
@@ -69,7 +218,8 @@ async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
         pr_data = pr_resp.json()
 
         diff_resp = await client.get(
-            base, headers={**headers, "Accept": "application/vnd.github.diff"}
+            base,
+            headers={**headers, "Accept": "application/vnd.github.diff"},
         )
         diff_resp.raise_for_status()
 
@@ -86,9 +236,15 @@ async def review_pr(
     pr_number: int,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
-) -> str:
-    """Run a full review: fetch diff → Copilot → post comment."""
-    logger.info("Reviewing %s#%d with %s (reasoning: %s)", repo, pr_number, model, reasoning_effort)
+) -> ReviewResult:
+    """Run a full review: fetch diff → Copilot → return structured result."""
+    logger.info(
+        "Reviewing %s#%d with %s (reasoning: %s)",
+        repo,
+        pr_number,
+        model,
+        reasoning_effort,
+    )
 
     title, body, diff = await fetch_pr_diff(repo, pr_number)
     user_content = f"## PR: {title}\n\n{body}\n\n## Diff\n\n{diff}"
@@ -102,49 +258,59 @@ async def review_pr(
     )
     elapsed = time.monotonic() - start
 
-    # Build metadata footer
-    prompt = _format_tokens(result.prompt_tokens)
-    completion = _format_tokens(result.completion_tokens)
-    total = _format_tokens(result.total_tokens)
-    stats = [
-        f"⏱️ {elapsed:.1f}s",
-        f"📊 {total} tokens ({prompt} prompt → {completion} completion)",
-    ]
-    if result.reasoning_tokens > 0:
-        stats.append(f"🧠 {_format_tokens(result.reasoning_tokens)} reasoning tokens")
-    if result.cached_tokens > 0:
-        stats.append(f"💾 {_format_tokens(result.cached_tokens)} cached tokens")
-    stats.append(f"⚡ reasoning: {reasoning_effort}")
+    # Parse structured response
+    try:
+        summary, verdict, raw_comments = _parse_review_json(result.content)
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("Failed to parse structured review, falling back: %s", exc)
+        summary = result.content
+        verdict = "comment"
+        raw_comments = []
 
-    # Premium request cost (Copilot bills per-request, not per-token)
-    multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
-    if multiplier > 0:
-        cost = multiplier * OVERAGE_COST_PER_REQUEST
-        stats.append(f"💰 {multiplier}x premium (${cost:.2f}/req overage)")
-    else:
-        stats.append("💰 0x (included)")
-
-    footer = f"\n\n---\n🤖 *Reviewed by {result.model}*\n" + " · ".join(stats)
-    comment_body = result.content + footer
-
-    comment_url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.post(
-            comment_url,
-            headers={
-                "Authorization": f"Bearer {get_token()}",
-                "Accept": "application/vnd.github+json",
-            },
-            json={"body": comment_body},
+    comments = [
+        ReviewComment(
+            path=c["path"],
+            line=c["line"],
+            severity=c.get("severity", "nitpick"),
+            body=c.get("body", ""),
+            start_line=c.get("start_line"),
+            suggestion=c.get("suggestion"),
         )
-        resp.raise_for_status()
+        for c in raw_comments
+        if "path" in c and "line" in c
+    ]
+
+    # Enforce verdict consistency
+    has_blocking = any(c.severity in ("must-fix", "security") for c in comments)
+    if has_blocking and verdict == "approve":
+        verdict = "request_changes"
+
+    multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
+
+    review = ReviewResult(
+        summary=summary,
+        verdict=verdict,
+        comments=comments,
+        metadata={
+            "model": result.model,
+            "elapsed_seconds": elapsed,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "total_tokens": result.total_tokens,
+            "reasoning_tokens": result.reasoning_tokens,
+            "cached_tokens": result.cached_tokens,
+            "reasoning_effort": reasoning_effort,
+            "premium_multiplier": multiplier,
+        },
+    )
 
     logger.info(
-        "Review posted on %s#%d — %d words, %d tokens, %.1fs",
+        "Review complete for %s#%d — verdict=%s, %d comments, %d tokens, %.1fs",
         repo,
         pr_number,
-        len(result.content.split()),
+        verdict,
+        len(comments),
         result.total_tokens,
         elapsed,
     )
-    return comment_body
+    return review
