@@ -13,6 +13,7 @@ COMPOSE_PROJECT_DIR = "{{config_root}}/stacks"
 description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
   "uv run ruff check src/ tests/",
+  "shellcheck scripts/*.sh",
   "shellcheck .githooks/*",
   "uv run yamllint -c .yamllint.yaml stacks/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
