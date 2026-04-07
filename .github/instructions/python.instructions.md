@@ -1,24 +1,29 @@
 ---
-applyTo: "{src,tests}/**/*.py"
+applyTo: "stacks/agents/app/**/*.py"
 ---
 
 # Python Conventions
 
-Style is enforced by ruff and ty — see `pyproject.toml` for config. Don't repeat what the tooling already enforces.
+Style is enforced by ruff and ty — see `stacks/agents/app/pyproject.toml` for config. Don't repeat what the tooling already enforces.
 
-## Audit Module Pattern
+## Agent Service Pattern
 
-All check modules (`health.py`, `security.py`) follow the same structure:
+The agent service (`stacks/agents/app/`) is a FastAPI app that:
 
-1. Check functions that return `CheckResult` from `homelab.models`
-2. A `run_*()` function that returns `AuditReport`
-3. A `__main__` block: `report.print_report()` then `sys.exit(0 if report.passed else 1)`
+1. Receives requests (e.g., `/review`) with minimal input (repo + PR number)
+2. Calls external APIs (GitHub, Copilot) using local credentials (`gh auth token`)
+3. Returns structured JSON responses — the agent never writes to GitHub directly
+4. GitHub Actions workflows handle posting reviews, comments, etc.
 
-Use `run_cmd()` to wrap `subprocess.run()`. Return `Status.SKIP` when a tool isn't available, `Status.FAIL` on timeouts or bad results.
+### Key files
+
+- `main.py` — FastAPI endpoints, request/response models
+- `review.py` — PR review logic, system prompt, structured output parsing
+- `copilot.py` — Copilot API client, returns `ChatResult` dataclass
+- `tests/test_main.py` — unit tests (mock external calls)
 
 ## Testing
 
-- Mock `run_cmd` via `@patch("homelab.<module>.run_cmd")` — never call real system commands
-- Use `_mock_result(stdout=, returncode=)` helper to build `subprocess.CompletedProcess`
-- Group tests in classes by function under test (e.g., `TestCheckContainerRunning`)
-- Assert on `result.status` (the `Status` enum), not string comparisons
+- Mock external calls via `@patch("main.review_pr", new_callable=AsyncMock)`
+- Use `TestClient(app)` from FastAPI for endpoint tests
+- Run from the agent directory: `cd stacks/agents/app && uv run pytest`

@@ -8,12 +8,21 @@ on:
 
 jobs:
   review:
+    # Security gates:
+    # - pull_request: skip drafts, block forks via if-condition
+    # - issue_comment /review: role-gated (OWNER/MEMBER/COLLABORATOR);
+    #   fork PRs blocked by the "Block fork PRs" step below (can't
+    #   check head.repo in the if-condition — issue_comment events
+    #   don't include PR metadata)
     if: >
       (github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false) ||
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository) ||
       (github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
-      github.event.comment.body == '/review')
+      github.event.comment.body == '/review' &&
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
+      github.event.comment.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -25,6 +34,17 @@ jobs:
             && github.event.issue.number
             || github.event.pull_request.number }}
     steps:
+      - name: Block fork PRs on /review
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_REPO=$(gh api "/repos/$REPO/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::Refusing to review fork PR ($HEAD_REPO)"
+            exit 1
+          fi
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
