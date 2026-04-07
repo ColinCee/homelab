@@ -32,6 +32,17 @@ jobs:
             && github.event.issue.number
             || github.event.pull_request.number }}
     steps:
+      - name: Block fork PRs on /review
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_REPO=$(gh api "/repos/$REPO/pulls/$PR_NUMBER" --jq '.head.repo.full_name')
+          if [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::Refusing to review fork PR ($HEAD_REPO)"
+            exit 1
+          fi
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
