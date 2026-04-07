@@ -49,3 +49,38 @@ Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), Cro
 Agent: FastAPI on beelink:8585 — AI code review via Copilot API (GPT-5.4)
 Platform: Dokploy (manages container lifecycle, auto-deploys from main)
 ```
+
+## Pull Request Workflow
+
+This repo has an automated AI code review system. Follow this process:
+
+### Creating PRs
+
+1. **Create PRs as drafts** — `gh pr create --draft`
+2. Push commits, iterate until ready
+3. Mark ready: `gh pr ready <number>` → triggers first AI review
+
+### Review cycle
+
+1. When a PR is opened or marked ready, `code-review.yaml` auto-triggers
+2. GPT-5.4 on the Beelink agent posts a structured review as
+   `github-actions[bot]` with inline comments and a verdict:
+   - **APPROVE** — no issues, can merge
+   - **REQUEST_CHANGES** — must-fix or security issues block merge
+   - **COMMENT** — nitpicks only, doesn't block
+3. Inline comments use severity tags:
+   - 🔧 **Must Fix** — blocks merge
+   - 💡 **Nitpick** — optional improvement
+   - 🔒 **Security** — always blocks merge
+4. Fix any must-fix/security findings, push new commits
+5. Comment `/review` to re-trigger — the model receives its previous
+   review and checks if issues were resolved
+6. Repeat until APPROVE
+7. Repo owner merges — **never merge PRs yourself**
+
+### Important
+
+- **No `synchronize` trigger** — pushes don't auto-review. Use `/review`.
+- Stale reviews are dismissed on new pushes (branch protection)
+- Never use `--admin` to bypass branch protection
+- Fork PRs are blocked from triggering reviews
