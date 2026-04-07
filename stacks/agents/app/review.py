@@ -51,7 +51,7 @@ Use sparingly — only for things that are objectively wrong.
 - If the PR looks good, return verdict `approve` with an empty comments array
 """
 
-MAX_DIFF_BYTES = 80_000
+MAX_DIFF_BYTES = 80_000  # ~80KB cap to stay within model context limits
 
 # Premium request multipliers per model (source: GitHub Copilot docs)
 MODEL_MULTIPLIERS: dict[str, float] = {
