@@ -1,23 +1,90 @@
-#!/bin/sh
-# Pre-commit hook: prevent committing unencrypted files in docs/private/
-#
-# Install: git config core.hooksPath .githooks
-#
-# Checks the actual staged blob for the GITCRYPT magic header.
-# Any file under docs/private/ that isn't encrypted gets blocked.
+#!/usr/bin/env bash
+set -euo pipefail
 
-for f in $(git diff --cached --name-only | grep '^docs/private/'); do
+# Pre-commit hook — catch issues locally before CI.
+# Install: git config core.hooksPath .githooks
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+failed=0
+
+fail() { echo -e "${RED}FAIL${NC} $1"; failed=1; }
+pass() { echo -e "${GREEN}OK${NC}   $1"; }
+
+# ── Git-crypt: prevent plaintext commits in docs/private/ ──
+for f in $(git diff --cached --name-only | grep '^docs/private/' || true); do
   blob=$(git ls-files -s "$f" 2>/dev/null | awk '{print $2}')
   if [ -n "$blob" ]; then
     header=$(git cat-file -p "$blob" | head -c 10)
     case "$header" in
-      *GITCRYPT*)
-        ;; # encrypted, good
-      *)
-        echo "ERROR: ${f} would be committed in PLAINTEXT!"
-        echo "Check that .gitattributes has: docs/private/** filter=git-crypt diff=git-crypt"
-        exit 1
-        ;;
+      *GITCRYPT*) ;;
+      *) fail "$f would be committed in PLAINTEXT!" ;;
     esac
   fi
 done
+
+# ── Ruff lint ──
+if command -v uv &>/dev/null; then
+  if (cd stacks/agents/app && uv run ruff check . --quiet 2>/dev/null); then
+    pass "ruff lint"
+  else
+    fail "ruff lint (run: cd stacks/agents/app && uv run ruff check .)"
+  fi
+fi
+
+# ── Ruff format ──
+if command -v uv &>/dev/null; then
+  if (cd stacks/agents/app && uv run ruff format --check --quiet . 2>/dev/null); then
+    pass "ruff format"
+  else
+    fail "ruff format (run: cd stacks/agents/app && uv run ruff format .)"
+  fi
+fi
+
+# ── YAML lint ──
+if command -v uv &>/dev/null; then
+  if uv run yamllint -c .yamllint.yaml stacks/ 2>/dev/null; then
+    pass "yamllint"
+  else
+    fail "yamllint (run: uv run yamllint -c .yamllint.yaml stacks/)"
+  fi
+fi
+
+# ── Actionlint ──
+if command -v actionlint &>/dev/null; then
+  if find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint 2>/dev/null; then
+    pass "actionlint"
+  else
+    fail "actionlint (run: actionlint .github/workflows/*.yaml)"
+  fi
+fi
+
+# ── Shellcheck ──
+if command -v shellcheck &>/dev/null; then
+  shells=()
+  if ls scripts/*.sh &>/dev/null; then shells+=(scripts/*.sh); fi
+  if ls .githooks/* &>/dev/null; then shells+=(.githooks/*); fi
+  if [ ${#shells[@]} -gt 0 ]; then
+    if shellcheck "${shells[@]}" 2>/dev/null; then
+      pass "shellcheck"
+    else
+      fail "shellcheck"
+    fi
+  fi
+fi
+
+# ── Pytest ──
+if command -v uv &>/dev/null; then
+  if (cd stacks/agents/app && uv run pytest tests/ -q --no-header 2>/dev/null); then
+    pass "pytest"
+  else
+    fail "pytest (run: cd stacks/agents/app && uv run pytest tests/ -v)"
+  fi
+fi
+
+if [ "$failed" -ne 0 ]; then
+  echo ""
+  echo -e "${RED}Pre-commit checks failed. Fix issues above or skip with: git commit --no-verify${NC}"
+  exit 1
+fi
