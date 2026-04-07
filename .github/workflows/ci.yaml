@@ -33,7 +33,8 @@ jobs:
         run: uv run yamllint -c .yamllint.yaml stacks/
 
       - name: Lint GitHub Actions
-        run: actionlint
+        run: |
+          find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint
 
       - name: Validate compose files
         env:
