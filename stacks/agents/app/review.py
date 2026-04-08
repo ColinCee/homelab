@@ -42,6 +42,41 @@ def _get_bot_login() -> str:
     return f"{app_slug}[bot]"
 
 
+async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
+    """Dismiss previous bot reviews so stale REQUEST_CHANGES don't linger."""
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(reviews_url, headers=headers)
+        if resp.status_code != 200:
+            logger.warning("Failed to fetch reviews for dismissal: %d", resp.status_code)
+            return
+
+        reviews = resp.json()
+        for review in reviews:
+            if review.get("user", {}).get("login") == bot_login and review.get("state") in (
+                "CHANGES_REQUESTED",
+                "APPROVED",
+            ):
+                dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
+                resp = await client.put(
+                    dismiss_url,
+                    headers=headers,
+                    json={"message": "Superseded by new review."},
+                )
+                if resp.status_code == 200:
+                    logger.info("Dismissed stale review %d", review["id"])
+                else:
+                    logger.warning(
+                        "Failed to dismiss review %d: %d", review["id"], resp.status_code
+                    )
+
+
 async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, token: str) -> None:
     """Find the bot's latest review and append a stats footer."""
     if not stats_line:
@@ -93,6 +128,9 @@ async def review_pr(
     repo_url = f"https://github.com/{repo}.git"
 
     token = await get_installation_token()
+
+    await _dismiss_stale_reviews(repo, pr_number, token)
+
     worktree_path = await create_worktree(pr_number, repo_url)
 
     try:

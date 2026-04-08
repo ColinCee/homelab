@@ -37,6 +37,16 @@ class CLIResult:
         return " · ".join(parts) if parts else ""
 
 
+def _parse_time(value: str) -> int:
+    """Parse a time string like '6m 29s', '45s', or '3m' into total seconds."""
+    total = 0
+    if m := re.search(r"(\d+)m", value):
+        total += int(m.group(1)) * 60
+    if m := re.search(r"(\d+)s", value):
+        total += int(m.group(1))
+    return total
+
+
 def _parse_stats(output: str) -> dict:
     """Parse CLI session stats from non-silent output."""
     stats: dict = {"premium_requests": 0, "api_time": 0, "session_time": 0, "models": {}}
@@ -46,10 +56,10 @@ def _parse_stats(output: str) -> dict:
 
         if m := re.match(r"Total usage est:\s+(\d+)\s+Premium", line):
             stats["premium_requests"] = int(m.group(1))
-        elif m := re.match(r"API time spent:\s+(\d+)s", line):
-            stats["api_time"] = int(m.group(1))
-        elif m := re.match(r"Total session time:\s+(\d+)s", line):
-            stats["session_time"] = int(m.group(1))
+        elif m := re.match(r"API time spent:\s+(.+)", line):
+            stats["api_time"] = _parse_time(m.group(1))
+        elif m := re.match(r"Total session time:\s+(.+)", line):
+            stats["session_time"] = _parse_time(m.group(1))
         elif m := re.match(r"^\s*(\S+)\s+([\d.]+k?\s+in,\s+[\d.]+k?\s+out.*)", line):
             model_name = m.group(1)
             if model_name not in ("Total", "Breakdown"):

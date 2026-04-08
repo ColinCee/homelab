@@ -27,6 +27,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      issues: write
     env:
       REPO: ${{ github.repository }}
       PR_NUMBER: >-
@@ -34,6 +35,14 @@ jobs:
             && github.event.issue.number
             || github.event.pull_request.number }}
     steps:
+      - name: React to /review comment
+        if: github.event_name == 'issue_comment'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST -f content='eyes' --silent
+
       - name: Block fork PRs on /review
         if: github.event_name == 'issue_comment'
         env:
