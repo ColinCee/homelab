@@ -1,6 +1,7 @@
 """Copilot CLI headless runner — invokes the copilot binary for code review."""
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -98,21 +99,29 @@ async def run_copilot(
     stderr_lines: list[str] = []
 
     async def _stream(stream: asyncio.StreamReader, lines: list[str], prefix: str) -> None:
-        async for raw in stream:
-            line = raw.decode().rstrip()
-            lines.append(line)
-            logger.info("[copilot %s] %s", prefix, line)
+        while not stream.at_eof():
+            try:
+                raw = await asyncio.wait_for(stream.readline(), timeout=5.0)
+                if raw:
+                    line = raw.decode().rstrip()
+                    lines.append(line)
+                    logger.info("[copilot %s] %s", prefix, line)
+            except TimeoutError:
+                if proc.returncode is not None:
+                    break
 
     try:
         assert proc.stdout and proc.stderr
-        await asyncio.wait_for(
-            asyncio.gather(
-                _stream(proc.stdout, stdout_lines, "out"),
-                _stream(proc.stderr, stderr_lines, "err"),
-                proc.wait(),
-            ),
-            timeout=TIMEOUT_SECONDS,
-        )
+        out_task = asyncio.create_task(_stream(proc.stdout, stdout_lines, "out"))
+        err_task = asyncio.create_task(_stream(proc.stderr, stderr_lines, "err"))
+
+        await asyncio.wait_for(proc.wait(), timeout=TIMEOUT_SECONDS)
+        # Give streams a moment to flush, then cancel
+        await asyncio.sleep(1)
+        out_task.cancel()
+        err_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.gather(out_task, err_task)
     except TimeoutError as err:
         proc.kill()
         raise RuntimeError(f"Copilot CLI timed out after {TIMEOUT_SECONDS}s") from err
