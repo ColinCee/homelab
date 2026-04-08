@@ -1,6 +1,7 @@
 ---
 name: code-review
 description: Perform a structured PR code review. Use when asked to review a pull request, diff, or set of changes.
+allowed-tools: shell
 ---
 
 # Code Review Skill
@@ -17,34 +18,28 @@ Review for:
 - **Breaking changes** — API contract changes, config renames, removed features
 - **Operational risk** — resource leaks, missing healthchecks, unbounded growth
 
-Severity levels:
-- **blocker** — must fix before merge (bugs, security, breaking changes)
-- **suggestion** — non-blocking improvement, author decides
-- **question** — seeks clarification, non-blocking
+## Severity Levels
 
-## Output Format
+- 🚫 **Blocker** — must fix before merge (bugs, security, breaking changes)
+- 💡 **Suggestion** — non-blocking improvement, author decides
+- ❓ **Question** — seeks clarification, non-blocking
 
-Return your review as a single raw JSON object (no code fences, no extra text):
+## Posting Reviews
 
-```json
-{
-  "summary": "Brief overall assessment",
-  "verdict": "approve" | "request_changes",
-  "comments": [
-    {
-      "path": "path/to/file",
-      "line": 42,
-      "severity": "blocker" | "suggestion" | "question",
-      "body": "What is wrong and why",
-      "start_line": null
-    }
-  ]
-}
+You have `gh` CLI available and authenticated. Post reviews directly via the GitHub API.
+
+To post a review with inline comments:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
+  --method POST \
+  -f event="APPROVE" \
+  -f body="Summary text" \
+  -f 'comments=[{"path":"file.py","line":42,"body":"🚫 **Blocker**\n\nExplanation"}]'
 ```
 
 Rules:
-- `verdict` is `request_changes` ONLY if there is at least one `blocker` comment
-- `line` is the line number in the **current version** of the file
-- `start_line` is optional — set it for multi-line ranges, otherwise `null`
-- Keep comments concise — state WHAT is wrong and WHY
-- If the code looks good, return `approve` with an empty comments array
+- Use `event: "REQUEST_CHANGES"` only if you have blocker-severity comments
+- Use `event: "APPROVE"` when the code looks good or only has suggestions
+- End the body with `\n\n---\n🤖 *Reviewed by homelab-review-bot*`
+- If the code looks good, approve with no inline comments
