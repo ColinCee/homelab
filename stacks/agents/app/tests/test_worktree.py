@@ -41,11 +41,12 @@ class TestCreateWorktree:
                 path = await worktree.create_worktree(42, "https://github.com/user/repo.git")
 
             assert path == Path("/tmp/test-reviews/pr-42")
-            # Should have: clone, fetch PR, add worktree
-            assert len(calls) == 3
+            # Should have: clone, branch -D (cleanup stale ref), fetch PR, add worktree
+            assert len(calls) == 4
             assert "clone" in calls[0][0][1]
-            assert "pull/42/head:pr-42" in calls[1][0][3]
-            assert "worktree" in calls[2][0][1]
+            assert "branch" in calls[1][0][1]
+            assert "pull/42/head:pr-42" in calls[2][0][3]
+            assert "worktree" in calls[3][0][1]
 
         asyncio.run(run())
 

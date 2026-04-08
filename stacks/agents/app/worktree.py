@@ -33,6 +33,9 @@ async def init_bare_clone(repo_url: str) -> Path:
     """Initialize or update the bare clone used as an object store."""
     head_file = BARE_CLONE_PATH / "HEAD"
     if head_file.exists():
+        # Prune stale worktree refs (e.g. after container restart with persistent volume)
+        with contextlib.suppress(RuntimeError):
+            await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
         await _run(["git", "fetch", "--all", "--prune"], cwd=BARE_CLONE_PATH)
     else:
         BARE_CLONE_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +52,10 @@ async def create_worktree(pr_number: int, repo_url: str) -> Path:
             await _remove_worktree(worktree_path, pr_number)
 
         await init_bare_clone(repo_url)
+
+        # Force-update the branch ref (handles stale refs from previous container)
+        with contextlib.suppress(RuntimeError):
+            await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
 
         await _run(
             ["git", "fetch", "origin", f"pull/{pr_number}/head:pr-{pr_number}"],
