@@ -110,7 +110,7 @@ services:
     image: some-image:latest
     restart: unless-stopped
     ports:
-      - "${TAILSCALE_IP:?}:8080:8080"
+      - "100.100.146.119:8080:8080"
     volumes:
       - my-data:/data
 
@@ -141,7 +141,7 @@ mise run deploy:my-service
 
 ### Conventions
 
-- **Port binding:** Use `${TAILSCALE_IP:?}:hostPort:containerPort` to bind only to Tailscale. Fails fast if `TAILSCALE_IP` is not set.
+- **Port binding:** Use `100.100.146.119:hostPort:containerPort` to bind only to Tailscale. The CGNAT address is only routable within your tailnet.
 - **Host network:** Only use `network_mode: host` when required (e.g., Home Assistant needs Bluetooth/mDNS).
 - **Volumes:** Use named volumes for data persistence. Add data directories to `.gitignore` via `stacks/*/data/`.
 - **Image versions:** Pin image tags (e.g., `grafana/grafana:11.5`) for Renovate to track and auto-PR updates.

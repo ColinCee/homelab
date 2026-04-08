@@ -8,7 +8,7 @@ Each stack is a self-contained directory under `stacks/<service>/` with a `compo
 
 ## Compose Patterns
 
-- **Port binding:** `${TAILSCALE_IP:?}:hostPort:containerPort` — binds to Tailscale only, fails fast if env var is unset
+- **Port binding:** `100.100.146.119:hostPort:containerPort` — binds to Tailscale interface only (CGNAT range, only routable within tailnet)
 - **Host network:** Only `network_mode: host` when required (e.g., Home Assistant needs Bluetooth/mDNS)
 - **Restart policy:** `restart: unless-stopped` on all services
 - **Image tags:** Pin versions (e.g., `grafana/grafana:11.5`) so Renovate can track and auto-PR updates

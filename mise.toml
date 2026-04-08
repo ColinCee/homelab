@@ -5,15 +5,11 @@ shellcheck = "latest"
 actionlint = "latest"
 trivy = "latest"
 
-[env]
-COMPOSE_PROJECT_DIR = "{{config_root}}/stacks"
-
 # ── Dev ────────────────────────────────────────────
 [tasks.lint]
 description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
   "cd stacks/agents/app && uv run ruff check .",
-  "if ls scripts/*.sh &>/dev/null; then shellcheck scripts/*.sh; else echo 'No scripts to lint'; fi",
   "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
   "uv run yamllint -c .yamllint.yaml stacks/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
@@ -21,7 +17,7 @@ run = [
 
 [tasks.format]
 description = "Format Python code"
-run = "uv run ruff format stacks/agents/app/ tests/"
+run = "uv run ruff format stacks/agents/app/"
 
 [tasks.typecheck]
 description = "Type-check Python code"
@@ -65,10 +61,6 @@ run = "docker compose -f stacks/agents/compose.yaml up -d --build"
 description = "Run health checks against all services"
 run = "curl -sf http://100.100.146.119:8585/health && echo ' Agent OK ✅'"
 
-[tasks."check:security"]
-description = "Run security posture audit"
-run = "echo 'Security audit not yet implemented'"
-
 [tasks."check:vulnerabilities"]
 description = "Scan Docker images for CVEs"
 run = """
@@ -85,50 +77,9 @@ done
 [tasks."validate:compose"]
 description = "Validate all compose files"
 run = """
-export TAILSCALE_IP="${TAILSCALE_IP:-127.0.0.1}"
 for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
   docker compose -f "$f" config --quiet || exit 1
 done
 echo "All compose files valid ✅"
 """
-
-# ── Setup (bootstrap) ─────────────────────────────
-[tasks.setup]
-description = "Full server bootstrap"
-depends = ["setup:docker", "setup:ufw", "setup:fail2ban", "setup:dokploy"]
-
-[tasks."setup:docker"]
-description = "Install Docker if not present"
-run = """
-if command -v docker &>/dev/null; then
-  echo "Docker already installed ✅"
-else
-  curl -fsSL https://get.docker.com | sh
-  sudo usermod -aG docker "$USER"
-  echo "Docker installed ✅ — log out and back in for group changes"
-fi
-"""
-
-[tasks."setup:ufw"]
-description = "Configure UFW firewall"
-run = """
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow in on tailscale0
-sudo ufw allow in on lo
-sudo ufw --force enable
-echo "UFW configured ✅"
-"""
-
-[tasks."setup:fail2ban"]
-description = "Install and enable fail2ban"
-run = """
-sudo apt-get install -y fail2ban
-sudo systemctl enable --now fail2ban
-echo "fail2ban active ✅"
-"""
-
-[tasks."setup:dokploy"]
-description = "Install Dokploy"
-run = "curl -sSL https://dokploy.com/install.sh | sh"
