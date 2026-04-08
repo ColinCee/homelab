@@ -33,6 +33,11 @@ Review PR #{pr_number} in {repo}.
 
 Use the code-review skill. Explore the codebase with grep and view to understand \
 how changed code is used. Output a single raw JSON object (no code fences).
+
+**Network note:** You are behind an egress proxy. Only github.com, \
+api.githubcopilot.com, githubusercontent.com, and common documentation sites \
+(docs.python.org, docs.docker.com, stackoverflow.com, etc.) are reachable. \
+Do not attempt to fetch other URLs.
 """
 
 
