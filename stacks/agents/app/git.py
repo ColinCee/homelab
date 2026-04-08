@@ -156,9 +156,19 @@ async def commit_and_push(
 
     sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
 
-    auth_url = f"https://x-access-token:{token}@github.com/{repo}.git"
+    # Use a credential helper to avoid leaking the token in error messages
     await _run(
-        ["git", "push", auth_url, f"HEAD:refs/heads/{branch}", "--force-with-lease"],
+        [
+            "git",
+            "-c",
+            f"credential.helper=!printf 'username=x-access-token\\npassword={token}'",
+            "-c",
+            "credential.useHttpPath=true",
+            "push",
+            f"https://github.com/{repo}.git",
+            f"HEAD:refs/heads/{branch}",
+            "--force-with-lease",
+        ],
         cwd=worktree_path,
     )
 

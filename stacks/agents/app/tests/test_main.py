@@ -56,7 +56,7 @@ def test_review_rejects_duplicate_in_flight(mock_review):
             "/review",
             json={"repo": "user/repo", "pr_number": 42},
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 409
         assert resp.json()["status"] == "already_in_progress"
         mock_review.assert_not_called()
     finally:
@@ -104,7 +104,7 @@ def test_implement_rejects_duplicate_in_flight(mock_impl):
             "/implement",
             json={"repo": "user/repo", "issue_number": 10},
         )
-        assert resp.status_code == 202
+        assert resp.status_code == 409
         assert resp.json()["status"] == "already_in_progress"
         mock_impl.assert_not_called()
     finally:

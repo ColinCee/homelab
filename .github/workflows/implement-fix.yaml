@@ -23,12 +23,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Count bot reviews (each fix cycle produces a new review)
-          REVIEW_COUNT=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/reviews" \
-            --jq '[.[] | select(.user.login == "homelab-review-bot[bot]" and .state == "CHANGES_REQUESTED")] | length')
+          # Count bot fix commits on this PR (dismissed reviews lose state, so use commits)
+          FIX_COUNT=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/commits" \
+            --jq '[.[] | select(.commit.author.name == "homelab-review-bot[bot]" and (.commit.message | startswith("fix:")))] | length')
 
           MAX_ITERATIONS=3
-          if [ "$REVIEW_COUNT" -ge "$MAX_ITERATIONS" ]; then
+          if [ "$FIX_COUNT" -ge "$MAX_ITERATIONS" ]; then
             echo "::warning::Hit max fix iterations ($MAX_ITERATIONS). Manual intervention needed."
             gh api "/repos/$REPO/issues/$PR_NUMBER/comments" \
               --method POST \
@@ -36,7 +36,7 @@ jobs:
               --silent
             exit 0
           fi
-          echo "Fix iteration $REVIEW_COUNT/$MAX_ITERATIONS"
+          echo "Fix iteration $((FIX_COUNT + 1))/$MAX_ITERATIONS"
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
@@ -47,17 +47,23 @@ jobs:
 
       - name: Trigger fix on Beelink agent
         run: |
-          HTTP_CODE=$(curl -sf --max-time 30 \
+          RESPONSE=$(curl -sf --max-time 30 \
             -X POST "http://beelink:8585/fix" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}" \
-            -o /dev/null -w "%{http_code}")
+            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}")
 
-          if [ "$HTTP_CODE" != "202" ]; then
-            echo "::error::Agent returned HTTP $HTTP_CODE"
+          HTTP_STATUS=$(echo "$RESPONSE" | jq -r '.status' 2>/dev/null || echo "unknown")
+
+          if [ "$HTTP_STATUS" = "already_in_progress" ]; then
+            echo "::error::Another fix/review is already in progress for PR #$PR_NUMBER"
             exit 1
           fi
-          echo "✅ Fix accepted by agent (202)"
+
+          if [ "$HTTP_STATUS" != "accepted" ]; then
+            echo "::error::Agent returned unexpected status: $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ Fix accepted by agent"
 
           # Poll until complete or failed (timeout 30 min)
           for i in $(seq 1 180); do

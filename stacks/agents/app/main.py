@@ -4,6 +4,7 @@ import logging
 import os
 
 from fastapi import BackgroundTasks, FastAPI
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from implement import fix_pr, implement_issue
@@ -58,8 +59,8 @@ async def health() -> dict[str, str]:
 # --- Review endpoints ---
 
 
-@app.post("/review", status_code=202)
-async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks) -> dict:
+@app.post("/review", status_code=202, response_model=None)
+async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks):
     """Accept a review request and process it in the background."""
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
@@ -67,7 +68,10 @@ async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks) -
 
     existing = _review_status.get(key)
     if existing and existing["status"] == "in_progress":
-        return {"status": "already_in_progress", "pr_number": req.pr_number}
+        return JSONResponse(
+            status_code=409,
+            content={"status": "already_in_progress", "pr_number": req.pr_number},
+        )
 
     _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
 
@@ -100,8 +104,8 @@ async def get_review_status(pr_number: int, repo: str = "") -> dict:
 # --- Implement endpoints ---
 
 
-@app.post("/implement", status_code=202)
-async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTasks) -> dict:
+@app.post("/implement", status_code=202, response_model=None)
+async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTasks):
     """Accept an implementation request and process it in the background."""
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
@@ -109,7 +113,10 @@ async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTa
 
     existing = _implement_status.get(key)
     if existing and existing["status"] == "in_progress":
-        return {"status": "already_in_progress", "issue_number": req.issue_number}
+        return JSONResponse(
+            status_code=409,
+            content={"status": "already_in_progress", "issue_number": req.issue_number},
+        )
 
     _implement_status[key] = {
         "status": "in_progress",
@@ -146,8 +153,8 @@ async def get_implement_status(issue_number: int, repo: str = "") -> dict:
 # --- Fix endpoint ---
 
 
-@app.post("/fix", status_code=202)
-async def handle_fix(req: FixRequest, background_tasks: BackgroundTasks) -> dict:
+@app.post("/fix", status_code=202, response_model=None)
+async def handle_fix(req: FixRequest, background_tasks: BackgroundTasks):
     """Accept a fix request to address review feedback on a PR."""
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
@@ -155,7 +162,10 @@ async def handle_fix(req: FixRequest, background_tasks: BackgroundTasks) -> dict
 
     existing = _review_status.get(key)
     if existing and existing["status"] == "in_progress":
-        return {"status": "already_in_progress", "pr_number": req.pr_number}
+        return JSONResponse(
+            status_code=409,
+            content={"status": "already_in_progress", "pr_number": req.pr_number},
+        )
 
     _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
 

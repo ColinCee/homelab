@@ -333,4 +333,6 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
             json={"body": body},
         )
         if resp.status_code not in (200, 201):
-            logger.warning("Failed to comment on %s#%d: %d", repo, issue_number, resp.status_code)
+            raise RuntimeError(
+                f"Failed to comment on {repo}#{issue_number}: HTTP {resp.status_code}"
+            )
