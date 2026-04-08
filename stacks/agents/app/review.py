@@ -43,7 +43,7 @@ def _get_bot_login() -> str:
 
 
 async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
-    """Dismiss previous bot reviews so stale REQUEST_CHANGES don't linger."""
+    """Dismiss previous bot reviews, keeping the latest one (just posted)."""
     bot_login = _get_bot_login()
     headers = {
         "Authorization": f"Bearer {token}",
@@ -58,23 +58,25 @@ async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
             return
 
         reviews = resp.json()
-        for review in reviews:
-            if review.get("user", {}).get("login") == bot_login and review.get("state") in (
-                "CHANGES_REQUESTED",
-                "APPROVED",
-            ):
-                dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
-                resp = await client.put(
-                    dismiss_url,
-                    headers=headers,
-                    json={"message": "Superseded by new review."},
-                )
-                if resp.status_code == 200:
-                    logger.info("Dismissed stale review %d", review["id"])
-                else:
-                    logger.warning(
-                        "Failed to dismiss review %d: %d", review["id"], resp.status_code
-                    )
+        bot_reviews = [
+            r
+            for r in reviews
+            if r.get("user", {}).get("login") == bot_login
+            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
+        ]
+
+        # Keep the latest bot review (just posted), dismiss all older ones
+        for review in bot_reviews[:-1]:
+            dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
+            resp = await client.put(
+                dismiss_url,
+                headers=headers,
+                json={"message": "Superseded by new review."},
+            )
+            if resp.status_code == 200:
+                logger.info("Dismissed stale review %d", review["id"])
+            else:
+                logger.warning("Failed to dismiss review %d: %d", review["id"], resp.status_code)
 
 
 async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, token: str) -> None:
@@ -129,8 +131,6 @@ async def review_pr(
 
     token = await get_installation_token()
 
-    await _dismiss_stale_reviews(repo, pr_number, token)
-
     worktree_path = await create_worktree(pr_number, repo_url)
 
     try:
@@ -145,6 +145,9 @@ async def review_pr(
         )
 
         elapsed = time.monotonic() - start
+
+        # Dismiss stale reviews only after a new one is successfully posted
+        await _dismiss_stale_reviews(repo, pr_number, token)
 
         if result.stats_line:
             await _append_stats_to_review(repo, pr_number, result.stats_line, token)
