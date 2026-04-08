@@ -1,6 +1,6 @@
 """Tests for Copilot CLI stats parsing."""
 
-from copilot_cli import _parse_stats, _parse_time
+from copilot import CLIResult, _parse_stats, _parse_time
 
 SAMPLE_OUTPUT = """\
 Hello world
@@ -84,8 +84,6 @@ def test_parse_models_with_millions():
 
 
 def test_stats_line_strips_est_premium():
-    from copilot_cli import CLIResult
-
     r = CLIResult(
         output="",
         total_premium_requests=1,

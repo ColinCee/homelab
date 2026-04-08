@@ -1,4 +1,4 @@
-"""Copilot CLI headless runner — invokes the copilot binary for code review."""
+"""Copilot CLI headless runner — invokes the copilot binary for agent tasks."""
 
 import asyncio
 import contextlib

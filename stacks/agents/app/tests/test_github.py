@@ -1,4 +1,4 @@
-"""Tests for GitHub App authentication."""
+"""Tests for GitHub API — auth, REST, and GraphQL helpers."""
 
 import asyncio
 import time
@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, mock_open, patch
 
 import httpx
 
-import github_app
+import github
 
 
 class TestGenerateJWT:
@@ -22,7 +22,7 @@ class TestGenerateJWT:
             encryption_algorithm=serialization.NoEncryption(),
         ).decode()
 
-        token = github_app._generate_jwt("12345", pem)
+        token = github._generate_jwt("12345", pem)
 
         public_key = private_key.public_key()
         decoded = jwt.decode(token, public_key, algorithms=["RS256"])
@@ -30,7 +30,7 @@ class TestGenerateJWT:
         assert decoded["exp"] - decoded["iat"] == 660  # 60s past + 10min
 
 
-class TestGetInstallationToken:
+class TestGetToken:
     def test_returns_token_from_api(self):
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import rsa
@@ -42,7 +42,7 @@ class TestGetInstallationToken:
             encryption_algorithm=serialization.NoEncryption(),
         ).decode()
 
-        github_app.reset_token_cache()
+        github.reset_token_cache()
 
         env = {
             "GITHUB_APP_ID": "12345",
@@ -62,19 +62,29 @@ class TestGetInstallationToken:
                 patch("builtins.open", mock_open(read_data=pem)),
                 patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp),
             ):
-                return await github_app.get_installation_token()
+                return await github.get_token()
 
         token = asyncio.run(run())
         assert token == "ghs_test_token_123"
 
     def test_returns_cached_token(self):
-        github_app._cached_token = "cached_token"
-        github_app._token_expires_at = time.time() + 3600
+        github._cached_token = "cached_token"
+        github._token_expires_at = time.time() + 3600
 
         async def run():
-            return await github_app.get_installation_token()
+            return await github.get_token()
 
         token = asyncio.run(run())
         assert token == "cached_token"
 
-        github_app.reset_token_cache()
+        github.reset_token_cache()
+
+
+class TestBotLogin:
+    def test_default_slug(self):
+        with patch.dict("os.environ", {}, clear=False):
+            assert github.bot_login() == "homelab-review-bot[bot]"
+
+    def test_custom_slug(self):
+        with patch.dict("os.environ", {"GITHUB_APP_SLUG": "my-bot"}):
+            assert github.bot_login() == "my-bot[bot]"
