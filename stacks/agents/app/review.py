@@ -1,7 +1,10 @@
 """PR review logic — orchestrates worktree, Copilot CLI, and cleanup."""
 
 import logging
+import os
 import time
+
+import httpx
 
 from copilot_cli import run_copilot
 from github_app import get_installation_token
@@ -37,6 +40,50 @@ are reachable.
 """
 
 
+def _get_bot_login() -> str:
+    """Derive the bot login from the GitHub App slug (set via env var)."""
+    app_slug = os.environ.get("GITHUB_APP_SLUG", "homelab-review-bot")
+    return f"{app_slug}[bot]"
+
+
+async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, token: str) -> None:
+    """Find the bot's latest review and append a stats footer."""
+    if not stats_line:
+        return
+
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(reviews_url, headers=headers)
+        if resp.status_code != 200:
+            logger.warning("Failed to fetch reviews for stats append: %d", resp.status_code)
+            return
+
+        reviews = resp.json()
+        bot_reviews = [r for r in reviews if r.get("user", {}).get("login") == bot_login]
+        if not bot_reviews:
+            logger.warning("No reviews from %s found to append stats to", bot_login)
+            return
+
+        latest = bot_reviews[-1]
+        review_id = latest["id"]
+        current_body = latest.get("body", "")
+
+        updated_body = f"{current_body}\n{stats_line}"
+
+        update_url = f"{reviews_url}/{review_id}"
+        resp = await client.put(update_url, headers=headers, json={"body": updated_body})
+        if resp.status_code == 200:
+            logger.info("Appended stats to review %d", review_id)
+        else:
+            logger.warning("Failed to update review with stats: %d", resp.status_code)
+
+
 async def review_pr(
     *,
     repo: str,
@@ -44,7 +91,7 @@ async def review_pr(
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
 ) -> dict:
-    """Full review pipeline: worktree → Copilot CLI (reviews + posts) → cleanup."""
+    """Full review pipeline: worktree → Copilot CLI (reviews + posts) → append stats → cleanup."""
     logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
     start = time.monotonic()
     repo_url = f"https://github.com/{repo}.git"
@@ -55,7 +102,7 @@ async def review_pr(
     try:
         prompt = REVIEW_PROMPT_TEMPLATE.format(pr_number=pr_number, repo=repo)
 
-        output = await run_copilot(
+        result = await run_copilot(
             worktree_path,
             prompt,
             model=model,
@@ -64,13 +111,18 @@ async def review_pr(
         )
 
         elapsed = time.monotonic() - start
+
+        if result.stats_line:
+            await _append_stats_to_review(repo, pr_number, result.stats_line, token)
+
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
 
         return {
             "model": model,
             "elapsed_seconds": elapsed,
             "reasoning_effort": reasoning_effort,
-            "output_bytes": len(output),
+            "premium_requests": result.total_premium_requests,
+            "models": result.models,
         }
 
     finally:
