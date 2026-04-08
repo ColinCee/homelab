@@ -28,6 +28,7 @@ services:
     tmpfs:
       - /reviews:size=512m,uid=1000,gid=1000
       - /tmp:size=64m,uid=1000,gid=1000
+      - /home/agent/.cache:size=128m,uid=1000,gid=1000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
