@@ -41,10 +41,11 @@ jobs:
 
       - name: Validate compose files
         run: |
-          sudo mkdir -p /home/colin/secrets
-          sudo touch /home/colin/secrets/agents.env
-          sudo touch /home/colin/secrets/github-app.pem
           for f in stacks/*/compose.yaml; do
+            dir=$(dirname "$f")
+            if [ -f "$dir/.env.example" ]; then
+              cp "$dir/.env.example" "$dir/.env"
+            fi
             echo "Validating $f..."
             docker compose -f "$f" config --quiet || exit 1
           done
