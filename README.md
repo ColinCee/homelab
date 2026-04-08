@@ -10,7 +10,7 @@ Infrastructure-as-code and documentation for Colin's homelab — a single Beelin
 mise install          # Install Python, uv, shellcheck, actionlint, trivy
 mise run lint         # Lint everything (Python, bash, YAML, Actions)
 mise run typecheck    # Type-check Python
-mise run test         # Run 24 pytest tests
+mise run test         # Run pytest
 mise run ci           # All of the above + validate compose files
 ```
 
@@ -19,9 +19,7 @@ On the server:
 ```bash
 mise run deploy:all          # Deploy all stacks
 mise run check:health        # Health check all services
-mise run check:security      # Security posture audit
 mise run check:vulnerabilities  # Scan images for CVEs
-mise run setup               # Bootstrap a fresh server
 ```
 
 ## Current Services
@@ -37,6 +35,7 @@ mise run setup               # Bootstrap a fresh server
 | Loki | Log aggregation (30d retention) | Docker Compose (`stacks/observability/`) |
 | Grafana Alloy | Unified collector (host + container metrics/logs) | Docker Compose (`stacks/observability/`) |
 | CrowdSec | Collaborative IDS + firewall bouncer | Docker Compose (`stacks/crowdsec/`) |
+| Homelab Agent | AI code review via Copilot CLI (GPT-5.4) | Docker Compose (`stacks/agents/`) |
 | Dokploy | PaaS dashboard, logs, metrics, alerts | Docker Swarm (self-managed) |
 
 ## Hardware
@@ -108,10 +107,12 @@ All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 - **[ADR-001: Dokploy](docs/decisions/001-dokploy.md)** — why Dokploy, what was considered, feature comparison
 - **[ADR-002: Repo Tooling](docs/decisions/002-repo-tooling.md)** — why mise + uv + Python
 - **[ADR-003: Observability](docs/decisions/003-observability.md)** — why GPAL stack, CrowdSec, Healthchecks.io
+- **[ADR-004: Isolated Review Agent](docs/decisions/004-isolated-review-agent.md)** — self-hosted AI review bot architecture
 
 ### Runbooks
 
 - **[Migration: Dokploy](docs/runbooks/migration.md)** — completed migration from Dockge/Tugtainer (reference)
 - **[Deploying Services](docs/runbooks/deploying-services.md)** — how to add new services (Dokploy Compose or local stack)
+- **[Isolated Review Agent](docs/runbooks/isolated-review-agent.md)** — setup and operation of the AI review bot
 
 

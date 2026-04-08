@@ -1,7 +1,7 @@
 services:
   mqtt:
     container_name: mqtt
-    image: eclipse-mosquitto:latest
+    image: eclipse-mosquitto:2.1.2
     restart: unless-stopped
     ports:
       - "100.100.146.119:1883:1883"
