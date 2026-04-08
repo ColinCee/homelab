@@ -35,6 +35,7 @@ services:
       retries: 3
     networks:
       - internal
+      - default
     depends_on:
       proxy:
         condition: service_started
