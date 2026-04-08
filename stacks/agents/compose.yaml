@@ -59,6 +59,7 @@ services:
       - /run:size=8m
     networks:
       - internal
+      - default
 
 networks:
   internal:
