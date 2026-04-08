@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import time
 
 import httpx
@@ -24,7 +25,7 @@ Use the code-review skill for review guidelines and output format.
 
 When posting the review via `gh api`, use this JSON structure:
 - "event": "APPROVE" or "REQUEST_CHANGES"
-- "body": your summary (end with a --- separator)
+- "body": your summary (end with a --- separator). Do NOT add any attribution or "Reviewed by" line.
 - "comments": array of inline comments with "path", "line", and "body" fields
 
 For inline comment bodies, prefix with severity emoji:
@@ -66,18 +67,19 @@ async def _get_previous_review_context(repo: str, pr_number: int, token: str) ->
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
-        # Get latest bot review
         reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-        resp = await client.get(reviews_url, headers=headers)
+        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
         if resp.status_code != 200:
             return ""
 
         reviews = resp.json()
+        # Include DISMISSED — previous reviews get dismissed after new one posts,
+        # so on the next /review rerun the prior findings are in dismissed state
         bot_reviews = [
             r
             for r in reviews
             if r.get("user", {}).get("login") == bot_login
-            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
+            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED", "DISMISSED")
         ]
         if not bot_reviews:
             return ""
@@ -122,7 +124,7 @@ async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
     reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers)
+        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
         if resp.status_code != 200:
             logger.warning("Failed to fetch reviews for dismissal: %d", resp.status_code)
             return
@@ -162,7 +164,7 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
     reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers)
+        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
         if resp.status_code != 200:
             logger.warning("Failed to fetch reviews for stats append: %d", resp.status_code)
             return
@@ -177,7 +179,10 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
         review_id = latest["id"]
         current_body = latest.get("body", "")
 
-        updated_body = f"{current_body}\n{stats_line}"
+        # Strip any "Reviewed by" attribution the model may have added
+        cleaned = re.sub(r"\n?🤖\s*\*?Reviewed by.*\*?\s*$", "", current_body).rstrip()
+
+        updated_body = f"{cleaned}\n{stats_line}"
 
         update_url = f"{reviews_url}/{review_id}"
         resp = await client.put(update_url, headers=headers, json={"body": updated_body})
@@ -197,7 +202,7 @@ async def _count_bot_reviews(repo: str, pr_number: int, token: str) -> int:
     reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers)
+        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
         if resp.status_code != 200:
             return 0
         return sum(
