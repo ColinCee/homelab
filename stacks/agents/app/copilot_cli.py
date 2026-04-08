@@ -102,7 +102,7 @@ async def run_copilot(
         raise RuntimeError(f"Copilot CLI timed out after {TIMEOUT_SECONDS}s") from err
 
     if proc.returncode != 0:
-        error = stderr.decode()
+        error = stderr.decode() or stdout.decode()
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
         raise RuntimeError(f"Copilot CLI exited with code {proc.returncode}: {error}")
 
