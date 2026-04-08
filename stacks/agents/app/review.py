@@ -20,7 +20,7 @@ SEVERITY_EMOJI = {
 }
 
 REVIEW_PROMPT_TEMPLATE = """\
-You are reviewing PR #{pr_number} in {repo}.
+Review PR #{pr_number} in {repo}.
 
 **Title:** {title}
 **Description:**
@@ -31,33 +31,8 @@ You are reviewing PR #{pr_number} in {repo}.
 
 {previous_context}
 
-Review these changes in the context of the full codebase. Use grep and view \
-to understand how changed code is used elsewhere. Focus on bugs, security \
-issues, breaking changes, and missing error handling. Do NOT comment on style \
-or formatting — linters handle that.
-
-Output your review as a single raw JSON object (no code fences, no extra text) \
-with this exact structure:
-{{
-  "summary": "Brief overall assessment",
-  "verdict": "approve" or "request_changes",
-  "comments": [
-    {{
-      "path": "path/to/file",
-      "line": 42,
-      "severity": "blocker" | "suggestion" | "question",
-      "body": "What is wrong and why",
-      "start_line": null
-    }}
-  ]
-}}
-
-Rules:
-- verdict is "request_changes" ONLY if there is at least one "blocker" comment
-- "line" is the line number in the current version of the file
-- "start_line" is optional — set it for multi-line comments, otherwise null
-- Keep comments concise — state WHAT is wrong and WHY, not how to fix it
-- If the code looks good, return verdict "approve" with an empty comments array
+Use the code-review skill. Explore the codebase with grep and view to understand \
+how changed code is used. Output a single raw JSON object (no code fences).
 """
 
 
