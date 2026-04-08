@@ -1,10 +1,10 @@
-"""Tests for git worktree management."""
+"""Tests for git operations."""
 
 import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-import worktree
+import git as git_module
 
 
 class TestRunCommand:
@@ -17,7 +17,7 @@ class TestRunCommand:
                 mock_proc.return_value = proc
 
                 with __import__("pytest").raises(RuntimeError, match="Command failed"):
-                    await worktree._run(["git", "status"])
+                    await git_module._run(["git", "status"])
 
         asyncio.run(run())
 
@@ -32,13 +32,13 @@ class TestCreateWorktree:
 
         async def run():
             with (
-                patch.object(worktree, "_run", side_effect=mock_run),
-                patch.object(worktree, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
-                patch.object(worktree, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
                 patch("pathlib.Path.exists", return_value=False),
                 patch("pathlib.Path.mkdir"),
             ):
-                path = await worktree.create_worktree(42, "https://github.com/user/repo.git")
+                path = await git_module.create_worktree(42, "https://github.com/user/repo.git")
 
             assert path == Path("/tmp/test-reviews/pr-42")
             # Should have: clone, branch -D (cleanup stale ref), fetch PR, add worktree
@@ -65,13 +65,13 @@ class TestCreateWorktree:
 
         async def run():
             with (
-                patch.object(worktree, "_run", side_effect=mock_run),
-                patch.object(worktree, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
-                patch.object(worktree, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
                 patch("pathlib.Path.exists", side_effect=lambda *a: next(exists_calls)),
                 patch("pathlib.Path.mkdir"),
             ):
-                path = await worktree.create_worktree(42, "https://github.com/user/repo.git")
+                path = await git_module.create_worktree(42, "https://github.com/user/repo.git")
 
             assert path == Path("/tmp/test-reviews/pr-42")
             assert any("worktree" in cmd and "remove" in cmd for cmd, _ in calls)

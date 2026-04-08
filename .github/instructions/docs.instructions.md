@@ -8,10 +8,21 @@ Plain markdown, viewable in GitHub or as an Obsidian vault. Encrypted private do
 
 ## Structure
 
-- `docs/requirements.md` — living north-star document with problems (P1–P8) and requirements (R1–R20) in tables
+- `docs/requirements.md` — living north-star document with problems (P1–P12) and requirements (R1–R27) in tables
 - `docs/decisions/` — append-only ADRs numbered sequentially (e.g., `001-dokploy.md`)
 - `docs/runbooks/` — operational how-tos with commands you can copy-paste
 - `docs/private/` — encrypted sensitive docs (security audits, network topology)
+
+## When to Write an ADR
+
+Document a decision when it:
+
+- **Affects architecture** — how services communicate, where code lives, what tools are used
+- **Affects security** — credential handling, network boundaries, access patterns
+- **Becomes a pattern** — if you've done the same thing 2+ times, the reasoning should be captured
+- **Involved trade-offs** — if you considered alternatives, future-you needs to know why you chose this one
+
+Small choices (variable naming, config tweaks) belong in runbooks or inline comments, not ADRs.
 
 ## ADR Format
 

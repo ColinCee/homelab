@@ -89,3 +89,7 @@ This repo has an automated AI code review system. Follow this process:
 - Stale reviews are dismissed on new pushes
 - Never use `--admin` to bypass branch protection
 - Fork PRs are blocked from triggering reviews
+
+## Documenting Decisions
+
+When a decision affects architecture, security, or becomes a repeating pattern, document it as an ADR in `docs/decisions/`. See `docs.instructions.md` for the format and criteria. Small choices belong in runbooks or inline comments.

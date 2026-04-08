@@ -1,4 +1,4 @@
-"""Git worktree management for PR reviews."""
+"""Git operations — bare clone, worktrees, branches, and push."""
 
 import asyncio
 import contextlib
