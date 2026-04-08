@@ -2,7 +2,6 @@
 
 import logging
 import os
-import re
 import time
 
 import httpx
@@ -179,10 +178,7 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
         review_id = latest["id"]
         current_body = latest.get("body", "")
 
-        # Strip any "Reviewed by" attribution the model may have added
-        cleaned = re.sub(r"\n?🤖\s*\*?Reviewed by.*\*?\s*$", "", current_body).rstrip()
-
-        updated_body = f"{cleaned}\n{stats_line}"
+        updated_body = f"{current_body}\n{stats_line}"
 
         update_url = f"{reviews_url}/{review_id}"
         resp = await client.put(update_url, headers=headers, json={"body": updated_body})
