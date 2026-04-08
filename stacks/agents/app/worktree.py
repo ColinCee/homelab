@@ -28,7 +28,8 @@ async def _run(cmd: list[str], cwd: Path | None = None) -> str:
 
 async def init_bare_clone(repo_url: str) -> Path:
     """Initialize or update the bare clone used as an object store."""
-    if BARE_CLONE_PATH.exists():
+    head_file = BARE_CLONE_PATH / "HEAD"
+    if head_file.exists():
         await _run(["git", "fetch", "--all", "--prune"], cwd=BARE_CLONE_PATH)
     else:
         BARE_CLONE_PATH.parent.mkdir(parents=True, exist_ok=True)
