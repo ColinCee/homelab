@@ -156,21 +156,27 @@ async def commit_and_push(
 
     sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
 
-    # Use a credential helper to avoid leaking the token in error messages
-    await _run(
-        [
+    # Push using GIT_ASKPASS to keep the token out of command args and error messages
+    askpass_script = worktree_path / ".git-askpass.sh"
+    askpass_script.write_text(f"#!/bin/sh\necho '{token}'\n")
+    askpass_script.chmod(0o700)
+    try:
+        proc = await asyncio.create_subprocess_exec(
             "git",
-            "-c",
-            f"credential.helper=!printf 'username=x-access-token\\npassword={token}'",
-            "-c",
-            "credential.useHttpPath=true",
             "push",
-            f"https://github.com/{repo}.git",
+            f"https://x-access-token@github.com/{repo}.git",
             f"HEAD:refs/heads/{branch}",
             "--force-with-lease",
-        ],
-        cwd=worktree_path,
-    )
+            cwd=worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**__import__("os").environ, "GIT_ASKPASS": str(askpass_script)},
+        )
+        _stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"git push failed (exit {proc.returncode})\n{stderr.decode()}")
+    finally:
+        askpass_script.unlink(missing_ok=True)
 
     logger.info("Pushed %s to %s/%s", sha[:8], repo, branch)
     return sha

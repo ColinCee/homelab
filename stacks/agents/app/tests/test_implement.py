@@ -10,7 +10,11 @@ from copilot import CLIResult
 class TestImplementIssue:
     def test_creates_pr_from_issue(self):
         mock_cli_result = CLIResult(output="done", total_premium_requests=1)
-        mock_issue = {"title": "Add foo feature", "body": "We need foo."}
+        mock_issue = {
+            "title": "Add foo feature",
+            "body": "We need foo.",
+            "author_association": "OWNER",
+        }
         mock_pr = {"number": 99, "html_url": "https://github.com/user/repo/pull/99"}
 
         async def run():

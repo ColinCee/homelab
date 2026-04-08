@@ -59,6 +59,16 @@ async def implement_issue(
     token = await get_token()
     issue = await get_issue(repo, issue_number)
 
+    # Trust boundary: only implement issues from trusted authors to prevent
+    # prompt injection via attacker-controlled issue bodies
+    trusted_roles = {"OWNER", "MEMBER", "COLLABORATOR"}
+    author_role = issue.get("author_association", "NONE")
+    if author_role not in trusted_roles:
+        raise ValueError(
+            f"Issue #{issue_number} author has role '{author_role}' — "
+            f"only {trusted_roles} are trusted for autonomous implementation"
+        )
+
     try:
         worktree_path = await create_branch_worktree(branch_name, repo_url)
 
