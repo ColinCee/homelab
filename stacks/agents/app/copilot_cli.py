@@ -132,9 +132,10 @@ async def run_copilot(
         raise RuntimeError(f"Copilot CLI exited with code {proc.returncode}: {error}")
 
     output = "\n".join(stdout_lines)
+    all_output = "\n".join(stdout_lines + stderr_lines)
     logger.info("Copilot CLI finished (%d bytes output)", len(output))
 
-    stats = _parse_stats(output)
+    stats = _parse_stats(all_output)
     return CLIResult(
         output=output,
         total_premium_requests=stats["premium_requests"],
