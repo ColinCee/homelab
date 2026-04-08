@@ -94,9 +94,23 @@ async def run_copilot(
         env=env,
     )
 
+    stdout_lines: list[str] = []
+    stderr_lines: list[str] = []
+
+    async def _stream(stream: asyncio.StreamReader, lines: list[str], prefix: str) -> None:
+        async for raw in stream:
+            line = raw.decode().rstrip()
+            lines.append(line)
+            logger.info("[copilot %s] %s", prefix, line)
+
     try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(),
+        assert proc.stdout and proc.stderr
+        await asyncio.wait_for(
+            asyncio.gather(
+                _stream(proc.stdout, stdout_lines, "out"),
+                _stream(proc.stderr, stderr_lines, "err"),
+                proc.wait(),
+            ),
             timeout=TIMEOUT_SECONDS,
         )
     except TimeoutError as err:
@@ -104,11 +118,11 @@ async def run_copilot(
         raise RuntimeError(f"Copilot CLI timed out after {TIMEOUT_SECONDS}s") from err
 
     if proc.returncode != 0:
-        error = stderr.decode() or stdout.decode()
+        error = "\n".join(stderr_lines) or "\n".join(stdout_lines)
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
         raise RuntimeError(f"Copilot CLI exited with code {proc.returncode}: {error}")
 
-    output = stdout.decode()
+    output = "\n".join(stdout_lines)
     logger.info("Copilot CLI finished (%d bytes output)", len(output))
 
     stats = _parse_stats(output)
