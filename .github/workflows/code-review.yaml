@@ -37,6 +37,7 @@ jobs:
     steps:
       - name: React to /review comment
         if: github.event_name == 'issue_comment'
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
