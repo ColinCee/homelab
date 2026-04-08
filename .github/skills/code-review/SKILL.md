@@ -41,5 +41,5 @@ gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
 Rules:
 - Use `event: "REQUEST_CHANGES"` only if you have blocker-severity comments
 - Use `event: "APPROVE"` when the code looks good or only has suggestions
-- End the body with `\n\n---\n🤖 *Reviewed by homelab-review-bot*`
+- End the body with `\n\n---` (no attribution line — stats are appended automatically)
 - If the code looks good, approve with no inline comments

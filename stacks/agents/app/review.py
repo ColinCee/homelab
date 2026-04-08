@@ -25,7 +25,7 @@ Use the code-review skill for review guidelines and output format.
 
 When posting the review via `gh api`, use this JSON structure:
 - "event": "APPROVE" or "REQUEST_CHANGES"
-- "body": your summary (end with a --- separator). Do NOT add any attribution or "Reviewed by" line.
+- "body": your summary (end with a --- separator)
 - "comments": array of inline comments with "path", "line", and "body" fields
 
 For inline comment bodies, prefix with severity emoji:
