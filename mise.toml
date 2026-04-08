@@ -77,6 +77,9 @@ done
 [tasks."validate:compose"]
 description = "Validate all compose files"
 run = """
+mkdir -p /home/colin/secrets
+touch /home/colin/secrets/agents.env
+touch /home/colin/secrets/github-app.pem
 for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
   docker compose -f "$f" config --quiet || exit 1
