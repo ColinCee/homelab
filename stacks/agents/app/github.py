@@ -154,8 +154,7 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
             },
         )
         if resp.status_code != 200:
-            logger.warning("GraphQL request failed: %d", resp.status_code)
-            return ""
+            raise RuntimeError(f"GraphQL request failed: HTTP {resp.status_code}")
 
         data = resp.json()
         threads = (

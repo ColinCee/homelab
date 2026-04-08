@@ -103,8 +103,20 @@ async def implement_issue(
             base="main",
         )
 
-        # Trigger review
-        await comment_on_issue(repo, pr["number"], "/review")
+        # Trigger review — if this fails, surface partial success with the PR info
+        try:
+            await comment_on_issue(repo, pr["number"], "/review")
+        except Exception:
+            logger.warning("Failed to trigger /review on PR #%d", pr["number"])
+            return {
+                "status": "partial",
+                "pr_number": pr["number"],
+                "pr_url": pr["html_url"],
+                "commit_sha": sha,
+                "elapsed_seconds": time.monotonic() - start,
+                "premium_requests": result.total_premium_requests,
+                "error": "PR created but failed to trigger /review comment",
+            }
 
         elapsed = time.monotonic() - start
         logger.info(
@@ -173,8 +185,19 @@ async def fix_pr(
             branch=head_branch,
         )
 
-        # Trigger re-review
-        await comment_on_issue(repo, pr_number, "/review")
+        # Trigger re-review — if this fails, surface partial success
+        try:
+            await comment_on_issue(repo, pr_number, "/review")
+        except Exception:
+            logger.warning("Failed to trigger /review on PR #%d", pr_number)
+            return {
+                "status": "partial",
+                "pr_number": pr_number,
+                "commit_sha": sha,
+                "elapsed_seconds": time.monotonic() - start,
+                "premium_requests": result.total_premium_requests,
+                "error": "Fix pushed but failed to trigger /review comment",
+            }
 
         elapsed = time.monotonic() - start
         logger.info("Fix complete for %s#%d in %.1fs", repo, pr_number, elapsed)
