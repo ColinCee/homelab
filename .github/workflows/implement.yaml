@@ -68,6 +68,11 @@ jobs:
                 echo "✅ Implementation complete → $PR_URL"
                 exit 0
                 ;;
+              partial)
+                PR_URL=$(echo "$RESPONSE" | jq -r '.pr_url // empty')
+                echo "::warning::PR created ($PR_URL) but /review trigger failed"
+                exit 0
+                ;;
               failed)
                 echo "::error::Implementation failed on agent"
                 exit 1

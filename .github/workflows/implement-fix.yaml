@@ -73,7 +73,8 @@ jobs:
               | jq -r '.status' 2>/dev/null || echo "unknown")
 
             case "$STATUS" in
-              complete) echo "✅ Fix complete"; exit 0 ;;
+              complete|fixed|nothing_to_fix) echo "✅ Fix complete (status: $STATUS)"; exit 0 ;;
+              partial)  echo "::warning::Fix pushed but /review trigger failed"; exit 0 ;;
               failed)   echo "::error::Fix failed on agent"; exit 1 ;;
               *)        echo "⏳ Status: $STATUS ($((i * 10))s elapsed)" ;;
             esac
