@@ -32,3 +32,13 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 - Every change should be tested if test infrastructure exists
 - Prefer modifying existing tests over creating new test files
 - If you add a new module, add a corresponding test file
+
+## Responding to Review Feedback
+
+When fixing issues raised by the review bot (or any reviewer):
+
+- **Fix the category, not the instance.** Each comment is a symptom — look for the underlying pattern and audit the full codebase for the same class of issue. If a reviewer catches a silent API failure in one function, check every API call for the same problem.
+- **Generalise before you start coding.** Before touching any file, read all the review comments and identify themes. Group related findings and fix them as a batch.
+- **Carry context forward.** Understand *why* the original code was written that way. Read the issue, PR description, and any previous review threads before making changes.
+- **Don't be literal.** A comment pointing at line 42 might reveal a design problem that affects lines 10–100. Step back and consider the broader implications.
+- **One pass, not three.** Aim to address all findings — and their generalisations — in a single fix cycle. Multiple round-trips waste tokens and time.
