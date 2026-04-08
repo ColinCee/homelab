@@ -75,8 +75,8 @@ jobs:
           fi
           echo "✅ Review accepted by agent (202)"
 
-          # Poll until the review completes or fails (timeout 10 min)
-          for i in $(seq 1 60); do
+          # Poll until the review completes or fails (timeout 15 min)
+          for i in $(seq 1 90); do
             sleep 10
             STATUS=$(curl -sf --max-time 10 \
               "http://beelink:8585/review/$PR_NUMBER?repo=$REPO" \
@@ -89,5 +89,5 @@ jobs:
             esac
           done
 
-          echo "::error::Review timed out after 600s"
+          echo "::error::Review timed out after 900s"
           exit 1

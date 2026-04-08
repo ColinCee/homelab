@@ -62,7 +62,7 @@ def _parse_stats(output: str) -> dict:
             stats["api_time"] = _parse_time(m.group(1))
         elif m := re.match(r"Total session time:\s+(.+)", line):
             stats["session_time"] = _parse_time(m.group(1))
-        elif m := re.match(r"^\s*(\S+)\s+([\d.]+k?\s+in,\s+[\d.]+k?\s+out.*)", line):
+        elif m := re.match(r"^\s*(\S+)\s+([\d.]+[km]?\s+in,\s+[\d.]+[km]?\s+out.*)", line):
             model_name = m.group(1)
             if model_name not in ("Total", "Breakdown"):
                 stats["models"][model_name] = m.group(2).strip()

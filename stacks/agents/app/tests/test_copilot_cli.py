@@ -66,3 +66,31 @@ def test_parse_timing_long_format():
     assert stats["session_time"] == 418
     assert stats["premium_requests"] == 1
     assert "gpt-5.4" in stats["models"]
+
+
+SAMPLE_OUTPUT_MILLIONS = """\
+Total usage est:        1 Premium request
+API time spent:         9m 15s
+Total session time:     6m 43s
+Breakdown by AI model:
+ gpt-5.4                  2.2m in, 28.9k out, 2.1m cached (Est. 1 Premium request)
+"""
+
+
+def test_parse_models_with_millions():
+    stats = _parse_stats(SAMPLE_OUTPUT_MILLIONS)
+    assert "gpt-5.4" in stats["models"]
+    assert "2.2m in" in stats["models"]["gpt-5.4"]
+
+
+def test_stats_line_strips_est_premium():
+    from copilot_cli import CLIResult
+
+    r = CLIResult(
+        output="",
+        total_premium_requests=1,
+        session_time_seconds=201,
+        models={"gpt-5.4": "2.2m in, 28.9k out, 2.1m cached (Est. 1 Premium request)"},
+    )
+    assert "(Est." not in r.stats_line
+    assert "2.2m in, 28.9k out, 2.1m cached" in r.stats_line

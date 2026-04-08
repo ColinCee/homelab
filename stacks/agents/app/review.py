@@ -33,6 +33,21 @@ For inline comment bodies, prefix with severity emoji:
 - ❓ **Question** — for clarification requests
 
 Set event to REQUEST_CHANGES only if you have blocker comments.
+{previous_review_section}\
+"""
+
+PREVIOUS_REVIEW_SECTION = """
+## Previous Review
+
+Your previous review raised these findings. Check whether each has been addressed
+in the current code. Only re-report issues that are still present — do NOT repeat
+findings that have been fixed.
+
+### Summary
+{review_body}
+
+### Inline Comments
+{inline_comments}
 """
 
 
@@ -40,6 +55,59 @@ def _get_bot_login() -> str:
     """Derive the bot login from the GitHub App slug (set via env var)."""
     app_slug = os.environ.get("GITHUB_APP_SLUG", "homelab-review-bot")
     return f"{app_slug}[bot]"
+
+
+async def _get_previous_review_context(repo: str, pr_number: int, token: str) -> str:
+    """Fetch the latest bot review body + inline comments for context."""
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        # Get latest bot review
+        reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+        resp = await client.get(reviews_url, headers=headers)
+        if resp.status_code != 200:
+            return ""
+
+        reviews = resp.json()
+        bot_reviews = [
+            r
+            for r in reviews
+            if r.get("user", {}).get("login") == bot_login
+            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
+        ]
+        if not bot_reviews:
+            return ""
+
+        latest = bot_reviews[-1]
+        review_body = latest.get("body", "").strip()
+
+        # Get inline review comments
+        comments_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/comments"
+        resp = await client.get(comments_url, headers=headers, params={"per_page": 100})
+        inline_comments = ""
+        if resp.status_code == 200:
+            comments = resp.json()
+            bot_comments = [c for c in comments if c.get("user", {}).get("login") == bot_login]
+            if bot_comments:
+                lines = []
+                for c in bot_comments:
+                    path = c.get("path", "?")
+                    line = c.get("line") or c.get("original_line") or "?"
+                    body = c.get("body", "").strip()
+                    lines.append(f"- **{path}:{line}** — {body}")
+                inline_comments = "\n".join(lines)
+
+        if not review_body and not inline_comments:
+            return ""
+
+        return PREVIOUS_REVIEW_SECTION.format(
+            review_body=review_body or "(no summary)",
+            inline_comments=inline_comments or "(no inline comments)",
+        )
 
 
 async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
@@ -134,7 +202,12 @@ async def review_pr(
     try:
         worktree_path = await create_worktree(pr_number, repo_url)
 
-        prompt = REVIEW_PROMPT_TEMPLATE.format(pr_number=pr_number, repo=repo)
+        previous_context = await _get_previous_review_context(repo, pr_number, token)
+        prompt = REVIEW_PROMPT_TEMPLATE.format(
+            pr_number=pr_number,
+            repo=repo,
+            previous_review_section=previous_context,
+        )
 
         result = await run_copilot(
             worktree_path,
