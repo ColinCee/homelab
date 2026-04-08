@@ -1,0 +1,87 @@
+name: Implement Issue
+
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  implement:
+    # Trigger on 'agent' label or /implement command from authorized users
+    if: >
+      (github.event_name == 'issues' &&
+      github.event.label.name == 'agent') ||
+      (github.event_name == 'issue_comment' &&
+      !github.event.issue.pull_request &&
+      github.event.comment.body == '/implement' &&
+      contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
+      github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      REPO: ${{ github.repository }}
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+    steps:
+      - name: React to comment
+        if: github.event_name == 'issue_comment'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST -f content='rocket' --silent
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Trigger implementation on Beelink agent
+        run: |
+          HTTP_CODE=$(curl -sf --max-time 30 \
+            -X POST "http://beelink:8585/implement" \
+            -H "Content-Type: application/json" \
+            -d "{\"repo\":\"$REPO\",\"issue_number\":$ISSUE_NUMBER}" \
+            -o /dev/null -w "%{http_code}")
+
+          if [ "$HTTP_CODE" != "202" ]; then
+            echo "::error::Agent returned HTTP $HTTP_CODE"
+            exit 1
+          fi
+          echo "✅ Implementation accepted by agent (202)"
+
+          # Poll until complete or failed (timeout 30 min)
+          for i in $(seq 1 180); do
+            sleep 10
+            RESPONSE=$(curl -sf --max-time 10 \
+              "http://beelink:8585/implement/$ISSUE_NUMBER?repo=$REPO" 2>/dev/null || echo '{}')
+            STATUS=$(echo "$RESPONSE" | jq -r '.status' 2>/dev/null || echo "unknown")
+
+            case "$STATUS" in
+              complete)
+                PR_URL=$(echo "$RESPONSE" | jq -r '.pr_url // empty')
+                echo "✅ Implementation complete → $PR_URL"
+                exit 0
+                ;;
+              partial)
+                PR_URL=$(echo "$RESPONSE" | jq -r '.pr_url // empty')
+                echo "::warning::PR created ($PR_URL) but /review trigger failed"
+                exit 0
+                ;;
+              failed)
+                echo "::error::Implementation failed on agent"
+                exit 1
+                ;;
+              *)
+                echo "⏳ Status: $STATUS ($((i * 10))s elapsed)"
+                ;;
+            esac
+          done
+
+          echo "::error::Implementation timed out after 1800s"
+          exit 1
