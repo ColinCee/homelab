@@ -193,10 +193,10 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
             reasoning_effort=reasoning_effort,
         )
         _review_status[key] = {
-            "status": "complete",
+            "status": result.get("status", "complete"),
             "repo": repo,
             "pr_number": pr_number,
-            "elapsed_seconds": result.get("elapsed_seconds"),
+            **result,
         }
     except Exception:
         logger.exception("Review failed for %s#%d", repo, pr_number)
@@ -215,12 +215,10 @@ async def _run_implement(
             reasoning_effort=reasoning_effort,
         )
         _implement_status[key] = {
-            "status": "complete",
+            "status": result.get("status", "complete"),
             "repo": repo,
             "issue_number": issue_number,
-            "pr_number": result.get("pr_number"),
-            "pr_url": result.get("pr_url"),
-            "elapsed_seconds": result.get("elapsed_seconds"),
+            **result,
         }
     except Exception:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
@@ -241,10 +239,10 @@ async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: s
             reasoning_effort=reasoning_effort,
         )
         _review_status[key] = {
-            "status": "complete",
+            "status": result.get("status", "complete"),
             "repo": repo,
             "pr_number": pr_number,
-            "elapsed_seconds": result.get("elapsed_seconds"),
+            **result,
         }
     except Exception:
         logger.exception("Fix failed for %s#%d", repo, pr_number)

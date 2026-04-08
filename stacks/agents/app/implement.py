@@ -128,6 +128,7 @@ async def implement_issue(
         )
 
         return {
+            "status": "complete",
             "pr_number": pr["number"],
             "pr_url": pr["html_url"],
             "commit_sha": sha,

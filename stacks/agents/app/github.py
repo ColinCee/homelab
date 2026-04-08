@@ -157,6 +157,10 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
             raise RuntimeError(f"GraphQL request failed: HTTP {resp.status_code}")
 
         data = resp.json()
+
+        if "errors" in data:
+            raise RuntimeError(f"GraphQL errors: {data['errors']}")
+
         threads = (
             data.get("data", {})
             .get("repository", {})
