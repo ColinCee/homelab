@@ -76,6 +76,7 @@ async def run_copilot(
         effort,
         "--yolo",
         "--no-ask-user",
+        "--autopilot",
     ]
 
     env = os.environ.copy()
@@ -87,6 +88,7 @@ async def run_copilot(
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=worktree_path,
+        stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=env,
