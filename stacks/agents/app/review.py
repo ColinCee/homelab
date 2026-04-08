@@ -55,7 +55,7 @@ async def review_pr(
     try:
         prompt = REVIEW_PROMPT_TEMPLATE.format(pr_number=pr_number, repo=repo)
 
-        await run_copilot(
+        output = await run_copilot(
             worktree_path,
             prompt,
             model=model,
@@ -70,6 +70,7 @@ async def review_pr(
             "model": model,
             "elapsed_seconds": elapsed,
             "reasoning_effort": reasoning_effort,
+            "output_bytes": len(output),
         }
 
     finally:

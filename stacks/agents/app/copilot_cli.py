@@ -33,7 +33,6 @@ async def run_copilot(
         model,
         "--effort",
         effort,
-        "-s",
         "--yolo",
         "--no-ask-user",
     ]
@@ -67,5 +66,6 @@ async def run_copilot(
         raise RuntimeError(f"Copilot CLI exited with code {proc.returncode}: {error}")
 
     output = stdout.decode()
-    logger.debug("Copilot CLI output (%d bytes)", len(output))
+    logger.info("Copilot CLI finished (%d bytes output)", len(output))
+    logger.debug("Copilot CLI output:\n%s", output)
     return output
