@@ -26,7 +26,9 @@ RUN uv sync --frozen --no-dev
 COPY . .
 
 # Non-root user for security
-RUN useradd -m -s /bin/bash agent
+RUN useradd -m -s /bin/bash agent && \
+    mkdir -p /repo.git /reviews && \
+    chown agent:agent /repo.git /reviews
 USER agent
 
 ENV HOME=/home/agent
