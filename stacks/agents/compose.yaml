@@ -26,8 +26,8 @@ services:
       - repo-cache:/repo.git
       - ${GITHUB_APP_KEY_FILE:?}:/secrets/github-app.pem:ro
     tmpfs:
-      - /reviews:size=512m
-      - /tmp:size=64m
+      - /reviews:size=512m,uid=1000,gid=1000
+      - /tmp:size=64m,uid=1000,gid=1000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
