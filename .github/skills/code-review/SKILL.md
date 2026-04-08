@@ -44,21 +44,15 @@ Rules:
 - End the body with `\n\n---` (no attribution line — stats are appended automatically)
 - If the code looks good, approve with no inline comments
 
-## Resolving Previous Threads
+## Permissions
+
+Your `gh` token has **pull requests: write** and **contents: read**. You cannot:
+- Push commits, create branches, or modify repository contents
+- Resolve or unresolve review threads (requires contents: write)
+
+## Previous Review Threads
 
 If the prompt includes unresolved review threads from previous reviews, check whether
-each issue has been fixed in the current code. Resolve threads that are no longer
-relevant by calling the GraphQL mutation with the thread ID provided:
-
-```bash
-gh api graphql -f query='
-  mutation {
-    resolveReviewThread(input: {threadId: "THREAD_ID"}) {
-      thread { isResolved }
-    }
-  }
-'
-```
-
-Only resolve a thread if the underlying issue is genuinely fixed. Do NOT resolve
-threads for issues that are still present — re-report them in your new review instead.
+each issue has been fixed in the current code. In your review summary, list each
+previous thread and whether it is **fixed** or **still present**. Do NOT re-report
+fixed issues as new inline comments — only comment on issues that are still present.

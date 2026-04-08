@@ -23,8 +23,8 @@ PREVIOUS_REVIEW_SECTION = """
 ## Unresolved Review Threads
 
 Previous reviews raised the findings below. Check whether each is still present
-in the current code. Resolve threads that have been fixed (use the GraphQL mutation
-in the skill instructions). Only re-report issues that are still unresolved.
+in the current code. In your review summary, note which are fixed and which remain.
+Only re-report issues that are still present as new inline comments.
 
 {threads}
 """
