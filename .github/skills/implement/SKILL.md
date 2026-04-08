@@ -33,6 +33,16 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 - Prefer modifying existing tests over creating new test files
 - If you add a new module, add a corresponding test file
 
+## The Review Cycle
+
+After you finish, an automated review bot will review your changes. It checks for bugs, security issues, breaking changes, and operational risk. Each review round costs time and tokens — **aim for zero blockers on the first review.**
+
+Before finishing your work, self-review against these questions:
+- **Error handling:** Do all external calls (HTTP, subprocess, filesystem) handle failures? If something raises, do callers handle it? Trace each new error path to the top.
+- **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
+- **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
+- **Cascading effects:** If you changed a function signature or return value, did you update every caller?
+
 ## Responding to Review Feedback
 
 When fixing issues raised by the review bot (or any reviewer):
