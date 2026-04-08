@@ -84,17 +84,19 @@ async def _get_previous_review_context(repo: str, pr_number: int, token: str) ->
 
         latest = bot_reviews[-1]
         review_body = latest.get("body", "").strip()
+        review_id = latest["id"]
 
-        # Get inline review comments
-        comments_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/comments"
+        # Get inline comments for this specific review only
+        comments_url = (
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews/{review_id}/comments"
+        )
         resp = await client.get(comments_url, headers=headers, params={"per_page": 100})
         inline_comments = ""
         if resp.status_code == 200:
             comments = resp.json()
-            bot_comments = [c for c in comments if c.get("user", {}).get("login") == bot_login]
-            if bot_comments:
+            if comments:
                 lines = []
-                for c in bot_comments:
+                for c in comments:
                     path = c.get("path", "?")
                     line = c.get("line") or c.get("original_line") or "?"
                     body = c.get("body", "").strip()
@@ -185,6 +187,27 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
             logger.warning("Failed to update review with stats: %d", resp.status_code)
 
 
+async def _count_bot_reviews(repo: str, pr_number: int, token: str) -> int:
+    """Count the number of active (non-dismissed) bot reviews on a PR."""
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(reviews_url, headers=headers)
+        if resp.status_code != 200:
+            return 0
+        return sum(
+            1
+            for r in resp.json()
+            if r.get("user", {}).get("login") == bot_login
+            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
+        )
+
+
 async def review_pr(
     *,
     repo: str,
@@ -202,6 +225,9 @@ async def review_pr(
     try:
         worktree_path = await create_worktree(pr_number, repo_url)
 
+        # Snapshot review count before running Copilot
+        reviews_before = await _count_bot_reviews(repo, pr_number, token)
+
         previous_context = await _get_previous_review_context(repo, pr_number, token)
         prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
@@ -218,6 +244,14 @@ async def review_pr(
         )
 
         elapsed = time.monotonic() - start
+
+        # Verify the CLI actually posted a new review
+        reviews_after = await _count_bot_reviews(repo, pr_number, token)
+        if reviews_after <= reviews_before:
+            raise RuntimeError(
+                f"Copilot CLI exited 0 but no new review was posted "
+                f"(before={reviews_before}, after={reviews_after})"
+            )
 
         # Dismiss stale reviews only after a new one is successfully posted
         await _dismiss_stale_reviews(repo, pr_number, token)
