@@ -112,8 +112,8 @@ async def run_copilot(
 
     try:
         assert proc.stdout and proc.stderr
-        out_task = asyncio.create_task(_stream(proc.stdout, stdout_lines, "out"))
-        err_task = asyncio.create_task(_stream(proc.stderr, stderr_lines, "err"))
+        out_task = asyncio.create_task(_stream(proc.stdout, stdout_lines, "agent"))
+        err_task = asyncio.create_task(_stream(proc.stderr, stderr_lines, "meta"))
 
         await asyncio.wait_for(proc.wait(), timeout=TIMEOUT_SECONDS)
         # Give streams a moment to flush, then cancel
