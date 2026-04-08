@@ -44,14 +44,14 @@ This token only grants Copilot LLM API access — it cannot modify repos or acce
 scp ~/Downloads/homelab-review-bot.*.private-key.pem \
   beelink:/home/colin/secrets/github-app.pem
 
-# Create the compose .env file (auto-loaded by docker compose, gitignored)
+# Create the secrets env file (referenced by compose.yaml via absolute path)
 ssh beelink
-cat > ~/code/homelab/stacks/agents/.env <<'EOF'
-GITHUB_APP_ID=3309597
-GITHUB_APP_INSTALLATION_ID=122226454
-GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
-COPILOT_GITHUB_TOKEN=github_pat_YOUR_TOKEN_HERE
+cat > ~/secrets/agents.env <<'EOF'
+GITHUB_APP_ID=<from app settings page>
+GITHUB_APP_INSTALLATION_ID=<from installation URL>
+COPILOT_GITHUB_TOKEN=<fine-grained PAT>
 EOF
+chmod 600 ~/secrets/agents.env
 ```
 
 ## 5. Deploy the Stack
