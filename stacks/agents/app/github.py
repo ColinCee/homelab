@@ -262,3 +262,75 @@ async def count_bot_reviews(repo: str, pr_number: int) -> int:
         if r.get("user", {}).get("login") == login
         and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
     )
+
+
+async def get_issue(repo: str, issue_number: int) -> dict:
+    """Fetch issue details (title, body, labels)."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{repo}/issues/{issue_number}",
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def get_pr(repo: str, pr_number: int) -> dict:
+    """Fetch PR details (head branch, base, state)."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+            headers=headers,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def create_pull_request(
+    repo: str, *, title: str, body: str, head: str, base: str = "main"
+) -> dict:
+    """Create a pull request. Returns PR data with number and html_url."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{repo}/pulls",
+            headers=headers,
+            json={"title": title, "body": body, "head": head, "base": base},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
+    """Post a comment on an issue or PR."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments",
+            headers=headers,
+            json={"body": body},
+        )
+        if resp.status_code not in (200, 201):
+            logger.warning("Failed to comment on %s#%d: %d", repo, issue_number, resp.status_code)

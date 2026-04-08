@@ -18,6 +18,7 @@ The agent service (`stacks/agents/app/`) is a FastAPI app that:
 
 - `main.py` — FastAPI endpoints, request/response models
 - `review.py` — PR review orchestrator (deep module, narrow interface)
+- `implement.py` — Issue implementation + fix orchestrator
 - `copilot.py` — Copilot CLI subprocess wrapper, returns `CLIResult` with parsed stats
 - `git.py` — Git operations: bare clone, worktrees, branches, commit and push
 - `github.py` — GitHub API: App auth (JWT → installation token), REST, GraphQL helpers
