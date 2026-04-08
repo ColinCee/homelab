@@ -12,7 +12,7 @@ Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running conta
 ## Repo Layout
 
 - `stacks/` — Docker Compose services (agents, home-assistant, mqtt, observability, crowdsec)
-- `stacks/agents/app/` — Python agent service (FastAPI, Copilot API integration)
+- `stacks/agents/app/` — Python agent service (FastAPI, Copilot CLI integration)
 - `docs/` — ADRs, runbooks, requirements (works as an Obsidian vault)
 - `access.md` — local-only server credentials and API keys (never committed, gitignored)
 
@@ -46,7 +46,7 @@ Internet
   └─ Tailscale → Admin access (SSH, Dokploy, HA, Grafana)
 
 Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), CrowdSec
-Agent: FastAPI on beelink:8585 — AI code review via Copilot API (GPT-5.4)
+Agent: FastAPI on beelink:8585 — AI code review via Copilot CLI (GPT-5.4)
 Platform: Dokploy (manages container lifecycle, auto-deploys from main)
 ```
 
@@ -63,24 +63,29 @@ This repo has an automated AI code review system. Follow this process:
 ### Review cycle
 
 1. When a PR is opened or marked ready, `code-review.yaml` auto-triggers
-2. GPT-5.4 on the Beelink agent posts a structured review as
-   `github-actions[bot]` with inline comments and a verdict:
-   - **APPROVE** — no issues, can merge
-   - **REQUEST_CHANGES** — must-fix or security issues block merge
-   - **COMMENT** — nitpicks only, doesn't block
+2. `homelab-review-bot[bot]` posts a structured review with inline
+   comments and a verdict:
+   - **APPROVE** — no issues found
+   - **REQUEST_CHANGES** — blocker-severity issues found
+   - **COMMENT** — suggestions only, non-blocking
 3. Inline comments use severity tags:
-   - 🚫 **Blocker** — blocks merge (bugs, security, breaking changes)
+   - 🚫 **Blocker** — bugs, security, breaking changes
    - 💡 **Suggestion** — non-blocking improvement, author decides
-   - ❓ **Question** — non-blocking, seeks clarification
-4. Fix any must-fix/security findings, push new commits
-5. Comment `/review` to re-trigger — the model receives its previous
-   review and checks if issues were resolved
-6. Repeat until APPROVE
-7. Repo owner merges — **never merge PRs yourself**
+   - ❓ **Question** — seeks clarification, non-blocking
+4. Fix legitimate findings, push new commits
+5. Comment `/review` to re-trigger — the bot receives all unresolved
+   review threads and checks if issues were addressed
+6. Repeat until you're confident the code is ready — bot reviews are
+   **advisory**, not blocking. Use your judgement: fix real issues,
+   dismiss false positives
+7. Merge when CI passes and you're satisfied with the code
 
 ### Important
 
+- **Bot reviews are advisory** — they inform but don't gate merges.
+  The bot may produce false positives. If you're confident a finding
+  is wrong, explain why in a comment and move on.
 - **No `synchronize` trigger** — pushes don't auto-review. Use `/review`.
-- Stale reviews are dismissed on new pushes (branch protection)
+- Stale reviews are dismissed on new pushes
 - Never use `--admin` to bypass branch protection
 - Fork PRs are blocked from triggering reviews
