@@ -46,6 +46,10 @@ async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks) -
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
 
+    existing = _review_status.get(key)
+    if existing and existing["status"] == "in_progress":
+        return {"status": "already_in_progress", "pr_number": req.pr_number}
+
     _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
 
     background_tasks.add_task(
