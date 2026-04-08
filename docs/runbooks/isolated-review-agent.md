@@ -37,24 +37,28 @@ Manual steps to activate the isolated review agent ([ADR-004](../decisions/004-i
 
 This token only grants Copilot LLM API access — it cannot modify repos or access GitHub APIs.
 
-## 4. Deploy Secrets to Beelink
+## 4. Deploy Secrets
 
 ```bash
-# Copy the private key
+# Copy the private key to beelink
 scp ~/Downloads/homelab-review-bot.*.private-key.pem \
   beelink:/home/colin/secrets/github-app.pem
-
-# Create the secrets env file (referenced by compose.yaml via absolute path)
-ssh beelink
-cat > ~/secrets/agents.env <<'EOF'
-GITHUB_APP_ID=<from app settings page>
-GITHUB_APP_INSTALLATION_ID=<from installation URL>
-COPILOT_GITHUB_TOKEN=<fine-grained PAT>
-EOF
-chmod 600 ~/secrets/agents.env
 ```
 
+Set the following environment variables in the **Dokploy UI** for the agents compose service:
+
+| Variable | Value |
+|----------|-------|
+| `GITHUB_APP_ID` | From app settings page |
+| `GITHUB_APP_INSTALLATION_ID` | From installation URL |
+| `COPILOT_GITHUB_TOKEN` | Fine-grained PAT with `Copilot Requests: Read` |
+| `GITHUB_APP_KEY_FILE` | `/home/colin/secrets/github-app.pem` |
+
+Dokploy writes these to `.env` next to the compose file, where Docker Compose reads them for variable interpolation.
+
 ## 5. Deploy the Stack
+
+Dokploy auto-deploys from main on push. For manual deploy, use the Dokploy UI or:
 
 ```bash
 mise run deploy:agents

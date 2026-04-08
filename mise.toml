@@ -77,9 +77,10 @@ done
 [tasks."validate:compose"]
 description = "Validate all compose files"
 run = """
-mkdir -p /home/colin/secrets
-touch /home/colin/secrets/agents.env
-touch /home/colin/secrets/github-app.pem
+export GITHUB_APP_ID="${GITHUB_APP_ID:-0}"
+export GITHUB_APP_INSTALLATION_ID="${GITHUB_APP_INSTALLATION_ID:-0}"
+export GITHUB_APP_KEY_FILE="${GITHUB_APP_KEY_FILE:-/dev/null}"
+export COPILOT_GITHUB_TOKEN="${COPILOT_GITHUB_TOKEN:-dummy}"
 for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
   docker compose -f "$f" config --quiet || exit 1

@@ -16,15 +16,16 @@ services:
     cpus: 2.0
     ports:
       - "100.100.146.119:8585:8585"
-    env_file:
-      - /home/colin/secrets/agents.env
     environment:
       - MODEL=gpt-5.4
       - REASONING_EFFORT=high
+      - GITHUB_APP_ID=${GITHUB_APP_ID:?}
+      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
       - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
     volumes:
       - repo-cache:/repo.git
-      - /home/colin/secrets/github-app.pem:/secrets/github-app.pem:ro
+      - ${GITHUB_APP_KEY_FILE:-/home/colin/secrets/github-app.pem}:/secrets/github-app.pem:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
