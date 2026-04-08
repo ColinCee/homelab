@@ -36,6 +36,35 @@ def _get_bot_login() -> str:
     return f"{app_slug}[bot]"
 
 
+async def _fetch_all_reviews(repo: str, pr_number: int, token: str) -> list[dict]:
+    """Paginate through all reviews on a PR."""
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+    all_reviews: list[dict] = []
+    page = 1
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            resp = await client.get(
+                reviews_url, headers=headers, params={"per_page": 100, "page": page}
+            )
+            if resp.status_code != 200:
+                logger.warning("Failed to fetch reviews (page %d): %d", page, resp.status_code)
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            all_reviews.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+
+    return all_reviews
+
+
 async def _get_unresolved_threads(repo: str, pr_number: int, token: str) -> str:
     """Fetch all unresolved, non-outdated review threads via GraphQL."""
     owner, name = repo.split("/", 1)
@@ -124,21 +153,16 @@ async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
     }
     reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
 
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    bot_reviews = [
+        r
+        for r in reviews
+        if r.get("user", {}).get("login") == bot_login
+        and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
+    ]
+
+    # Keep the latest bot review (just posted), dismiss all older ones
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
-        if resp.status_code != 200:
-            logger.warning("Failed to fetch reviews for dismissal: %d", resp.status_code)
-            return
-
-        reviews = resp.json()
-        bot_reviews = [
-            r
-            for r in reviews
-            if r.get("user", {}).get("login") == bot_login
-            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
-        ]
-
-        # Keep the latest bot review (just posted), dismiss all older ones
         for review in bot_reviews[:-1]:
             dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
             resp = await client.put(
@@ -164,25 +188,20 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
     }
     reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
 
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    bot_reviews = [r for r in reviews if r.get("user", {}).get("login") == bot_login]
+    if not bot_reviews:
+        logger.warning("No reviews from %s found to append stats to", bot_login)
+        return
+
+    latest = bot_reviews[-1]
+    review_id = latest["id"]
+    current_body = latest.get("body", "")
+
+    updated_body = f"{current_body}\n{stats_line}"
+
+    update_url = f"{reviews_url}/{review_id}"
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
-        if resp.status_code != 200:
-            logger.warning("Failed to fetch reviews for stats append: %d", resp.status_code)
-            return
-
-        reviews = resp.json()
-        bot_reviews = [r for r in reviews if r.get("user", {}).get("login") == bot_login]
-        if not bot_reviews:
-            logger.warning("No reviews from %s found to append stats to", bot_login)
-            return
-
-        latest = bot_reviews[-1]
-        review_id = latest["id"]
-        current_body = latest.get("body", "")
-
-        updated_body = f"{current_body}\n{stats_line}"
-
-        update_url = f"{reviews_url}/{review_id}"
         resp = await client.put(update_url, headers=headers, json={"body": updated_body})
         if resp.status_code == 200:
             logger.info("Appended stats to review %d", review_id)
@@ -193,22 +212,13 @@ async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, to
 async def _count_bot_reviews(repo: str, pr_number: int, token: str) -> int:
     """Count the number of active (non-dismissed) bot reviews on a PR."""
     bot_login = _get_bot_login()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
-        if resp.status_code != 200:
-            return 0
-        return sum(
-            1
-            for r in resp.json()
-            if r.get("user", {}).get("login") == bot_login
-            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
-        )
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    return sum(
+        1
+        for r in reviews
+        if r.get("user", {}).get("login") == bot_login
+        and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
+    )
 
 
 async def review_pr(
