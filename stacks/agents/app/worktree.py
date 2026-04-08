@@ -46,7 +46,7 @@ async def create_worktree(pr_number: int, repo_url: str) -> Path:
 
     async with _repo_lock:
         if worktree_path.exists():
-            await cleanup_worktree(pr_number)
+            await _remove_worktree(worktree_path, pr_number)
 
         await init_bare_clone(repo_url)
 
@@ -70,16 +70,21 @@ async def cleanup_worktree(pr_number: int) -> None:
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
 
     async with _repo_lock:
-        if worktree_path.exists():
-            try:
-                await _run(
-                    ["git", "worktree", "remove", "--force", str(worktree_path)],
-                    cwd=BARE_CLONE_PATH,
-                )
-            except RuntimeError:
-                shutil.rmtree(worktree_path, ignore_errors=True)
-
-        with contextlib.suppress(RuntimeError):
-            await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
+        await _remove_worktree(worktree_path, pr_number)
 
     logger.info("Cleaned up worktree for PR #%d", pr_number)
+
+
+async def _remove_worktree(worktree_path: Path, pr_number: int) -> None:
+    """Remove a worktree directory and its branch ref. Caller must hold _repo_lock."""
+    if worktree_path.exists():
+        try:
+            await _run(
+                ["git", "worktree", "remove", "--force", str(worktree_path)],
+                cwd=BARE_CLONE_PATH,
+            )
+        except RuntimeError:
+            shutil.rmtree(worktree_path, ignore_errors=True)
+
+    with contextlib.suppress(RuntimeError):
+        await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)

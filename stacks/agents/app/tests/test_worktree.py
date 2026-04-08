@@ -48,3 +48,31 @@ class TestCreateWorktree:
             assert "worktree" in calls[2][0][1]
 
         asyncio.run(run())
+
+    def test_cleans_stale_worktree_without_deadlock(self):
+        """Recreating a worktree for the same PR must not deadlock."""
+        calls = []
+
+        async def mock_run(cmd, cwd=None):
+            calls.append((cmd, cwd))
+            return ""
+
+        # 1: worktree_path.exists() in create_worktree → True (stale)
+        # 2: worktree_path.exists() in _remove_worktree → True (clean it)
+        # 3: head_file.exists() in init_bare_clone → False (fresh clone)
+        exists_calls = iter([True, True, False])
+
+        async def run():
+            with (
+                patch.object(worktree, "_run", side_effect=mock_run),
+                patch.object(worktree, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(worktree, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch("pathlib.Path.exists", side_effect=lambda *a: next(exists_calls)),
+                patch("pathlib.Path.mkdir"),
+            ):
+                path = await worktree.create_worktree(42, "https://github.com/user/repo.git")
+
+            assert path == Path("/tmp/test-reviews/pr-42")
+            assert any("worktree" in cmd and "remove" in cmd for cmd, _ in calls)
+
+        asyncio.run(run())
