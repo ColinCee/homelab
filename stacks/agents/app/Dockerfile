@@ -29,7 +29,9 @@ COPY . .
 RUN useradd -m -s /bin/bash agent && \
     mkdir -p /repo.git /reviews && \
     chown agent:agent /repo.git /reviews
-USER agent
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 ENV HOME=/home/agent
 ENV PATH="/app/.venv/bin:$PATH"
@@ -37,4 +39,5 @@ ENV PATH="/app/.venv/bin:$PATH"
 # Copilot CLI authenticates via COPILOT_GITHUB_TOKEN env var (set in compose)
 
 EXPOSE 8585
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]

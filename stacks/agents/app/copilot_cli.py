@@ -29,7 +29,9 @@ class CLIResult:
         """One-line stats summary for review footer."""
         parts = []
         for model_name, detail in self.models.items():
-            parts.append(f"🤖 {model_name} ({detail})")
+            # Strip redundant "(Est. N Premium request(s))" — shown separately
+            clean = re.sub(r"\s*\(Est\..*?\)", "", detail).strip().rstrip(",")
+            parts.append(f"🤖 {model_name} ({clean})")
         if self.total_premium_requests:
             parts.append(f"💰 {self.total_premium_requests} premium request(s)")
         if self.session_time_seconds:

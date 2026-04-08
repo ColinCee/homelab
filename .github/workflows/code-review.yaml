@@ -63,16 +63,31 @@ jobs:
 
       - name: Trigger review on Beelink agent
         run: |
-          # Fire-and-forget: agent handles review + posting internally
           HTTP_CODE=$(curl -sf --max-time 30 \
             -X POST "http://beelink:8585/review" \
             -H "Content-Type: application/json" \
             -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}" \
             -o /dev/null -w "%{http_code}")
 
-          if [ "$HTTP_CODE" = "202" ]; then
-            echo "✅ Review accepted by agent (202)"
-          else
+          if [ "$HTTP_CODE" != "202" ]; then
             echo "::error::Agent returned HTTP $HTTP_CODE"
             exit 1
           fi
+          echo "✅ Review accepted by agent (202)"
+
+          # Poll until the review completes or fails (timeout 10 min)
+          for i in $(seq 1 60); do
+            sleep 10
+            STATUS=$(curl -sf --max-time 10 \
+              "http://beelink:8585/review/$PR_NUMBER?repo=$REPO" \
+              | jq -r '.status' 2>/dev/null || echo "unknown")
+
+            case "$STATUS" in
+              complete) echo "✅ Review completed"; exit 0 ;;
+              failed)   echo "::error::Review failed on agent"; exit 1 ;;
+              *)        echo "⏳ Status: $STATUS ($((i * 10))s elapsed)" ;;
+            esac
+          done
+
+          echo "::error::Review timed out after 600s"
+          exit 1

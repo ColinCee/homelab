@@ -24,7 +24,7 @@ Use the code-review skill for review guidelines and output format.
 
 When posting the review via `gh api`, use this JSON structure:
 - "event": "APPROVE" or "REQUEST_CHANGES"
-- "body": your summary (end with a --- separator and bot attribution line)
+- "body": your summary (end with a --- separator)
 - "comments": array of inline comments with "path", "line", and "body" fields
 
 For inline comment bodies, prefix with severity emoji:
@@ -131,9 +131,9 @@ async def review_pr(
 
     token = await get_installation_token()
 
-    worktree_path = await create_worktree(pr_number, repo_url)
-
     try:
+        worktree_path = await create_worktree(pr_number, repo_url)
+
         prompt = REVIEW_PROMPT_TEMPLATE.format(pr_number=pr_number, repo=repo)
 
         result = await run_copilot(
