@@ -41,7 +41,7 @@ Frontend deploys to Cloudflare Pages (unchanged) — Dokploy doesn't manage it.
 #### MQTT (Mosquitto)
 - [x] Compose moved to `~/code/homelab/stacks/mqtt/`
 - [x] Data moved from `/opt/stacks/` to repo stacks directory
-- [x] Port bindings use `${TAILSCALE_IP}` env var
+- [x] Port bindings use hardcoded Tailscale IP
 - [ ] Optional: migrate to Dokploy-managed compose service
 
 ### Observability
@@ -60,7 +60,7 @@ Frontend deploys to Cloudflare Pages (unchanged) — Dokploy doesn't manage it.
 
 - [x] Tailscale ACLs tightened to least-privilege (desktop=full, mobile=HA only, CI=Dokploy only)
 - [x] Git history squashed to remove leaked Tailscale IP
-- [x] MQTT compose uses `${TAILSCALE_IP:?}` (fails fast if unset)
+- [x] MQTT compose uses hardcoded Tailscale IP for port binding
 
 ## Final State
 

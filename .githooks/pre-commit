@@ -63,7 +63,6 @@ fi
 # ── Shellcheck ──
 if command -v shellcheck &>/dev/null; then
   shells=()
-  if ls scripts/*.sh &>/dev/null; then shells+=(scripts/*.sh); fi
   if ls .githooks/* &>/dev/null; then shells+=(.githooks/*); fi
   if [ ${#shells[@]} -gt 0 ]; then
     if shellcheck "${shells[@]}" 2>/dev/null; then

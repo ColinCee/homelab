@@ -1,11 +1,11 @@
 services:
   mqtt:
     container_name: mqtt
-    image: eclipse-mosquitto:latest
+    image: eclipse-mosquitto:2.1.2
     restart: unless-stopped
     ports:
-      - "${TAILSCALE_IP:?Set TAILSCALE_IP env var}:1883:1883"
-      - "${TAILSCALE_IP}:9001:9001"
+      - "100.100.146.119:1883:1883"
+      - "100.100.146.119:9001:9001"
     volumes:
       - ./config:/mosquitto/config
       - ./data:/mosquitto/data

@@ -40,13 +40,10 @@ jobs:
           find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint
 
       - name: Validate compose files
-        env:
-          TAILSCALE_IP: 127.0.0.1
-          GITHUB_APP_ID: "0"
-          GITHUB_APP_INSTALLATION_ID: "0"
-          GITHUB_APP_KEY_FILE: /dev/null
-          COPILOT_GITHUB_TOKEN: dummy
         run: |
+          sudo mkdir -p /home/colin/secrets
+          sudo touch /home/colin/secrets/agents.env
+          sudo touch /home/colin/secrets/github-app.pem
           for f in stacks/*/compose.yaml; do
             echo "Validating $f..."
             docker compose -f "$f" config --quiet || exit 1
