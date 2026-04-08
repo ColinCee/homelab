@@ -87,9 +87,22 @@ What the container does NOT get:
 
 ### Network
 
-The container runs on the default Docker bridge. Outbound traffic is unrestricted — the security boundary is the scoped tokens (GitHub App + fine-grained PAT), not the network layer.
+The container runs on the default Docker bridge with unrestricted outbound access. The security boundary is credential scoping and trigger gating, not the network layer.
 
-An egress proxy (Squid) was considered but dropped: Docker's `internal: true` networks don't support port publishing, so the agent needs the default bridge anyway. Proxy env vars are advisory-only (tools can bypass them), making it complexity without real enforcement. The meaningful controls are credential scoping and runtime hardening.
+**Why no egress proxy:** An HTTP proxy (Squid) was considered but dropped:
+- Docker's `internal: true` networks don't support port publishing
+- Proxy env vars are advisory-only — any tool can bypass `HTTP_PROXY`
+- Data can be exfiltrated through allowed API endpoints (create gists, post issues)
+- DNS exfiltration bypasses HTTP proxies entirely
+- Adds operational complexity for marginal security gain
+
+**Threat model:** The realistic attack is prompt injection via malicious PR content causing the CLI to exfiltrate credentials. Mitigations:
+- Fork PRs are blocked from triggering reviews (checked in workflow + agent)
+- `/review` command is role-gated to OWNER/MEMBER/COLLABORATOR
+- Credentials are scoped: PAT has only Copilot Requests, App has only PR write + contents read
+- No host filesystem, Docker socket, or Colin's personal credentials in the container
+
+This matches industry practice — GitHub Copilot code review, CodeRabbit, Qodo, and similar tools all run with repo access and credentials without egress proxies. The trust boundary is who can trigger reviews, not what network the agent can reach.
 
 ### Filesystem isolation
 
@@ -127,8 +140,7 @@ Create a GitHub App `homelab-review-bot` installed only on `ColinCee/homelab`:
 - **Permissions:** Pull Requests (write), Contents (read)
 - **Identity:** Reviews appear as `homelab-review-bot[bot]`
 - **Auth:** JWT from private key → short-lived installation token (1hr expiry)
-- The App's approval satisfies branch protection's review requirement
-- Agents (Copilot coding agent, etc.) can create PRs but cannot approve them — only the review bot can
+- **Note:** GitHub App bot approvals do not count toward required review counts (platform limitation). The bot review is advisory — CI status checks gate merges, the owner self-approves after reading the bot's review
 
 ## What Changes
 

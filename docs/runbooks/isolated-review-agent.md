@@ -60,11 +60,15 @@ EOF
 mise run deploy:agents
 ```
 
-## 6. Update Branch Protection
+## 6. Branch Protection
 
-1. Go to **Settings → Branches → main → Edit**
-2. Under **Require approvals**, add `homelab-review-bot` as a required reviewer
-3. This ensures the bot's APPROVE satisfies the review requirement
+GitHub App bot approvals **do not count** toward required review counts (platform limitation). The repo uses a ruleset with:
+
+- Required approvals: **0** (bot review is advisory)
+- Required status check: `check` (CI gates merges)
+- Dismiss stale reviews on push: enabled
+
+The workflow is: bot posts review → you read it, fix blockers → self-approve and merge.
 
 ## 7. Verify
 
