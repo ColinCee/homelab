@@ -86,5 +86,9 @@ async def _remove_worktree(worktree_path: Path, pr_number: int) -> None:
         except RuntimeError:
             shutil.rmtree(worktree_path, ignore_errors=True)
 
+    # Clean up stale worktree references (e.g. after directory was removed manually)
+    with contextlib.suppress(RuntimeError):
+        await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
+
     with contextlib.suppress(RuntimeError):
         await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
