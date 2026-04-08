@@ -1,273 +1,224 @@
-"""PR review logic — fetch diff, call Copilot, return structured review."""
+"""PR review logic — orchestrates worktree, Copilot CLI, and cleanup."""
 
 import logging
+import os
 import time
-from enum import StrEnum
 
 import httpx
-from pydantic import BaseModel, Field
 
-from copilot import chat, get_token
+from copilot_cli import run_copilot
+from github_app import get_installation_token
+from worktree import cleanup_worktree, create_worktree
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """\
-You are a senior engineer reviewing a pull request.
+REVIEW_PROMPT_TEMPLATE = """\
+Review PR #{pr_number} in {repo}.
 
-## Philosophy
-
-Your job is to catch problems that would make the codebase worse. Default to \
-approving — if the code works correctly and is reasonably clear, approve it \
-even if you'd write it differently. Trust the author.
-
-Identify problems. Do NOT suggest fixes — the author will decide how to fix \
-them. Focus on WHAT is wrong and WHY, not HOW to fix it.
-
-## What to look for
-
-- **Bugs**: Logic errors, off-by-one, null/undefined, race conditions
-- **Security**: Injection, secrets in code, unsafe deserialization, path traversal
-- **Breaking changes**: API contract changes, config format changes
-- **Missing error handling**: Unhandled exceptions, silent failures
-
-Do NOT comment on: style, formatting, naming conventions, or subjective \
-preferences. Linters handle style.
-
-## Severity levels
-
-- `blocker` — Real bugs, security issues, data loss, breaking changes. \
-Use sparingly — only for things that are objectively wrong.
-- `suggestion` — Non-blocking improvement. Author decides whether to adopt.
-- `question` — "Did you consider X?" Seeks clarification, not a demand.
-
-## Verdict rules
-
-- `request_changes` ONLY if there is at least one `blocker` comment
-- `approve` if the PR looks good, or only has `suggestion`/`question` items
-- `approve` with comments is the normal outcome for decent code with minor issues
-- `line` is the line number in the NEW version of the file (right side of diff)
-- `start_line` is optional — set for multi-line comments (start_line to line)
-- Keep comments concise and actionable
-- If the PR looks good, return verdict `approve` with an empty comments array
+Use the code-review skill for review guidelines and output format.
+{previous_review_section}\
 """
 
-MAX_DIFF_BYTES = 80_000
+PREVIOUS_REVIEW_SECTION = """
+## Unresolved Review Threads
 
-# Premium request multipliers per model (source: GitHub Copilot docs)
-MODEL_MULTIPLIERS: dict[str, float] = {
-    "gpt-5-mini": 0,
-    "gpt-4.1": 0,
-    "gpt-4o": 0,
-    "claude-haiku-4.5": 0.33,
-    "o3-mini": 0.33,
-    "o4-mini": 0.33,
-    "gemini-2.0-flash": 0.25,
-    "claude-sonnet-4.6": 1,
-    "gpt-5.4": 1,
-    "gpt-5.2-codex": 1,
-    "gemini-pro-2.5": 1,
-    "claude-opus-4.6": 3,
-}
-OVERAGE_COST_PER_REQUEST = 0.04  # USD
+Previous reviews raised the findings below. Check whether each is still present
+in the current code. In your review summary, note which are fixed and which remain.
+Only re-report issues that are still present as new inline comments.
 
-SEVERITY_EMOJI = {
-    "blocker": "🚫",
-    "suggestion": "💡",
-    "question": "❓",
-}
+{threads}
+"""
 
 
-# -- Pydantic models for structured output --
+def _get_bot_login() -> str:
+    """Derive the bot login from the GitHub App slug (set via env var)."""
+    app_slug = os.environ.get("GITHUB_APP_SLUG", "homelab-review-bot")
+    return f"{app_slug}[bot]"
 
 
-class Severity(StrEnum):
-    blocker = "blocker"
-    suggestion = "suggestion"
-    question = "question"
-
-
-class Verdict(StrEnum):
-    approve = "approve"
-    request_changes = "request_changes"
-
-
-class LLMComment(BaseModel):
-    """A single review comment from the model."""
-
-    path: str
-    line: int
-    severity: Severity
-    body: str
-    start_line: int | None = None
-
-
-class LLMReview(BaseModel):
-    """Structured review output — schema sent to the API via response_format."""
-
-    summary: str
-    verdict: Verdict
-    comments: list[LLMComment] = Field(default_factory=list)
-
-
-# -- Internal result types --
-
-
-class ReviewResult(BaseModel):
-    """Complete review with metadata, ready for GitHub Reviews API."""
-
-    summary: str
-    verdict: Verdict
-    comments: list[LLMComment] = Field(default_factory=list)
-    metadata: dict = Field(default_factory=dict)
-
-    def to_github_review(self) -> dict:
-        """Convert to GitHub PR Reviews API payload."""
-        event_map = {
-            Verdict.approve: "APPROVE",
-            Verdict.request_changes: "REQUEST_CHANGES",
-        }
-
-        gh_comments = []
-        for c in self.comments:
-            emoji = SEVERITY_EMOJI.get(c.severity.value, "📝")
-            body = f"**{emoji} {c.severity.value.replace('_', ' ').title()}**\n\n{c.body}"
-
-            entry: dict = {"path": c.path, "line": c.line, "body": body}
-            if c.start_line is not None and c.start_line != c.line:
-                entry["start_line"] = c.start_line
-            gh_comments.append(entry)
-
-        # Build metadata footer
-        meta = self.metadata
-        stats_parts = []
-        if "elapsed_seconds" in meta:
-            stats_parts.append(f"⏱️ {meta['elapsed_seconds']:.1f}s")
-        if "total_tokens" in meta:
-            prompt = f"{meta.get('prompt_tokens', 0):,}"
-            completion = f"{meta.get('completion_tokens', 0):,}"
-            total = f"{meta['total_tokens']:,}"
-            stats_parts.append(f"📊 {total} tokens ({prompt} prompt → {completion} completion)")
-        if meta.get("reasoning_tokens", 0) > 0:
-            stats_parts.append(f"🧠 {meta['reasoning_tokens']:,} reasoning tokens")
-        if meta.get("cached_tokens", 0) > 0:
-            stats_parts.append(f"💾 {meta['cached_tokens']:,} cached tokens")
-        if "reasoning_effort" in meta:
-            stats_parts.append(f"⚡ reasoning: {meta['reasoning_effort']}")
-        if "premium_multiplier" in meta:
-            m = meta["premium_multiplier"]
-            if m > 0:
-                cost = m * OVERAGE_COST_PER_REQUEST
-                stats_parts.append(f"💰 {m}x premium (${cost:.2f}/req overage)")
-            else:
-                stats_parts.append("💰 0x (included)")
-
-        stats_line = " · ".join(stats_parts)
-        body = f"{self.summary}\n\n---\n🤖 *Reviewed by {meta.get('model', 'unknown')}*"
-        if stats_line:
-            body += f"\n{stats_line}"
-
-        return {
-            "event": event_map.get(self.verdict, "APPROVE"),
-            "body": body,
-            "comments": gh_comments,
-        }
-
-    def to_dict(self) -> dict:
-        """Serialize for JSON API response."""
-        result = self.to_github_review()
-        result["raw"] = {
-            "summary": self.summary,
-            "verdict": self.verdict.value,
-            "comments": [c.model_dump() for c in self.comments],
-            "metadata": self.metadata,
-        }
-        return result
-
-
-# -- GitHub API helpers --
-
-
-async def _github_get(client: httpx.AsyncClient, url: str, headers: dict) -> httpx.Response:
-    """GET with GitHub API headers."""
-    resp = await client.get(url, headers=headers)
-    resp.raise_for_status()
-    return resp
-
-
-async def fetch_pr_diff(repo: str, pr_number: int) -> tuple[str, str, str]:
-    """Fetch PR title, body, and diff from GitHub API."""
+async def _fetch_all_reviews(repo: str, pr_number: int, token: str) -> list[dict]:
+    """Paginate through all reviews on a PR."""
     headers = {
-        "Authorization": f"Bearer {get_token()}",
+        "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     }
-    base = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+    all_reviews: list[dict] = []
+    page = 1
 
     async with httpx.AsyncClient(timeout=30) as client:
-        pr_resp = await _github_get(client, base, headers)
-        pr_data = pr_resp.json()
+        while True:
+            resp = await client.get(
+                reviews_url, headers=headers, params={"per_page": 100, "page": page}
+            )
+            if resp.status_code != 200:
+                logger.warning("Failed to fetch reviews (page %d): %d", page, resp.status_code)
+                break
+            batch = resp.json()
+            if not batch:
+                break
+            all_reviews.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
 
-        diff_resp = await client.get(
-            base,
-            headers={**headers, "Accept": "application/vnd.github.diff"},
+    return all_reviews
+
+
+async def _get_unresolved_threads(repo: str, pr_number: int, token: str) -> str:
+    """Fetch all unresolved, non-outdated review threads via GraphQL."""
+    owner, name = repo.split("/", 1)
+    bot_login = _get_bot_login()
+
+    query = """
+    query($owner: String!, $name: String!, $pr: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              isOutdated
+              path
+              line
+              comments(first: 20) {
+                nodes {
+                  author { login }
+                  body
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.github.com/graphql",
+            headers=headers,
+            json={
+                "query": query,
+                "variables": {"owner": owner, "name": name, "pr": pr_number},
+            },
         )
-        diff_resp.raise_for_status()
-
-    title = pr_data.get("title", "")
-    body = pr_data.get("body", "") or ""
-    diff = diff_resp.text[:MAX_DIFF_BYTES]
-
-    return title, body, diff
-
-
-async def fetch_previous_reviews(repo: str, pr_number: int) -> str:
-    """Fetch prior bot reviews to give the model context on what it already said."""
-    headers = {
-        "Authorization": f"Bearer {get_token()}",
-        "Accept": "application/vnd.github+json",
-    }
-    url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await _github_get(client, url, headers)
-        reviews = resp.json()
-
-        # Filter to bot reviews only (github-actions[bot])
-        bot_reviews = [
-            r for r in reviews if r.get("user", {}).get("login") == "github-actions[bot]"
-        ]
-
-        if not bot_reviews:
+        if resp.status_code != 200:
+            logger.warning("GraphQL request failed: %d", resp.status_code)
             return ""
 
-        # Get the latest bot review
-        latest = bot_reviews[-1]
-        review_id = latest["id"]
-        verdict = latest.get("state", "UNKNOWN")
-
-        # Fetch inline comments for this review
-        comments_url = (
-            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews/{review_id}/comments"
+        data = resp.json()
+        threads = (
+            data.get("data", {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+            .get("nodes", [])
         )
-        comments_resp = await _github_get(client, comments_url, headers)
-        comments = comments_resp.json()
 
-    parts = [f"Previous review verdict: {verdict}"]
-    if latest.get("body"):
-        # Strip the metadata footer
-        body = latest["body"].split("\n---\n")[0].strip()
-        if body:
-            parts.append(f"Summary: {body}")
+        # Only unresolved, non-outdated threads started by the bot
+        lines = []
+        for t in threads:
+            if t["isResolved"] or t["isOutdated"]:
+                continue
+            comments = t.get("comments", {}).get("nodes", [])
+            if not comments:
+                continue
+            first = comments[0]
+            if first.get("author", {}).get("login") != bot_login:
+                continue
 
-    for c in comments:
-        path = c.get("path", "?")
-        line = c.get("line") or c.get("original_line", "?")
-        comment_body = c.get("body", "")
-        parts.append(f"- {path}:{line} — {comment_body}")
+            path = t.get("path", "?")
+            line = t.get("line") or "?"
+            body = first.get("body", "").strip()
+            thread_id = t["id"]
+            lines.append(f"- **{path}:{line}** (thread {thread_id}) — {body}")
 
-    return "\n".join(parts)
+        if not lines:
+            return ""
+
+        return PREVIOUS_REVIEW_SECTION.format(threads="\n".join(lines))
 
 
-# -- Main review function --
+async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
+    """Dismiss previous bot reviews, keeping the latest one (just posted)."""
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    bot_reviews = [
+        r
+        for r in reviews
+        if r.get("user", {}).get("login") == bot_login
+        and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
+    ]
+
+    # Keep the latest bot review (just posted), dismiss all older ones
+    async with httpx.AsyncClient(timeout=30) as client:
+        for review in bot_reviews[:-1]:
+            dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
+            resp = await client.put(
+                dismiss_url,
+                headers=headers,
+                json={"message": "Superseded by new review."},
+            )
+            if resp.status_code == 200:
+                logger.info("Dismissed stale review %d", review["id"])
+            else:
+                logger.warning("Failed to dismiss review %d: %d", review["id"], resp.status_code)
+
+
+async def _append_stats_to_review(repo: str, pr_number: int, stats_line: str, token: str) -> None:
+    """Find the bot's latest review and append a stats footer."""
+    if not stats_line:
+        return
+
+    bot_login = _get_bot_login()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
+
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    bot_reviews = [r for r in reviews if r.get("user", {}).get("login") == bot_login]
+    if not bot_reviews:
+        logger.warning("No reviews from %s found to append stats to", bot_login)
+        return
+
+    latest = bot_reviews[-1]
+    review_id = latest["id"]
+    current_body = latest.get("body", "")
+
+    updated_body = f"{current_body}\n{stats_line}"
+
+    update_url = f"{reviews_url}/{review_id}"
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.put(update_url, headers=headers, json={"body": updated_body})
+        if resp.status_code == 200:
+            logger.info("Appended stats to review %d", review_id)
+        else:
+            logger.warning("Failed to update review with stats: %d", resp.status_code)
+
+
+async def _count_bot_reviews(repo: str, pr_number: int, token: str) -> int:
+    """Count the number of active (non-dismissed) bot reviews on a PR."""
+    bot_login = _get_bot_login()
+    reviews = await _fetch_all_reviews(repo, pr_number, token)
+    return sum(
+        1
+        for r in reviews
+        if r.get("user", {}).get("login") == bot_login
+        and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
+    )
 
 
 async def review_pr(
@@ -276,76 +227,60 @@ async def review_pr(
     pr_number: int,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
-) -> ReviewResult:
-    """Run a full review: fetch diff → Copilot → return structured result."""
-    logger.info(
-        "Reviewing %s#%d with %s (reasoning: %s)",
-        repo,
-        pr_number,
-        model,
-        reasoning_effort,
-    )
+) -> dict:
+    """Full review pipeline: worktree → Copilot CLI (reviews + posts) → append stats → cleanup."""
+    logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
+    start = time.monotonic()
+    repo_url = f"https://github.com/{repo}.git"
 
-    title, body, diff = await fetch_pr_diff(repo, pr_number)
-    previous = await fetch_previous_reviews(repo, pr_number)
+    token = await get_installation_token()
 
-    user_content = f"## PR: {title}\n\n{body}\n\n## Diff\n\n{diff}"
-    if previous:
-        user_content += (
-            f"\n\n## Your Previous Review\n\n{previous}\n\n"
-            "Check whether your previous findings were addressed. "
-            "Do NOT repeat findings that have been fixed. "
-            "If all previous issues are resolved and no new issues exist, "
-            "set verdict to approve."
+    try:
+        worktree_path = await create_worktree(pr_number, repo_url)
+
+        # Snapshot review count before running Copilot
+        reviews_before = await _count_bot_reviews(repo, pr_number, token)
+
+        previous_context = await _get_unresolved_threads(repo, pr_number, token)
+        prompt = REVIEW_PROMPT_TEMPLATE.format(
+            pr_number=pr_number,
+            repo=repo,
+            previous_review_section=previous_context,
         )
 
-    start = time.monotonic()
-    result = await chat(
-        system=SYSTEM_PROMPT,
-        user=user_content,
-        model=model,
-        reasoning_effort=reasoning_effort,
-        response_schema=LLMReview,
-    )
-    elapsed = time.monotonic() - start
+        result = await run_copilot(
+            worktree_path,
+            prompt,
+            model=model,
+            effort=reasoning_effort,
+            gh_token=token,
+        )
 
-    # Parse structured response — guaranteed valid by response_format
-    llm_review = LLMReview.model_validate_json(result.content)
+        elapsed = time.monotonic() - start
 
-    # Enforce verdict consistency
-    has_blocker = any(c.severity == Severity.blocker for c in llm_review.comments)
-    verdict = llm_review.verdict
-    if has_blocker and verdict == Verdict.approve:
-        verdict = Verdict.request_changes
-    if not has_blocker and verdict == Verdict.request_changes:
-        verdict = Verdict.approve
+        # Verify the CLI actually posted a new review
+        reviews_after = await _count_bot_reviews(repo, pr_number, token)
+        if reviews_after <= reviews_before:
+            raise RuntimeError(
+                f"Copilot CLI exited 0 but no new review was posted "
+                f"(before={reviews_before}, after={reviews_after})"
+            )
 
-    multiplier = MODEL_MULTIPLIERS.get(result.model, 1)
+        # Dismiss stale reviews only after a new one is successfully posted
+        await _dismiss_stale_reviews(repo, pr_number, token)
 
-    review = ReviewResult(
-        summary=llm_review.summary,
-        verdict=verdict,
-        comments=llm_review.comments,
-        metadata={
-            "model": result.model,
+        if result.stats_line:
+            await _append_stats_to_review(repo, pr_number, result.stats_line, token)
+
+        logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
+
+        return {
+            "model": model,
             "elapsed_seconds": elapsed,
-            "prompt_tokens": result.prompt_tokens,
-            "completion_tokens": result.completion_tokens,
-            "total_tokens": result.total_tokens,
-            "reasoning_tokens": result.reasoning_tokens,
-            "cached_tokens": result.cached_tokens,
             "reasoning_effort": reasoning_effort,
-            "premium_multiplier": multiplier,
-        },
-    )
+            "premium_requests": result.total_premium_requests,
+            "models": result.models,
+        }
 
-    logger.info(
-        "Review complete for %s#%d — verdict=%s, %d comments, %d tokens, %.1fs",
-        repo,
-        pr_number,
-        verdict.value,
-        len(llm_review.comments),
-        result.total_tokens,
-        elapsed,
-    )
-    return review
+    finally:
+        await cleanup_worktree(pr_number)

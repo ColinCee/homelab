@@ -14,6 +14,10 @@ Living document — the "north star" for what this homelab should do and why. Ev
 | P6 | Dockge friction — requires compose files in `/opt/stacks/`, doesn't work with `~/code/` | ✅ Solved — Dockge removed, stacks in repo |
 | P7 | No security visibility — no firewall, no intrusion detection, no audit trail | ✅ Solved — CrowdSec IDS + Grafana security dashboard + UFW bouncer |
 | P8 | No network traffic monitoring — can't see what's hitting services or from where | ✅ Solved — Grafana + Prometheus + Loki + Alloy |
+| P9 | AI review agent lacks codebase context — can't grep files, only sees the diff | 🔧 In progress — [ADR-004](decisions/004-isolated-review-agent.md) |
+| P10 | No autonomous agents — no path to agents picking up issues and creating PRs independently | 🔲 Planned |
+| P11 | No GitOps — deploying requires manual SSH + git pull + mise run on the Beelink | 🔲 Planned |
+| P12 | No staging environment — feature branches deploy over production to test, risking downtime and stale state | 🔲 Planned |
 
 ## Requirements
 
@@ -56,6 +60,18 @@ Living document — the "north star" for what this homelab should do and why. Ev
 | R18 | Maintainable — can debug and understand when it breaks | Must | ✅ TypeScript codebase (Dokploy) |
 | R19 | Scales to multi-node when needed without full migration | Nice | 🔲 Dokploy Swarm mode (later) |
 | R20 | Private self-hosted knowledge base / notes (accessible via Tailscale only) | Nice | 🔲 Evaluate after Dokploy migration |
+| R26 | GitOps — repo is the single source of truth; push to main auto-deploys all services | Must | 🔲 Planned |
+| R27 | Feature branch deployment testing — deploy stacks from a branch to an isolated namespace (different ports/names) without disrupting production services | Should | 🔲 Planned |
+
+### Autonomous Agents
+
+| ID | Requirement | Priority | Status |
+|----|-------------|----------|--------|
+| R21 | Code review with full codebase context — agent can grep, read files, understand project structure | Must | 🔧 [ADR-004](decisions/004-isolated-review-agent.md) |
+| R22 | Agent credential isolation — least-privilege tokens, never Colin's personal credentials | Must | 🔧 [ADR-004](decisions/004-isolated-review-agent.md) |
+| R23 | Agent network isolation — containers can only reach required APIs (GitHub, Copilot) | Should | 🔲 Planned — egress proxy dropped as impractical with Docker port binding |
+| R24 | Autonomous issue resolution — agents pick up issues and create PRs | Nice | 🔲 Planned |
+| R25 | Agent-driven project management — agents work on requirements and track progress autonomously | Nice | 🔲 Planned |
 
 ## Scaling Path
 
