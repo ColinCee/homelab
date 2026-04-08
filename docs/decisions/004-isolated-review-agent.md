@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-07
 **Status:** Accepted
-**Requirements:** R21 (codebase context), R22 (credential isolation), R23 (network isolation), R16 (Docker socket hardening)
+**Requirements:** R21 (codebase context), R22 (credential isolation), R16 (Docker socket hardening)
 
 ## Context
 
@@ -36,7 +36,6 @@ Run Copilot CLI in non-interactive mode (`-p` flag) inside a locked-down Docker 
 - ✅ Standalone binary — no Node.js runtime needed
 - ✅ JSON output (`--output-format json`) for structured parsing
 - ✅ Credential isolation via fine-grained PAT + GitHub App
-- ✅ Network isolation via egress proxy
 - ✅ Parallel reviews via git worktrees
 - ❌ More infrastructure to maintain
 - **Verdict: Chosen.** Best balance of capability and security.
@@ -86,29 +85,21 @@ What the container does NOT get:
 - ❌ `--privileged` flag — standard container sandbox
 - ❌ Host directory mounts — no access to host filesystem
 
-### Network isolation (egress whitelist)
+### Network
 
-The review container sits on a Docker internal network with no direct internet access. A Squid proxy sidecar provides filtered egress:
+The container runs on the default Docker bridge. Outbound traffic is unrestricted — the security boundary is the scoped tokens (GitHub App + fine-grained PAT), not the network layer.
 
-| Domain | Purpose |
-|---|---|
-| `github.com` | Git clone/fetch |
-| `api.github.com` | Post reviews, fetch PR data |
-| `api.githubcopilot.com` | Copilot LLM API |
-
-All other domains are blocked. The container cannot reach local network services (Dokploy, Grafana, SSH, etc.).
+An egress proxy (Squid) was considered but dropped: Docker's `internal: true` networks don't support port publishing, so the agent needs the default bridge anyway. Proxy env vars are advisory-only (tools can bypass them), making it complexity without real enforcement. The meaningful controls are credential scoping and runtime hardening.
 
 ### Filesystem isolation
 
 - Bare clone at `/repo.git` — persistent Docker volume (object cache), not a host mount
-- Worktrees in `/reviews/` — tmpfs, ephemeral, wiped on restart
-- `read_only: true` root filesystem
+- Worktrees in `/reviews/` — ephemeral, wiped on restart
 - No host directory mounts at all
 
 ### Runtime hardening
 
 ```yaml
-read_only: true
 security_opt: [no-new-privileges:true]
 cap_drop: [ALL]
 mem_limit: 2g
@@ -146,7 +137,7 @@ Create a GitHub App `homelab-review-bot` installed only on `ColinCee/homelab`:
 | LLM access | Direct Copilot API (diff only) | Copilot CLI headless (full codebase) |
 | Auth | Colin's `gh` config mounted | Fine-grained PAT + GitHub App |
 | Review identity | `github-actions[bot]` | `homelab-review-bot[bot]` |
-| Container isolation | Shared host credentials | Locked down, egress filtered |
+| Container isolation | Shared host credentials | Locked down (cap_drop, no-new-privileges, non-root) |
 | Workflow | Synchronous (wait for response) | Fire-and-forget (async) |
 | Concurrency | Single-threaded | Parallel via git worktrees |
 
@@ -161,19 +152,16 @@ Create a GitHub App `homelab-review-bot` installed only on `ColinCee/homelab`:
 1. Create GitHub App + install on repo
 2. Create fine-grained PAT with Copilot Requests only
 3. Build new Dockerfile (Python + standalone copilot binary + git)
-4. Write compose config with isolation (read_only, cap_drop, internal network)
-5. Add Squid egress proxy sidecar with domain whitelist
-6. Implement async fire-and-forget endpoint with worktree management
-7. Implement Copilot CLI review logic + JSON output parsing
-8. Implement GitHub App JWT auth for posting reviews
-9. Simplify Actions workflow (fire-and-forget trigger)
-10. Update branch protection to recognise the App
-11. Run evaluation matrix (clean, bug, security, borderline PRs)
-12. Clean up old direct Copilot API code
+4. Write compose config with isolation (cap_drop, non-root, resource limits)
+5. Implement async fire-and-forget endpoint with worktree management
+7. Implement GitHub App JWT auth for posting reviews
+8. Simplify Actions workflow (fire-and-forget trigger)
+9. Update branch protection to recognise the App
+10. Run evaluation matrix (clean, bug, security, borderline PRs)
+11. Clean up old direct Copilot API code
 
 ## References
 
 - [Copilot CLI non-interactive mode](https://docs.github.com/en/copilot/how-tos/use-copilot-agents/use-copilot-cli)
 - [Copilot CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
 - [GitHub Apps documentation](https://docs.github.com/en/apps/creating-github-apps)
-- [Docker egress filtering](https://docs.docker.com/engine/network/firewall-iptables/)

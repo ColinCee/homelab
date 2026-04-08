@@ -34,10 +34,6 @@ USER agent
 ENV HOME=/home/agent
 ENV PATH="/app/.venv/bin:$PATH"
 
-# Squid proxy for egress filtering (set at runtime via compose)
-# ENV HTTPS_PROXY=http://proxy:3128
-# ENV HTTP_PROXY=http://proxy:3128
-
 # Copilot CLI authenticates via COPILOT_GITHUB_TOKEN env var (set in compose)
 
 EXPOSE 8585

@@ -33,10 +33,6 @@ For inline comment bodies, prefix with severity emoji:
 - ❓ **Question** — for clarification requests
 
 Set event to REQUEST_CHANGES only if you have blocker comments.
-
-**Network note:** You are behind an egress proxy. Only github.com, \
-api.githubcopilot.com, githubusercontent.com, and common documentation sites \
-are reachable.
 """
 
 

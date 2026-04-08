@@ -69,7 +69,7 @@ Living document — the "north star" for what this homelab should do and why. Ev
 |----|-------------|----------|--------|
 | R21 | Code review with full codebase context — agent can grep, read files, understand project structure | Must | 🔧 [ADR-004](decisions/004-isolated-review-agent.md) |
 | R22 | Agent credential isolation — least-privilege tokens, never Colin's personal credentials | Must | 🔧 [ADR-004](decisions/004-isolated-review-agent.md) |
-| R23 | Agent network isolation — containers can only reach required APIs (GitHub, Copilot) | Must | 🔧 [ADR-004](decisions/004-isolated-review-agent.md) |
+| R23 | Agent network isolation — containers can only reach required APIs (GitHub, Copilot) | Should | 🔲 Planned — egress proxy dropped as impractical with Docker port binding |
 | R24 | Autonomous issue resolution — agents pick up issues and create PRs | Nice | 🔲 Planned |
 | R25 | Agent-driven project management — agents work on requirements and track progress autonomously | Nice | 🔲 Planned |
 

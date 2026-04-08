@@ -18,9 +18,6 @@ services:
       - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
       - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
-      - HTTPS_PROXY=http://proxy:3128
-      - HTTP_PROXY=http://proxy:3128
-      - NO_PROXY=localhost,127.0.0.1
     volumes:
       - repo-cache:/repo.git
       - ${GITHUB_APP_KEY_FILE:?}:/secrets/github-app.pem:ro
@@ -29,36 +26,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    networks:
-      - internal
-      - default
-    depends_on:
-      proxy:
-        condition: service_started
-
-  proxy:
-    image: ubuntu/squid:6.13-25.04_beta
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - SETGID
-      - SETUID
-    volumes:
-      - ./squid.conf:/etc/squid/squid.conf:ro
-    tmpfs:
-      - /var/spool/squid:size=32m
-      - /var/log/squid:size=8m
-      - /run:size=8m
-    networks:
-      - internal
-      - default
-
-networks:
-  internal:
-    internal: true
 
 volumes:
   repo-cache:
