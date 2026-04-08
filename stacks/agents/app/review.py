@@ -15,39 +15,18 @@ logger = logging.getLogger(__name__)
 REVIEW_PROMPT_TEMPLATE = """\
 Review PR #{pr_number} in {repo}.
 
-You have `gh` CLI available and authenticated. Use it to:
-1. Read the PR details: `gh pr view {pr_number} --repo {repo} --json title,body,files`
-2. Explore the codebase with grep and view to understand context
-3. Post your review directly: `gh api repos/{repo}/pulls/{pr_number}/reviews --method POST ...`
-
 Use the code-review skill for review guidelines and output format.
-
-When posting the review via `gh api`, use this JSON structure:
-- "event": "APPROVE" or "REQUEST_CHANGES"
-- "body": your summary (end with a --- separator)
-- "comments": array of inline comments with "path", "line", and "body" fields
-
-For inline comment bodies, prefix with severity emoji:
-- 🚫 **Blocker** — for must-fix issues
-- 💡 **Suggestion** — for non-blocking improvements
-- ❓ **Question** — for clarification requests
-
-Set event to REQUEST_CHANGES only if you have blocker comments.
 {previous_review_section}\
 """
 
 PREVIOUS_REVIEW_SECTION = """
-## Previous Review
+## Unresolved Review Threads
 
-Your previous review raised these findings. Check whether each has been addressed
-in the current code. Only re-report issues that are still present — do NOT repeat
-findings that have been fixed.
+Previous reviews raised the findings below. Check whether each is still present
+in the current code. Resolve threads that have been fixed (use the GraphQL mutation
+in the skill instructions). Only re-report issues that are still unresolved.
 
-### Summary
-{review_body}
-
-### Inline Comments
-{inline_comments}
+{threads}
 """
 
 
@@ -57,60 +36,83 @@ def _get_bot_login() -> str:
     return f"{app_slug}[bot]"
 
 
-async def _get_previous_review_context(repo: str, pr_number: int, token: str) -> str:
-    """Fetch the latest bot review body + inline comments for context."""
+async def _get_unresolved_threads(repo: str, pr_number: int, token: str) -> str:
+    """Fetch all unresolved, non-outdated review threads via GraphQL."""
+    owner, name = repo.split("/", 1)
     bot_login = _get_bot_login()
+
+    query = """
+    query($owner: String!, $name: String!, $pr: Int!) {
+      repository(owner: $owner, name: $name) {
+        pullRequest(number: $pr) {
+          reviewThreads(first: 100) {
+            nodes {
+              id
+              isResolved
+              isOutdated
+              path
+              line
+              comments(first: 20) {
+                nodes {
+                  author { login }
+                  body
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    """
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     }
 
     async with httpx.AsyncClient(timeout=30) as client:
-        reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-        resp = await client.get(reviews_url, headers=headers, params={"per_page": 100})
+        resp = await client.post(
+            "https://api.github.com/graphql",
+            headers=headers,
+            json={
+                "query": query,
+                "variables": {"owner": owner, "name": name, "pr": pr_number},
+            },
+        )
         if resp.status_code != 200:
+            logger.warning("GraphQL request failed: %d", resp.status_code)
             return ""
 
-        reviews = resp.json()
-        # Include DISMISSED — previous reviews get dismissed after new one posts,
-        # so on the next /review rerun the prior findings are in dismissed state
-        bot_reviews = [
-            r
-            for r in reviews
-            if r.get("user", {}).get("login") == bot_login
-            and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED", "DISMISSED")
-        ]
-        if not bot_reviews:
-            return ""
-
-        latest = bot_reviews[-1]
-        review_body = latest.get("body", "").strip()
-        review_id = latest["id"]
-
-        # Get inline comments for this specific review only
-        comments_url = (
-            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews/{review_id}/comments"
+        data = resp.json()
+        threads = (
+            data.get("data", {})
+            .get("repository", {})
+            .get("pullRequest", {})
+            .get("reviewThreads", {})
+            .get("nodes", [])
         )
-        resp = await client.get(comments_url, headers=headers, params={"per_page": 100})
-        inline_comments = ""
-        if resp.status_code == 200:
-            comments = resp.json()
-            if comments:
-                lines = []
-                for c in comments:
-                    path = c.get("path", "?")
-                    line = c.get("line") or c.get("original_line") or "?"
-                    body = c.get("body", "").strip()
-                    lines.append(f"- **{path}:{line}** — {body}")
-                inline_comments = "\n".join(lines)
 
-        if not review_body and not inline_comments:
+        # Only unresolved, non-outdated threads started by the bot
+        lines = []
+        for t in threads:
+            if t["isResolved"] or t["isOutdated"]:
+                continue
+            comments = t.get("comments", {}).get("nodes", [])
+            if not comments:
+                continue
+            first = comments[0]
+            if first.get("author", {}).get("login") != bot_login:
+                continue
+
+            path = t.get("path", "?")
+            line = t.get("line") or "?"
+            body = first.get("body", "").strip()
+            thread_id = t["id"]
+            lines.append(f"- **{path}:{line}** (thread {thread_id}) — {body}")
+
+        if not lines:
             return ""
 
-        return PREVIOUS_REVIEW_SECTION.format(
-            review_body=review_body or "(no summary)",
-            inline_comments=inline_comments or "(no inline comments)",
-        )
+        return PREVIOUS_REVIEW_SECTION.format(threads="\n".join(lines))
 
 
 async def _dismiss_stale_reviews(repo: str, pr_number: int, token: str) -> None:
@@ -229,7 +231,7 @@ async def review_pr(
         # Snapshot review count before running Copilot
         reviews_before = await _count_bot_reviews(repo, pr_number, token)
 
-        previous_context = await _get_previous_review_context(repo, pr_number, token)
+        previous_context = await _get_unresolved_threads(repo, pr_number, token)
         prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
             repo=repo,

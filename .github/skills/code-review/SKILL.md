@@ -43,3 +43,22 @@ Rules:
 - Use `event: "APPROVE"` when the code looks good or only has suggestions
 - End the body with `\n\n---` (no attribution line — stats are appended automatically)
 - If the code looks good, approve with no inline comments
+
+## Resolving Previous Threads
+
+If the prompt includes unresolved review threads from previous reviews, check whether
+each issue has been fixed in the current code. Resolve threads that are no longer
+relevant by calling the GraphQL mutation with the thread ID provided:
+
+```bash
+gh api graphql -f query='
+  mutation {
+    resolveReviewThread(input: {threadId: "THREAD_ID"}) {
+      thread { isResolved }
+    }
+  }
+'
+```
+
+Only resolve a thread if the underlying issue is genuinely fixed. Do NOT resolve
+threads for issues that are still present — re-report them in your new review instead.
