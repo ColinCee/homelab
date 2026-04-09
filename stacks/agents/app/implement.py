@@ -79,12 +79,13 @@ async def implement_issue(
             body=issue.get("body") or "(no description)",
         )
 
+        # Agent gets NO GitHub API access — it only edits local files.
+        # The orchestrator handles all git/GitHub operations with the App token.
         result = await run_copilot(
             worktree_path,
             prompt,
             model=model,
             effort=reasoning_effort,
-            gh_token=token,
         )
 
         sha = await commit_and_push(
@@ -170,12 +171,12 @@ async def fix_pr(
             threads=threads,
         )
 
+        # Agent gets NO GitHub API access — it only edits local files.
         result = await run_copilot(
             worktree_path,
             prompt,
             model=model,
             effort=reasoning_effort,
-            gh_token=token,
         )
 
         sha = await commit_and_push(
