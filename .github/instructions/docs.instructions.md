@@ -33,7 +33,6 @@ ADRs follow this structure — keep it consistent:
 
 **Date:** YYYY-MM-DD
 **Status:** Accepted | Superseded by ADR-NNN
-**Requirements:** R1, R5, R12
 
 ## Context
 ## Options Considered
@@ -42,7 +41,6 @@ ADRs follow this structure — keep it consistent:
 ## References
 ```
 
-- Link to requirement IDs from `requirements.md` when the decision relates to an active roadmap item
 - Include a feature comparison table when evaluating multiple options
 - Verdicts should be one sentence explaining why it was chosen or rejected
 

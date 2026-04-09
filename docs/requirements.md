@@ -4,19 +4,18 @@ What's left to build. Solved items live in their respective [ADRs](decisions/) �
 
 ## Active
 
-| ID | Problem / Requirement | Status | Notes |
-|----|----------------------|--------|-------|
-| P10 | Autonomous agents — agents pick up issues and create PRs independently | 🔧 In progress | Implement/fix/review loop merged, needs battle-testing |
-| R24 | Autonomous issue resolution — label `agent` or `/implement` triggers full cycle | 🔧 In progress | Capped at 3 fix iterations |
+| Item | Status | Notes |
+|------|--------|-------|
+| Autonomous agents — pick up issues and create PRs independently | 🔧 In progress | Implement/fix/review loop merged, needs battle-testing |
+| Autonomous issue resolution — label `agent` or `/implement` triggers full cycle | 🔧 In progress | Capped at 3 fix iterations |
 
 ## Planned
 
-| ID | Requirement | Priority | Notes |
-|----|-------------|----------|-------|
-| P12 / R27 | Staging environment — feature branch deployment to isolated namespace | Should | Avoids deploying over production to test |
-| R16 | Docker socket hardening | Should | |
-| R19 | Multi-node scaling (Dokploy Swarm) | Nice | When a second machine is added |
-| R23 | ~~Agent network isolation~~ | ~~Should~~ | Won't-fix — [ADR-007](decisions/007-agent-network-isolation.md) |
+| Item | Priority | Notes |
+|------|----------|-------|
+| Staging environment — feature branch deployment to isolated namespace | Should | Avoids deploying over production to test |
+| Docker socket hardening | Should | |
+| Multi-node scaling (Dokploy Swarm) | Nice | When a second machine is added |
 
 ## Scaling Path
 

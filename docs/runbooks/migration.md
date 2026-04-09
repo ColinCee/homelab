@@ -2,7 +2,6 @@
 
 Step-by-step guide for migrating from Dockge/Tugtainer to Dokploy.
 
-**Requirements:** R1, R2, R3, R5, R6, R7
 **Decision:** [ADR-001](../decisions/001-dokploy.md)
 **Status:** ✅ Complete
 

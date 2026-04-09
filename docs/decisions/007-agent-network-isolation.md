@@ -2,11 +2,10 @@
 
 **Date:** 2026-04-09
 **Status:** Accepted
-**Requirements:** R23
 
 ## Context
 
-The agent container (FastAPI orchestrator + Copilot CLI) runs on the default Docker bridge with unrestricted outbound access. R23 asks for egress filtering — only allowing the agent to reach required APIs. ADR-004 noted this as impractical; this ADR documents the full analysis.
+The agent container (FastAPI orchestrator + Copilot CLI) runs on the default Docker bridge with unrestricted outbound access. The roadmap previously called for egress filtering — only allowing the agent to reach required APIs. ADR-004 noted this as impractical; this ADR documents the full analysis.
 
 ### What the agent connects to
 
@@ -79,9 +78,9 @@ Accept unrestricted outbound network access. The agent's security model relies o
 
 Even with egress filtering, data could be exfiltrated through allowed endpoints (create gists, post to issues). The realistic threat is prompt injection via malicious PR/issue content, and the mitigations above address that directly.
 
-### What R23 becomes
+### Outcome
 
-R23 is **closed as won't-fix**. The analysis shows egress filtering is either technically infeasible (port publishing constraint), fragile (IP-based rules), or insufficient (proxy bypass, DNS exfil). The existing controls provide the actual security boundary.
+Agent network isolation is **closed as won't-fix**. The analysis shows egress filtering is either technically infeasible (port publishing constraint), fragile (IP-based rules), or insufficient (proxy bypass, DNS exfil). The existing controls provide the actual security boundary.
 
 ## References
 
