@@ -8,7 +8,7 @@ Plain markdown, viewable in GitHub or as an Obsidian vault. Encrypted private do
 
 ## Structure
 
-- `docs/requirements.md` — living north-star document with problems (P1–P12) and requirements (R1–R27) in tables
+- `docs/requirements.md` — roadmap of active and planned work (solved items archived in ADRs)
 - `docs/decisions/` — append-only ADRs numbered sequentially (e.g., `001-dokploy.md`)
 - `docs/runbooks/` — operational how-tos with commands you can copy-paste
 - `docs/private/` — encrypted sensitive docs (security audits, network topology)
@@ -33,7 +33,6 @@ ADRs follow this structure — keep it consistent:
 
 **Date:** YYYY-MM-DD
 **Status:** Accepted | Superseded by ADR-NNN
-**Requirements:** R1, R5, R12
 
 ## Context
 ## Options Considered
@@ -42,7 +41,6 @@ ADRs follow this structure — keep it consistent:
 ## References
 ```
 
-- Always link back to requirement IDs from `requirements.md`
 - Include a feature comparison table when evaluating multiple options
 - Verdicts should be one sentence explaining why it was chosen or rejected
 

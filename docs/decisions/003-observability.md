@@ -2,7 +2,6 @@
 
 **Date:** 2026-04-06
 **Status:** Accepted
-**Requirements:** P7, P8, R8, R9, R10, R14, R15
 
 ## Context
 

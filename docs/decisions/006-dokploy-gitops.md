@@ -2,7 +2,6 @@
 
 **Date:** 2026-04-08
 **Status:** Accepted
-**Requirements:** R26 (GitOps), R2 (webhook deploy)
 
 ## Context
 

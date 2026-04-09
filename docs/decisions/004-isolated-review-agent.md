@@ -2,7 +2,6 @@
 
 **Date:** 2026-04-07
 **Status:** Accepted
-**Requirements:** R21 (codebase context), R22 (credential isolation), R16 (Docker socket hardening)
 
 ## Context
 
