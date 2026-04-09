@@ -1,77 +1,22 @@
-# Requirements
+# Roadmap
 
-Living document — the "north star" for what this homelab should do and why. Every [decision](decisions/) traces back to a requirement here.
+What's left to build. Solved items live in their respective [ADRs](decisions/) — this doc tracks only active and planned work.
 
-## Problems (what we're solving)
+## Active
 
-| ID | Problem | Status |
-|----|---------|--------|
-| P1 | No centralised management — `cd` into each project, `docker compose up/down` manually | ✅ Solved — [Dokploy](decisions/001-dokploy.md) dashboard on port 3000 |
-| P2 | No logging — container stdout disappears; no way to search or retain logs | ✅ Solved — Dokploy built-in per-container logs |
-| P3 | No metrics — no visibility into CPU, RAM, or disk usage per container | ✅ Solved — Dokploy built-in metrics |
-| P4 | No alerting — if something crashes at 3am, nobody knows | ✅ Solved — Dokploy → Discord alerts (build errors, deploys, threshold) |
-| P5 | No clean deploy pipeline — Tugtainer polls GHCR on 2-min cron with stagger hacks | ✅ Solved — CI → Tailscale → Dokploy API deploy |
-| P6 | Dockge friction — requires compose files in `/opt/stacks/`, doesn't work with `~/code/` | ✅ Solved — Dockge removed, stacks in repo |
-| P7 | No security visibility — no firewall, no intrusion detection, no audit trail | ✅ Solved — CrowdSec IDS + Grafana security dashboard + UFW bouncer |
-| P8 | No network traffic monitoring — can't see what's hitting services or from where | ✅ Solved — Grafana + Prometheus + Loki + Alloy |
-| P9 | AI review agent lacks codebase context — can't grep files, only sees the diff | ✅ Solved — [ADR-004](decisions/004-isolated-review-agent.md) |
-| P10 | No autonomous agents — no path to agents picking up issues and creating PRs independently | 🔧 In progress |
-| P11 | No GitOps — deploying requires manual SSH + git pull + mise run on the Beelink | ✅ Solved — [ADR-006](decisions/006-dokploy-gitops.md) |
-| P12 | No staging environment — feature branches deploy over production to test, risking downtime and stale state | 🔲 Planned |
+| ID | Problem / Requirement | Status | Notes |
+|----|----------------------|--------|-------|
+| P10 | Autonomous agents — agents pick up issues and create PRs independently | 🔧 In progress | Implement/fix/review loop merged, needs battle-testing |
+| R24 | Autonomous issue resolution — label `agent` or `/implement` triggers full cycle | 🔧 In progress | Capped at 3 fix iterations |
 
-## Requirements
+## Planned
 
-### Service Management
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| R1 | Single dashboard for all services, status, logs, resource usage | Must | ✅ Dokploy |
-| R2 | Git push → webhook → deploy (not polling) | Must | ✅ Tailscale CI → Dokploy API |
-| R3 | Add, remove, restart services from a web UI | Must | ✅ Dokploy |
-| R4 | Keep existing network topology (Tailscale admin, CF Tunnel public) | Must | ✅ |
-
-### Observability
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| R5 | Per-container real-time logs with search | Must | ✅ Dokploy built-in |
-| R6 | CPU, RAM, disk metrics per container | Must | ✅ Dokploy built-in |
-| R7 | Alert thresholds → Discord (e.g. CPU > 80%, RAM > 90%) | Must | ✅ Dokploy → Discord |
-| R8 | Historical log retention and search | Nice | ✅ Loki (30d retention) + Grafana Explore |
-| R9 | Long-term host metrics and trending | Nice | ✅ Prometheus (30d retention) + Grafana dashboards |
-| R10 | Endpoint uptime monitoring + status page | Nice | ✅ Healthchecks.io (external heartbeat) |
-
-### Security
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| R11 | Host firewall — deny all except Tailscale | Must | ✅ UFW enabled |
-| R12 | Automatic security patches | Must | ✅ unattended-upgrades fixed |
-| R13 | Brute-force protection | Must | ✅ fail2ban active |
-| R14 | Intrusion detection — know if someone gains access | Must | ✅ CrowdSec (collaborative IDS) + UFW firewall bouncer |
-| R15 | Network request stats — see what's hitting services | Should | ✅ Alloy → Prometheus/Loki → Grafana dashboards |
-| R16 | Docker socket hardening | Should | 🔲 Planned |
-
-### Operational
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| R17 | Lightweight — runs comfortably on single Beelink alongside services | Must | ✅ |
-| R18 | Maintainable — can debug and understand when it breaks | Must | ✅ TypeScript codebase (Dokploy) |
-| R19 | Scales to multi-node when needed without full migration | Nice | 🔲 Dokploy Swarm mode (later) |
-| R20 | Private self-hosted knowledge base / notes (accessible via Tailscale only) | Nice | 🔲 Evaluate after Dokploy migration |
-| R26 | GitOps — repo is the single source of truth; push to main auto-deploys all services | Must | ✅ [ADR-006](decisions/006-dokploy-gitops.md) |
-| R27 | Feature branch deployment testing — deploy stacks from a branch to an isolated namespace (different ports/names) without disrupting production services | Should | 🔲 Planned |
-
-### Autonomous Agents
-
-| ID | Requirement | Priority | Status |
-|----|-------------|----------|--------|
-| R21 | Code review with full codebase context — agent can grep, read files, understand project structure | Must | ✅ [ADR-004](decisions/004-isolated-review-agent.md) |
-| R22 | Agent credential isolation — least-privilege tokens, never Colin's personal credentials | Must | ✅ [ADR-004](decisions/004-isolated-review-agent.md) |
-| R23 | Agent network isolation — containers can only reach required APIs (GitHub, Copilot) | Should | 🔲 Planned — egress proxy dropped as impractical with Docker port binding |
-| R24 | Autonomous issue resolution — agents pick up issues and create PRs | Nice | 🔧 In progress |
-| R25 | Agent-driven project management — agents work on requirements and track progress autonomously | Nice | 🔧 In progress |
+| ID | Requirement | Priority | Notes |
+|----|-------------|----------|-------|
+| P12 / R27 | Staging environment — feature branch deployment to isolated namespace | Should | Avoids deploying over production to test |
+| R16 | Docker socket hardening | Should | |
+| R19 | Multi-node scaling (Dokploy Swarm) | Nice | When a second machine is added |
+| R23 | ~~Agent network isolation~~ | ~~Should~~ | Won't-fix — [ADR-007](decisions/007-agent-network-isolation.md) |
 
 ## Scaling Path
 
