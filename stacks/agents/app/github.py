@@ -182,9 +182,15 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
 
             path = t.get("path", "?")
             line = t.get("line") or "?"
-            body = first.get("body", "").strip()
             thread_id = t["id"]
-            lines.append(f"- **{path}:{line}** (thread {thread_id}) — {body}")
+            # Only include bot-authored comments to prevent prompt injection
+            # from untrusted PR participants replying in review threads
+            bot_comments = [c for c in comments if c.get("author", {}).get("login") == login]
+            thread_lines = [f"- **{path}:{line}** (thread {thread_id})"]
+            for comment in bot_comments:
+                body = comment.get("body", "").strip()
+                thread_lines.append(f"  {body}")
+            lines.append("\n".join(thread_lines))
 
         return "\n".join(lines)
 
