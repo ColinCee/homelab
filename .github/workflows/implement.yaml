@@ -34,6 +34,15 @@ jobs:
           gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
             --method POST -f content='rocket' --silent
 
+      - name: React to label
+        if: github.event_name == 'issues'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "/repos/$REPO/issues/$ISSUE_NUMBER/reactions" \
+            --method POST -f content='rocket' --silent
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:

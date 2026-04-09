@@ -36,7 +36,13 @@ async def init_bare_clone(repo_url: str) -> Path:
         # Prune stale worktree refs (e.g. after container restart with persistent volume)
         with contextlib.suppress(RuntimeError):
             await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
-        await _run(["git", "fetch", "--all", "--prune"], cwd=BARE_CLONE_PATH)
+        # Bare clones have no default refspec, so fetch main explicitly to keep
+        # the base ref current. Only fetch main — fetching all of refs/heads/*
+        # would prune local-only worktree branches (agent/issue-*, pr-*).
+        await _run(
+            ["git", "fetch", "origin", "+refs/heads/main:refs/heads/main"],
+            cwd=BARE_CLONE_PATH,
+        )
     else:
         BARE_CLONE_PATH.parent.mkdir(parents=True, exist_ok=True)
         await _run(["git", "clone", "--bare", repo_url, str(BARE_CLONE_PATH)])
@@ -95,8 +101,10 @@ async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
         with contextlib.suppress(RuntimeError):
             await _run(["git", "branch", "-D", branch_name], cwd=BARE_CLONE_PATH)
 
+        # In a bare clone, fetch writes directly to refs/heads/ (no remote-tracking
+        # branches), so the ref is "main" not "origin/main".
         await _run(
-            ["git", "branch", branch_name, "origin/main"],
+            ["git", "branch", branch_name, "main"],
             cwd=BARE_CLONE_PATH,
         )
 
