@@ -35,6 +35,12 @@ Use the implement skill for guidelines on how to make changes.
 FIX_PROMPT_TEMPLATE = """\
 Fix the review feedback on PR #{pr_number} in {repo}.
 
+## PR Description
+
+{pr_body}
+
+## Review Findings
+
 The review bot found the following issues that need to be addressed:
 
 {threads}
@@ -168,6 +174,7 @@ async def fix_pr(
         prompt = FIX_PROMPT_TEMPLATE.format(
             repo=repo,
             pr_number=pr_number,
+            pr_body=pr_data.get("body") or "(no description)",
             threads=threads,
         )
 

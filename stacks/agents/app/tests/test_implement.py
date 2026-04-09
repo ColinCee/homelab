@@ -49,7 +49,7 @@ class TestImplementIssue:
 class TestFixPR:
     def test_fixes_review_feedback(self):
         mock_cli_result = CLIResult(output="fixed", total_premium_requests=1)
-        mock_pr_data = {"head": {"ref": "agent/issue-42"}}
+        mock_pr_data = {"head": {"ref": "agent/issue-42"}, "body": "Implements #42."}
 
         async def run():
             with (

@@ -182,9 +182,14 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
 
             path = t.get("path", "?")
             line = t.get("line") or "?"
-            body = first.get("body", "").strip()
             thread_id = t["id"]
-            lines.append(f"- **{path}:{line}** (thread {thread_id}) — {body}")
+            # Include all comments in the thread for full context
+            thread_lines = [f"- **{path}:{line}** (thread {thread_id})"]
+            for comment in comments:
+                author = comment.get("author", {}).get("login", "unknown")
+                body = comment.get("body", "").strip()
+                thread_lines.append(f"  **{author}:** {body}")
+            lines.append("\n".join(thread_lines))
 
         return "\n".join(lines)
 
