@@ -36,7 +36,12 @@ async def init_bare_clone(repo_url: str) -> Path:
         # Prune stale worktree refs (e.g. after container restart with persistent volume)
         with contextlib.suppress(RuntimeError):
             await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
-        await _run(["git", "fetch", "--all", "--prune"], cwd=BARE_CLONE_PATH)
+        # Bare clones have no default refspec, so fetch explicitly into refs/heads/
+        # to keep local branch refs up to date with the remote.
+        await _run(
+            ["git", "fetch", "origin", "+refs/heads/*:refs/heads/*", "--prune"],
+            cwd=BARE_CLONE_PATH,
+        )
     else:
         BARE_CLONE_PATH.parent.mkdir(parents=True, exist_ok=True)
         await _run(["git", "clone", "--bare", repo_url, str(BARE_CLONE_PATH)])
