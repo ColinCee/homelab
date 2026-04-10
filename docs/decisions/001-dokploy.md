@@ -5,7 +5,7 @@
 
 ## Context
 
-The homelab runs services via raw Docker Compose files scattered across directories with no centralised management, logging, metrics, alerting, or deploy pipeline (see [requirements P1–P6](../requirements.md)).
+The homelab runs services via raw Docker Compose files scattered across directories with no centralised management, logging, metrics, alerting, or deploy pipeline (see [roadmap](../roadmap.md)).
 
 We need a lightweight self-hosted PaaS that provides a dashboard, webhook deploys, built-in observability, and runs comfortably on a single Beelink mini-PC alongside actual services.
 

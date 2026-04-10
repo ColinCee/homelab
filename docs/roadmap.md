@@ -17,6 +17,16 @@ What's left to build. Solved items live in their respective [ADRs](decisions/) â
 | Docker socket hardening | Should | |
 | Multi-node scaling (Dokploy Swarm) | Nice | When a second machine is added |
 
+## Known Limitations â€” Autonomous Agents
+
+Discovered during battle-testing. Each is tracked as an issue.
+
+| Limitation | Issue | Impact |
+|-----------|-------|--------|
+| Can't rebase or resolve merge conflicts | [#41](https://github.com/ColinCee/homelab/issues/41) | PRs stall when `main` moves during implementation |
+| Failed runs discard all CLI work | [#42](https://github.com/ColinCee/homelab/issues/42) | ~6 min + 1 premium request wasted per failed attempt |
+| Parallel agents can conflict on shared files | [#43](https://github.com/ColinCee/homelab/issues/43) | Low risk today (single agent), blocks scaling |
+
 ## Scaling Path
 
 | Scale | Tool | When |

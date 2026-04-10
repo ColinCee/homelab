@@ -8,7 +8,7 @@ Plain markdown, viewable in GitHub or as an Obsidian vault. Encrypted private do
 
 ## Structure
 
-- `docs/requirements.md` — roadmap of active and planned work (solved items archived in ADRs)
+- `docs/roadmap.md` — active work, planned items, and known limitations (solved items archived in ADRs)
 - `docs/decisions/` — append-only ADRs numbered sequentially (e.g., `001-dokploy.md`)
 - `docs/runbooks/` — operational how-tos with commands you can copy-paste
 - `docs/private/` — encrypted sensitive docs (security audits, network topology)
