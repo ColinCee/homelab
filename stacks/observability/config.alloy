@@ -124,3 +124,17 @@ prometheus.scrape "crowdsec" {
   job_name        = "crowdsec"
   metrics_path    = "/metrics"
 }
+
+// ================================
+// Agent Service Metrics
+// ================================
+
+prometheus.scrape "agent_service" {
+  targets = [{
+    __address__ = "beelink:8585",
+  }]
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "30s"
+  job_name        = "agent"
+  metrics_path    = "/metrics"
+}

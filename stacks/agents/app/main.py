@@ -2,18 +2,28 @@
 
 import logging
 import os
+import time
 
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
 from implement import fix_pr, implement_issue
+from metrics import (
+    METRICS_REGISTRY,
+    PREMIUM_REQUESTS_TOTAL,
+    TASK_DURATION_SECONDS,
+    TASK_IN_PROGRESS,
+    TASK_TOTAL,
+)
 from review import review_pr
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Homelab Agent Service", version="0.6.0")
+app.mount("/metrics", make_asgi_app(registry=METRICS_REGISTRY))
 
 MODEL = os.environ.get("MODEL", "gpt-5.4")
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
@@ -28,6 +38,31 @@ def _review_key(repo: str, pr_number: int) -> str:
 
 def _implement_key(repo: str, issue_number: int) -> str:
     return f"{repo}#{issue_number}"
+
+
+def _task_status_label(status: object) -> str:
+    if status == "failed":
+        return "failed"
+    if status == "partial":
+        return "partial"
+    return "complete"
+
+
+def _premium_requests(result: dict[str, object] | None) -> int:
+    if not result:
+        return 0
+
+    premium_requests = result.get("premium_requests", 0)
+    return premium_requests if isinstance(premium_requests, int) else 0
+
+
+def _record_task_metrics(
+    *, task_type: str, status: str, duration_seconds: float, premium_requests: int
+) -> None:
+    TASK_DURATION_SECONDS.labels(task_type=task_type, status=status).observe(duration_seconds)
+    TASK_TOTAL.labels(task_type=task_type, status=status).inc()
+    if premium_requests:
+        PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type).inc(premium_requests)
 
 
 class ReviewRequest(BaseModel):
@@ -185,6 +220,10 @@ async def handle_fix(req: FixRequest, background_tasks: BackgroundTasks):
 
 async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort: str) -> None:
     key = _review_key(repo, pr_number)
+    status = "failed"
+    premium_requests = 0
+    start = time.monotonic()
+    TASK_IN_PROGRESS.labels(task_type="review").inc()
     try:
         result = await review_pr(
             repo=repo,
@@ -192,6 +231,8 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
             model=model,
             reasoning_effort=reasoning_effort,
         )
+        status = _task_status_label(result.get("status"))
+        premium_requests = _premium_requests(result)
         _review_status[key] = {
             "status": result.get("status", "complete"),
             "repo": repo,
@@ -201,12 +242,24 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
     except Exception:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+    finally:
+        _record_task_metrics(
+            task_type="review",
+            status=status,
+            duration_seconds=time.monotonic() - start,
+            premium_requests=premium_requests,
+        )
+        TASK_IN_PROGRESS.labels(task_type="review").dec()
 
 
 async def _run_implement(
     *, repo: str, issue_number: int, model: str, reasoning_effort: str
 ) -> None:
     key = _implement_key(repo, issue_number)
+    status = "failed"
+    premium_requests = 0
+    start = time.monotonic()
+    TASK_IN_PROGRESS.labels(task_type="implement").inc()
     try:
         result = await implement_issue(
             repo=repo,
@@ -214,6 +267,8 @@ async def _run_implement(
             model=model,
             reasoning_effort=reasoning_effort,
         )
+        status = _task_status_label(result.get("status"))
+        premium_requests = _premium_requests(result)
         _implement_status[key] = {
             "status": result.get("status", "complete"),
             "repo": repo,
@@ -227,10 +282,22 @@ async def _run_implement(
             "repo": repo,
             "issue_number": issue_number,
         }
+    finally:
+        _record_task_metrics(
+            task_type="implement",
+            status=status,
+            duration_seconds=time.monotonic() - start,
+            premium_requests=premium_requests,
+        )
+        TASK_IN_PROGRESS.labels(task_type="implement").dec()
 
 
 async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: str) -> None:
     key = _review_key(repo, pr_number)
+    status = "failed"
+    premium_requests = 0
+    start = time.monotonic()
+    TASK_IN_PROGRESS.labels(task_type="fix").inc()
     try:
         result = await fix_pr(
             repo=repo,
@@ -238,6 +305,8 @@ async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: s
             model=model,
             reasoning_effort=reasoning_effort,
         )
+        status = _task_status_label(result.get("status"))
+        premium_requests = _premium_requests(result)
         _review_status[key] = {
             "status": result.get("status", "complete"),
             "repo": repo,
@@ -247,3 +316,11 @@ async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: s
     except Exception:
         logger.exception("Fix failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+    finally:
+        _record_task_metrics(
+            task_type="fix",
+            status=status,
+            duration_seconds=time.monotonic() - start,
+            premium_requests=premium_requests,
+        )
+        TASK_IN_PROGRESS.labels(task_type="fix").dec()
