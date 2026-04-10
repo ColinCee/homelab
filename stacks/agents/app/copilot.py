@@ -76,7 +76,6 @@ async def run_copilot(
     *,
     model: str = "gpt-5.4",
     effort: str = "high",
-    gh_token: str | None = None,
 ) -> CLIResult:
     """Run Copilot CLI in headless mode and return result with stats."""
     cmd = [
@@ -93,8 +92,9 @@ async def run_copilot(
     ]
 
     env = os.environ.copy()
-    if gh_token:
-        env["GH_TOKEN"] = gh_token
+    # Ensure the CLI never inherits GitHub API access — the orchestrator
+    # handles all GitHub operations with its own scoped token.
+    env.pop("GH_TOKEN", None)
 
     logger.info("Running Copilot CLI in %s (model=%s, effort=%s)", worktree_path, model, effort)
 

@@ -1,16 +1,17 @@
 """PR review orchestrator — ties together git, copilot, and github modules."""
 
+import json
 import logging
 import time
+from pathlib import Path
 
 from copilot import run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
-    append_stats_to_review,
-    count_bot_reviews,
+    comment_on_issue,
     dismiss_stale_reviews,
-    get_token,
     get_unresolved_threads,
+    post_review,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,56 @@ Only re-report issues that are still present as new inline comments.
 {threads}
 """
 
+REVIEW_OUTPUT_FILE = ".copilot-review.json"
+VALID_EVENTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
+
+
+def _parse_review_file(review_file: Path) -> dict:
+    """Parse and validate the review JSON file written by the CLI.
+
+    Returns a validated dict with 'event', 'body', and 'comments' keys.
+    Raises RuntimeError with a descriptive message on any validation failure.
+    """
+    if not review_file.exists():
+        raise RuntimeError(
+            f"Copilot CLI did not produce a review file ({REVIEW_OUTPUT_FILE} not found)"
+        )
+
+    raw = review_file.read_text().strip()
+
+    # CLI occasionally wraps JSON in markdown code fences
+    if raw.startswith("```"):
+        lines = raw.splitlines()
+        lines = [line for line in lines if not line.startswith("```")]
+        raw = "\n".join(lines).strip()
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Review file is not valid JSON: {exc}\nContent (first 500 chars): {raw[:500]}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Review file must be a JSON object, got {type(data).__name__}")
+
+    event = data.get("event")
+    if event not in VALID_EVENTS:
+        raise RuntimeError(f"Invalid review event '{event}' — must be one of {VALID_EVENTS}")
+
+    comments = data.get("comments", [])
+    if not isinstance(comments, list):
+        raise RuntimeError(f"'comments' must be a list, got {type(comments).__name__}")
+
+    for i, c in enumerate(comments):
+        if not isinstance(c, dict):
+            raise RuntimeError(f"Comment {i} must be an object, got {type(c).__name__}")
+        for required_key in ("path", "line", "body"):
+            if required_key not in c:
+                raise RuntimeError(f"Comment {i} missing required key '{required_key}'")
+
+    return {"event": event, "body": data.get("body", ""), "comments": comments}
+
 
 async def review_pr(
     *,
@@ -40,17 +91,13 @@ async def review_pr(
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
 ) -> dict:
-    """Full review pipeline: worktree → Copilot CLI → post-review cleanup."""
+    """Full review pipeline: worktree → Copilot CLI → read JSON → post review."""
     logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
     start = time.monotonic()
     repo_url = f"https://github.com/{repo}.git"
 
-    token = await get_token()
-
     try:
         worktree_path = await create_worktree(pr_number, repo_url)
-
-        reviews_before = await count_bot_reviews(repo, pr_number)
 
         threads = await get_unresolved_threads(repo, pr_number)
         previous_section = PREVIOUS_REVIEW_SECTION.format(threads=threads) if threads else ""
@@ -65,23 +112,34 @@ async def review_pr(
             prompt,
             model=model,
             effort=reasoning_effort,
-            gh_token=token,
         )
 
-        elapsed = time.monotonic() - start
-
-        reviews_after = await count_bot_reviews(repo, pr_number)
-        if reviews_after <= reviews_before:
-            raise RuntimeError(
-                f"Copilot CLI exited 0 but no new review was posted "
-                f"(before={reviews_before}, after={reviews_after})"
+        try:
+            review_data = _parse_review_file(worktree_path / REVIEW_OUTPUT_FILE)
+        except RuntimeError as exc:
+            logger.error("Review output validation failed: %s", exc)
+            await comment_on_issue(
+                repo,
+                pr_number,
+                f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
             )
+            raise
+
+        body = review_data["body"]
+        if result.stats_line:
+            body += f"\n\n📊 {result.stats_line}"
+
+        await post_review(
+            repo,
+            pr_number,
+            event=review_data["event"],
+            body=body,
+            comments=review_data["comments"] or None,
+        )
 
         await dismiss_stale_reviews(repo, pr_number)
 
-        if result.stats_line:
-            await append_stats_to_review(repo, pr_number, result.stats_line)
-
+        elapsed = time.monotonic() - start
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
 
         return {
