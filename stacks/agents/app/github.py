@@ -227,52 +227,6 @@ async def dismiss_stale_reviews(repo: str, pr_number: int) -> None:
                 logger.warning("Failed to dismiss review %d: %d", review["id"], resp.status_code)
 
 
-async def append_stats_to_review(repo: str, pr_number: int, stats_line: str) -> None:
-    """Find the bot's latest review and append a stats footer."""
-    if not stats_line:
-        return
-
-    token = await get_token()
-    login = bot_login()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-    reviews_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews"
-
-    reviews = await _fetch_all_reviews(repo, pr_number, token)
-    bot_reviews = [r for r in reviews if r.get("user", {}).get("login") == login]
-    if not bot_reviews:
-        logger.warning("No reviews from %s found to append stats to", login)
-        return
-
-    latest = bot_reviews[-1]
-    review_id = latest["id"]
-    current_body = latest.get("body", "")
-    updated_body = f"{current_body}\n{stats_line}"
-
-    update_url = f"{reviews_url}/{review_id}"
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.put(update_url, headers=headers, json={"body": updated_body})
-        if resp.status_code == 200:
-            logger.info("Appended stats to review %d", review_id)
-        else:
-            logger.warning("Failed to update review with stats: %d", resp.status_code)
-
-
-async def count_bot_reviews(repo: str, pr_number: int) -> int:
-    """Count active (non-dismissed) bot reviews on a PR."""
-    token = await get_token()
-    login = bot_login()
-    reviews = await _fetch_all_reviews(repo, pr_number, token)
-    return sum(
-        1
-        for r in reviews
-        if r.get("user", {}).get("login") == login
-        and r.get("state") in ("CHANGES_REQUESTED", "APPROVED", "COMMENTED")
-    )
-
-
 async def get_issue(repo: str, issue_number: int) -> dict:
     """Fetch issue details (title, body, labels)."""
     token = await get_token()
@@ -345,3 +299,32 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
             raise RuntimeError(
                 f"Failed to comment on {repo}#{issue_number}: HTTP {resp.status_code}"
             )
+
+
+async def post_review(
+    repo: str,
+    pr_number: int,
+    *,
+    event: str,
+    body: str,
+    comments: list[dict] | None = None,
+) -> dict:
+    """Post a pull request review with optional inline comments."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    payload: dict = {"event": event, "body": body}
+    if comments:
+        payload["comments"] = comments
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews",
+            headers=headers,
+            json=payload,
+        )
+        resp.raise_for_status()
+        return resp.json()

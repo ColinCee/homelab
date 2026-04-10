@@ -31,31 +31,35 @@ Review for:
 - 💡 **Suggestion** — non-blocking improvement, author decides
 - ❓ **Question** — seeks clarification, non-blocking
 
-## Posting Reviews
+## Review Output
 
-You have `gh` CLI available and authenticated. Post reviews directly via the GitHub API.
+You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root.
 
-To post a review with inline comments:
+Schema:
 
-```bash
-gh api repos/{owner}/{repo}/pulls/{pr_number}/reviews \
-  --method POST \
-  -f event="APPROVE" \
-  -f body="Summary text" \
-  -f 'comments=[{"path":"file.py","line":42,"body":"🚫 **Blocker**\n\nExplanation"}]'
+```json
+{
+  "event": "APPROVE",
+  "body": "Summary of the review.",
+  "comments": [
+    {
+      "path": "file.py",
+      "line": 42,
+      "body": "🚫 **Blocker**\n\nExplanation of the issue."
+    }
+  ]
+}
 ```
 
 Rules:
-- Use `event: "REQUEST_CHANGES"` only if you have blocker-severity comments
-- Use `event: "APPROVE"` when the code looks good or only has suggestions
-- End the body with `\n\n---` (no attribution line — stats are appended automatically)
-- If the code looks good, approve with no inline comments
+- `event` must be `"REQUEST_CHANGES"` if you have blocker-severity comments, otherwise `"APPROVE"`
+- `body` is the review summary — end with `\n\n---`
+- `comments` is an array of inline comments (can be empty for a clean approval)
+- Each comment needs `path` (relative file path), `line` (line number in the new file), and `body`
+- For multi-line comments, add `start_line` (first line) alongside `line` (last line)
+- If the code looks good, set `event` to `"APPROVE"` with an empty `comments` array
 
-## Permissions
-
-Your `gh` token has **pull requests: write** and **contents: read**. You cannot:
-- Push commits, create branches, or modify repository contents
-- Resolve or unresolve review threads (requires contents: write)
+The orchestrator will read this file and post the review on your behalf.
 
 ## Previous Review Threads
 
