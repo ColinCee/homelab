@@ -26,6 +26,8 @@ Discovered during battle-testing. Each is tracked as an issue.
 | Can't rebase or resolve merge conflicts | [#41](https://github.com/ColinCee/homelab/issues/41) | PRs stall when `main` moves during implementation |
 | Failed runs discard all CLI work | [#42](https://github.com/ColinCee/homelab/issues/42) | ~6 min + 1 premium request wasted per failed attempt |
 | Parallel agents can conflict on shared files | [#43](https://github.com/ColinCee/homelab/issues/43) | Low risk today (single agent), blocks scaling |
+| Can't self-review review infrastructure changes | — | PRs that change the review skill or orchestrator break the review loop (CLI reads the PR's skill, but orchestrator runs the old code) |
+| Dokploy config isn't code-editable | — | Agent can edit `compose.yaml` but not Dokploy-level settings (domains, env vars, resource limits) — those live in Dokploy's DB. Would need Terraform/Pulumi for full IaC |
 
 ## Scaling Path
 
