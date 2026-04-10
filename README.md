@@ -98,7 +98,7 @@ UFW firewall active (deny all except Tailscale), CrowdSec IDS with collaborative
 
 All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 
-- **[Requirements](docs/requirements.md)** — goals, problems, and status (the "north star")
+- **[Roadmap](docs/roadmap.md)** — active work, planned items, and known limitations
 - **[Security](docs/private/security.md)** — audit findings, hardening status, periodic checklist *(encrypted)*
 - **[Network](docs/private/network.md)** — topology, interfaces, traffic monitoring plan *(encrypted)*
 
