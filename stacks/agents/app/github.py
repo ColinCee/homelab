@@ -309,7 +309,11 @@ async def post_review(
     body: str,
     comments: list[dict] | None = None,
 ) -> dict:
-    """Post a pull request review with optional inline comments."""
+    """Post a pull request review with optional inline comments.
+
+    If GitHub rejects inline comments (e.g. invalid line numbers not in the
+    diff), retries without them and appends comment text to the body instead.
+    """
     token = await get_token()
     headers = {
         "Authorization": f"Bearer {token}",
@@ -326,5 +330,31 @@ async def post_review(
             headers=headers,
             json=payload,
         )
+
+        if resp.status_code == 422 and comments:
+            logger.warning(
+                "GitHub rejected inline comments (422), retrying without them: %s",
+                resp.text[:500],
+            )
+            fallback_parts = [
+                body,
+                "",
+                "---",
+                "*Inline comments could not be posted (invalid line numbers). Included below:*",
+                "",
+            ]
+            for c in comments:
+                fallback_parts.append(
+                    f"**{c.get('path', '?')}:{c.get('line', '?')}** — {c.get('body', '')}"
+                )
+                fallback_parts.append("")
+
+            fallback_payload: dict = {"event": event, "body": "\n".join(fallback_parts)}
+            resp = await client.post(
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews",
+                headers=headers,
+                json=fallback_payload,
+            )
+
         resp.raise_for_status()
         return resp.json()
