@@ -40,6 +40,10 @@ Blast radius boundaries. The agent is good at making changes but needs to know w
 
 > `/review` must continue to work independently for human-triggered reviews. Accumulated premium_requests must still be accurate for metrics.
 
+## Triggering implementation
+
+After creating the issue, trigger the bot by commenting `/implement` on the issue or adding the `agent` label. The `implement.yaml` workflow dispatches to the agent service.
+
 ## What to omit
 
 - **File lists and function signatures** — the agent explores the codebase itself

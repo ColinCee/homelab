@@ -1,0 +1,9 @@
+# Whitelist — deny everything, allow only what the build needs.
+# This prevents secrets (.env, access.md) from leaking into the build context.
+*
+
+# Dockerfile and app source
+!stacks/agents/app/**
+
+# Repo-level config needed by the build (mise install in Dockerfile)
+!mise.toml

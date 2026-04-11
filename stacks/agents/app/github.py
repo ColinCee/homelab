@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import time
 
 import httpx
@@ -73,6 +74,9 @@ def reset_token_cache() -> None:
 
 _APP_SLUG = "colins-homelab-bot"
 _BOT_USER_ID = "274352150"  # stable across app renames
+
+# author_association values trusted for autonomous operations (implement, prompt context)
+TRUSTED_ROLES = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
 
 
 def bot_login() -> str:
@@ -331,6 +335,76 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
             )
 
 
+def _parse_diff_right_lines(patch: str) -> list[int]:
+    """Parse a unified diff patch and return all right-side line numbers visible in it.
+
+    These are the line numbers GitHub accepts for inline review comments (side=RIGHT).
+    """
+    lines: list[int] = []
+    current_right = 0
+
+    for line in patch.splitlines():
+        if line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            if m:
+                current_right = int(m.group(1))
+            continue
+
+        if line.startswith("+"):
+            lines.append(current_right)
+            current_right += 1
+        elif line.startswith("-"):
+            pass  # deletion — left side only
+        else:
+            # Context line — visible on both sides
+            lines.append(current_right)
+            current_right += 1
+
+    return lines
+
+
+async def get_diff_valid_lines(repo: str, pr_number: int) -> set[tuple[str, int]]:
+    """Fetch PR file diffs and return (path, line) tuples valid for inline comments."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    valid: set[tuple[str, int]] = set()
+    page = 1
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            resp = await client.get(
+                f"https://api.github.com/repos/{repo}/pulls/{pr_number}/files",
+                headers=headers,
+                params={"per_page": 100, "page": page},
+            )
+            resp.raise_for_status()
+            files = resp.json()
+            if not files:
+                break
+
+            for f in files:
+                path = f["filename"]
+                patch = f.get("patch", "")
+                for line_num in _parse_diff_right_lines(patch):
+                    valid.add((path, line_num))
+
+            if len(files) < 100:
+                break
+            page += 1
+
+    logger.info(
+        "PR #%d diff has %d valid comment lines across %d files",
+        pr_number,
+        len(valid),
+        len({p for p, _ in valid}),
+    )
+    return valid
+
+
 async def post_review(
     repo: str,
     pr_number: int,
@@ -338,6 +412,7 @@ async def post_review(
     event: str,
     body: str,
     comments: list[dict] | None = None,
+    commit_id: str | None = None,
 ) -> dict:
     """Post a pull request review with optional inline comments.
 
@@ -353,6 +428,8 @@ async def post_review(
     payload: dict = {"event": event, "body": body}
     if comments:
         payload["comments"] = comments
+    if commit_id:
+        payload["commit_id"] = commit_id
 
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(

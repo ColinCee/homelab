@@ -12,6 +12,7 @@ from git import (
     create_worktree,
 )
 from github import (
+    TRUSTED_ROLES,
     comment_on_issue,
     create_pull_request,
     get_issue,
@@ -67,12 +68,11 @@ async def implement_issue(
 
     # Trust boundary: only implement issues from trusted authors to prevent
     # prompt injection via attacker-controlled issue bodies
-    trusted_roles = {"OWNER", "MEMBER", "COLLABORATOR"}
     author_role = issue.get("author_association", "NONE")
-    if author_role not in trusted_roles:
+    if author_role not in TRUSTED_ROLES:
         raise ValueError(
             f"Issue #{issue_number} author has role '{author_role}' — "
-            f"only {trusted_roles} are trusted for autonomous implementation"
+            f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
         )
 
     try:

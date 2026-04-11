@@ -88,3 +88,48 @@ class TestBotLogin:
 class TestBotEmail:
     def test_email(self):
         assert github.bot_email() == "274352150+colins-homelab-bot[bot]@users.noreply.github.com"
+
+
+class TestParseDiffRightLines:
+    def test_parses_added_lines(self):
+        patch = "@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3"
+        assert github._parse_diff_right_lines(patch) == [1, 2, 3]
+
+    def test_parses_context_lines(self):
+        patch = "@@ -1,3 +1,4 @@\n existing\n+added\n existing2\n existing3"
+        result = github._parse_diff_right_lines(patch)
+        assert 1 in result  # context "existing"
+        assert 2 in result  # added
+        assert 3 in result  # context "existing2"
+        assert 4 in result  # context "existing3"
+
+    def test_skips_deleted_lines(self):
+        patch = "@@ -1,3 +1,2 @@\n existing\n-removed\n existing2"
+        result = github._parse_diff_right_lines(patch)
+        # Only right-side lines: 1 (existing), 2 (existing2)
+        assert result == [1, 2]
+
+    def test_multiple_hunks(self):
+        patch = "@@ -1,2 +1,2 @@\n context\n+added1\n@@ -10,2 +10,2 @@\n context2\n+added2"
+        result = github._parse_diff_right_lines(patch)
+        assert 1 in result  # first hunk context
+        assert 2 in result  # first hunk added
+        assert 10 in result  # second hunk context
+        assert 11 in result  # second hunk added
+
+    def test_empty_patch(self):
+        assert github._parse_diff_right_lines("") == []
+
+    def test_real_world_patch(self):
+        patch = (
+            "@@ -29,6 +29,7 @@ class ReviewComment(BaseModel):\n"
+            "     path: str\n"
+            "     line: int\n"
+            "+    start_line: int | None = None\n"
+            "     body: str\n"
+        )
+        result = github._parse_diff_right_lines(patch)
+        assert 29 in result  # context
+        assert 30 in result  # context
+        assert 31 in result  # added (start_line)
+        assert 32 in result  # context

@@ -252,3 +252,85 @@ def test_fix_metrics_record_failed_status(mock_fix):
     assert _metric_value("agent_task_total", labels) == 1.0
     assert _metric_value("agent_task_duration_seconds_count", labels) == 1.0
     assert _metric_value("agent_premium_requests_total", {"task_type": "fix"}) == 0.0
+
+
+# --- Fire-and-forget safety: error comments on failures ---
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.review_pr", new_callable=AsyncMock)
+def test_review_failure_posts_error_comment(mock_review, mock_comment):
+    """When review_pr raises, _run_review posts an error comment on the PR."""
+    from copilot import TaskError
+
+    mock_review.side_effect = TaskError("CLI timed out", premium_requests=3)
+
+    asyncio.run(
+        _run_review(repo="user/repo", pr_number=42, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_called_once()
+    args = mock_comment.call_args
+    assert args[0][0] == "user/repo"
+    assert args[0][1] == 42
+    assert "Review failed" in args[0][2]
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.review_pr", new_callable=AsyncMock)
+def test_review_failure_skips_comment_when_already_commented(mock_review, mock_comment):
+    """When TaskError has commented=True, _run_review does not double-post."""
+    from copilot import TaskError
+
+    mock_review.side_effect = TaskError("parse error", premium_requests=1, commented=True)
+
+    asyncio.run(
+        _run_review(repo="user/repo", pr_number=42, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_not_called()
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.review_pr", new_callable=AsyncMock)
+def test_review_unexpected_failure_posts_generic_comment(mock_review, mock_comment):
+    """Non-TaskError exceptions also get an error comment."""
+    mock_review.side_effect = RuntimeError("unexpected")
+
+    asyncio.run(
+        _run_review(repo="user/repo", pr_number=42, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_called_once()
+    assert "see agent logs" in mock_comment.call_args[0][2]
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_failure_posts_error_comment(mock_impl, mock_comment):
+    """When implement_issue raises, _run_implement posts an error comment."""
+    from copilot import TaskError
+
+    mock_impl.side_effect = TaskError("CLI crashed", premium_requests=5)
+
+    asyncio.run(
+        _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_called_once()
+    assert mock_comment.call_args[0][1] == 10
+    assert "Implementation failed" in mock_comment.call_args[0][2]
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_rejection_does_not_post_comment(mock_impl, mock_comment):
+    """ValueError (untrusted author) should not post a comment on the issue."""
+    mock_impl.side_effect = ValueError("untrusted author")
+
+    asyncio.run(
+        _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_not_called()
+    assert _implement_status["user/repo#10"]["status"] == "rejected"

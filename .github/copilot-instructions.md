@@ -8,6 +8,7 @@ Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running conta
 - Co-locate code by feature, not file type
 - Readability is the primary concern; fewer lines of code is secondary
 - Prefer simplicity over abstraction — don't add layers until they're needed
+- **Source code is the single source of truth** — don't duplicate information that lives in code (schemas, constants, examples). Reference the source file instead. If it can go stale, it shouldn't be written twice.
 - When fixing a bug or adding a pattern, audit for the same class of issue across the codebase. Don't fix one instance — grep for the pattern and fix all of them in one pass.
 
 ## Repo Layout

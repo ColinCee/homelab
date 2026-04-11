@@ -1,16 +1,22 @@
 """PR review orchestrator — ties together git, copilot, and github modules."""
 
-import json
 import logging
+import re
 import time
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from copilot import TaskError, run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
+    TRUSTED_ROLES,
     bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
+    get_diff_valid_lines,
+    get_issue,
     get_pr,
     get_unresolved_threads,
     post_review,
@@ -18,11 +24,116 @@ from github import (
 
 logger = logging.getLogger(__name__)
 
+
+# ── Review output schema (single source of truth) ──────────────────────
+
+
+class ReviewComment(BaseModel):
+    """A single inline review comment attached to a file and line."""
+
+    path: str
+    line: int
+    start_line: int | None = None
+    body: str
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "path": "compose.yaml",
+                    "line": 4,
+                    "body": (
+                        "🚫 **Blocker** — Secret leakage via build context\n\n"
+                        "**Problem**: Widening Docker build context to the repo root "
+                        "sends the entire directory tree to the daemon.\n\n"
+                        "**Impact**: Every file not excluded by .dockerignore is readable "
+                        "in the build tarball — today that's .env, tomorrow anything "
+                        "added to the repo root. Layer caching can persist these.\n\n"
+                        "**Fix**: Convert .dockerignore to a whitelist pattern "
+                        "(deny all, allow specific paths)."
+                    ),
+                },
+                {
+                    "path": "main.py",
+                    "line": 25,
+                    "body": (
+                        "💡 **Suggestion** — Redundant API call\n\n"
+                        "**Problem**: `get_pr()` is called twice — once for prompt "
+                        "context, once for the bot-authored-PR check.\n\n"
+                        "**Impact**: Adds ~200ms per review and creates a maintenance "
+                        "trap — if the fetch logic changes, it needs updating in two "
+                        "places.\n\n"
+                        "**Fix**: Reuse the result from the first call."
+                    ),
+                },
+            ]
+        }
+    }
+
+
+class ReviewOutput(BaseModel):
+    """Schema for the .copilot-review.json file produced by the CLI."""
+
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"]
+    body: str = ""
+    comments: list[ReviewComment] = Field(default_factory=list)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "event": "APPROVE",
+                    "body": (
+                        "✅ **Approved** — no issues found.\n\n"
+                        "Solid approach — clean separation between orchestrator and CLI.\n\n---"
+                    ),
+                    "comments": [],
+                },
+                {
+                    "event": "REQUEST_CHANGES",
+                    "body": (
+                        "🚫 **Changes requested** — see inline comments.\n\n"
+                        "Widening the build context is the right call for mise access, "
+                        "but it introduces a secret-leakage surface that needs a "
+                        "whitelist-based .dockerignore.\n\n---"
+                    ),
+                    "comments": [
+                        {
+                            "path": "compose.yaml",
+                            "line": 4,
+                            "body": "🚫 **Blocker** — see ReviewComment examples",
+                        }
+                    ],
+                },
+            ]
+        }
+    }
+
+
+# ── Prompt templates ───────────────────────────────────────
+
+# Matches "Fixes #123", "Closes #123", "Resolves #123" (case-insensitive)
+_LINKED_ISSUE_RE = re.compile(r"(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE)
+
 REVIEW_PROMPT_TEMPLATE = """\
 Review PR #{pr_number} in {repo}.
 
 Use the bot-review skill for review guidelines and output format.
+
+## PR Context
+
+**{title}**
+Base branch: `{base_branch}`
+
+{description}
+{linked_issues_section}\
 {previous_review_section}\
+"""
+
+LINKED_ISSUES_SECTION = """
+## Linked Issues
+
+{issues}
 """
 
 PREVIOUS_REVIEW_SECTION = """
@@ -36,13 +147,52 @@ Only re-report issues that are still present as new inline comments.
 """
 
 REVIEW_OUTPUT_FILE = ".copilot-review.json"
-VALID_EVENTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
 
 
-def _parse_review_file(review_file: Path) -> dict:
+# ── Helpers ────────────────────────────────────────────────
+
+
+def _parse_linked_issues(text: str) -> list[int]:
+    """Extract issue numbers from 'Fixes #N' / 'Closes #N' / 'Resolves #N' in text."""
+    return sorted(set(int(m) for m in _LINKED_ISSUE_RE.findall(text)))
+
+
+async def _fetch_linked_issues_section(repo: str, description: str) -> str:
+    """Fetch linked issue bodies and format as a prompt section.
+
+    Only includes issues authored by trusted roles (OWNER/MEMBER/COLLABORATOR)
+    to prevent prompt injection via attacker-controlled issue bodies.
+    """
+    issue_numbers = _parse_linked_issues(description)
+    if not issue_numbers:
+        return ""
+
+    parts = []
+    for num in issue_numbers:
+        try:
+            issue = await get_issue(repo, num)
+            author_role = issue.get("author_association", "NONE")
+            if author_role not in TRUSTED_ROLES:
+                logger.warning(
+                    "Skipping linked issue #%d — author role '%s' not trusted",
+                    num,
+                    author_role,
+                )
+                continue
+            title = issue.get("title", "")
+            body = issue.get("body") or "_No body._"
+            parts.append(f"### #{num}: {title}\n\n{body}")
+        except Exception:
+            logger.warning("Could not fetch linked issue #%d", num)
+    if not parts:
+        return ""
+    return LINKED_ISSUES_SECTION.format(issues="\n\n".join(parts))
+
+
+def _parse_review_file(review_file: Path) -> ReviewOutput:
     """Parse and validate the review JSON file written by the CLI.
 
-    Returns a validated dict with 'event', 'body', and 'comments' keys.
+    Returns a validated ReviewOutput model.
     Raises RuntimeError with a descriptive message on any validation failure.
     """
     if not review_file.exists():
@@ -59,31 +209,14 @@ def _parse_review_file(review_file: Path) -> dict:
         raw = "\n".join(lines).strip()
 
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        return ReviewOutput.model_validate_json(raw)
+    except Exception as exc:
         raise RuntimeError(
-            f"Review file is not valid JSON: {exc}\nContent (first 500 chars): {raw[:500]}"
+            f"Review file validation failed: {exc}\nContent (first 500 chars): {raw[:500]}"
         ) from exc
 
-    if not isinstance(data, dict):
-        raise RuntimeError(f"Review file must be a JSON object, got {type(data).__name__}")
 
-    event = data.get("event")
-    if event not in VALID_EVENTS:
-        raise RuntimeError(f"Invalid review event '{event}' — must be one of {VALID_EVENTS}")
-
-    comments = data.get("comments", [])
-    if not isinstance(comments, list):
-        raise RuntimeError(f"'comments' must be a list, got {type(comments).__name__}")
-
-    for i, c in enumerate(comments):
-        if not isinstance(c, dict):
-            raise RuntimeError(f"Comment {i} must be an object, got {type(c).__name__}")
-        for required_key in ("path", "line", "body"):
-            if required_key not in c:
-                raise RuntimeError(f"Comment {i} missing required key '{required_key}'")
-
-    return {"event": event, "body": data.get("body", ""), "comments": comments}
+# ── Orchestrator ───────────────────────────────────────────
 
 
 async def review_pr(
@@ -101,11 +234,21 @@ async def review_pr(
     try:
         worktree_path = await create_worktree(pr_number, repo_url)
 
+        pr_data = await get_pr(repo, pr_number)
+        title = pr_data.get("title", "")
+        description = pr_data.get("body") or "_No description provided._"
+        base_branch = pr_data.get("base", {}).get("ref", "main")
+
+        linked_issues_section = await _fetch_linked_issues_section(repo, description)
         threads = await get_unresolved_threads(repo, pr_number)
         previous_section = PREVIOUS_REVIEW_SECTION.format(threads=threads) if threads else ""
         prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
             repo=repo,
+            title=title,
+            description=description,
+            base_branch=base_branch,
+            linked_issues_section=linked_issues_section,
             previous_review_section=previous_section,
         )
 
@@ -128,33 +271,65 @@ async def review_pr(
                     pr_number,
                     f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
                 )
-                raise
+                raise TaskError(
+                    str(exc), premium_requests=result.total_premium_requests, commented=True
+                ) from exc
 
-            body = review_data["body"]
+            body = review_data.body
 
-            event = review_data["event"]
+            event = review_data.event
             downgraded = False
 
             # GitHub doesn't allow REQUEST_CHANGES or APPROVE on your own PR
-            pr_data = await get_pr(repo, pr_number)
             is_own_pr = pr_data.get("user", {}).get("login") == bot_login()
             if is_own_pr and event in ("REQUEST_CHANGES", "APPROVE"):
                 logger.info("Using COMMENT instead of %s (bot's own PR)", event)
                 event = "COMMENT"
                 downgraded = True
 
-            # Append stats as a collapsible footer — orchestrator-only metadata
             if result.stats_line:
-                body += (
-                    f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
-                )
+                body += f"\n\n📊 {result.stats_line}"
+
+            head_sha = pr_data.get("head", {}).get("sha")
+
+            # Strip start_line — ranged comments need side/start_side which we
+            # don't support yet. Single-line comments are reliable.
+            comments_dicts = [
+                {k: v for k, v in c.model_dump(exclude_none=True).items() if k != "start_line"}
+                for c in review_data.comments
+            ]
+
+            # Filter comments to lines that actually appear in the diff —
+            # GitHub returns 422 for lines outside diff hunks.
+            if comments_dicts:
+                valid_lines = await get_diff_valid_lines(repo, pr_number)
+                valid_comments: list[dict] = []
+                dropped_comments: list[dict] = []
+                for c in comments_dicts:
+                    if (c["path"], c["line"]) in valid_lines:
+                        valid_comments.append(c)
+                    else:
+                        dropped_comments.append(c)
+                        logger.warning(
+                            "Comment on %s:%d not in diff — moving to body",
+                            c["path"],
+                            c["line"],
+                        )
+
+                if dropped_comments:
+                    body += "\n\n---\n*Some comments reference lines outside the diff:*\n\n"
+                    for c in dropped_comments:
+                        body += f"**{c['path']}:{c['line']}** — {c['body']}\n\n"
+
+                comments_dicts = valid_comments
 
             await post_review(
                 repo,
                 pr_number,
                 event=event,
                 body=body,
-                comments=review_data["comments"] or None,
+                comments=comments_dicts or None,
+                commit_id=head_sha,
             )
 
             # Best-effort cleanup — review is already posted, don't fail the task

@@ -21,8 +21,10 @@ Review for:
 
 ## Review Approach
 
+- **Start with the big picture.** Before examining individual lines, understand the PR's goal and whether the approach is sound. A PR can have zero bugs and still be wrong — wrong abstraction, wrong layer, wrong trade-off. If the design direction is off, say so in the body summary before diving into line-level issues.
 - **Trace the full flow.** Don't just read the diff line-by-line. Follow data through the system — if a function is changed, check every caller. If a status value is added, check every consumer.
 - **Report root causes, not symptoms.** When you find a bug, ask: what's the underlying pattern, and where else does it appear? Report the class of issue with ALL affected locations in a single comment. If you'd file the same finding against 5 different lines, that's one finding with 5 locations, not 5 findings.
+- **Assess blast radius.** For each finding, think beyond the immediate line. What's the worst case? How many codepaths are affected? Does this interact with other systems (CI, deploy, auth)? A "small" bug in a hot path is worse than a "big" bug in dead code.
 - **Think about implications.** If you recommend "this should raise instead of log", also flag what happens to callers when it raises. Don't create a fix that introduces a new bug.
 - **Front-load everything.** Aim for one review round, not three. Surface all issues — including second-order effects of your own recommendations — in a single pass.
 
@@ -30,36 +32,40 @@ Review for:
 
 - 🚫 **Blocker** — must fix before merge (bugs, security, breaking changes)
 - 💡 **Suggestion** — non-blocking improvement, author decides
-- ❓ **Question** — seeks clarification, non-blocking
+
+## Comment Format
+
+Each inline comment must follow this structure:
+
+```
+{severity} — Pattern name
+
+**Problem**: What's wrong — concise, specific to this diff.
+
+**Impact**: Blast radius — what breaks, how broadly, and what's the worst case.
+
+**Fix**: Strategic direction, not a band-aid. If the fix requires
+auditing for the same pattern elsewhere, say so.
+```
+
+Where `{severity}` is either `🚫 **Blocker**` or `💡 **Suggestion**`.
+
+The pattern name after the severity tag is required — it names the class of issue so the fixer knows to grep for similar instances. "Missing error handling" not "this function doesn't catch exceptions". One class = one comment, even if it appears in multiple locations.
 
 ## Review Output
 
 You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root. The orchestrator will read this file and post the review on your behalf — you own the content, the orchestrator owns the delivery.
 
-Schema:
-
-```json
-{
-  "event": "APPROVE",
-  "body": "✅ **Approved** — no issues found.\n\nSummary of the review.\n\n---",
-  "comments": [
-    {
-      "path": "file.py",
-      "line": 42,
-      "body": "🚫 **Blocker**\n\nExplanation of the issue."
-    }
-  ]
-}
-```
+Read `stacks/agents/app/review.py` for the `ReviewOutput` and `ReviewComment` Pydantic models — they define the exact schema and include examples. That file is the single source of truth for the output format.
 
 ### `body` format
 
-Start with a verdict banner so the outcome is visible at a glance:
+Start with a verdict banner:
 
 - `✅ **Approved** — no issues found.` when event is APPROVE
 - `🚫 **Changes requested** — see inline comments.` when event is REQUEST_CHANGES
 
-Follow the banner with a blank line, then a concise summary of what you reviewed and any notable observations. End the body with `\n\n---`.
+Follow with 1-2 sentences on the overall design direction — is the approach sound, and what's the main risk? Do NOT repeat or summarize inline comments. The body is the forest; comments are the trees. End with `\n\n---`.
 
 ### Rules
 
