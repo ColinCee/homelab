@@ -1,7 +1,8 @@
 ---
 name: code-review
-description: Review a pull request for bugs, security issues, and breaking changes. Use when asked to review a PR, diff, or code changes.
+description: Automated code review for the homelab agent orchestrator. Use when the orchestrator dispatches a pull request review via the agent API — not for local or interactive use.
 allowed-tools: shell
+user-invocable: false
 ---
 
 # Code Review Skill

@@ -1,7 +1,8 @@
 ---
-name: implement
-description: Implement a GitHub issue or fix review feedback. Use when asked to implement an issue, build a feature, fix a bug, or address code review comments on a pull request.
+name: auto-implement
+description: Automated implementation for the homelab agent orchestrator. Use when the orchestrator dispatches an issue implementation or review-feedback fix via the agent API — not for local or interactive use.
 allowed-tools: shell
+user-invocable: false
 ---
 
 # Implementation Skill
