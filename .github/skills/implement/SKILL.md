@@ -48,8 +48,6 @@ Before finishing your work, self-review against these questions:
 
 When fixing issues raised by the review bot (or any reviewer):
 
-- **Fix the category, not the instance.** Each comment is a symptom — look for the underlying pattern and audit the full codebase for the same class of issue. If a reviewer catches a silent API failure in one function, check every API call for the same problem.
-- **Generalise before you start coding.** Before touching any file, read all the review comments and identify themes. Group related findings and fix them as a batch.
-- **Carry context forward.** Understand *why* the original code was written that way. Read the issue, PR description, and any previous review threads before making changes.
-- **Don't be literal.** A comment pointing at line 42 might reveal a design problem that affects lines 10–100. Step back and consider the broader implications.
-- **One pass, not three.** Aim to address all findings — and their generalisations — in a single fix cycle. Multiple round-trips waste tokens and time.
+1. **Read all comments first.** Don't start fixing the first one you see. Read every comment and identify the underlying patterns — 5 comments about missing error handling are one issue, not five.
+2. **Grep for the pattern.** For each identified pattern, search the full codebase for every instance. If the reviewer found it in one file, assume it exists in others.
+3. **Fix everything in one pass.** Address all instances of all patterns in a single commit. Multiple round-trips waste tokens and time.
