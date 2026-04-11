@@ -361,30 +361,36 @@ async def post_review(
             json=payload,
         )
 
-        if resp.status_code == 422 and comments:
-            logger.warning(
-                "GitHub rejected inline comments (422), retrying without them: %s",
-                resp.text[:500],
-            )
-            fallback_parts = [
-                body,
-                "",
-                "---",
-                "*Inline comments could not be posted (invalid line numbers). Included below:*",
-                "",
-            ]
-            for c in comments:
-                fallback_parts.append(
-                    f"**{c.get('path', '?')}:{c.get('line', '?')}** — {c.get('body', '')}"
+        if resp.status_code == 422:
+            if not comments:
+                logger.warning(
+                    "GitHub rejected review (422): %s",
+                    resp.text[:500],
                 )
-                fallback_parts.append("")
+            else:
+                logger.warning(
+                    "GitHub rejected inline comments (422), retrying without them: %s",
+                    resp.text[:500],
+                )
+                fallback_parts = [
+                    body,
+                    "",
+                    "---",
+                    "*Inline comments could not be posted (invalid line numbers). Included below:*",
+                    "",
+                ]
+                for c in comments:
+                    fallback_parts.append(
+                        f"**{c.get('path', '?')}:{c.get('line', '?')}** — {c.get('body', '')}"
+                    )
+                    fallback_parts.append("")
 
-            fallback_payload: dict = {"event": event, "body": "\n".join(fallback_parts)}
-            resp = await client.post(
-                f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews",
-                headers=headers,
-                json=fallback_payload,
-            )
+                fallback_payload: dict = {"event": event, "body": "\n".join(fallback_parts)}
+                resp = await client.post(
+                    f"https://api.github.com/repos/{repo}/pulls/{pr_number}/reviews",
+                    headers=headers,
+                    json=fallback_payload,
+                )
 
         resp.raise_for_status()
         return resp.json()

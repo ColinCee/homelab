@@ -135,10 +135,11 @@ async def review_pr(
             event = review_data["event"]
             downgraded = False
 
-            # GitHub doesn't allow REQUEST_CHANGES on your own PR — use COMMENT instead
+            # GitHub doesn't allow REQUEST_CHANGES or APPROVE on your own PR
             pr_data = await get_pr(repo, pr_number)
-            if event == "REQUEST_CHANGES" and pr_data.get("user", {}).get("login") == bot_login():
-                logger.info("Using COMMENT instead of REQUEST_CHANGES (bot's own PR)")
+            is_own_pr = pr_data.get("user", {}).get("login") == bot_login()
+            if is_own_pr and event in ("REQUEST_CHANGES", "APPROVE"):
+                logger.info("Using COMMENT instead of %s (bot's own PR)", event)
                 event = "COMMENT"
                 downgraded = True
 
