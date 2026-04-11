@@ -14,6 +14,14 @@ COPILOT_BINARY = "/usr/local/bin/copilot"
 TIMEOUT_SECONDS = 600
 
 
+class TaskError(Exception):
+    """Wraps a post-CLI failure, preserving the premium request count for metrics."""
+
+    def __init__(self, message: str, *, premium_requests: int = 0) -> None:
+        super().__init__(message)
+        self.premium_requests = premium_requests
+
+
 @dataclass
 class CLIResult:
     """Result from a Copilot CLI invocation."""
@@ -133,12 +141,20 @@ async def run_copilot(
         err_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(out_task, err_task)
-        raise RuntimeError(f"Copilot CLI timed out after {TIMEOUT_SECONDS}s") from err
+        stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
+        raise TaskError(
+            f"Copilot CLI timed out after {TIMEOUT_SECONDS}s",
+            premium_requests=stats["premium_requests"],
+        ) from err
 
     if proc.returncode != 0:
         error = "\n".join(stderr_lines) or "\n".join(stdout_lines)
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
-        raise RuntimeError(f"Copilot CLI exited with code {proc.returncode}: {error}")
+        stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
+        raise TaskError(
+            f"Copilot CLI exited with code {proc.returncode}: {error}",
+            premium_requests=stats["premium_requests"],
+        )
 
     output = "\n".join(stdout_lines)
     all_output = "\n".join(stdout_lines + stderr_lines)
