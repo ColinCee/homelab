@@ -81,22 +81,10 @@ class TestGetToken:
 
 
 class TestBotLogin:
-    def test_default_slug(self):
-        with patch.dict("os.environ", {}, clear=False):
-            assert github.bot_login() == "colins-homelab-bot[bot]"
-
-    def test_custom_slug(self):
-        with patch.dict("os.environ", {"GITHUB_APP_SLUG": "my-bot"}):
-            assert github.bot_login() == "my-bot[bot]"
+    def test_login(self):
+        assert github.bot_login() == "colins-homelab-bot[bot]"
 
 
 class TestBotEmail:
-    def test_default(self):
-        with patch.dict("os.environ", {}, clear=False):
-            assert (
-                github.bot_email() == "274352150+colins-homelab-bot[bot]@users.noreply.github.com"
-            )
-
-    def test_custom_slug(self):
-        with patch.dict("os.environ", {"GITHUB_APP_SLUG": "my-bot", "GITHUB_APP_BOT_ID": "12345"}):
-            assert github.bot_email() == "12345+my-bot[bot]@users.noreply.github.com"
+    def test_email(self):
+        assert github.bot_email() == "274352150+colins-homelab-bot[bot]@users.noreply.github.com"

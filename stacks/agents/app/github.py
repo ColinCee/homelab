@@ -71,19 +71,18 @@ def reset_token_cache() -> None:
     _token_expires_at = 0
 
 
+_APP_SLUG = "colins-homelab-bot"
+_BOT_USER_ID = "274352150"  # stable across app renames
+
+
 def bot_login() -> str:
-    """Derive the bot login from the GitHub App slug (set via env var)."""
-    app_slug = os.environ.get("GITHUB_APP_SLUG", "colins-homelab-bot")
-    return f"{app_slug}[bot]"
+    """The bot's GitHub login (e.g. 'colins-homelab-bot[bot]')."""
+    return f"{_APP_SLUG}[bot]"
 
 
 def bot_email() -> str:
-    """GitHub noreply email for the bot, used as git commit author.
-
-    Bot user ID (274352150) is stable across app renames.
-    """
-    bot_id = os.environ.get("GITHUB_APP_BOT_ID", "274352150")
-    return f"{bot_id}+{bot_login()}@users.noreply.github.com"
+    """GitHub noreply email for the bot, used as git commit author."""
+    return f"{_BOT_USER_ID}+{bot_login()}@users.noreply.github.com"
 
 
 async def _fetch_all_reviews(repo: str, pr_number: int, token: str) -> list[dict]:
