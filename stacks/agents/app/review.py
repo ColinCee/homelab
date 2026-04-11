@@ -154,9 +154,11 @@ async def review_pr(
         except Exception as exc:
             raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
-        # When downgraded to COMMENT, dismiss ALL prior stateful reviews —
-        # otherwise a stale APPROVE could linger since our COMMENT isn't stateful
-        await dismiss_stale_reviews(repo, pr_number, keep_latest=not downgraded)
+        # Best-effort cleanup — review is already posted, don't fail the task
+        try:
+            await dismiss_stale_reviews(repo, pr_number, keep_latest=not downgraded)
+        except Exception:
+            logger.warning("Failed to dismiss stale reviews on %s#%d", repo, pr_number)
 
         elapsed = time.monotonic() - start
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
