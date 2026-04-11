@@ -195,6 +195,20 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
         return "\n".join(lines)
 
 
+# --- Pull Request Reviews ---
+#
+# GitHub has three distinct comment types on PRs:
+#   1. PR comments — plain text on the timeline (Issues API), no merge impact
+#   2. Review comments — inline code annotations, always part of a review
+#   3. Reviews — submitted via the Reviews API with a verdict:
+#      - APPROVED / CHANGES_REQUESTED — "stateful", affect branch protection
+#      - COMMENT — informational only, no merge impact
+#
+# Only stateful reviews (APPROVED, CHANGES_REQUESTED) can be dismissed.
+# Dismissal changes the state to DISMISSED, removing its merge-blocking effect.
+# COMMENT reviews are permanent — they can't be dismissed or retracted.
+
+
 async def dismiss_stale_reviews(repo: str, pr_number: int, *, keep_latest: bool = True) -> None:
     """Dismiss previous stateful bot reviews.
 
