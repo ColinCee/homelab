@@ -3,10 +3,10 @@
 *
 
 # Dockerfile and app source
-!stacks/agents/app/
+!stacks/agents/app/**
 
 # Repo-level config needed by the build
 !mise.toml
 !pyproject.toml
 !uv.lock
-!.github/
+!.github/**

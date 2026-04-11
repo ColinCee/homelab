@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from copilot import TaskError, run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
+    TRUSTED_ROLES,
     bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
@@ -157,7 +158,11 @@ def _parse_linked_issues(text: str) -> list[int]:
 
 
 async def _fetch_linked_issues_section(repo: str, description: str) -> str:
-    """Fetch linked issue bodies and format as a prompt section."""
+    """Fetch linked issue bodies and format as a prompt section.
+
+    Only includes issues authored by trusted roles (OWNER/MEMBER/COLLABORATOR)
+    to prevent prompt injection via attacker-controlled issue bodies.
+    """
     issue_numbers = _parse_linked_issues(description)
     if not issue_numbers:
         return ""
@@ -166,6 +171,14 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     for num in issue_numbers:
         try:
             issue = await get_issue(repo, num)
+            author_role = issue.get("author_association", "NONE")
+            if author_role not in TRUSTED_ROLES:
+                logger.warning(
+                    "Skipping linked issue #%d — author role '%s' not trusted",
+                    num,
+                    author_role,
+                )
+                continue
             title = issue.get("title", "")
             body = issue.get("body") or "_No body._"
             parts.append(f"### #{num}: {title}\n\n{body}")
