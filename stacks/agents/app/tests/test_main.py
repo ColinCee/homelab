@@ -45,6 +45,14 @@ def test_metrics_endpoint_exposes_prometheus_text():
     assert 'agent_task_in_progress{task_type="review"} 0.0' in resp.text
 
 
+@patch("main.reap_old_worktrees", new_callable=AsyncMock)
+def test_startup_reaps_old_worktrees(mock_reap):
+    with TestClient(app):
+        pass
+
+    mock_reap.assert_awaited_once()
+
+
 @patch("main.review_pr", new_callable=AsyncMock)
 def test_review_returns_202_accepted(mock_review):
     mock_review.return_value = {"model": "gpt-5.4", "elapsed_seconds": 1.5}

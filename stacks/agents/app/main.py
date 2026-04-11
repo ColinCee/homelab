@@ -4,6 +4,8 @@ import contextlib
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import JSONResponse
@@ -11,6 +13,7 @@ from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
 from copilot import TaskError
+from git import reap_old_worktrees
 from github import comment_on_issue
 from implement import implement_issue
 from metrics import (
@@ -25,14 +28,21 @@ from review import review_pr
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Homelab Agent Service", version="0.6.0")
-app.mount("/metrics", make_asgi_app(registry=METRICS_REGISTRY))
-
 MODEL = os.environ.get("MODEL", "gpt-5.4")
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
 
 _review_status: dict[str, dict] = {}
 _implement_status: dict[str, dict] = {}
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await reap_old_worktrees()
+    yield
+
+
+app = FastAPI(title="Homelab Agent Service", version="0.6.0", lifespan=lifespan)
+app.mount("/metrics", make_asgi_app(registry=METRICS_REGISTRY))
 
 
 def _review_key(repo: str, pr_number: int) -> str:
