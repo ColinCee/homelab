@@ -1,6 +1,6 @@
 ---
-name: auto-implement
-description: Automated implementation for the homelab agent orchestrator. Use when the orchestrator dispatches an issue implementation or review-feedback fix via the agent API — not for local or interactive use.
+name: bot-implement
+description: Implementation skill for the homelab review bot. Activated when the bot orchestrator dispatches an issue implementation or review-feedback fix — not for local or interactive use.
 allowed-tools: shell
 user-invocable: false
 ---

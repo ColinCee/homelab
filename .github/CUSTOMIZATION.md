@@ -147,8 +147,8 @@ From [agentskills.io best practices](https://agentskills.io/skill-creation/best-
 
 | Skill | Invocable | Auto-loaded | Purpose |
 |-------|:-:|:-:|---------|
-| `auto-implement` | ❌ | ✅ | Orchestrator: implement issues, fix review feedback |
-| `code-review` | ❌ | ✅ | Orchestrator: structured PR review with JSON output |
+| `bot-implement` | ❌ | ✅ | Orchestrator: implement issues, fix review feedback |
+| `bot-review` | ❌ | ✅ | Orchestrator: structured PR review with JSON output |
 
 ## Decision tree: where does this go?
 

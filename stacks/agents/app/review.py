@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 REVIEW_PROMPT_TEMPLATE = """\
 Review PR #{pr_number} in {repo}.
 
-Use the code-review skill for review guidelines and output format.
+Use the bot-review skill for review guidelines and output format.
 {previous_review_section}\
 """
 

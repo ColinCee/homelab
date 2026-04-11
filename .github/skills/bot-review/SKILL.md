@@ -1,6 +1,6 @@
 ---
-name: code-review
-description: Automated code review for the homelab agent orchestrator. Use when the orchestrator dispatches a pull request review via the agent API — not for local or interactive use.
+name: bot-review
+description: Code review skill for the homelab review bot. Activated when the bot orchestrator dispatches a pull request review — not for local or interactive use.
 allowed-tools: shell
 user-invocable: false
 ---
