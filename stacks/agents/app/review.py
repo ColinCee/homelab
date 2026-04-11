@@ -352,6 +352,7 @@ async def review_pr(
             "reasoning_effort": reasoning_effort,
             "premium_requests": result.total_premium_requests,
             "models": result.models,
+            "original_event": review_data.event,
         }
 
     finally:

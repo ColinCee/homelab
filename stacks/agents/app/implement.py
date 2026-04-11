@@ -1,27 +1,25 @@
 """Issue implementation orchestrator — turns issues into PRs via Copilot CLI."""
 
+import contextlib
 import logging
 import time
 
 from copilot import TaskError, run_copilot
-from git import (
-    cleanup_branch_worktree,
-    cleanup_worktree,
-    commit_and_push,
-    create_branch_worktree,
-    create_worktree,
-)
+from git import cleanup_branch_worktree, commit_and_push, create_branch_worktree
 from github import (
     TRUSTED_ROLES,
     comment_on_issue,
     create_pull_request,
     get_issue,
-    get_pr,
     get_token,
     get_unresolved_threads,
+    mark_pr_ready,
 )
+from review import review_pr
 
 logger = logging.getLogger(__name__)
+
+MAX_FIX_ITERATIONS = 3
 
 IMPLEMENT_PROMPT_TEMPLATE = """\
 Implement the following GitHub issue in {repo}.
@@ -34,15 +32,10 @@ Use the bot-implement skill for guidelines on how to make changes.
 """
 
 FIX_PROMPT_TEMPLATE = """\
-Fix the review feedback on PR #{pr_number} in {repo}.
-
-## PR Description
-
-{pr_body}
+The automated review found issues with your implementation of #{issue_number}. \
+Fix all reported problems.
 
 ## Review Findings
-
-The review bot found the following issues that need to be addressed:
 
 {threads}
 
@@ -57,7 +50,7 @@ async def implement_issue(
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
 ) -> dict:
-    """Implement a GitHub issue: create branch → run CLI → push → create PR."""
+    """Implement a GitHub issue: branch → CLI → push → PR → review+fix loop."""
     logger.info("Implementing issue %s#%d", repo, issue_number)
     start = time.monotonic()
     repo_url = f"https://github.com/{repo}.git"
@@ -74,6 +67,9 @@ async def implement_issue(
             f"Issue #{issue_number} author has role '{author_role}' — "
             f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
         )
+
+    total_premium_requests = 0
+    pr_number = None
 
     try:
         worktree_path = await create_branch_worktree(branch_name, repo_url)
@@ -93,6 +89,8 @@ async def implement_issue(
             model=model,
             effort=reasoning_effort,
         )
+        total_premium_requests += result.total_premium_requests
+        implement_session_id = result.session_id
 
         # Post-CLI operations can fail — preserve premium request count for metrics
         try:
@@ -104,6 +102,9 @@ async def implement_issue(
                 branch=branch_name,
             )
 
+            # Draft PR avoids triggering code-review.yaml (which skips
+            # drafts), preventing a concurrent external review from racing
+            # the internal review+fix loop below.
             pr = await create_pull_request(
                 repo,
                 title=f"feat: {issue['title']}",
@@ -112,121 +113,185 @@ async def implement_issue(
                 ),
                 head=branch_name,
                 base="main",
+                draft=True,
             )
         except Exception as exc:
-            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
+            raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
-        # Trigger review — if this fails, surface partial success with the PR info
-        try:
-            await comment_on_issue(repo, pr["number"], "/review")
-        except Exception:
-            logger.warning("Failed to trigger /review on PR #%d", pr["number"])
-            return {
-                "status": "partial",
-                "pr_number": pr["number"],
-                "pr_url": pr["html_url"],
-                "commit_sha": sha,
-                "elapsed_seconds": time.monotonic() - start,
-                "premium_requests": result.total_premium_requests,
-                "error": "PR created but failed to trigger /review comment",
-            }
+        pr_number = pr["number"]
+        pr_url = pr["html_url"]
 
-        elapsed = time.monotonic() - start
-        logger.info(
-            "Implementation complete for %s#%d in %.1fs → PR #%d",
-            repo,
-            issue_number,
-            elapsed,
-            pr["number"],
-        )
-
-        return {
-            "status": "complete",
-            "pr_number": pr["number"],
-            "pr_url": pr["html_url"],
-            "commit_sha": sha,
-            "elapsed_seconds": elapsed,
-            "premium_requests": result.total_premium_requests,
-        }
-
-    finally:
-        await cleanup_branch_worktree(branch_name)
-
-
-async def fix_pr(
-    *,
-    repo: str,
-    pr_number: int,
-    model: str = "gpt-5.4",
-    reasoning_effort: str = "high",
-) -> dict:
-    """Fix review feedback on a PR: checkout → run CLI → push → re-trigger review."""
-    logger.info("Fixing PR %s#%d", repo, pr_number)
-    start = time.monotonic()
-    repo_url = f"https://github.com/{repo}.git"
-
-    token = await get_token()
-
-    threads = await get_unresolved_threads(repo, pr_number)
-    if not threads:
-        return {"status": "nothing_to_fix", "pr_number": pr_number}
-
-    pr_data = await get_pr(repo, pr_number)
-    head_branch = pr_data["head"]["ref"]
-
-    try:
-        worktree_path = await create_worktree(pr_number, repo_url)
-
-        prompt = FIX_PROMPT_TEMPLATE.format(
-            repo=repo,
-            pr_number=pr_number,
-            pr_body=pr_data.get("body") or "(no description)",
-            threads=threads,
-        )
-
-        # Agent gets NO GitHub API access — it only edits local files.
-        result = await run_copilot(
-            worktree_path,
-            prompt,
-            model=model,
-            effort=reasoning_effort,
-        )
-
-        try:
-            sha = await commit_and_push(
-                worktree_path,
-                message=f"fix: address review feedback on #{pr_number}",
-                token=token,
-                repo=repo,
-                branch=head_branch,
+        # Review+fix loop — review first, then fix if needed.
+        # We allow MAX_FIX_ITERATIONS fix attempts. Each fix is followed by a
+        # re-review, so we run up to MAX_FIX_ITERATIONS + 1 review rounds
+        # (initial + one after each fix).
+        for review_round in range(MAX_FIX_ITERATIONS + 1):
+            logger.info(
+                "Review round %d/%d for %s#%d (PR #%d)",
+                review_round + 1,
+                MAX_FIX_ITERATIONS + 1,
+                repo,
+                issue_number,
+                pr_number,
             )
-        except Exception as exc:
-            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
-        # Trigger re-review — if this fails, surface partial success
-        try:
-            await comment_on_issue(repo, pr_number, "/review")
-        except Exception:
-            logger.warning("Failed to trigger /review on PR #%d", pr_number)
-            return {
-                "status": "partial",
-                "pr_number": pr_number,
-                "commit_sha": sha,
-                "elapsed_seconds": time.monotonic() - start,
-                "premium_requests": result.total_premium_requests,
-                "error": "Fix pushed but failed to trigger /review comment",
-            }
+            try:
+                review_result = await review_pr(
+                    repo=repo,
+                    pr_number=pr_number,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                )
+            except TaskError as exc:
+                total_premium_requests += exc.premium_requests
+                logger.warning("Review failed on round %d: %s", review_round + 1, exc)
+                return {
+                    "status": "partial",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                    "error": f"Review failed on round {review_round + 1}: {exc}",
+                }
 
-        elapsed = time.monotonic() - start
-        logger.info("Fix complete for %s#%d in %.1fs", repo, pr_number, elapsed)
+            total_premium_requests += review_result.get("premium_requests", 0)
+            original_event = review_result.get("original_event", "COMMENT")
+
+            if original_event != "REQUEST_CHANGES":
+                logger.info(
+                    "Review passed (%s) on round %d for %s#%d",
+                    original_event,
+                    review_round + 1,
+                    repo,
+                    issue_number,
+                )
+                return {
+                    "status": "complete",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                }
+
+            # REQUEST_CHANGES — check if we have fix attempts remaining
+            if review_round == MAX_FIX_ITERATIONS:
+                # Final review after last fix still found issues
+                break
+
+            if not implement_session_id:
+                logger.warning(
+                    "Cannot resume session — no session ID captured. Stopping after review."
+                )
+                return {
+                    "status": "partial",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                    "error": "Review requested changes but session resumption unavailable",
+                }
+
+            threads = await get_unresolved_threads(repo, pr_number)
+            if not threads:
+                logger.warning(
+                    "REQUEST_CHANGES but no unresolved threads — "
+                    "findings may be in review body only"
+                )
+                return {
+                    "status": "partial",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                    "error": "Review requested changes but findings are in "
+                    "review body (not inline threads) — needs manual attention",
+                }
+
+            fix_prompt = FIX_PROMPT_TEMPLATE.format(
+                issue_number=issue_number,
+                threads=threads,
+            )
+
+            try:
+                fix_result = await run_copilot(
+                    worktree_path,
+                    fix_prompt,
+                    model=model,
+                    effort=reasoning_effort,
+                    session_id=implement_session_id,
+                )
+                total_premium_requests += fix_result.total_premium_requests
+                if fix_result.session_id:
+                    implement_session_id = fix_result.session_id
+            except TaskError as exc:
+                total_premium_requests += exc.premium_requests
+                raise TaskError(
+                    f"Fix failed on round {review_round + 1}: {exc}",
+                    premium_requests=total_premium_requests,
+                ) from exc
+
+            try:
+                sha = await commit_and_push(
+                    worktree_path,
+                    message=f"fix: address review feedback on #{issue_number} "
+                    f"(round {review_round + 1})",
+                    token=token,
+                    repo=repo,
+                    branch=branch_name,
+                )
+            except RuntimeError as exc:
+                if "No changes to commit" in str(exc):
+                    logger.warning(
+                        "No changes after fix round %d — needs manual attention",
+                        review_round + 1,
+                    )
+                    return {
+                        "status": "partial",
+                        "pr_number": pr_number,
+                        "pr_url": pr_url,
+                        "commit_sha": sha,
+                        "review_rounds": review_round + 1,
+                        "elapsed_seconds": time.monotonic() - start,
+                        "premium_requests": total_premium_requests,
+                        "error": "Fix produced no changes — remaining findings "
+                        "need manual attention",
+                    }
+                raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
+            except Exception as exc:
+                raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
+
+        # Exhausted all fix iterations — last review still requested changes
+        logger.warning(
+            "Hit max fix iterations (%d) for %s#%d", MAX_FIX_ITERATIONS, repo, issue_number
+        )
+        with contextlib.suppress(Exception):
+            await comment_on_issue(
+                repo,
+                pr_number,
+                f"⚠️ Hit maximum fix iterations ({MAX_FIX_ITERATIONS}). "
+                "The remaining issues need manual attention.",
+            )
 
         return {
-            "status": "fixed",
+            "status": "max_iterations",
             "pr_number": pr_number,
+            "pr_url": pr_url,
             "commit_sha": sha,
-            "elapsed_seconds": elapsed,
-            "premium_requests": result.total_premium_requests,
+            "review_rounds": MAX_FIX_ITERATIONS + 1,
+            "elapsed_seconds": time.monotonic() - start,
+            "premium_requests": total_premium_requests,
         }
 
     finally:
-        await cleanup_worktree(pr_number)
+        if pr_number is not None:
+            with contextlib.suppress(Exception):
+                await mark_pr_ready(repo, pr_number)
+        await cleanup_branch_worktree(branch_name)

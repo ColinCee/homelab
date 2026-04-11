@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from copilot import CLIResult, _parse_stats, _parse_time
+from copilot import CLIResult, _parse_session_id, _parse_stats, _parse_time
 
 SAMPLE_OUTPUT = """\
 Hello world
@@ -98,6 +98,26 @@ def test_stats_line_strips_est_premium():
     assert "2.2m in, 28.9k out, 2.1m cached" in r.stats_line
 
 
+def test_parse_session_id_from_output():
+    output = "Starting session...\nSession ID: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`\nDone."
+    assert _parse_session_id(output) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
+def test_parse_session_id_without_backticks():
+    output = "Session ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    assert _parse_session_id(output) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
+def test_parse_session_id_returns_none_when_absent():
+    assert _parse_session_id("no session info here") is None
+
+
+def test_parse_session_id_from_markdown_transcript():
+    """The --share transcript uses markdown: > - **Session ID:** `<uuid>`"""
+    output = "> - **Session ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`"
+    assert _parse_session_id(output) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
 class TestRunCopilot:
     def _make_mock_process(self, stdout_text: str = "", returncode: int = 0):
         """Create a mock subprocess that yields stdout_text line by line."""
@@ -160,3 +180,41 @@ class TestRunCopilot:
         result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
 
         assert result.session_transcript is None
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_resume_flag_in_command(self, mock_exec: AsyncMock, tmp_path: Path):
+        """When session_id is provided, --resume flag is passed to the CLI."""
+        proc = self._make_mock_process("done")
+        mock_exec.return_value = proc
+
+        asyncio.run(
+            __import__("copilot").run_copilot(tmp_path, "fix prompt", session_id="abc-123-def-456")
+        )
+
+        cmd = mock_exec.call_args[0]
+        resume_args = [a for a in cmd if a.startswith("--resume=")]
+        assert resume_args == ["--resume=abc-123-def-456"]
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_no_resume_flag_without_session_id(self, mock_exec: AsyncMock, tmp_path: Path):
+        """Without session_id, no --resume flag is passed."""
+        proc = self._make_mock_process("done")
+        mock_exec.return_value = proc
+
+        asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+
+        cmd = mock_exec.call_args[0]
+        resume_args = [a for a in cmd if a.startswith("--resume=")]
+        assert resume_args == []
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_session_id_parsed_from_output(self, mock_exec: AsyncMock, tmp_path: Path):
+        """Session ID is extracted from CLI stdout."""
+        proc = self._make_mock_process(
+            "Starting...\nSession ID: `a1b2c3d4-e5f6-7890-abcd-ef1234567890`\nDone."
+        )
+        mock_exec.return_value = proc
+
+        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+
+        assert result.session_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
