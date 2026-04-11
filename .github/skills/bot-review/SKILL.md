@@ -21,8 +21,10 @@ Review for:
 
 ## Review Approach
 
+- **Start with the big picture.** Before examining individual lines, understand the PR's goal and whether the approach is sound. A PR can have zero bugs and still be wrong — wrong abstraction, wrong layer, wrong trade-off. If the design direction is off, say so in the body summary before diving into line-level issues.
 - **Trace the full flow.** Don't just read the diff line-by-line. Follow data through the system — if a function is changed, check every caller. If a status value is added, check every consumer.
 - **Report root causes, not symptoms.** When you find a bug, ask: what's the underlying pattern, and where else does it appear? Report the class of issue with ALL affected locations in a single comment. If you'd file the same finding against 5 different lines, that's one finding with 5 locations, not 5 findings.
+- **Assess blast radius.** For each finding, think beyond the immediate line. What's the worst case? How many codepaths are affected? Does this interact with other systems (CI, deploy, auth)? A "small" bug in a hot path is worse than a "big" bug in dead code.
 - **Think about implications.** If you recommend "this should raise instead of log", also flag what happens to callers when it raises. Don't create a fix that introduces a new bug.
 - **Front-load everything.** Aim for one review round, not three. Surface all issues — including second-order effects of your own recommendations — in a single pass.
 
@@ -41,7 +43,7 @@ Each inline comment must follow this structure:
 
 **Problem**: What's wrong — concise, specific to this diff.
 
-**Impact**: What happens if not fixed — why this matters.
+**Impact**: Blast radius — what breaks, how broadly, and what's the worst case.
 
 **Fix**: Strategic direction, not a band-aid. If the fix requires
 auditing for the same pattern elsewhere, say so.
@@ -83,7 +85,12 @@ Start with a verdict banner so the outcome is visible at a glance:
 - `✅ **Approved** — no issues found.` when event is APPROVE
 - `🚫 **Changes requested** — see inline comments.` when event is REQUEST_CHANGES
 
-Follow the banner with a blank line, then a concise summary of what you reviewed and any notable observations. End the body with `\n\n---`.
+Follow the banner with a strategic summary (2-4 sentences):
+- **Design assessment** — is the overall approach sound? Right abstraction, right layer?
+- **Risk assessment** — what's the main risk this PR introduces or mitigates?
+- **Key trade-offs** — what did the author trade off, and is the trade-off reasonable?
+
+Don't list files or repeat inline comments. The summary should help someone who reads *only* the body understand whether this PR is headed in the right direction. End the body with `\n\n---`.
 
 ### Rules
 
