@@ -73,10 +73,18 @@ class TestImplementIssue:
 
     def test_creates_pr_and_review_approves(self):
         """Happy path: implement → PR → review approves on first pass."""
-        result = self._run_with_mocks(self._standard_mocks(review_events=["APPROVE"]))
+        create_pr = AsyncMock(return_value={"number": 99, "html_url": "https://url"})
+
+        mocks = self._standard_mocks(review_events=["APPROVE"])
+        mocks[5] = patch("implement.create_pull_request", create_pr)
+        result = self._run_with_mocks(mocks)
         assert result["status"] == "complete"
         assert result["pr_number"] == 99
         assert result["review_rounds"] == 1
+        # PR must be created as draft to avoid racing code-review.yaml
+        create_pr.assert_called_once()
+        _, kwargs = create_pr.call_args
+        assert kwargs.get("draft") is True
 
     def test_review_fix_loop_converges(self):
         """Review requests changes, fix succeeds, second review approves."""

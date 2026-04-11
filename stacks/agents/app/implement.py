@@ -100,6 +100,9 @@ async def implement_issue(
                 branch=branch_name,
             )
 
+            # Draft PR avoids triggering code-review.yaml (which skips
+            # drafts), preventing a concurrent external review from racing
+            # the internal review+fix loop below.
             pr = await create_pull_request(
                 repo,
                 title=f"feat: {issue['title']}",
@@ -108,6 +111,7 @@ async def implement_issue(
                 ),
                 head=branch_name,
                 base="main",
+                draft=True,
             )
         except Exception as exc:
             raise TaskError(str(exc), premium_requests=total_premium_requests) from exc

@@ -296,7 +296,13 @@ async def get_pr(repo: str, pr_number: int) -> dict:
 
 
 async def create_pull_request(
-    repo: str, *, title: str, body: str, head: str, base: str = "main"
+    repo: str,
+    *,
+    title: str,
+    body: str,
+    head: str,
+    base: str = "main",
+    draft: bool = False,
 ) -> dict:
     """Create a pull request. Returns PR data with number and html_url."""
     token = await get_token()
@@ -309,7 +315,13 @@ async def create_pull_request(
         resp = await client.post(
             f"https://api.github.com/repos/{repo}/pulls",
             headers=headers,
-            json={"title": title, "body": body, "head": head, "base": base},
+            json={
+                "title": title,
+                "body": body,
+                "head": head,
+                "base": base,
+                "draft": draft,
+            },
         )
         resp.raise_for_status()
         return resp.json()
