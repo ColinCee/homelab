@@ -76,7 +76,7 @@ class TestImplementIssue:
         result = self._run_with_mocks(self._standard_mocks(review_events=["APPROVE"]))
         assert result["status"] == "complete"
         assert result["pr_number"] == 99
-        assert result["iterations"] == 1
+        assert result["review_rounds"] == 1
 
     def test_review_fix_loop_converges(self):
         """Review requests changes, fix succeeds, second review approves."""
@@ -84,13 +84,14 @@ class TestImplementIssue:
             self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
         )
         assert result["status"] == "complete"
-        assert result["iterations"] == 2
+        assert result["review_rounds"] == 2
 
     def test_max_iterations_posts_comment(self):
         """Exhausting all fix iterations returns max_iterations status."""
-        result = self._run_with_mocks(self._standard_mocks(review_events=["REQUEST_CHANGES"] * 3))
+        # 3 fixes + 1 final review = 4 review rounds, all REQUEST_CHANGES
+        result = self._run_with_mocks(self._standard_mocks(review_events=["REQUEST_CHANGES"] * 4))
         assert result["status"] == "max_iterations"
-        assert result["iterations"] == 3
+        assert result["review_rounds"] == 4
 
     def test_no_session_id_returns_partial(self):
         """Without session ID, cannot resume — returns partial after first review."""
@@ -99,6 +100,19 @@ class TestImplementIssue:
         )
         assert result["status"] == "partial"
         assert "session resumption unavailable" in result["error"]
+
+    def test_no_threads_returns_partial(self):
+        """REQUEST_CHANGES with no threads returns partial, not complete."""
+        mocks = self._standard_mocks(review_events=["REQUEST_CHANGES"])
+        # Override get_unresolved_threads to return empty
+        mocks[7] = patch(
+            "implement.get_unresolved_threads",
+            new_callable=AsyncMock,
+            return_value="",
+        )
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "partial"
+        assert "review body" in result["error"]
 
     def test_accumulates_premium_requests(self):
         """Premium requests from implement + review + fix are all accumulated."""

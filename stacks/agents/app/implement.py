@@ -115,12 +115,15 @@ async def implement_issue(
         pr_number = pr["number"]
         pr_url = pr["html_url"]
 
-        # Review+fix loop — the agent reviews its own work and iterates
-        for iteration in range(MAX_FIX_ITERATIONS):
+        # Review+fix loop — review first, then fix if needed.
+        # We allow MAX_FIX_ITERATIONS fix attempts. Each fix is followed by a
+        # re-review, so we run up to MAX_FIX_ITERATIONS + 1 review rounds
+        # (initial + one after each fix).
+        for review_round in range(MAX_FIX_ITERATIONS + 1):
             logger.info(
-                "Review iteration %d/%d for %s#%d (PR #%d)",
-                iteration + 1,
-                MAX_FIX_ITERATIONS,
+                "Review round %d/%d for %s#%d (PR #%d)",
+                review_round + 1,
+                MAX_FIX_ITERATIONS + 1,
                 repo,
                 issue_number,
                 pr_number,
@@ -135,16 +138,16 @@ async def implement_issue(
                 )
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
-                logger.warning("Review failed on iteration %d: %s", iteration + 1, exc)
+                logger.warning("Review failed on round %d: %s", review_round + 1, exc)
                 return {
                     "status": "partial",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "commit_sha": sha,
-                    "iterations": iteration + 1,
+                    "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
-                    "error": f"Review failed on iteration {iteration + 1}: {exc}",
+                    "error": f"Review failed on round {review_round + 1}: {exc}",
                 }
 
             total_premium_requests += review_result.get("premium_requests", 0)
@@ -152,9 +155,9 @@ async def implement_issue(
 
             if original_event != "REQUEST_CHANGES":
                 logger.info(
-                    "Review passed (%s) on iteration %d for %s#%d",
+                    "Review passed (%s) on round %d for %s#%d",
                     original_event,
-                    iteration + 1,
+                    review_round + 1,
                     repo,
                     issue_number,
                 )
@@ -163,12 +166,16 @@ async def implement_issue(
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "commit_sha": sha,
-                    "iterations": iteration + 1,
+                    "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
                 }
 
-            # REQUEST_CHANGES — fix and re-submit
+            # REQUEST_CHANGES — check if we have fix attempts remaining
+            if review_round == MAX_FIX_ITERATIONS:
+                # Final review after last fix still found issues
+                break
+
             if not implement_session_id:
                 logger.warning(
                     "Cannot resume session — no session ID captured. Stopping after review."
@@ -178,7 +185,7 @@ async def implement_issue(
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "commit_sha": sha,
-                    "iterations": iteration + 1,
+                    "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
                     "error": "Review requested changes but session resumption unavailable",
@@ -186,15 +193,20 @@ async def implement_issue(
 
             threads = await get_unresolved_threads(repo, pr_number)
             if not threads:
-                logger.info("No unresolved threads despite REQUEST_CHANGES — treating as pass")
+                logger.warning(
+                    "REQUEST_CHANGES but no unresolved threads — "
+                    "findings may be in review body only"
+                )
                 return {
-                    "status": "complete",
+                    "status": "partial",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "commit_sha": sha,
-                    "iterations": iteration + 1,
+                    "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
+                    "error": "Review requested changes but findings are in "
+                    "review body (not inline threads) — needs manual attention",
                 }
 
             fix_prompt = FIX_PROMPT_TEMPLATE.format(
@@ -216,7 +228,7 @@ async def implement_issue(
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
                 raise TaskError(
-                    f"Fix failed on iteration {iteration + 1}: {exc}",
+                    f"Fix failed on round {review_round + 1}: {exc}",
                     premium_requests=total_premium_requests,
                 ) from exc
 
@@ -224,31 +236,33 @@ async def implement_issue(
                 sha = await commit_and_push(
                     worktree_path,
                     message=f"fix: address review feedback on #{issue_number} "
-                    f"(iteration {iteration + 1})",
+                    f"(round {review_round + 1})",
                     token=token,
                     repo=repo,
                     branch=branch_name,
                 )
             except RuntimeError as exc:
                 if "No changes to commit" in str(exc):
-                    logger.info(
-                        "No changes after fix iteration %d — treating as complete",
-                        iteration + 1,
+                    logger.warning(
+                        "No changes after fix round %d — needs manual attention",
+                        review_round + 1,
                     )
                     return {
-                        "status": "complete",
+                        "status": "partial",
                         "pr_number": pr_number,
                         "pr_url": pr_url,
                         "commit_sha": sha,
-                        "iterations": iteration + 1,
+                        "review_rounds": review_round + 1,
                         "elapsed_seconds": time.monotonic() - start,
                         "premium_requests": total_premium_requests,
+                        "error": "Fix produced no changes — remaining findings "
+                        "need manual attention",
                     }
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
             except Exception as exc:
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
-        # Exhausted all iterations
+        # Exhausted all fix iterations — last review still requested changes
         logger.warning(
             "Hit max fix iterations (%d) for %s#%d", MAX_FIX_ITERATIONS, repo, issue_number
         )
@@ -265,7 +279,7 @@ async def implement_issue(
             "pr_number": pr_number,
             "pr_url": pr_url,
             "commit_sha": sha,
-            "iterations": MAX_FIX_ITERATIONS,
+            "review_rounds": MAX_FIX_ITERATIONS + 1,
             "elapsed_seconds": time.monotonic() - start,
             "premium_requests": total_premium_requests,
         }
