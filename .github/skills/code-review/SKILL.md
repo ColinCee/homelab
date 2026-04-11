@@ -33,14 +33,14 @@ Review for:
 
 ## Review Output
 
-You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root.
+You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root. The orchestrator will read this file and post the review on your behalf — you own the content, the orchestrator owns the delivery.
 
 Schema:
 
 ```json
 {
   "event": "APPROVE",
-  "body": "Summary of the review.",
+  "body": "✅ **Approved** — no issues found.\n\nSummary of the review.\n\n---",
   "comments": [
     {
       "path": "file.py",
@@ -51,15 +51,22 @@ Schema:
 }
 ```
 
-Rules:
+### `body` format
+
+Start with a verdict banner so the outcome is visible at a glance:
+
+- `✅ **Approved** — no issues found.` when event is APPROVE
+- `🚫 **Changes requested** — see inline comments.` when event is REQUEST_CHANGES
+
+Follow the banner with a blank line, then a concise summary of what you reviewed and any notable observations. End the body with `\n\n---`.
+
+### Rules
+
 - `event` must be `"REQUEST_CHANGES"` if you have blocker-severity comments, otherwise `"APPROVE"`
-- `body` is the review summary — end with `\n\n---`
 - `comments` is an array of inline comments (can be empty for a clean approval)
 - Each comment needs `path` (relative file path), `line` (line number in the new file), and `body`
 - For multi-line comments, add `start_line` (first line) alongside `line` (last line)
 - If the code looks good, set `event` to `"APPROVE"` with an empty `comments` array
-
-The orchestrator will read this file and post the review on your behalf.
 
 ## Previous Review Threads
 

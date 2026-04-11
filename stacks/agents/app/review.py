@@ -139,16 +139,9 @@ async def review_pr(
             event = "COMMENT"
             downgraded = True
 
-        verdict_banners = {
-            "APPROVE": "✅ **Approved** — no issues found.",
-            "REQUEST_CHANGES": "🚫 **Changes requested** — see inline comments.",
-            "COMMENT": "💬 **Review complete** — comments only, non-blocking.",
-        }
-        banner = verdict_banners.get(event, "")
-        parts = [banner, "", body] if banner else [body]
+        # Append stats as a collapsible footer — orchestrator-only metadata
         if result.stats_line:
-            parts.extend(["", f"📊 {result.stats_line}"])
-        body = "\n".join(parts)
+            body += f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
 
         await post_review(
             repo,
