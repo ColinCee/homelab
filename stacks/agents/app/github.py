@@ -327,6 +327,38 @@ async def create_pull_request(
         return resp.json()
 
 
+async def mark_pr_ready(repo: str, pr_number: int) -> None:
+    """Mark a draft PR as ready for review via GraphQL mutation."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    # First get the PR node_id (needed for GraphQL)
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
+            headers=headers,
+        )
+        resp.raise_for_status()
+        node_id = resp.json()["node_id"]
+
+        mutation = """
+        mutation($id: ID!) {
+            markPullRequestReadyForReview(input: {pullRequestId: $id}) {
+                pullRequest { number }
+            }
+        }
+        """
+        resp = await client.post(
+            "https://api.github.com/graphql",
+            headers=headers,
+            json={"query": mutation, "variables": {"id": node_id}},
+        )
+        resp.raise_for_status()
+
+
 async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
     """Post a comment on an issue or PR."""
     token = await get_token()

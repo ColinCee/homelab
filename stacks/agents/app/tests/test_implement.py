@@ -57,6 +57,7 @@ class TestImplementIssue:
                 return_value="- **file.py:10** — bug here",
             ),
             patch("implement.comment_on_issue", new_callable=AsyncMock),
+            patch("implement.mark_pr_ready", new_callable=AsyncMock),
             patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
         ]
 

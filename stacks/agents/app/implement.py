@@ -13,6 +13,7 @@ from github import (
     get_issue,
     get_token,
     get_unresolved_threads,
+    mark_pr_ready,
 )
 from review import review_pr
 
@@ -68,6 +69,7 @@ async def implement_issue(
         )
 
     total_premium_requests = 0
+    pr_number = None
 
     try:
         worktree_path = await create_branch_worktree(branch_name, repo_url)
@@ -289,4 +291,7 @@ async def implement_issue(
         }
 
     finally:
+        if pr_number is not None:
+            with contextlib.suppress(Exception):
+                await mark_pr_ready(repo, pr_number)
         await cleanup_branch_worktree(branch_name)
