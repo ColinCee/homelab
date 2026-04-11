@@ -1,7 +1,8 @@
 services:
   agent:
     build:
-      context: app
+      context: ../..
+      dockerfile: stacks/agents/app/Dockerfile
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

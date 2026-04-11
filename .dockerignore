@@ -1,0 +1,9 @@
+# Context is repo root — only include what the build needs
+**/.git
+**/.venv
+**/__pycache__
+**/.ruff_cache
+**/.pytest_cache
+**/data
+**/node_modules
+**/*.pyc

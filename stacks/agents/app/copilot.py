@@ -11,7 +11,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 COPILOT_BINARY = "/usr/local/bin/copilot"
-TIMEOUT_SECONDS = 600
+TIMEOUT_SECONDS = 900
 
 
 class TaskError(Exception):

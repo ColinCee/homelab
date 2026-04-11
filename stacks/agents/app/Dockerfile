@@ -19,22 +19,34 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     apt-get update && apt-get install -y --no-install-recommends gh && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+# Install mise and provision all dev tools (shellcheck, actionlint, trivy)
+# so the Copilot CLI has the same toolchain as local dev.
+# Shared data dir with shims on PATH — tools callable by any user.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+ENV MISE_DATA_DIR="/mise"
+ENV MISE_CONFIG_DIR="/mise"
+ENV MISE_CACHE_DIR="/mise/cache"
+ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
+RUN curl https://mise.run | sh
+COPY mise.toml /mise/config.toml
+RUN mise install --yes && mise reshim
 
-COPY . .
+WORKDIR /app
+COPY stacks/agents/app/pyproject.toml stacks/agents/app/uv.lock ./
+RUN uv sync --frozen
+
+COPY stacks/agents/app/ .
 
 # Non-root user for security
 RUN useradd -m -s /bin/bash agent && \
     mkdir -p /repo.git /reviews && \
-    chown agent:agent /repo.git /reviews
+    chown agent:agent /repo.git /reviews /mise
 
-COPY entrypoint.sh /entrypoint.sh
+COPY stacks/agents/app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV HOME=/home/agent
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/mise/shims:/app/.venv/bin:$PATH"
 
 # Copilot CLI authenticates via COPILOT_GITHUB_TOKEN env var (set in compose)
 
