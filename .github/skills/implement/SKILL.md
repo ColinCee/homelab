@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Implement a GitHub issue. Make code changes, run tests, and ensure quality.
+description: Implement a GitHub issue or fix review feedback. Use when asked to implement an issue, build a feature, fix a bug, or address code review comments. Keywords: implement, build, fix, issue, feature, review feedback.
 allowed-tools: shell
 ---
 
