@@ -56,16 +56,6 @@ The `applyTo` glob determines when the instructions are loaded. Use the narrowes
 - **Tables over prose** for comparisons, tool lists, and conventions.
 - **Keep each file focused** on one domain — don't combine Python conventions with Docker patterns.
 
-### Current instructions
-
-| File | Scope | Content |
-|------|-------|---------|
-| `python.instructions.md` | `stacks/agents/app/**/*.py` | Module design, types, error handling, async, logging |
-| `stacks.instructions.md` | `stacks/**` | Compose patterns, port binding, networking |
-| `testing.instructions.md` | `**/tests/**,**/*test*` | Test philosophy, AAA structure, naming, what to test |
-| `docs.instructions.md` | `docs/**/*.md` | ADR format, writing style, when to write docs |
-| `pr-workflow.instructions.md` | `.github/workflows/**` | PR lifecycle, review triggers, merge process |
-
 ## Writing skills
 
 Skills follow the [Agent Skills spec](https://agentskills.io/specification). They work across VS Code, Copilot CLI, and the cloud coding agent.
@@ -142,13 +132,6 @@ From [agentskills.io best practices](https://agentskills.io/skill-creation/best-
   "comments": []
 }
 ```
-
-### Current skills
-
-| Skill | Invocable | Auto-loaded | Purpose |
-|-------|:-:|:-:|---------|
-| `bot-implement` | ❌ | ✅ | Orchestrator: implement issues, fix review feedback |
-| `bot-review` | ❌ | ✅ | Orchestrator: structured PR review with JSON output |
 
 ## Decision tree: where does this go?
 
