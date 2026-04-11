@@ -1,4 +1,4 @@
-# Copilot Customization Guide
+# Copilot Authoring Guide
 
 How to write and organize instructions and skills for this repo. Covers what goes where, how each mechanism works, and how to write effective content.
 
@@ -51,6 +51,7 @@ The `applyTo` glob determines when the instructions are loaded. Use the narrowes
 
 ### Content guidelines
 
+- **Source code is the single source of truth.** Don't duplicate schemas, constants, or examples that live in code — they will go stale. Reference the source file and tell the model to read it. If it can drift from the code, it shouldn't be written in prose.
 - **Add what the model lacks, skip what it knows.** Don't explain what Docker is. Do explain that this repo binds ports to `100.100.146.119` (Tailscale interface).
 - **Be prescriptive where it matters.** "Use `asyncio.to_thread()` for blocking I/O" beats "consider async patterns."
 - **Tables over prose** for comparisons, tool lists, and conventions.
@@ -124,13 +125,10 @@ From [agentskills.io best practices](https://agentskills.io/skill-creation/best-
 - Security: are credentials out of logs and args?
 ```
 
-**Output templates** — more reliable than prose descriptions:
-```json
-{
-  "event": "APPROVE",
-  "body": "✅ **Approved** — no issues found.\n\n---",
-  "comments": []
-}
+**Source references** — point at code instead of duplicating it:
+```markdown
+Read `stacks/agents/app/review.py` for the `ReviewOutput` and
+`ReviewComment` models — they define the schema and include examples.
 ```
 
 ## Decision tree: where does this go?
