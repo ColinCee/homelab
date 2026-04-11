@@ -21,9 +21,9 @@ Review for:
 ## Review Approach
 
 - **Trace the full flow.** Don't just read the diff line-by-line. Follow data through the system — if a function is changed, check every caller. If a status value is added, check every consumer.
+- **Report root causes, not symptoms.** When you find a bug, ask: what's the underlying pattern, and where else does it appear? Report the class of issue with ALL affected locations in a single comment. If you'd file the same finding against 5 different lines, that's one finding with 5 locations, not 5 findings.
 - **Think about implications.** If you recommend "this should raise instead of log", also flag what happens to callers when it raises. Don't create a fix that introduces a new bug.
-- **Batch related findings.** If you find the same class of issue in multiple places, group them and say "this pattern appears in X, Y, and Z — fix all of them." Don't report them one at a time across review rounds.
-- **Front-load everything.** Aim for one review round, not five. Surface all issues — including second-order effects of your own recommendations — in a single pass.
+- **Front-load everything.** Aim for one review round, not three. Surface all issues — including second-order effects of your own recommendations — in a single pass.
 
 ## Severity Levels
 
