@@ -1,29 +1,22 @@
 name: Code Review
 
 on:
-  pull_request:
-    types: [opened, ready_for_review]
   issue_comment:
     types: [created]
 
 jobs:
   review:
-    # Security gates:
-    # - pull_request: skip drafts, block forks via if-condition
-    # - issue_comment /review: role-gated (OWNER/MEMBER/COLLABORATOR);
-    #   fork PRs blocked by the "Block fork PRs" step below (can't
-    #   check head.repo in the if-condition — issue_comment events
-    #   don't include PR metadata)
+    # Triggered only by /review comment — no auto-review on PR open.
+    # Security: role-gated (OWNER/MEMBER/COLLABORATOR) + bot;
+    # fork PRs blocked by the "Block fork PRs" step below (can't
+    # check head.repo in the if-condition — issue_comment events
+    # don't include PR metadata)
     if: >
-      (github.event_name == 'pull_request' &&
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'issue_comment' &&
       github.event.issue.pull_request &&
       github.event.comment.body == '/review' &&
       (contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
       github.event.comment.author_association) ||
-      github.event.comment.user.login == 'colins-homelab-bot[bot]'))
+      github.event.comment.user.login == 'colins-homelab-bot[bot]')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -31,13 +24,9 @@ jobs:
       issues: write
     env:
       REPO: ${{ github.repository }}
-      PR_NUMBER: >-
-        ${{ github.event_name == 'issue_comment'
-            && github.event.issue.number
-            || github.event.pull_request.number }}
+      PR_NUMBER: ${{ github.event.issue.number }}
     steps:
       - name: React to /review comment
-        if: github.event_name == 'issue_comment'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,8 +34,7 @@ jobs:
           gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
             --method POST -f content='eyes' --silent
 
-      - name: Block fork PRs on /review
-        if: github.event_name == 'issue_comment'
+      - name: Block fork PRs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
