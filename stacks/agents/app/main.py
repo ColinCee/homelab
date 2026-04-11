@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from copilot import TaskError
 from github import comment_on_issue
-from implement import fix_pr, implement_issue
+from implement import implement_issue
 from metrics import (
     METRICS_REGISTRY,
     PREMIUM_REQUESTS_TOTAL,
@@ -46,7 +46,7 @@ def _implement_key(repo: str, issue_number: int) -> str:
 def _task_status_label(status: object) -> str:
     if status == "failed":
         return "failed"
-    if status == "partial":
+    if status in ("partial", "max_iterations"):
         return "partial"
     return "complete"
 
@@ -78,13 +78,6 @@ class ReviewRequest(BaseModel):
 class ImplementRequest(BaseModel):
     repo: str
     issue_number: int
-    model: str | None = None
-    reasoning_effort: str | None = None
-
-
-class FixRequest(BaseModel):
-    repo: str
-    pr_number: int
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -186,36 +179,6 @@ async def get_implement_status(issue_number: int, repo: str = "") -> dict:
             return v
 
     return {"status": "not_found", "issue_number": issue_number}
-
-
-# --- Fix endpoint ---
-
-
-@app.post("/fix", status_code=202, response_model=None)
-async def handle_fix(req: FixRequest, background_tasks: BackgroundTasks):
-    """Accept a fix request to address review feedback on a PR."""
-    model = req.model or MODEL
-    effort = req.reasoning_effort or REASONING_EFFORT
-    key = _review_key(req.repo, req.pr_number)
-
-    existing = _review_status.get(key)
-    if existing and existing["status"] == "in_progress":
-        return JSONResponse(
-            status_code=409,
-            content={"status": "already_in_progress", "pr_number": req.pr_number},
-        )
-
-    _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
-
-    background_tasks.add_task(
-        _run_fix,
-        repo=req.repo,
-        pr_number=req.pr_number,
-        model=model,
-        reasoning_effort=effort,
-    )
-
-    return {"status": "accepted", "pr_number": req.pr_number}
 
 
 # --- Background tasks ---
@@ -333,41 +296,3 @@ async def _run_implement(
             premium_requests=premium_requests,
         )
         TASK_IN_PROGRESS.labels(task_type="implement").dec()
-
-
-async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: str) -> None:
-    key = _review_key(repo, pr_number)
-    status = "failed"
-    premium_requests = 0
-    start = time.monotonic()
-    TASK_IN_PROGRESS.labels(task_type="fix").inc()
-    try:
-        result = await fix_pr(
-            repo=repo,
-            pr_number=pr_number,
-            model=model,
-            reasoning_effort=reasoning_effort,
-        )
-        status = _task_status_label(result.get("status"))
-        premium_requests = _premium_requests(result)
-        _review_status[key] = {
-            "status": result.get("status", "complete"),
-            "repo": repo,
-            "pr_number": pr_number,
-            **result,
-        }
-    except TaskError as exc:
-        logger.exception("Fix failed for %s#%d", repo, pr_number)
-        _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
-        premium_requests = exc.premium_requests
-    except Exception:
-        logger.exception("Fix failed for %s#%d", repo, pr_number)
-        _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
-    finally:
-        _record_task_metrics(
-            task_type="fix",
-            status=status,
-            duration_seconds=time.monotonic() - start,
-            premium_requests=premium_requests,
-        )
-        TASK_IN_PROGRESS.labels(task_type="fix").dec()

@@ -37,6 +37,7 @@ class CLIResult:
     session_time_seconds: int = 0
     models: dict[str, str] = field(default_factory=dict)
     session_transcript: str | None = None
+    session_id: str | None = None
 
     @property
     def stats_line(self) -> str:
@@ -86,6 +87,15 @@ def _parse_stats(output: str) -> dict:
 
 SESSION_TRANSCRIPT_FILE = ".copilot-session.md"
 
+_SESSION_ID_RE = re.compile(r"Session ID:\s*`?([0-9a-f-]{36})`?")
+
+
+def _parse_session_id(text: str) -> str | None:
+    """Extract session ID UUID from CLI output or transcript."""
+    if m := _SESSION_ID_RE.search(text):
+        return m.group(1)
+    return None
+
 
 async def run_copilot(
     worktree_path: Path,
@@ -93,6 +103,7 @@ async def run_copilot(
     *,
     model: str = "gpt-5.4",
     effort: str = "high",
+    session_id: str | None = None,
 ) -> CLIResult:
     """Run Copilot CLI in headless mode and return result with stats."""
     transcript_path = worktree_path / SESSION_TRANSCRIPT_FILE
@@ -109,6 +120,9 @@ async def run_copilot(
         "--autopilot",
         f"--share={transcript_path}",
     ]
+
+    if session_id:
+        cmd.append(f"--resume={session_id}")
 
     env = os.environ.copy()
     # Ensure the CLI never inherits GitHub API access — the orchestrator
@@ -180,6 +194,10 @@ async def run_copilot(
         logger.warning("No session transcript found at %s", transcript_path)
 
     stats = _parse_stats(all_output)
+    parsed_session_id = _parse_session_id(all_output)
+    if not parsed_session_id and transcript:
+        parsed_session_id = _parse_session_id(transcript)
+
     return CLIResult(
         output=output,
         total_premium_requests=stats["premium_requests"],
@@ -187,4 +205,5 @@ async def run_copilot(
         session_time_seconds=stats["session_time"],
         models=stats["models"],
         session_transcript=transcript,
+        session_id=parsed_session_id,
     )

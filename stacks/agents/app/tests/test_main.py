@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from main import _implement_status, _review_status, _run_fix, _run_implement, _run_review, app
+from main import _implement_status, _review_status, _run_implement, _run_review, app
 from metrics import METRICS_REGISTRY, reset_metrics
 
 
@@ -139,27 +139,6 @@ def test_implement_rejects_duplicate_in_flight(mock_impl):
         _implement_status.pop("user/repo#10", None)
 
 
-# --- Fix endpoint tests ---
-
-
-@patch("main.fix_pr", new_callable=AsyncMock)
-def test_fix_returns_202_accepted(mock_fix):
-    mock_fix.return_value = {"status": "fixed", "elapsed_seconds": 3.0}
-    resp = _client().post(
-        "/fix",
-        json={"repo": "user/repo", "pr_number": 99},
-    )
-    assert resp.status_code == 202
-    data = resp.json()
-    assert data["status"] == "accepted"
-    assert data["pr_number"] == 99
-
-
-def test_fix_missing_fields():
-    resp = _client().post("/fix", json={"pr_number": 1})
-    assert resp.status_code == 422
-
-
 def test_review_metrics_track_task_lifecycle():
     started = asyncio.Event()
     finish = asyncio.Event()
@@ -213,45 +192,22 @@ def test_implement_metrics_record_partial_status(mock_implement):
     assert _metric_value("agent_task_duration_seconds_count", labels) == 1.0
 
 
-@patch("main.fix_pr", new_callable=AsyncMock)
-def test_fix_metrics_normalize_fixed_status_to_complete(mock_fix):
-    mock_fix.return_value = {"status": "fixed", "premium_requests": 1}
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_metrics_max_iterations_records_partial(mock_implement):
+    mock_implement.return_value = {"status": "max_iterations", "premium_requests": 6}
 
     asyncio.run(
-        _run_fix(
+        _run_implement(
             repo="user/repo",
-            pr_number=303,
+            issue_number=303,
             model="gpt-5.4",
             reasoning_effort="high",
         )
     )
 
-    labels = {"task_type": "fix", "status": "complete"}
-    assert _metric_value("agent_task_in_progress", {"task_type": "fix"}) == 0.0
+    labels = {"task_type": "implement", "status": "partial"}
     assert _metric_value("agent_task_total", labels) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "fix"}) == 1.0
-    assert _metric_value("agent_task_duration_seconds_count", labels) == 1.0
-    assert _review_status["user/repo#303"]["status"] == "fixed"
-
-
-@patch("main.fix_pr", new_callable=AsyncMock)
-def test_fix_metrics_record_failed_status(mock_fix):
-    mock_fix.side_effect = RuntimeError("boom")
-
-    asyncio.run(
-        _run_fix(
-            repo="user/repo",
-            pr_number=404,
-            model="gpt-5.4",
-            reasoning_effort="high",
-        )
-    )
-
-    labels = {"task_type": "fix", "status": "failed"}
-    assert _metric_value("agent_task_in_progress", {"task_type": "fix"}) == 0.0
-    assert _metric_value("agent_task_total", labels) == 1.0
-    assert _metric_value("agent_task_duration_seconds_count", labels) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "fix"}) == 0.0
+    assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 6.0
 
 
 # --- Fire-and-forget safety: error comments on failures ---
