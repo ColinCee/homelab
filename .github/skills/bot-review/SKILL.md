@@ -57,26 +57,7 @@ The pattern name after the severity tag is required — it names the class of is
 
 You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root. The orchestrator will read this file and post the review on your behalf — you own the content, the orchestrator owns the delivery.
 
-Schema:
-
-```json
-{
-  "event": "REQUEST_CHANGES",
-  "body": "🚫 **Changes requested** — see inline comments.\n\nApproach is sound but widening the build context to repo root introduces a class of secret-leakage risk that needs a whitelist-based .dockerignore.\n\n---",
-  "comments": [
-    {
-      "path": "compose.yaml",
-      "line": 4,
-      "body": "🚫 **Blocker** — Secret leakage via build context\n\n**Problem**: Widening Docker build context to the repo root sends the entire directory tree to the daemon, including .env files and any future credential stores.\n\n**Impact**: Every file not excluded by .dockerignore is readable in the build tarball — today that's .env, tomorrow it could be anything added to the repo root. Layer caching can persist these. This affects every rebuild on every machine that builds this image.\n\n**Fix**: Convert .dockerignore to a whitelist pattern (deny all, allow specific paths). This makes the default safe regardless of what gets added to the repo later."
-    },
-    {
-      "path": "main.py",
-      "line": 25,
-      "body": "💡 **Suggestion** — Redundant API call\n\n**Problem**: `get_pr()` is called twice — once for prompt context, once for the bot-authored-PR check.\n\n**Impact**: Low — adds ~200ms per review. But it's also a maintenance trap: if the PR fetch logic changes (e.g., adding auth headers), it needs updating in two places.\n\n**Fix**: Reuse the result from the first call. Single source of truth for PR data in the review flow."
-    }
-  ]
-}
-```
+Read `stacks/agents/app/review.py` for the `ReviewOutput` and `ReviewComment` Pydantic models — they define the exact schema and include examples. That file is the single source of truth for the output format.
 
 ### `body` format
 
