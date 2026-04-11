@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Perform a structured PR code review. Use when asked to review a pull request, diff, or code changes for bugs, security issues, and breaking changes. Keywords: review, PR, pull request, diff, code review.
+description: Review a pull request for bugs, security issues, and breaking changes. Use when asked to review a PR, diff, or code changes.
 allowed-tools: shell
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: implement
-description: Implement a GitHub issue or fix review feedback. Use when asked to implement an issue, build a feature, fix a bug, or address code review comments. Keywords: implement, build, fix, issue, feature, review feedback.
+description: Implement a GitHub issue or fix review feedback. Use when asked to implement an issue, build a feature, fix a bug, or address code review comments on a pull request.
 allowed-tools: shell
 ---
 
@@ -43,6 +43,12 @@ Before finishing your work, self-review against these questions:
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
 - **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
+
+## Gotchas
+
+- **`mise run ci` includes type-checking (`ty`).** `ty` does not support `# type: ignore` comments — they are silently ignored. If the type checker complains about dynamic attribute access, use typed dataclasses or exceptions instead of monkey-patching attributes onto objects.
+- **Docker service names don't resolve across separate compose stacks.** Use Tailscale IPs (`100.x.x.x`) or `host.docker.internal`, not hostnames like `service-name:port`, when one stack needs to reach another.
+- **GitHub API rejects APPROVE and REQUEST_CHANGES on your own PRs.** If the bot creates a PR and then reviews it, the review must be downgraded to COMMENT or the API returns 422.
 
 ## Responding to Review Feedback
 
