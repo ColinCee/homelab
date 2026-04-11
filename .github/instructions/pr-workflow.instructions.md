@@ -24,7 +24,6 @@ This repo has an automated AI code review and implementation system powered by `
 3. Inline comments use severity tags:
    - 🚫 **Blocker** — bugs, security, breaking changes
    - 💡 **Suggestion** — non-blocking improvement, author decides
-   - ❓ **Question** — seeks clarification, non-blocking
 4. Fix legitimate findings, push new commits
 5. Comment `/review` to re-trigger — the bot receives all unresolved
    review threads and checks if issues were addressed

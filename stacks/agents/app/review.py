@@ -64,19 +64,6 @@ class ReviewComment(BaseModel):
                         "**Fix**: Reuse the result from the first call."
                     ),
                 },
-                {
-                    "path": "copilot.py",
-                    "line": 108,
-                    "body": (
-                        "❓ **Question** — Timeout strategy\n\n"
-                        "**Problem**: The 1800s timeout is a round number with no "
-                        "data backing it.\n\n"
-                        "**Impact**: Too short kills productive runs; too long wastes "
-                        "resources on stuck processes.\n\n"
-                        "**Fix**: Is there telemetry on typical run durations to "
-                        "inform this value?"
-                    ),
-                },
             ]
         }
     }

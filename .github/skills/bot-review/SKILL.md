@@ -32,7 +32,6 @@ Review for:
 
 - 🚫 **Blocker** — must fix before merge (bugs, security, breaking changes)
 - 💡 **Suggestion** — non-blocking improvement, author decides
-- ❓ **Question** — seeks clarification, non-blocking
 
 ## Comment Format
 
@@ -49,7 +48,7 @@ Each inline comment must follow this structure:
 auditing for the same pattern elsewhere, say so.
 ```
 
-Where `{severity}` is one of: `🚫 **Blocker**`, `💡 **Suggestion**`, or `❓ **Question**`.
+Where `{severity}` is either `🚫 **Blocker**` or `💡 **Suggestion**`.
 
 The pattern name after the severity tag is required — it names the class of issue so the fixer knows to grep for similar instances. "Missing error handling" not "this function doesn't catch exceptions". One class = one comment, even if it appears in multiple locations.
 
