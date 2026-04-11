@@ -32,6 +32,23 @@ Review for:
 - 💡 **Suggestion** — non-blocking improvement, author decides
 - ❓ **Question** — seeks clarification, non-blocking
 
+## Comment Format
+
+Each inline comment must follow this structure:
+
+```
+🚫 **Blocker** — Pattern name (e.g., "Secret leakage via build context")
+
+**Problem**: What's wrong — concise, specific to this diff.
+
+**Impact**: What happens if not fixed — why this matters.
+
+**Fix**: Strategic direction, not a band-aid. If the fix requires
+auditing for the same pattern elsewhere, say so.
+```
+
+The pattern name after the severity tag is required — it names the class of issue so the fixer knows to grep for similar instances. "Missing error handling" not "this function doesn't catch exceptions". One class = one comment, even if it appears in multiple locations.
+
 ## Review Output
 
 You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root. The orchestrator will read this file and post the review on your behalf — you own the content, the orchestrator owns the delivery.
@@ -46,7 +63,7 @@ Schema:
     {
       "path": "file.py",
       "line": 42,
-      "body": "🚫 **Blocker**\n\nExplanation of the issue."
+      "body": "🚫 **Blocker** — Secret leakage via build context\n\n**Problem**: Widening Docker build context sends .env files to the daemon tarball.\n\n**Impact**: Tokens accessible in layer cache.\n\n**Fix**: Narrow context or convert .dockerignore to a whitelist."
     }
   ]
 }
