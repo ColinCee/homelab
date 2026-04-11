@@ -22,6 +22,13 @@ REVIEW_PROMPT_TEMPLATE = """\
 Review PR #{pr_number} in {repo}.
 
 Use the bot-review skill for review guidelines and output format.
+
+## PR Context
+
+**{title}**
+Base branch: `{base_branch}`
+
+{description}
 {previous_review_section}\
 """
 
@@ -101,11 +108,19 @@ async def review_pr(
     try:
         worktree_path = await create_worktree(pr_number, repo_url)
 
+        pr_data = await get_pr(repo, pr_number)
+        title = pr_data.get("title", "")
+        description = pr_data.get("body") or "_No description provided._"
+        base_branch = pr_data.get("base", {}).get("ref", "main")
+
         threads = await get_unresolved_threads(repo, pr_number)
         previous_section = PREVIOUS_REVIEW_SECTION.format(threads=threads) if threads else ""
         prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
             repo=repo,
+            title=title,
+            description=description,
+            base_branch=base_branch,
             previous_review_section=previous_section,
         )
 
@@ -136,7 +151,6 @@ async def review_pr(
             downgraded = False
 
             # GitHub doesn't allow REQUEST_CHANGES or APPROVE on your own PR
-            pr_data = await get_pr(repo, pr_number)
             is_own_pr = pr_data.get("user", {}).get("login") == bot_login()
             if is_own_pr and event in ("REQUEST_CHANGES", "APPROVE"):
                 logger.info("Using COMMENT instead of %s (bot's own PR)", event)
