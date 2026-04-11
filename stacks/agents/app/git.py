@@ -6,6 +6,8 @@ import logging
 import shutil
 from pathlib import Path
 
+from github import bot_email, bot_login
+
 logger = logging.getLogger(__name__)
 
 BARE_CLONE_PATH = Path("/repo.git")
@@ -152,9 +154,9 @@ async def commit_and_push(
         [
             "git",
             "-c",
-            "user.name=homelab-review-bot[bot]",
+            f"user.name={bot_login()}",
             "-c",
-            "user.email=274352150+homelab-review-bot[bot]@users.noreply.github.com",
+            f"user.email={bot_email()}",
             "commit",
             "-m",
             message,

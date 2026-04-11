@@ -9,7 +9,7 @@ jobs:
     # Only trigger for REQUEST_CHANGES from the review bot on agent-created PRs
     if: >
       github.event.review.state == 'changes_requested' &&
-      github.event.review.user.login == 'homelab-review-bot[bot]' &&
+      github.event.review.user.login == 'colins-homelab-bot[bot]' &&
       startsWith(github.event.pull_request.head.ref, 'agent/')
     runs-on: ubuntu-latest
     permissions:
@@ -25,8 +25,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Count bot fix commits on this PR (dismissed reviews lose state, so use commits)
+          # Bot identity must match _APP_SLUG in stacks/agents/app/github.py
           FIX_COUNT=$(gh api "/repos/$REPO/pulls/$PR_NUMBER/commits" \
-            --jq '[.[] | select(.commit.author.name == "homelab-review-bot[bot]" and (.commit.message | startswith("fix:")))] | length')
+            --jq '[.[] | select(.commit.author.name == "colins-homelab-bot[bot]" and (.commit.message | startswith("fix:")))] | length')
 
           MAX_ITERATIONS=3
           if [ "$FIX_COUNT" -ge "$MAX_ITERATIONS" ]; then
