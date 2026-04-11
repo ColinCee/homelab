@@ -5,7 +5,7 @@ import logging
 import time
 from pathlib import Path
 
-from copilot import run_copilot
+from copilot import TaskError, run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
     bot_login,
@@ -125,8 +125,7 @@ async def review_pr(
                 pr_number,
                 f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
             )
-            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
-            raise
+            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
         body = review_data["body"]
 
@@ -153,8 +152,7 @@ async def review_pr(
                 comments=review_data["comments"] or None,
             )
         except Exception as exc:
-            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
-            raise
+            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
         # When downgraded to COMMENT, dismiss ALL prior stateful reviews —
         # otherwise a stale APPROVE could linger since our COMMENT isn't stateful

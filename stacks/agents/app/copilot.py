@@ -14,6 +14,14 @@ COPILOT_BINARY = "/usr/local/bin/copilot"
 TIMEOUT_SECONDS = 600
 
 
+class TaskError(Exception):
+    """Wraps a post-CLI failure, preserving the premium request count for metrics."""
+
+    def __init__(self, message: str, *, premium_requests: int = 0) -> None:
+        super().__init__(message)
+        self.premium_requests = premium_requests
+
+
 @dataclass
 class CLIResult:
     """Result from a Copilot CLI invocation."""

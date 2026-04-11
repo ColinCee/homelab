@@ -3,7 +3,7 @@
 import logging
 import time
 
-from copilot import run_copilot
+from copilot import TaskError, run_copilot
 from git import (
     cleanup_branch_worktree,
     cleanup_worktree,
@@ -114,8 +114,7 @@ async def implement_issue(
                 base="main",
             )
         except Exception as exc:
-            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
-            raise
+            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
         # Trigger review — if this fails, surface partial success with the PR info
         try:
@@ -202,8 +201,7 @@ async def fix_pr(
                 branch=head_branch,
             )
         except Exception as exc:
-            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
-            raise
+            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
 
         # Trigger re-review — if this fails, surface partial success
         try:
