@@ -125,6 +125,7 @@ async def review_pr(
                 pr_number,
                 f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
             )
+            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
             raise
 
         body = review_data["body"]
@@ -143,13 +144,17 @@ async def review_pr(
         if result.stats_line:
             body += f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
 
-        await post_review(
-            repo,
-            pr_number,
-            event=event,
-            body=body,
-            comments=review_data["comments"] or None,
-        )
+        try:
+            await post_review(
+                repo,
+                pr_number,
+                event=event,
+                body=body,
+                comments=review_data["comments"] or None,
+            )
+        except Exception as exc:
+            exc.premium_requests = result.total_premium_requests  # type: ignore[attr-defined]
+            raise
 
         # When downgraded to COMMENT, dismiss ALL prior stateful reviews —
         # otherwise a stale APPROVE could linger since our COMMENT isn't stateful

@@ -239,9 +239,10 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
             "pr_number": pr_number,
             **result,
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+        premium_requests = getattr(exc, "premium_requests", 0) or 0
     finally:
         _record_task_metrics(
             task_type="review",
@@ -275,13 +276,14 @@ async def _run_implement(
             "issue_number": issue_number,
             **result,
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
         _implement_status[key] = {
             "status": "failed",
             "repo": repo,
             "issue_number": issue_number,
         }
+        premium_requests = getattr(exc, "premium_requests", 0) or 0
     finally:
         _record_task_metrics(
             task_type="implement",
@@ -313,9 +315,10 @@ async def _run_fix(*, repo: str, pr_number: int, model: str, reasoning_effort: s
             "pr_number": pr_number,
             **result,
         }
-    except Exception:
+    except Exception as exc:
         logger.exception("Fix failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+        premium_requests = getattr(exc, "premium_requests", 0) or 0
     finally:
         _record_task_metrics(
             task_type="fix",
