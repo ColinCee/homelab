@@ -39,12 +39,12 @@ After you finish, an automated review bot will review your changes. It checks fo
 
 Before finishing your work, self-review against these questions:
 
-- **Error handling:** Don't wrap individual calls in try/except one at a time. Identify the *critical section boundary* (e.g., "everything after `run_copilot()` completes") and wrap ALL code after it in a single handler. If important state needs to survive failures (metrics, counts, tokens spent), ensure every exception path preserves it — including the code that produced the state in the first place (timeouts, non-zero exits).
-- **New types or patterns:** If you introduce a new exception class, status value, or pattern, grep for all places that use the OLD version and migrate them. Don't leave some call sites raising `RuntimeError` while others raise `TaskError`.
+- **Error handling:** If a multi-step operation produces state that matters (metrics, audit logs, side effects), ensure that state is captured regardless of which step fails. Think about the whole operation, not individual calls — one handler around the entire post-critical section beats wrapping each call separately.
+- **New types or patterns:** If you introduce a new exception class, status value, or convention, grep for all call sites using the old version and migrate them. Don't leave a mix of old and new.
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
 - **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
-- **Deployment topology:** If you changed ports, hostnames, or cross-stack references, verify the target is reachable from the source's network context. Docker containers in different compose stacks can't use Docker DNS to find each other — use explicit IPs or host-mapped ports.
+- **Deployment topology:** If you changed ports, hostnames, or cross-stack references, verify the target is reachable from the source's network context (e.g., Docker containers in different compose stacks can't resolve each other's service names).
 
 ## Responding to Review Feedback
 
