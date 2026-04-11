@@ -62,7 +62,7 @@ Schema:
 ```json
 {
   "event": "REQUEST_CHANGES",
-  "body": "🚫 **Changes requested** — see inline comments.\n\nWidening the Docker build context to the repo root is a reasonable trade-off for accessing mise.toml, but it opens a class of secret-leakage risk that wasn't present before. The .dockerignore needs to be a whitelist rather than a blacklist to prevent future additions (like .env files or credential stores) from silently entering the build context. The redundant API call is minor but worth fixing while touching this code.\n\n---",
+  "body": "🚫 **Changes requested** — see inline comments.\n\nApproach is sound but widening the build context to repo root introduces a class of secret-leakage risk that needs a whitelist-based .dockerignore.\n\n---",
   "comments": [
     {
       "path": "compose.yaml",
@@ -80,17 +80,12 @@ Schema:
 
 ### `body` format
 
-Start with a verdict banner so the outcome is visible at a glance:
+Start with a verdict banner:
 
 - `✅ **Approved** — no issues found.` when event is APPROVE
 - `🚫 **Changes requested** — see inline comments.` when event is REQUEST_CHANGES
 
-Follow the banner with a strategic summary (2-4 sentences):
-- **Design assessment** — is the overall approach sound? Right abstraction, right layer?
-- **Risk assessment** — what's the main risk this PR introduces or mitigates?
-- **Key trade-offs** — what did the author trade off, and is the trade-off reasonable?
-
-Don't list files or repeat inline comments. The summary should help someone who reads *only* the body understand whether this PR is headed in the right direction. End the body with `\n\n---`.
+Follow with 1-2 sentences on the overall design direction — is the approach sound, and what's the main risk? Do NOT repeat or summarize inline comments. The body is the forest; comments are the trees. End with `\n\n---`.
 
 ### Rules
 
