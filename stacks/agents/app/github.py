@@ -71,10 +71,18 @@ def reset_token_cache() -> None:
     _token_expires_at = 0
 
 
+_APP_SLUG = "colins-homelab-bot"
+_BOT_USER_ID = "274352150"  # stable across app renames
+
+
 def bot_login() -> str:
-    """Derive the bot login from the GitHub App slug (set via env var)."""
-    app_slug = os.environ.get("GITHUB_APP_SLUG", "homelab-review-bot")
-    return f"{app_slug}[bot]"
+    """The bot's GitHub login (e.g. 'colins-homelab-bot[bot]')."""
+    return f"{_APP_SLUG}[bot]"
+
+
+def bot_email() -> str:
+    """GitHub noreply email for the bot, used as git commit author."""
+    return f"{_BOT_USER_ID}+{bot_login()}@users.noreply.github.com"
 
 
 async def _fetch_all_reviews(repo: str, pr_number: int, token: str) -> list[dict]:
@@ -195,8 +203,28 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
         return "\n".join(lines)
 
 
-async def dismiss_stale_reviews(repo: str, pr_number: int) -> None:
-    """Dismiss previous bot reviews, keeping the latest one (just posted)."""
+# --- Pull Request Reviews ---
+#
+# GitHub has three distinct comment types on PRs:
+#   1. PR comments — plain text on the timeline (Issues API), no merge impact
+#   2. Review comments — inline code annotations, always part of a review
+#   3. Reviews — submitted via the Reviews API with a verdict:
+#      - APPROVED / CHANGES_REQUESTED — "stateful", affect branch protection
+#      - COMMENT — informational only, no merge impact
+#
+# Only stateful reviews (APPROVED, CHANGES_REQUESTED) can be dismissed.
+# Dismissal changes the state to DISMISSED, removing its merge-blocking effect.
+# COMMENT reviews are permanent — they can't be dismissed or retracted.
+
+
+async def dismiss_stale_reviews(repo: str, pr_number: int, *, keep_latest: bool = True) -> None:
+    """Dismiss previous stateful bot reviews.
+
+    Args:
+        keep_latest: If True, keep the most recent stateful review (normal case).
+            If False, dismiss ALL stateful reviews (used when the new review is a
+            COMMENT that won't appear in the stateful list).
+    """
     token = await get_token()
     login = bot_login()
     headers = {
@@ -213,8 +241,10 @@ async def dismiss_stale_reviews(repo: str, pr_number: int) -> None:
         and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
     ]
 
+    to_dismiss = bot_reviews[:-1] if keep_latest else bot_reviews
+
     async with httpx.AsyncClient(timeout=30) as client:
-        for review in bot_reviews[:-1]:
+        for review in to_dismiss:
             dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
             resp = await client.put(
                 dismiss_url,

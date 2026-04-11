@@ -8,8 +8,10 @@ from pathlib import Path
 from copilot import run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
+    bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
+    get_pr,
     get_unresolved_threads,
     post_review,
 )
@@ -126,18 +128,32 @@ async def review_pr(
             raise
 
         body = review_data["body"]
+
+        event = review_data["event"]
+        downgraded = False
+
+        # GitHub doesn't allow REQUEST_CHANGES on your own PR — use COMMENT instead
+        pr_data = await get_pr(repo, pr_number)
+        if event == "REQUEST_CHANGES" and pr_data.get("user", {}).get("login") == bot_login():
+            logger.info("Using COMMENT instead of REQUEST_CHANGES (bot's own PR)")
+            event = "COMMENT"
+            downgraded = True
+
+        # Append stats as a collapsible footer — orchestrator-only metadata
         if result.stats_line:
-            body += f"\n\n📊 {result.stats_line}"
+            body += f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
 
         await post_review(
             repo,
             pr_number,
-            event=review_data["event"],
+            event=event,
             body=body,
             comments=review_data["comments"] or None,
         )
 
-        await dismiss_stale_reviews(repo, pr_number)
+        # When downgraded to COMMENT, dismiss ALL prior stateful reviews —
+        # otherwise a stale APPROVE could linger since our COMMENT isn't stateful
+        await dismiss_stale_reviews(repo, pr_number, keep_latest=not downgraded)
 
         elapsed = time.monotonic() - start
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)

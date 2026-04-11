@@ -23,7 +23,7 @@ jobs:
       github.event.comment.body == '/review' &&
       (contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
       github.event.comment.author_association) ||
-      github.event.comment.user.login == 'homelab-review-bot[bot]'))
+      github.event.comment.user.login == 'colins-homelab-bot[bot]'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
