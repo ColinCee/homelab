@@ -195,8 +195,14 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
         return "\n".join(lines)
 
 
-async def dismiss_stale_reviews(repo: str, pr_number: int) -> None:
-    """Dismiss previous bot reviews, keeping the latest one (just posted)."""
+async def dismiss_stale_reviews(repo: str, pr_number: int, *, keep_latest: bool = True) -> None:
+    """Dismiss previous stateful bot reviews.
+
+    Args:
+        keep_latest: If True, keep the most recent stateful review (normal case).
+            If False, dismiss ALL stateful reviews (used when the new review is a
+            COMMENT that won't appear in the stateful list).
+    """
     token = await get_token()
     login = bot_login()
     headers = {
@@ -213,8 +219,10 @@ async def dismiss_stale_reviews(repo: str, pr_number: int) -> None:
         and r.get("state") in ("CHANGES_REQUESTED", "APPROVED")
     ]
 
+    to_dismiss = bot_reviews[:-1] if keep_latest else bot_reviews
+
     async with httpx.AsyncClient(timeout=30) as client:
-        for review in bot_reviews[:-1]:
+        for review in to_dismiss:
             dismiss_url = f"{reviews_url}/{review['id']}/dismissals"
             resp = await client.put(
                 dismiss_url,
