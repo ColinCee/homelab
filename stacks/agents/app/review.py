@@ -8,8 +8,10 @@ from pathlib import Path
 from copilot import run_copilot
 from git import cleanup_worktree, create_worktree
 from github import (
+    bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
+    get_pr,
     get_unresolved_threads,
     post_review,
 )
@@ -129,10 +131,18 @@ async def review_pr(
         if result.stats_line:
             body += f"\n\n📊 {result.stats_line}"
 
+        event = review_data["event"]
+
+        # GitHub doesn't allow REQUEST_CHANGES on your own PR — downgrade to COMMENT
+        pr_data = await get_pr(repo, pr_number)
+        if event == "REQUEST_CHANGES" and pr_data.get("user", {}).get("login") == bot_login():
+            logger.info("Downgrading REQUEST_CHANGES to COMMENT (bot's own PR)")
+            event = "COMMENT"
+
         await post_review(
             repo,
             pr_number,
-            event=review_data["event"],
+            event=event,
             body=body,
             comments=review_data["comments"] or None,
         )
