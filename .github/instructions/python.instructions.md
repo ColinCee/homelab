@@ -6,13 +6,15 @@ applyTo: "stacks/agents/app/**/*.py"
 
 Style is enforced by ruff and ty — see `stacks/agents/app/pyproject.toml` for config. Don't repeat what the tooling already enforces.
 
+**ty quirk:** `ty` does not support `# type: ignore` comments. If you need to suppress a type error, fix the types instead of adding ignore comments.
+
 ## Agent Service Pattern
 
 The agent service (`stacks/agents/app/`) is a FastAPI app that:
 
 1. Receives requests (e.g., `/review`) with minimal input (repo + PR number)
-2. Runs Copilot CLI in headless mode to perform the work (review, implement)
-3. Copilot CLI interacts with GitHub directly — posting reviews, reading files, etc.
+2. Runs Copilot CLI in headless mode in an isolated worktree
+3. Reads CLI output (JSON files, stdout) and handles all GitHub API interactions (posting reviews, creating PRs, commenting)
 
 ### Key files
 
