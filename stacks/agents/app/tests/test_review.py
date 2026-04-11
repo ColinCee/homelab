@@ -1,11 +1,13 @@
 """Tests for review orchestrator — specifically the review file parser."""
 
+import asyncio
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from review import _parse_review_file
+from review import _fetch_linked_issues_section, _parse_linked_issues, _parse_review_file
 
 
 @pytest.fixture
@@ -103,3 +105,67 @@ class TestParseReviewFile:
         )
         result = _parse_review_file(review_file)
         assert "Blocker" in result["comments"][0]["body"]
+
+
+class TestParseLinkedIssues:
+    def test_fixes_hashtag(self):
+        assert _parse_linked_issues("Fixes #42") == [42]
+
+    def test_closes_hashtag(self):
+        assert _parse_linked_issues("Closes #10") == [10]
+
+    def test_resolves_hashtag(self):
+        assert _parse_linked_issues("Resolves #99") == [99]
+
+    def test_case_insensitive(self):
+        assert _parse_linked_issues("fixes #1\nCLOSES #2\nResolves #3") == [1, 2, 3]
+
+    def test_multiple_issues(self):
+        assert _parse_linked_issues("Fixes #5, fixes #10, closes #3") == [3, 5, 10]
+
+    def test_deduplicates(self):
+        assert _parse_linked_issues("Fixes #7\nCloses #7") == [7]
+
+    def test_no_matches(self):
+        assert _parse_linked_issues("No issues referenced here") == []
+
+    def test_ignores_bare_hashtag(self):
+        assert _parse_linked_issues("See #42 for details") == []
+
+    def test_fix_singular(self):
+        assert _parse_linked_issues("Fix #15") == [15]
+
+    def test_closed_past_tense(self):
+        assert _parse_linked_issues("Closed #8") == [8]
+
+    def test_resolved_past_tense(self):
+        assert _parse_linked_issues("Resolved #12") == [12]
+
+
+class TestFetchLinkedIssuesSection:
+    def test_returns_empty_when_no_links(self):
+        result = asyncio.run(_fetch_linked_issues_section("owner/repo", "No links here"))
+        assert result == ""
+
+    @patch("review.get_issue", new_callable=AsyncMock)
+    def test_fetches_and_formats_linked_issue(self, mock_get_issue: AsyncMock):
+        mock_get_issue.return_value = {
+            "title": "Add widget",
+            "body": "We need a widget that does X.",
+        }
+        result = asyncio.run(_fetch_linked_issues_section("owner/repo", "Fixes #54"))
+        mock_get_issue.assert_awaited_once_with("owner/repo", 54)
+        assert "### #54: Add widget" in result
+        assert "We need a widget that does X." in result
+
+    @patch("review.get_issue", new_callable=AsyncMock)
+    def test_skips_issues_that_fail_to_fetch(self, mock_get_issue: AsyncMock):
+        mock_get_issue.side_effect = RuntimeError("Not found")
+        result = asyncio.run(_fetch_linked_issues_section("owner/repo", "Fixes #999"))
+        assert result == ""
+
+    @patch("review.get_issue", new_callable=AsyncMock)
+    def test_handles_issue_with_no_body(self, mock_get_issue: AsyncMock):
+        mock_get_issue.return_value = {"title": "Empty issue", "body": None}
+        result = asyncio.run(_fetch_linked_issues_section("owner/repo", "Closes #1"))
+        assert "_No body._" in result

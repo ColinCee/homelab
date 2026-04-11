@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -11,12 +12,16 @@ from github import (
     bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
+    get_issue,
     get_pr,
     get_unresolved_threads,
     post_review,
 )
 
 logger = logging.getLogger(__name__)
+
+# Matches "Fixes #123", "Closes #123", "Resolves #123" (case-insensitive)
+_LINKED_ISSUE_RE = re.compile(r"(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE)
 
 REVIEW_PROMPT_TEMPLATE = """\
 Review PR #{pr_number} in {repo}.
@@ -29,7 +34,14 @@ Use the bot-review skill for review guidelines and output format.
 Base branch: `{base_branch}`
 
 {description}
+{linked_issues_section}\
 {previous_review_section}\
+"""
+
+LINKED_ISSUES_SECTION = """
+## Linked Issues
+
+{issues}
 """
 
 PREVIOUS_REVIEW_SECTION = """
@@ -44,6 +56,31 @@ Only re-report issues that are still present as new inline comments.
 
 REVIEW_OUTPUT_FILE = ".copilot-review.json"
 VALID_EVENTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
+
+
+def _parse_linked_issues(text: str) -> list[int]:
+    """Extract issue numbers from 'Fixes #N' / 'Closes #N' / 'Resolves #N' in text."""
+    return sorted(set(int(m) for m in _LINKED_ISSUE_RE.findall(text)))
+
+
+async def _fetch_linked_issues_section(repo: str, description: str) -> str:
+    """Fetch linked issue bodies and format as a prompt section."""
+    issue_numbers = _parse_linked_issues(description)
+    if not issue_numbers:
+        return ""
+
+    parts = []
+    for num in issue_numbers:
+        try:
+            issue = await get_issue(repo, num)
+            title = issue.get("title", "")
+            body = issue.get("body") or "_No body._"
+            parts.append(f"### #{num}: {title}\n\n{body}")
+        except Exception:
+            logger.warning("Could not fetch linked issue #%d", num)
+    if not parts:
+        return ""
+    return LINKED_ISSUES_SECTION.format(issues="\n\n".join(parts))
 
 
 def _parse_review_file(review_file: Path) -> dict:
@@ -113,6 +150,7 @@ async def review_pr(
         description = pr_data.get("body") or "_No description provided._"
         base_branch = pr_data.get("base", {}).get("ref", "main")
 
+        linked_issues_section = await _fetch_linked_issues_section(repo, description)
         threads = await get_unresolved_threads(repo, pr_number)
         previous_section = PREVIOUS_REVIEW_SECTION.format(threads=threads) if threads else ""
         prompt = REVIEW_PROMPT_TEMPLATE.format(
@@ -121,6 +159,7 @@ async def review_pr(
             title=title,
             description=description,
             base_branch=base_branch,
+            linked_issues_section=linked_issues_section,
             previous_review_section=previous_section,
         )
 
