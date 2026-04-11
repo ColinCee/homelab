@@ -172,6 +172,7 @@ async def run_copilot(
     if transcript_path.exists():
         transcript = transcript_path.read_text()
         logger.info("Session transcript captured (%d bytes)", len(transcript))
+        logger.debug("Session transcript:\n%s", transcript)
     else:
         logger.warning("No session transcript found at %s", transcript_path)
 

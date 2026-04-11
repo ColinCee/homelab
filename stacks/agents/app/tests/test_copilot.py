@@ -1,5 +1,9 @@
 """Tests for Copilot CLI stats parsing."""
 
+import asyncio
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
 from copilot import CLIResult, _parse_stats, _parse_time
 
 SAMPLE_OUTPUT = """\
@@ -92,3 +96,67 @@ def test_stats_line_strips_est_premium():
     )
     assert "(Est." not in r.stats_line
     assert "2.2m in, 28.9k out, 2.1m cached" in r.stats_line
+
+
+class TestRunCopilot:
+    def _make_mock_process(self, stdout_text: str = "", returncode: int = 0):
+        """Create a mock subprocess that yields stdout_text line by line."""
+        proc = AsyncMock()
+        proc.returncode = returncode
+
+        stdout_lines = (stdout_text + "\n").encode().split(b"\n") if stdout_text else [b""]
+        stdout_stream = AsyncMock()
+        stdout_stream.at_eof = lambda: len(stdout_lines) == 0
+
+        async def read_stdout():
+            if stdout_lines:
+                return stdout_lines.pop(0) + b"\n"
+            return b""
+
+        stdout_stream.readline = read_stdout
+
+        stderr_stream = AsyncMock()
+        stderr_stream.at_eof = lambda: True
+        stderr_stream.readline = AsyncMock(return_value=b"")
+
+        proc.stdout = stdout_stream
+        proc.stderr = stderr_stream
+        proc.wait = AsyncMock()
+        return proc
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_share_flag_in_command(self, mock_exec: AsyncMock, tmp_path: Path):
+        """Verifies --share flag is passed to the CLI."""
+        proc = self._make_mock_process("done")
+        mock_exec.return_value = proc
+
+        asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+
+        cmd = mock_exec.call_args[0]
+        share_args = [a for a in cmd if a.startswith("--share=")]
+        assert len(share_args) == 1
+        assert str(tmp_path / ".copilot-session.md") in share_args[0]
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_reads_transcript_when_present(self, mock_exec: AsyncMock, tmp_path: Path):
+        """Verifies session transcript is read from the --share output file."""
+        transcript_content = "# Session\n\n## Turn 1\n\nUser: test prompt\n"
+        transcript_path = tmp_path / ".copilot-session.md"
+        transcript_path.write_text(transcript_content)
+
+        proc = self._make_mock_process("done")
+        mock_exec.return_value = proc
+
+        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+
+        assert result.session_transcript == transcript_content
+
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_transcript_none_when_file_missing(self, mock_exec: AsyncMock, tmp_path: Path):
+        """Transcript is None when --share file doesn't exist."""
+        proc = self._make_mock_process("done")
+        mock_exec.return_value = proc
+
+        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+
+        assert result.session_transcript is None
