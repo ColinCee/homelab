@@ -11,12 +11,11 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 ## Process
 
 1. Read and understand the issue requirements
-2. Explore the codebase to understand the relevant code and conventions
-3. Make the necessary changes — follow existing patterns
-4. Run tests and linting if you changed code:
-   - Python: `uv run pytest tests/ -v && uv run ruff check .`
-   - YAML: `yamllint -c .yamllint.yaml stacks/`
-5. Fix any test/lint failures before finishing
+2. Read `.github/copilot-instructions.md` for project conventions
+3. Explore the codebase to understand the relevant code and conventions
+4. Make the necessary changes — follow existing patterns
+5. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
+6. Self-review against the checklist below before finishing
 
 ## Rules
 
@@ -24,7 +23,6 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 - **Do NOT run `git add`, `git commit`, `git push`, or `gh pr create`**
 - Focus on making correct, complete code changes in the working directory
 - Follow existing code patterns and conventions
-- Read `.github/copilot-instructions.md` for project conventions
 - Keep changes minimal — solve the issue, don't refactor unrelated code
 
 ## Quality
@@ -37,11 +35,16 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 
 After you finish, an automated review bot will review your changes. It checks for bugs, security issues, breaking changes, and operational risk. Each review round costs time and tokens — **aim for zero blockers on the first review.**
 
+### Pre-completion checklist
+
 Before finishing your work, self-review against these questions:
-- **Error handling:** Do all external calls (HTTP, subprocess, filesystem) handle failures? If something raises, do callers handle it? Trace each new error path to the top.
+
+- **Error handling:** Don't wrap individual calls in try/except one at a time. Identify the *critical section boundary* (e.g., "everything after `run_copilot()` completes") and wrap ALL code after it in a single handler. If important state needs to survive failures (metrics, counts, tokens spent), ensure every exception path preserves it — including the code that produced the state in the first place (timeouts, non-zero exits).
+- **New types or patterns:** If you introduce a new exception class, status value, or pattern, grep for all places that use the OLD version and migrate them. Don't leave some call sites raising `RuntimeError` while others raise `TaskError`.
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
 - **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
+- **Deployment topology:** If you changed ports, hostnames, or cross-stack references, verify the target is reachable from the source's network context. Docker containers in different compose stacks can't use Docker DNS to find each other — use explicit IPs or host-mapped ports.
 
 ## Responding to Review Feedback
 
