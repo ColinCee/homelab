@@ -12,7 +12,6 @@ from github import (
     create_pull_request,
     get_issue,
     get_token,
-    get_unresolved_threads,
 )
 from review import review_pr
 
@@ -120,6 +119,7 @@ async def implement_issue(
         # We allow MAX_FIX_ITERATIONS fix attempts. Each fix is followed by a
         # re-review, so we run up to MAX_FIX_ITERATIONS + 1 review rounds
         # (initial + one after each fix).
+        previous_review_threads = ""
         for review_round in range(MAX_FIX_ITERATIONS + 1):
             logger.info(
                 "Review round %d/%d for %s#%d (PR #%d)",
@@ -136,6 +136,7 @@ async def implement_issue(
                     pr_number=pr_number,
                     model=model,
                     reasoning_effort=reasoning_effort,
+                    previous_comments=previous_review_threads,
                 )
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
@@ -192,12 +193,9 @@ async def implement_issue(
                     "error": "Review requested changes but session resumption unavailable",
                 }
 
-            threads = await get_unresolved_threads(repo, pr_number)
-            if not threads:
-                logger.warning(
-                    "REQUEST_CHANGES but no unresolved threads — "
-                    "findings may be in review body only"
-                )
+            review_threads = review_result.get("review_threads", "")
+            if not review_threads:
+                logger.warning("REQUEST_CHANGES but no inline findings to fix")
                 return {
                     "status": "partial",
                     "pr_number": pr_number,
@@ -206,13 +204,13 @@ async def implement_issue(
                     "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
-                    "error": "Review requested changes but findings are in "
-                    "review body (not inline threads) — needs manual attention",
+                    "error": "Review requested changes but no inline comments "
+                    "were posted — needs manual attention",
                 }
 
             fix_prompt = FIX_PROMPT_TEMPLATE.format(
                 issue_number=issue_number,
-                threads=threads,
+                threads=review_threads,
             )
 
             try:
@@ -242,6 +240,7 @@ async def implement_issue(
                     repo=repo,
                     branch=branch_name,
                 )
+                previous_review_threads = review_threads
             except RuntimeError as exc:
                 if "No changes to commit" in str(exc):
                     logger.warning(

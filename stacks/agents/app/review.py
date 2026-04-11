@@ -152,6 +152,17 @@ REVIEW_OUTPUT_FILE = ".copilot-review.json"
 # ── Helpers ────────────────────────────────────────────────
 
 
+def _format_review_threads(comments: list[ReviewComment]) -> str:
+    """Format review comments as a thread summary for fix prompts and re-review context.
+
+    Produces a format compatible with get_unresolved_threads() output so the fix
+    prompt and PREVIOUS_REVIEW_SECTION work identically regardless of source.
+    """
+    if not comments:
+        return ""
+    return "\n".join(f"- **{c.path}:{c.line}**\n  {c.body}" for c in comments)
+
+
 def _parse_linked_issues(text: str) -> list[int]:
     """Extract issue numbers from 'Fixes #N' / 'Closes #N' / 'Resolves #N' in text."""
     return sorted(set(int(m) for m in _LINKED_ISSUE_RE.findall(text)))
@@ -225,8 +236,16 @@ async def review_pr(
     pr_number: int,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
+    previous_comments: str = "",
 ) -> dict:
-    """Full review pipeline: worktree → Copilot CLI → read JSON → post review."""
+    """Full review pipeline: worktree → Copilot CLI → read JSON → post review.
+
+    Args:
+        previous_comments: Thread summary from a prior review round. Used as
+            fallback for PREVIOUS_REVIEW_SECTION when get_unresolved_threads()
+            returns empty (e.g. self-PR where COMMENT reviews don't create
+            resolvable threads).
+    """
     logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
     start = time.monotonic()
     repo_url = f"https://github.com/{repo}.git"
@@ -248,6 +267,8 @@ async def review_pr(
 
         linked_issues_section = await _fetch_linked_issues_section(repo, description)
         threads = await get_unresolved_threads(repo, pr_number)
+        if not threads and previous_comments:
+            threads = previous_comments
         previous_section = PREVIOUS_REVIEW_SECTION.format(threads=threads) if threads else ""
         prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
@@ -360,6 +381,7 @@ async def review_pr(
             "premium_requests": result.total_premium_requests,
             "models": result.models,
             "original_event": review_data.event,
+            "review_threads": _format_review_threads(review_data.comments),
         }
 
     finally:

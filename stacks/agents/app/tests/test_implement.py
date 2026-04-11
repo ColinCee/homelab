@@ -28,7 +28,14 @@ class TestImplementIssue:
         mock_pr = {"number": 99, "html_url": "https://github.com/user/repo/pull/99"}
 
         review_results = [
-            {"original_event": event, "premium_requests": 1} for event in review_events
+            {
+                "original_event": event,
+                "premium_requests": 1,
+                "review_threads": (
+                    "- **file.py:10**\n  bug here" if event == "REQUEST_CHANGES" else ""
+                ),
+            }
+            for event in review_events
         ]
 
         return [
@@ -50,11 +57,6 @@ class TestImplementIssue:
                 "implement.review_pr",
                 new_callable=AsyncMock,
                 side_effect=review_results,
-            ),
-            patch(
-                "implement.get_unresolved_threads",
-                new_callable=AsyncMock,
-                return_value="- **file.py:10** — bug here",
             ),
             patch("implement.comment_on_issue", new_callable=AsyncMock),
             patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -102,17 +104,21 @@ class TestImplementIssue:
         assert "session resumption unavailable" in result["error"]
 
     def test_no_threads_returns_partial(self):
-        """REQUEST_CHANGES with no threads returns partial, not complete."""
+        """REQUEST_CHANGES with no inline findings returns partial."""
         mocks = self._standard_mocks(review_events=["REQUEST_CHANGES"])
-        # Override get_unresolved_threads to return empty
-        mocks[7] = patch(
-            "implement.get_unresolved_threads",
+        # Override review_pr to return REQUEST_CHANGES with no inline comments
+        mocks[6] = patch(
+            "implement.review_pr",
             new_callable=AsyncMock,
-            return_value="",
+            return_value={
+                "original_event": "REQUEST_CHANGES",
+                "premium_requests": 1,
+                "review_threads": "",
+            },
         )
         result = self._run_with_mocks(mocks)
         assert result["status"] == "partial"
-        assert "review body" in result["error"]
+        assert "no inline comments" in result["error"]
 
     def test_accumulates_premium_requests(self):
         """Premium requests from implement + review + fix are all accumulated."""
@@ -121,3 +127,22 @@ class TestImplementIssue:
         )
         # 1 (implement) + 1 (review 1) + 1 (fix) + 1 (review 2) = 4
         assert result["premium_requests"] == 4
+
+    def test_passes_previous_threads_to_re_review(self):
+        """On second review round, previous findings are passed as context."""
+        mocks = self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                review_mock = entered[6]  # review_pr mock
+                from implement import implement_issue
+
+                await implement_issue(repo="user/repo", issue_number=42)
+
+                # First call: no previous context
+                assert review_mock.call_args_list[0].kwargs["previous_comments"] == ""
+                # Second call: previous findings threaded through
+                assert "file.py:10" in review_mock.call_args_list[1].kwargs["previous_comments"]
+
+        asyncio.run(run())
