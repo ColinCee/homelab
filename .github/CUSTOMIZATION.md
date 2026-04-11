@@ -149,6 +149,7 @@ From [agentskills.io best practices](https://agentskills.io/skill-creation/best-
 |-------|:-:|:-:|---------|
 | `bot-implement` | ❌ | ✅ | Orchestrator: implement issues, fix review feedback |
 | `bot-review` | ❌ | ✅ | Orchestrator: structured PR review with JSON output |
+| `write-issue` | ✅ | ✅ | Write issues for agent implementation — problem/behavior/constraints format |
 
 ## Decision tree: where does this go?
 
