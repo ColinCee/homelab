@@ -30,8 +30,13 @@ Review for:
 
 ## Severity Levels
 
-- 🚫 **Blocker** — must fix before merge (bugs, security, breaking changes)
-- 💡 **Suggestion** — non-blocking improvement, author decides
+- 🚫 **Blocker** — must fix before merge. Anything that damages the codebase if merged:
+  - Bugs, logic errors, race conditions
+  - Security issues (exposed secrets, missing auth, injection)
+  - Breaking changes (API contracts, config renames, removed features)
+  - Operational risk (resource leaks, unbounded growth, missing timeouts)
+  - Codebase health (generated files committed, test pollution, dead code that misleads, wrong abstractions that will spread)
+- 💡 **Suggestion** — non-blocking improvement, author decides. Style preferences, minor readability tweaks, optional optimizations.
 
 ## Comment Format
 
