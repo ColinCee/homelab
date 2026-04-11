@@ -11,7 +11,9 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 COPILOT_BINARY = "/usr/local/bin/copilot"
-TIMEOUT_SECONDS = 900
+# Last-resort safety net — prevents a truly hung process from sitting forever.
+# This should never fire during normal operation; productive runs complete well under this.
+TIMEOUT_SECONDS = 1800
 
 
 class TaskError(Exception):

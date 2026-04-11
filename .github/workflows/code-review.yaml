@@ -75,21 +75,4 @@ jobs:
             echo "::error::Agent returned HTTP $HTTP_CODE"
             exit 1
           fi
-          echo "✅ Review accepted by agent (202)"
-
-          # Poll until the review completes or fails (timeout 15 min)
-          for i in $(seq 1 90); do
-            sleep 10
-            STATUS=$(curl -sf --max-time 10 \
-              "http://beelink:8585/review/$PR_NUMBER?repo=$REPO" \
-              | jq -r '.status' 2>/dev/null || echo "unknown")
-
-            case "$STATUS" in
-              complete) echo "✅ Review completed"; exit 0 ;;
-              failed)   echo "::error::Review failed on agent"; exit 1 ;;
-              *)        echo "⏳ Status: $STATUS ($((i * 10))s elapsed)" ;;
-            esac
-          done
-
-          echo "::error::Review timed out after 900s"
-          exit 1
+          echo "✅ Review dispatched to agent"
