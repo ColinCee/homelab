@@ -220,7 +220,7 @@ async def commit_and_push(
             "push",
             f"https://x-access-token@github.com/{repo}.git",
             f"HEAD:refs/heads/{branch}",
-            "--force-with-lease",
+            "--force",
             cwd=worktree_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
