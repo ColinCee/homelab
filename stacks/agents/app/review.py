@@ -116,34 +116,38 @@ async def review_pr(
             effort=reasoning_effort,
         )
 
+        # Everything after run_copilot can fail — wrap in a single handler
+        # so premium request count is always preserved for metrics
         try:
-            review_data = _parse_review_file(worktree_path / REVIEW_OUTPUT_FILE)
-        except RuntimeError as exc:
-            logger.error("Review output validation failed: %s", exc)
-            await comment_on_issue(
-                repo,
-                pr_number,
-                f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
-            )
-            raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
+            try:
+                review_data = _parse_review_file(worktree_path / REVIEW_OUTPUT_FILE)
+            except RuntimeError as exc:
+                logger.error("Review output validation failed: %s", exc)
+                await comment_on_issue(
+                    repo,
+                    pr_number,
+                    f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
+                )
+                raise
 
-        body = review_data["body"]
+            body = review_data["body"]
 
-        event = review_data["event"]
-        downgraded = False
+            event = review_data["event"]
+            downgraded = False
 
-        # GitHub doesn't allow REQUEST_CHANGES on your own PR — use COMMENT instead
-        pr_data = await get_pr(repo, pr_number)
-        if event == "REQUEST_CHANGES" and pr_data.get("user", {}).get("login") == bot_login():
-            logger.info("Using COMMENT instead of REQUEST_CHANGES (bot's own PR)")
-            event = "COMMENT"
-            downgraded = True
+            # GitHub doesn't allow REQUEST_CHANGES on your own PR — use COMMENT instead
+            pr_data = await get_pr(repo, pr_number)
+            if event == "REQUEST_CHANGES" and pr_data.get("user", {}).get("login") == bot_login():
+                logger.info("Using COMMENT instead of REQUEST_CHANGES (bot's own PR)")
+                event = "COMMENT"
+                downgraded = True
 
-        # Append stats as a collapsible footer — orchestrator-only metadata
-        if result.stats_line:
-            body += f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
+            # Append stats as a collapsible footer — orchestrator-only metadata
+            if result.stats_line:
+                body += (
+                    f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
+                )
 
-        try:
             await post_review(
                 repo,
                 pr_number,
@@ -151,14 +155,17 @@ async def review_pr(
                 body=body,
                 comments=review_data["comments"] or None,
             )
+
+            # Best-effort cleanup — review is already posted, don't fail the task
+            try:
+                await dismiss_stale_reviews(repo, pr_number, keep_latest=not downgraded)
+            except Exception:
+                logger.warning("Failed to dismiss stale reviews on %s#%d", repo, pr_number)
+
+        except TaskError:
+            raise
         except Exception as exc:
             raise TaskError(str(exc), premium_requests=result.total_premium_requests) from exc
-
-        # Best-effort cleanup — review is already posted, don't fail the task
-        try:
-            await dismiss_stale_reviews(repo, pr_number, keep_latest=not downgraded)
-        except Exception:
-            logger.warning("Failed to dismiss stale reviews on %s#%d", repo, pr_number)
 
         elapsed = time.monotonic() - start
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
