@@ -165,6 +165,13 @@ async def commit_and_push(
     worktree_path: Path, *, message: str, token: str, repo: str, branch: str
 ) -> str:
     """Stage all changes, commit, and push to the remote branch. Returns commit SHA."""
+    # Auto-format and fix lint issues before staging. The CLI agent doesn't
+    # run our pre-commit hooks, so the orchestrator ensures clean commits.
+    with contextlib.suppress(RuntimeError):
+        await _run(["ruff", "format", "."], cwd=worktree_path)
+    with contextlib.suppress(RuntimeError):
+        await _run(["ruff", "check", "--fix", "."], cwd=worktree_path)
+
     await _run(["git", "add", "-A"], cwd=worktree_path)
 
     # Unstage CLI artifacts that git add -A may have picked up.
