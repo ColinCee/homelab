@@ -51,6 +51,10 @@ async def init_bare_clone(repo_url: str) -> Path:
     return BARE_CLONE_PATH
 
 
+_FETCH_RETRIES = 3
+_FETCH_BACKOFF_SECONDS = [2, 4, 8]
+
+
 async def create_worktree(pr_number: int, repo_url: str) -> Path:
     """Fetch a PR ref and create a worktree for review."""
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
@@ -65,10 +69,26 @@ async def create_worktree(pr_number: int, repo_url: str) -> Path:
         with contextlib.suppress(RuntimeError):
             await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
 
-        await _run(
-            ["git", "fetch", "origin", f"pull/{pr_number}/head:pr-{pr_number}"],
-            cwd=BARE_CLONE_PATH,
-        )
+        # GitHub may take a few seconds to propagate pull/N/head after PR
+        # creation. Retry with backoff so the implement lifecycle doesn't
+        # crash when it reviews its own freshly-created PR.
+        fetch_cmd = ["git", "fetch", "origin", f"pull/{pr_number}/head:pr-{pr_number}"]
+        for attempt in range(_FETCH_RETRIES):
+            try:
+                await _run(fetch_cmd, cwd=BARE_CLONE_PATH)
+                break
+            except RuntimeError:
+                if attempt == _FETCH_RETRIES - 1:
+                    raise
+                delay = _FETCH_BACKOFF_SECONDS[attempt]
+                logger.warning(
+                    "Fetch pull/%d/head failed (attempt %d/%d), retrying in %ds",
+                    pr_number,
+                    attempt + 1,
+                    _FETCH_RETRIES,
+                    delay,
+                )
+                await asyncio.sleep(delay)
 
         REVIEWS_PATH.mkdir(parents=True, exist_ok=True)
         await _run(
@@ -135,6 +155,12 @@ async def commit_and_push(
 ) -> str:
     """Stage all changes, commit, and push to the remote branch. Returns commit SHA."""
     await _run(["git", "add", "-A"], cwd=worktree_path)
+
+    # Unstage CLI artifacts that git add -A may have picked up.
+    # Worktrees don't inherit the repo's .gitignore, so we handle it here.
+    for artifact in (".copilot-session.md", ".copilot"):
+        with contextlib.suppress(RuntimeError):
+            await _run(["git", "rm", "--cached", "-rf", artifact], cwd=worktree_path)
 
     # git diff --cached --quiet returns 0 if NO changes staged
     proc = await asyncio.create_subprocess_exec(
