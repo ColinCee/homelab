@@ -112,6 +112,12 @@ def test_parse_session_id_returns_none_when_absent():
     assert _parse_session_id("no session info here") is None
 
 
+def test_parse_session_id_from_markdown_transcript():
+    """The --share transcript uses markdown: > - **Session ID:** `<uuid>`"""
+    output = "> - **Session ID:** `a1b2c3d4-e5f6-7890-abcd-ef1234567890`"
+    assert _parse_session_id(output) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
 class TestRunCopilot:
     def _make_mock_process(self, stdout_text: str = "", returncode: int = 0):
         """Create a mock subprocess that yields stdout_text line by line."""

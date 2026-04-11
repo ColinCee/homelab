@@ -87,7 +87,9 @@ def _parse_stats(output: str) -> dict:
 
 SESSION_TRANSCRIPT_FILE = ".copilot-session.md"
 
-_SESSION_ID_RE = re.compile(r"Session ID:\s*`?([0-9a-f-]{36})`?")
+# Matches both plain stdout "Session ID: <uuid>" and the markdown
+# transcript format "> - **Session ID:** `<uuid>`"
+_SESSION_ID_RE = re.compile(r"Session ID:?\*{0,2}\s*`?([0-9a-f-]{36})`?")
 
 
 def _parse_session_id(text: str) -> str | None:
