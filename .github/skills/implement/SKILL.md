@@ -11,11 +11,10 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 ## Process
 
 1. Read and understand the issue requirements
-2. Read `.github/copilot-instructions.md` for project conventions
-3. Explore the codebase to understand the relevant code and conventions
-4. Make the necessary changes — follow existing patterns
-5. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
-6. Self-review against the checklist below before finishing
+2. Explore the codebase to understand the relevant code and conventions
+3. Make the necessary changes — follow existing patterns
+4. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
+5. Self-review against the checklist below before finishing
 
 ## Rules
 
