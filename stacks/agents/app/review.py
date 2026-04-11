@@ -143,11 +143,8 @@ async def review_pr(
                 event = "COMMENT"
                 downgraded = True
 
-            # Append stats as a collapsible footer — orchestrator-only metadata
             if result.stats_line:
-                body += (
-                    f"\n\n<details>\n<summary>📊 Stats</summary>\n\n{result.stats_line}\n</details>"
-                )
+                body += f"\n\n📊 {result.stats_line}"
 
             await post_review(
                 repo,
