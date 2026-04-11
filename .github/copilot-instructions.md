@@ -64,7 +64,7 @@ This repo has an automated AI code review system. Follow this process:
 ### Review cycle
 
 1. When a PR is opened or marked ready, `code-review.yaml` auto-triggers
-2. `homelab-review-bot[bot]` posts a structured review with inline
+2. `colins-homelab-bot[bot]` posts a structured review with inline
    comments and a verdict:
    - **APPROVE** — no issues found
    - **REQUEST_CHANGES** — blocker-severity issues found

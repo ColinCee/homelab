@@ -112,30 +112,27 @@ async def run_copilot(
 
     async def _stream(stream: asyncio.StreamReader, lines: list[str], prefix: str) -> None:
         while not stream.at_eof():
-            try:
-                raw = await asyncio.wait_for(stream.readline(), timeout=5.0)
-                if raw:
-                    line = raw.decode().rstrip()
-                    lines.append(line)
-                    logger.info("[copilot %s] %s", prefix, line)
-            except TimeoutError:
-                if proc.returncode is not None:
-                    break
+            raw = await stream.readline()
+            if raw:
+                line = raw.decode().rstrip()
+                lines.append(line)
+                logger.info("[copilot %s] %s", prefix, line)
 
     try:
         assert proc.stdout and proc.stderr
         out_task = asyncio.create_task(_stream(proc.stdout, stdout_lines, "agent"))
         err_task = asyncio.create_task(_stream(proc.stderr, stderr_lines, "meta"))
 
-        await asyncio.wait_for(proc.wait(), timeout=TIMEOUT_SECONDS)
-        # Give streams a moment to flush, then cancel
-        await asyncio.sleep(1)
+        # Wait for streams to EOF (happens when the process exits and pipes close).
+        # The overall timeout covers both the process runtime and stream draining.
+        await asyncio.wait_for(asyncio.gather(out_task, err_task), timeout=TIMEOUT_SECONDS)
+        await proc.wait()
+    except TimeoutError as err:
+        proc.kill()
         out_task.cancel()
         err_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.gather(out_task, err_task)
-    except TimeoutError as err:
-        proc.kill()
         raise RuntimeError(f"Copilot CLI timed out after {TIMEOUT_SECONDS}s") from err
 
     if proc.returncode != 0:
