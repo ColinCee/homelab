@@ -45,10 +45,38 @@ class ReviewComment(BaseModel):
                         "**Problem**: Widening Docker build context to the repo root "
                         "sends the entire directory tree to the daemon.\n\n"
                         "**Impact**: Every file not excluded by .dockerignore is readable "
-                        "in the build tarball.\n\n"
-                        "**Fix**: Convert .dockerignore to a whitelist pattern."
+                        "in the build tarball — today that's .env, tomorrow anything "
+                        "added to the repo root. Layer caching can persist these.\n\n"
+                        "**Fix**: Convert .dockerignore to a whitelist pattern "
+                        "(deny all, allow specific paths)."
                     ),
-                }
+                },
+                {
+                    "path": "main.py",
+                    "line": 25,
+                    "body": (
+                        "💡 **Suggestion** — Redundant API call\n\n"
+                        "**Problem**: `get_pr()` is called twice — once for prompt "
+                        "context, once for the bot-authored-PR check.\n\n"
+                        "**Impact**: Adds ~200ms per review and creates a maintenance "
+                        "trap — if the fetch logic changes, it needs updating in two "
+                        "places.\n\n"
+                        "**Fix**: Reuse the result from the first call."
+                    ),
+                },
+                {
+                    "path": "copilot.py",
+                    "line": 108,
+                    "body": (
+                        "❓ **Question** — Timeout strategy\n\n"
+                        "**Problem**: The 1800s timeout is a round number with no "
+                        "data backing it.\n\n"
+                        "**Impact**: Too short kills productive runs; too long wastes "
+                        "resources on stuck processes.\n\n"
+                        "**Fix**: Is there telemetry on typical run durations to "
+                        "inform this value?"
+                    ),
+                },
             ]
         }
     }
@@ -66,9 +94,28 @@ class ReviewOutput(BaseModel):
             "examples": [
                 {
                     "event": "APPROVE",
-                    "body": "✅ **Approved** — no issues found.\n\n---",
+                    "body": (
+                        "✅ **Approved** — no issues found.\n\n"
+                        "Solid approach — clean separation between orchestrator and CLI.\n\n---"
+                    ),
                     "comments": [],
-                }
+                },
+                {
+                    "event": "REQUEST_CHANGES",
+                    "body": (
+                        "🚫 **Changes requested** — see inline comments.\n\n"
+                        "Widening the build context is the right call for mise access, "
+                        "but it introduces a secret-leakage surface that needs a "
+                        "whitelist-based .dockerignore.\n\n---"
+                    ),
+                    "comments": [
+                        {
+                            "path": "compose.yaml",
+                            "line": 4,
+                            "body": "🚫 **Blocker** — see ReviewComment examples",
+                        }
+                    ],
+                },
             ]
         }
     }
