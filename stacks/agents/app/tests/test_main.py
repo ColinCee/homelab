@@ -31,6 +31,12 @@ def reset_state():
     _implement_status.clear()
 
 
+@pytest.fixture(autouse=True)
+def stub_reaper():
+    with patch("main.reap_old_worktrees", new=AsyncMock(return_value=0)) as mock_reaper:
+        yield mock_reaper
+
+
 def test_health():
     resp = _client().get("/health")
     assert resp.status_code == 200
@@ -43,6 +49,14 @@ def test_metrics_endpoint_exposes_prometheus_text():
     assert resp.headers["content-type"].startswith("text/plain")
     assert "# HELP agent_task_total" in resp.text
     assert 'agent_task_in_progress{task_type="review"} 0.0' in resp.text
+
+
+def test_startup_reaps_old_worktrees(stub_reaper):
+    with TestClient(app) as client:
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    stub_reaper.assert_awaited_once()
 
 
 @patch("main.review_pr", new_callable=AsyncMock)

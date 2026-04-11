@@ -2,8 +2,12 @@
 
 import asyncio
 import contextlib
+import json
 import logging
+import os
 import shutil
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from github import bot_email, bot_login
@@ -12,9 +16,19 @@ logger = logging.getLogger(__name__)
 
 BARE_CLONE_PATH = Path("/repo.git")
 REVIEWS_PATH = Path("/reviews")
+WORKTREE_RETENTION_SECONDS = int(os.environ.get("WORKTREE_RETENTION_SECONDS", str(14 * 86400)))
+CLEANUP_MARKER_FILE = ".cleanup-after"
 
 # Serializes all git operations on the shared bare clone
 _repo_lock = asyncio.Lock()
+
+
+@dataclass(frozen=True)
+class CleanupMarker:
+    """Deferred cleanup metadata stored inside a worktree."""
+
+    expires_at: int
+    branch_name: str
 
 
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
@@ -51,9 +65,96 @@ async def init_bare_clone(repo_url: str) -> Path:
     return BARE_CLONE_PATH
 
 
+def _branch_worktree_path(branch_name: str) -> Path:
+    """Map a git branch name to its worktree directory name."""
+    return REVIEWS_PATH / branch_name.replace("/", "-")
+
+
+def _marker_path(worktree_path: Path) -> Path:
+    return worktree_path / CLEANUP_MARKER_FILE
+
+
+def _write_cleanup_marker(worktree_path: Path, branch_name: str) -> CleanupMarker:
+    """Persist deferred cleanup metadata inside the worktree."""
+    marker = CleanupMarker(
+        expires_at=int(time.time()) + WORKTREE_RETENTION_SECONDS,
+        branch_name=branch_name,
+    )
+    _marker_path(worktree_path).write_text(
+        json.dumps(
+            {
+                "expires_at": marker.expires_at,
+                "branch_name": marker.branch_name,
+            }
+        )
+        + "\n"
+    )
+    return marker
+
+
+def _read_cleanup_marker(marker_path: Path) -> CleanupMarker:
+    """Parse a worktree cleanup marker file."""
+    try:
+        payload = json.loads(marker_path.read_text())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"invalid JSON in {marker_path}") from exc
+
+    if not isinstance(payload, dict):
+        raise ValueError(f"cleanup marker {marker_path} must be a JSON object")
+
+    expires_at = payload.get("expires_at")
+    branch_name = payload.get("branch_name")
+    if not isinstance(expires_at, int) or not isinstance(branch_name, str) or not branch_name:
+        raise ValueError(
+            f"cleanup marker {marker_path} must contain integer expires_at and string branch_name"
+        )
+
+    return CleanupMarker(expires_at=expires_at, branch_name=branch_name)
+
+
+async def reap_old_worktrees() -> int:
+    """Delete worktrees whose deferred-cleanup marker has expired."""
+    if not REVIEWS_PATH.exists():
+        return 0
+
+    now = int(time.time())
+    reaped = 0
+
+    async with _repo_lock:
+        for entry in REVIEWS_PATH.iterdir():
+            if not entry.is_dir():
+                continue
+
+            marker_path = _marker_path(entry)
+            if not marker_path.exists():
+                continue
+
+            try:
+                marker = _read_cleanup_marker(marker_path)
+            except ValueError as exc:
+                logger.warning("Skipping malformed cleanup marker at %s: %s", marker_path, exc)
+                continue
+
+            if marker.expires_at > now:
+                continue
+
+            try:
+                await _remove_named_worktree(entry, marker.branch_name)
+            except RuntimeError as exc:
+                logger.warning("Failed to reap expired worktree %s: %s", entry, exc)
+                continue
+
+            reaped += 1
+            logger.info("Reaped expired worktree %s for branch %s", entry, marker.branch_name)
+
+    return reaped
+
+
 async def create_worktree(pr_number: int, repo_url: str) -> Path:
     """Fetch a PR ref and create a worktree for review."""
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
+
+    await reap_old_worktrees()
 
     async with _repo_lock:
         if worktree_path.exists():
@@ -81,18 +182,33 @@ async def create_worktree(pr_number: int, repo_url: str) -> Path:
 
 
 async def cleanup_worktree(pr_number: int) -> None:
-    """Remove a PR worktree and its branch ref."""
+    """Mark a PR worktree for deferred cleanup, or remove a missing-path ref eagerly."""
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
+    branch_name = f"pr-{pr_number}"
+
+    await reap_old_worktrees()
 
     async with _repo_lock:
+        if worktree_path.exists():
+            marker = _write_cleanup_marker(worktree_path, branch_name)
+            logger.info(
+                "Deferred cleanup for PR #%d until %d at %s",
+                pr_number,
+                marker.expires_at,
+                worktree_path,
+            )
+            return
+
         await _remove_worktree(worktree_path, pr_number)
 
-    logger.info("Cleaned up worktree for PR #%d", pr_number)
+    logger.info("Removed missing-path worktree ref for PR #%d", pr_number)
 
 
 async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
     """Create a new branch from origin/main and a worktree for it."""
-    worktree_path = REVIEWS_PATH / branch_name.replace("/", "-")
+    worktree_path = _branch_worktree_path(branch_name)
+
+    await reap_old_worktrees()
 
     async with _repo_lock:
         if worktree_path.exists():
@@ -121,13 +237,25 @@ async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
 
 
 async def cleanup_branch_worktree(branch_name: str) -> None:
-    """Remove a branch worktree and its branch ref."""
-    worktree_path = REVIEWS_PATH / branch_name.replace("/", "-")
+    """Mark a branch worktree for deferred cleanup, or remove a missing-path ref eagerly."""
+    worktree_path = _branch_worktree_path(branch_name)
+
+    await reap_old_worktrees()
 
     async with _repo_lock:
+        if worktree_path.exists():
+            marker = _write_cleanup_marker(worktree_path, branch_name)
+            logger.info(
+                "Deferred cleanup for branch %s until %d at %s",
+                branch_name,
+                marker.expires_at,
+                worktree_path,
+            )
+            return
+
         await _remove_named_worktree(worktree_path, branch_name)
 
-    logger.info("Cleaned up branch worktree %s", branch_name)
+    logger.info("Removed missing-path worktree ref for branch %s", branch_name)
 
 
 async def commit_and_push(
@@ -195,13 +323,19 @@ async def commit_and_push(
 async def _remove_named_worktree(worktree_path: Path, branch_name: str) -> None:
     """Remove a worktree and its branch ref. Caller must hold _repo_lock."""
     if worktree_path.exists():
-        try:
-            await _run(
-                ["git", "worktree", "remove", "--force", str(worktree_path)],
-                cwd=BARE_CLONE_PATH,
-            )
-        except RuntimeError:
+        if BARE_CLONE_PATH.exists():
+            try:
+                await _run(
+                    ["git", "worktree", "remove", "--force", str(worktree_path)],
+                    cwd=BARE_CLONE_PATH,
+                )
+            except RuntimeError:
+                shutil.rmtree(worktree_path, ignore_errors=True)
+        else:
             shutil.rmtree(worktree_path, ignore_errors=True)
+
+    if not BARE_CLONE_PATH.exists():
+        return
 
     with contextlib.suppress(RuntimeError):
         await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
