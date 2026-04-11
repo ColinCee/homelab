@@ -8,8 +8,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from review import (
+    ReviewComment,
     ReviewOutput,
     _fetch_linked_issues_section,
+    _format_review_threads,
     _parse_linked_issues,
     _parse_review_file,
 )
@@ -214,3 +216,23 @@ class TestFetchLinkedIssuesSection:
         }
         result = asyncio.run(_fetch_linked_issues_section("owner/repo", "Fixes #10"))
         assert "### #10: Legit issue" in result
+
+
+class TestFormatReviewThreads:
+    def test_formats_single_comment(self):
+        comments = [ReviewComment(path="main.py", line=10, body="Bug here")]
+        result = _format_review_threads(comments)
+        assert result == "- **main.py:10**\n  Bug here"
+
+    def test_formats_multiple_comments(self):
+        comments = [
+            ReviewComment(path="a.py", line=1, body="First issue"),
+            ReviewComment(path="b.py", line=42, body="Second issue"),
+        ]
+        result = _format_review_threads(comments)
+        assert "- **a.py:1**" in result
+        assert "- **b.py:42**" in result
+        assert result.count("- **") == 2
+
+    def test_returns_empty_for_no_comments(self):
+        assert _format_review_threads([]) == ""
