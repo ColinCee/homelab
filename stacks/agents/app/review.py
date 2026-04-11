@@ -14,6 +14,7 @@ from github import (
     bot_login,
     comment_on_issue,
     dismiss_stale_reviews,
+    get_diff_valid_lines,
     get_issue,
     get_pr,
     get_unresolved_threads,
@@ -257,7 +258,9 @@ async def review_pr(
                     pr_number,
                     f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
                 )
-                raise
+                raise TaskError(
+                    str(exc), premium_requests=result.total_premium_requests, commented=True
+                ) from exc
 
             body = review_data.body
 
@@ -274,13 +277,46 @@ async def review_pr(
             if result.stats_line:
                 body += f"\n\n📊 {result.stats_line}"
 
-            comments_dicts = [c.model_dump(exclude_none=True) for c in review_data.comments]
+            head_sha = pr_data.get("head", {}).get("sha")
+
+            # Strip start_line — ranged comments need side/start_side which we
+            # don't support yet. Single-line comments are reliable.
+            comments_dicts = [
+                {k: v for k, v in c.model_dump(exclude_none=True).items() if k != "start_line"}
+                for c in review_data.comments
+            ]
+
+            # Filter comments to lines that actually appear in the diff —
+            # GitHub returns 422 for lines outside diff hunks.
+            if comments_dicts:
+                valid_lines = await get_diff_valid_lines(repo, pr_number)
+                valid_comments: list[dict] = []
+                dropped_comments: list[dict] = []
+                for c in comments_dicts:
+                    if (c["path"], c["line"]) in valid_lines:
+                        valid_comments.append(c)
+                    else:
+                        dropped_comments.append(c)
+                        logger.warning(
+                            "Comment on %s:%d not in diff — moving to body",
+                            c["path"],
+                            c["line"],
+                        )
+
+                if dropped_comments:
+                    body += "\n\n---\n*Some comments reference lines outside the diff:*\n\n"
+                    for c in dropped_comments:
+                        body += f"**{c['path']}:{c['line']}** — {c['body']}\n\n"
+
+                comments_dicts = valid_comments
+
             await post_review(
                 repo,
                 pr_number,
                 event=event,
                 body=body,
                 comments=comments_dicts or None,
+                commit_id=head_sha,
             )
 
             # Best-effort cleanup — review is already posted, don't fail the task

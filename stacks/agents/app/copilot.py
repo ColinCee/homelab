@@ -19,9 +19,12 @@ TIMEOUT_SECONDS = 1800
 class TaskError(Exception):
     """Wraps a post-CLI failure, preserving the premium request count for metrics."""
 
-    def __init__(self, message: str, *, premium_requests: int = 0) -> None:
+    def __init__(self, message: str, *, premium_requests: int = 0, commented: bool = False) -> None:
         super().__init__(message)
         self.premium_requests = premium_requests
+        # True when an error comment was already posted on the PR/issue,
+        # so callers can avoid double-posting.
+        self.commented = commented
 
 
 @dataclass

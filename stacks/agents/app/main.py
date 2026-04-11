@@ -1,5 +1,6 @@
 """Agent service — FastAPI app for Beelink-hosted AI agents."""
 
+import contextlib
 import logging
 import os
 import time
@@ -10,6 +11,7 @@ from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
 from copilot import TaskError
+from github import comment_on_issue
 from implement import fix_pr, implement_issue
 from metrics import (
     METRICS_REGISTRY,
@@ -244,9 +246,16 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
         premium_requests = exc.premium_requests
+        if not exc.commented:
+            with contextlib.suppress(Exception):
+                await comment_on_issue(repo, pr_number, f"⚠️ **Review failed** — {exc}")
     except Exception:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+        with contextlib.suppress(Exception):
+            await comment_on_issue(
+                repo, pr_number, "⚠️ **Review failed** — see agent logs for details."
+            )
     finally:
         _record_task_metrics(
             task_type="review",
@@ -280,6 +289,14 @@ async def _run_implement(
             "issue_number": issue_number,
             **result,
         }
+    except ValueError as exc:
+        # Trust boundary rejection (untrusted author) — don't interact with the issue
+        logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
+        _implement_status[key] = {
+            "status": "rejected",
+            "repo": repo,
+            "issue_number": issue_number,
+        }
     except TaskError as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
         _implement_status[key] = {
@@ -288,6 +305,13 @@ async def _run_implement(
             "issue_number": issue_number,
         }
         premium_requests = exc.premium_requests
+        if not exc.commented:
+            with contextlib.suppress(Exception):
+                await comment_on_issue(
+                    repo,
+                    issue_number,
+                    f"⚠️ **Implementation failed** — {exc}",
+                )
     except Exception:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
         _implement_status[key] = {
@@ -295,6 +319,12 @@ async def _run_implement(
             "repo": repo,
             "issue_number": issue_number,
         }
+        with contextlib.suppress(Exception):
+            await comment_on_issue(
+                repo,
+                issue_number,
+                "⚠️ **Implementation failed** — see agent logs for details.",
+            )
     finally:
         _record_task_metrics(
             task_type="implement",

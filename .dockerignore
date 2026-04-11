@@ -1,9 +1,12 @@
-# Context is repo root — only include what the build needs
-**/.git
-**/.venv
-**/__pycache__
-**/.ruff_cache
-**/.pytest_cache
-**/data
-**/node_modules
-**/*.pyc
+# Whitelist — deny everything, allow only what the build needs.
+# This prevents secrets (.env, access.md) from leaking into the build context.
+*
+
+# Dockerfile and app source
+!stacks/agents/app/
+
+# Repo-level config needed by the build
+!mise.toml
+!pyproject.toml
+!uv.lock
+!.github/
