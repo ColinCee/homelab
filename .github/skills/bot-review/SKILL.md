@@ -62,17 +62,17 @@ Schema:
 ```json
 {
   "event": "REQUEST_CHANGES",
-  "body": "🚫 **Changes requested** — see inline comments.\n\nSummary.\n\n---",
+  "body": "🚫 **Changes requested** — see inline comments.\n\nWidening the Docker build context to the repo root is a reasonable trade-off for accessing mise.toml, but it opens a class of secret-leakage risk that wasn't present before. The .dockerignore needs to be a whitelist rather than a blacklist to prevent future additions (like .env files or credential stores) from silently entering the build context. The redundant API call is minor but worth fixing while touching this code.\n\n---",
   "comments": [
     {
       "path": "compose.yaml",
       "line": 4,
-      "body": "🚫 **Blocker** — Secret leakage via build context\n\n**Problem**: Widening Docker build context sends .env files to the daemon tarball.\n\n**Impact**: Tokens accessible in layer cache.\n\n**Fix**: Narrow context or convert .dockerignore to a whitelist."
+      "body": "🚫 **Blocker** — Secret leakage via build context\n\n**Problem**: Widening Docker build context to the repo root sends the entire directory tree to the daemon, including .env files and any future credential stores.\n\n**Impact**: Every file not excluded by .dockerignore is readable in the build tarball — today that's .env, tomorrow it could be anything added to the repo root. Layer caching can persist these. This affects every rebuild on every machine that builds this image.\n\n**Fix**: Convert .dockerignore to a whitelist pattern (deny all, allow specific paths). This makes the default safe regardless of what gets added to the repo later."
     },
     {
       "path": "main.py",
       "line": 25,
-      "body": "💡 **Suggestion** — Redundant API call\n\n**Problem**: `get_pr()` is called twice — once for context, once for bot-login check.\n\n**Impact**: Adds ~200ms latency per review.\n\n**Fix**: Reuse the result from the first call."
+      "body": "💡 **Suggestion** — Redundant API call\n\n**Problem**: `get_pr()` is called twice — once for prompt context, once for the bot-authored-PR check.\n\n**Impact**: Low — adds ~200ms per review. But it's also a maintenance trap: if the PR fetch logic changes (e.g., adding auth headers), it needs updating in two places.\n\n**Fix**: Reuse the result from the first call. Single source of truth for PR data in the review flow."
     }
   ]
 }
