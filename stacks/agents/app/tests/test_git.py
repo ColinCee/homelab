@@ -88,7 +88,7 @@ class TestCreateWorktree:
             calls.append(cmd)
             if "fetch" in cmd and "pull/" in " ".join(cmd):
                 attempt += 1
-                if attempt < 3:
+                if attempt < 4:
                     raise RuntimeError("couldn't find remote ref")
             return ""
 
@@ -105,10 +105,11 @@ class TestCreateWorktree:
 
             assert path == Path("/tmp/test-reviews/pr-42")
             fetch_calls = [c for c in calls if "fetch" in c and "pull/" in " ".join(c)]
-            assert len(fetch_calls) == 3
-            assert mock_sleep.call_count == 2
+            assert len(fetch_calls) == 4
+            assert mock_sleep.call_count == 3
             mock_sleep.assert_any_call(2)
             mock_sleep.assert_any_call(4)
+            mock_sleep.assert_any_call(8)
 
         asyncio.run(run())
 
@@ -135,8 +136,33 @@ class TestCreateWorktree:
 
         asyncio.run(run())
 
+    def test_fetches_head_ref_when_provided(self):
+        """When head_ref is given, fetch the actual branch instead of pull/N/head."""
+        calls = []
 
-class TestCommitAndPush:
+        async def mock_run(cmd, cwd=None):
+            calls.append(cmd)
+            return ""
+
+        async def run():
+            with (
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch("pathlib.Path.exists", return_value=False),
+                patch("pathlib.Path.mkdir"),
+            ):
+                await git_module.create_worktree(
+                    42, "https://github.com/user/repo.git", head_ref="agent/issue-42"
+                )
+
+            fetch_calls = [c for c in calls if "fetch" in c]
+            assert len(fetch_calls) == 1
+            assert "agent/issue-42:pr-42" in fetch_calls[0][3]
+            assert "pull/" not in fetch_calls[0][3]
+
+        asyncio.run(run())
+
     def test_unstages_cli_artifacts(self):
         """commit_and_push unstages .copilot-session.md and .copilot/ before committing."""
         calls = []

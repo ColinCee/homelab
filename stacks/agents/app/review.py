@@ -232,12 +232,13 @@ async def review_pr(
     repo_url = f"https://github.com/{repo}.git"
 
     try:
-        worktree_path = await create_worktree(pr_number, repo_url)
-
         pr_data = await get_pr(repo, pr_number)
         title = pr_data.get("title", "")
         description = pr_data.get("body") or "_No description provided._"
         base_branch = pr_data.get("base", {}).get("ref", "main")
+        head_ref = pr_data.get("head", {}).get("ref")
+
+        worktree_path = await create_worktree(pr_number, repo_url, head_ref=head_ref)
 
         linked_issues_section = await _fetch_linked_issues_section(repo, description)
         threads = await get_unresolved_threads(repo, pr_number)
