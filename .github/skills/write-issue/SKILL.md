@@ -6,42 +6,43 @@ allowed-tools: shell
 
 # Writing Issues for Agent Implementation
 
-Issues are the contract between you and the implementing agent. Describe the problem and what success looks like — not how to change the code.
+An issue is a contract: define the destination, not the route. The agent can read the codebase, follow conventions, and run CI — your job is to tell it what problem to solve and how to know it's solved.
 
-## Structure
+## The 4 essential sections
 
-### Problem
-What's broken, missing, or wrong. Include the current behavior and why it's a problem. Be specific — "the fix loop is broken" is better than "improve the fix loop."
+### 1. What's wrong
 
-### Desired behavior
-What the system should do after implementation. Describe the end state, not the journey. An implementor who reads only this section should know what "done" looks like.
+Current behavior and why it's a problem. Be specific about the gap.
 
-### Research findings (if applicable)
-Include technical findings the agent can't discover on its own — API behavior confirmed through testing, CLI flags verified to work, external constraints discovered through experimentation. Don't include things the agent can find by reading the codebase.
+> The fix loop uses a separate CLI session that starts cold — it re-reads the entire codebase without knowing WHY the original code was written that way. This is like handing code to a different developer for fixes.
 
-### Architecture (if applicable)
-When the issue involves a design decision that's already been made, describe it here. Use a diagram or pseudocode showing the flow. This is a decision, not an instruction — the agent should understand the WHY, not just follow steps.
+Not: "The fix loop needs improvement."
 
-### Constraints
-Non-negotiable requirements: what must not break, limits, security boundaries, compatibility requirements. These are guardrails, not implementation steps.
+### 2. What done looks like
 
-## What to include
+Observable, testable success criteria. If the agent can't verify it with `mise run ci` or by checking behavior, it's not concrete enough.
 
-- **Observable behavior** — "the endpoint should return X when given Y"
-- **Decisions already made** — architecture choices, tool selections, confirmed feasibility
-- **Things the agent can't discover** — external API quirks, confirmed CLI behavior, environment-specific facts
-- **What success looks like** — how to verify the implementation is correct
-- **What must not break** — existing behavior that must be preserved
+> A single `/implement` call owns the full lifecycle: implement → review → fix → re-review, looping until clean or capped at 3 iterations. The implementor session is resumed for fixes. The reviewer is always a fresh session.
+
+Not: "Make the implement flow better."
+
+### 3. What the agent can't discover
+
+Research findings, external API behavior, confirmed feasibility — things that require experimentation or access the agent won't have. Don't include things discoverable by reading the codebase.
+
+> CLI session resumption is confirmed working: `copilot --resume=<id> -p "prompt"` in headless mode preserves ~68k cached tokens. Session ID is captured via `--share`.
+
+Not: "The codebase uses FastAPI and has these 5 files..."
+
+### 4. What must not break
+
+Blast radius boundaries. The agent is good at making changes but needs to know which existing behavior is sacred.
+
+> `/review` must continue to work independently for human-triggered reviews. Accumulated premium_requests must still be accurate for metrics.
 
 ## What to omit
 
-- **File-by-file change lists** — the agent should explore the codebase and decide what to change
-- **Function signatures** — that's implementation detail, not requirements
-- **Implementation order** — the agent knows dependency ordering
-- **How to test** — the agent has `mise run ci` and knows the testing conventions
-
-## Why this matters
-
-Prescribing the HOW means the agent follows instructions instead of thinking. If the prescribed approach has a flaw, the agent implements the flaw. Describing the WHAT lets the agent find a better path — or catch problems you didn't anticipate.
-
-The bot-implement skill already tells the agent to explore the codebase, follow existing patterns, and run CI. Trust that process. Your job is to define the destination, not draw the map.
+- **File lists and function signatures** — the agent explores the codebase itself
+- **Implementation order** — the agent handles dependency ordering
+- **How to test** — the agent has `mise run ci` and testing conventions
+- **Codebase structure** — the agent can read it; instructions and skills cover conventions
