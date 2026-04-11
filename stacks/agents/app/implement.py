@@ -29,7 +29,7 @@ Implement the following GitHub issue in {repo}.
 
 {body}
 
-Use the implement skill for guidelines on how to make changes.
+Use the bot-implement skill for guidelines on how to make changes.
 """
 
 FIX_PROMPT_TEMPLATE = """\
@@ -45,7 +45,7 @@ The review bot found the following issues that need to be addressed:
 
 {threads}
 
-Use the implement skill for guidelines on how to make changes.
+Use the bot-implement skill for guidelines on how to make changes.
 """
 
 

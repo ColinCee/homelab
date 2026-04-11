@@ -13,6 +13,7 @@ Each stack is a self-contained directory under `stacks/<service>/` with a `compo
 - **Restart policy:** `restart: unless-stopped` on all services
 - **Image tags:** Pin versions (e.g., `grafana/grafana:11.5`) so Renovate can track and auto-PR updates
 - **Volumes:** Named volumes for persistence. Data directories gitignored via `stacks/*/data/`
+- **Cross-stack networking:** Containers in different compose stacks can't resolve each other's service names via Docker DNS. Use the Tailscale IP (`100.100.146.119`) or host-mapped ports for cross-stack references.
 
 ## Current Stacks
 
