@@ -51,8 +51,19 @@ async def init_bare_clone(repo_url: str) -> Path:
     return BARE_CLONE_PATH
 
 
-async def create_worktree(pr_number: int, repo_url: str) -> Path:
-    """Fetch a PR ref and create a worktree for review."""
+_FETCH_BACKOFF_SECONDS = [2, 4, 8]
+
+
+async def create_worktree(pr_number: int, repo_url: str, *, head_ref: str | None = None) -> Path:
+    """Fetch a PR ref and create a worktree for review.
+
+    Args:
+        pr_number: PR number (used for worktree naming and fallback fetch).
+        repo_url: Repository clone URL.
+        head_ref: Actual branch name (e.g. "agent/issue-42"). If provided,
+            fetches this directly instead of the synthetic pull/N/head ref,
+            which avoids GitHub's ref propagation delay.
+    """
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
 
     async with _repo_lock:
@@ -65,10 +76,30 @@ async def create_worktree(pr_number: int, repo_url: str) -> Path:
         with contextlib.suppress(RuntimeError):
             await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
 
-        await _run(
-            ["git", "fetch", "origin", f"pull/{pr_number}/head:pr-{pr_number}"],
-            cwd=BARE_CLONE_PATH,
-        )
+        # Prefer the actual branch ref — it's available immediately after push.
+        # Fall back to pull/N/head (synthetic ref with propagation delay) when
+        # the caller doesn't know the branch name.
+        source_ref = head_ref or f"pull/{pr_number}/head"
+        fetch_cmd = ["git", "fetch", "origin", f"{source_ref}:pr-{pr_number}"]
+
+        # Retry with backoff: initial attempt + one retry per backoff interval.
+        max_attempts = len(_FETCH_BACKOFF_SECONDS) + 1
+        for attempt in range(max_attempts):
+            try:
+                await _run(fetch_cmd, cwd=BARE_CLONE_PATH)
+                break
+            except RuntimeError:
+                if attempt == max_attempts - 1:
+                    raise
+                delay = _FETCH_BACKOFF_SECONDS[attempt]
+                logger.warning(
+                    "Fetch %s failed (attempt %d/%d), retrying in %ds",
+                    source_ref,
+                    attempt + 1,
+                    max_attempts,
+                    delay,
+                )
+                await asyncio.sleep(delay)
 
         REVIEWS_PATH.mkdir(parents=True, exist_ok=True)
         await _run(
@@ -135,6 +166,12 @@ async def commit_and_push(
 ) -> str:
     """Stage all changes, commit, and push to the remote branch. Returns commit SHA."""
     await _run(["git", "add", "-A"], cwd=worktree_path)
+
+    # Unstage CLI artifacts that git add -A may have picked up.
+    # Worktrees don't inherit the repo's .gitignore, so we handle it here.
+    for artifact in (".copilot-session.md", ".copilot"):
+        with contextlib.suppress(RuntimeError):
+            await _run(["git", "rm", "--cached", "-rf", artifact], cwd=worktree_path)
 
     # git diff --cached --quiet returns 0 if NO changes staged
     proc = await asyncio.create_subprocess_exec(

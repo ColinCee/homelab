@@ -232,12 +232,19 @@ async def review_pr(
     repo_url = f"https://github.com/{repo}.git"
 
     try:
-        worktree_path = await create_worktree(pr_number, repo_url)
-
         pr_data = await get_pr(repo, pr_number)
         title = pr_data.get("title", "")
         description = pr_data.get("body") or "_No description provided._"
         base_branch = pr_data.get("base", {}).get("ref", "main")
+        head_ref = pr_data.get("head", {}).get("ref")
+        # Only use the branch name directly for same-repo PRs. Fork PRs have
+        # a branch name that exists in the fork, not in origin — fall back to
+        # pull/N/head for those.
+        head_repo = pr_data.get("head", {}).get("repo", {}).get("full_name")
+        if head_repo != repo:
+            head_ref = None
+
+        worktree_path = await create_worktree(pr_number, repo_url, head_ref=head_ref)
 
         linked_issues_section = await _fetch_linked_issues_section(repo, description)
         threads = await get_unresolved_threads(repo, pr_number)

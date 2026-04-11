@@ -54,9 +54,7 @@ Platform: Dokploy (manages container lifecycle, auto-deploys from main)
 
 ## Pull Request Workflow
 
-PRs require CI to pass and are squash-merged. `colins-homelab-bot[bot]` auto-reviews when a PR is opened or marked ready. Comment `/review` to re-trigger. Bot reviews are **advisory** — they inform but don't gate merges.
-
-See `.github/instructions/pr-workflow.instructions.md` for the full process.
+PRs require CI to pass and are squash-merged. Comment `/review` on a PR to trigger an AI review from `colins-homelab-bot[bot]`. Bot reviews are **advisory** — they inform but don't gate merges.
 
 ## Documenting Decisions
 

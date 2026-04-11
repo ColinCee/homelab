@@ -13,7 +13,6 @@ from github import (
     get_issue,
     get_token,
     get_unresolved_threads,
-    mark_pr_ready,
 )
 from review import review_pr
 
@@ -102,9 +101,6 @@ async def implement_issue(
                 branch=branch_name,
             )
 
-            # Draft PR avoids triggering code-review.yaml (which skips
-            # drafts), preventing a concurrent external review from racing
-            # the internal review+fix loop below.
             pr = await create_pull_request(
                 repo,
                 title=f"feat: {issue['title']}",
@@ -113,7 +109,6 @@ async def implement_issue(
                 ),
                 head=branch_name,
                 base="main",
-                draft=True,
             )
         except Exception as exc:
             raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
@@ -291,7 +286,4 @@ async def implement_issue(
         }
 
     finally:
-        if pr_number is not None:
-            with contextlib.suppress(Exception):
-                await mark_pr_ready(repo, pr_number)
         await cleanup_branch_worktree(branch_name)
