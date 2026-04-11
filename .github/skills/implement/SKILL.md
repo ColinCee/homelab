@@ -44,7 +44,6 @@ Before finishing your work, self-review against these questions:
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
 - **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
-- **Deployment topology:** If you changed ports, hostnames, or cross-stack references, verify the target is reachable from the source's network context (e.g., Docker containers in different compose stacks can't resolve each other's service names).
 
 ## Responding to Review Feedback
 
