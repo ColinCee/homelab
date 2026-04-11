@@ -5,8 +5,5 @@
 # Dockerfile and app source
 !stacks/agents/app/**
 
-# Repo-level config needed by the build
+# Repo-level config needed by the build (mise install in Dockerfile)
 !mise.toml
-!pyproject.toml
-!uv.lock
-!.github/**
