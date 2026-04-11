@@ -1,10 +1,12 @@
 """PR review orchestrator — ties together git, copilot, and github modules."""
 
-import json
 import logging
 import re
 import time
 from pathlib import Path
+from typing import Literal
+
+from pydantic import BaseModel, Field
 
 from copilot import TaskError, run_copilot
 from git import cleanup_worktree, create_worktree
@@ -19,6 +21,60 @@ from github import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ── Review output schema (single source of truth) ──────────────────────
+
+
+class ReviewComment(BaseModel):
+    """A single inline review comment attached to a file and line."""
+
+    path: str
+    line: int
+    start_line: int | None = None
+    body: str
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "path": "compose.yaml",
+                    "line": 4,
+                    "body": (
+                        "🚫 **Blocker** — Secret leakage via build context\n\n"
+                        "**Problem**: Widening Docker build context to the repo root "
+                        "sends the entire directory tree to the daemon.\n\n"
+                        "**Impact**: Every file not excluded by .dockerignore is readable "
+                        "in the build tarball.\n\n"
+                        "**Fix**: Convert .dockerignore to a whitelist pattern."
+                    ),
+                }
+            ]
+        }
+    }
+
+
+class ReviewOutput(BaseModel):
+    """Schema for the .copilot-review.json file produced by the CLI."""
+
+    event: Literal["APPROVE", "REQUEST_CHANGES", "COMMENT"]
+    body: str = ""
+    comments: list[ReviewComment] = Field(default_factory=list)
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "event": "APPROVE",
+                    "body": "✅ **Approved** — no issues found.\n\n---",
+                    "comments": [],
+                }
+            ]
+        }
+    }
+
+
+# ── Prompt templates ───────────────────────────────────────
 
 # Matches "Fixes #123", "Closes #123", "Resolves #123" (case-insensitive)
 _LINKED_ISSUE_RE = re.compile(r"(?:fix(?:es)?|close[sd]?|resolve[sd]?)\s+#(\d+)", re.IGNORECASE)
@@ -55,7 +111,9 @@ Only re-report issues that are still present as new inline comments.
 """
 
 REVIEW_OUTPUT_FILE = ".copilot-review.json"
-VALID_EVENTS = {"APPROVE", "REQUEST_CHANGES", "COMMENT"}
+
+
+# ── Helpers ────────────────────────────────────────────────
 
 
 def _parse_linked_issues(text: str) -> list[int]:
@@ -83,10 +141,10 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     return LINKED_ISSUES_SECTION.format(issues="\n\n".join(parts))
 
 
-def _parse_review_file(review_file: Path) -> dict:
+def _parse_review_file(review_file: Path) -> ReviewOutput:
     """Parse and validate the review JSON file written by the CLI.
 
-    Returns a validated dict with 'event', 'body', and 'comments' keys.
+    Returns a validated ReviewOutput model.
     Raises RuntimeError with a descriptive message on any validation failure.
     """
     if not review_file.exists():
@@ -103,31 +161,14 @@ def _parse_review_file(review_file: Path) -> dict:
         raw = "\n".join(lines).strip()
 
     try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as exc:
+        return ReviewOutput.model_validate_json(raw)
+    except Exception as exc:
         raise RuntimeError(
-            f"Review file is not valid JSON: {exc}\nContent (first 500 chars): {raw[:500]}"
+            f"Review file validation failed: {exc}\nContent (first 500 chars): {raw[:500]}"
         ) from exc
 
-    if not isinstance(data, dict):
-        raise RuntimeError(f"Review file must be a JSON object, got {type(data).__name__}")
 
-    event = data.get("event")
-    if event not in VALID_EVENTS:
-        raise RuntimeError(f"Invalid review event '{event}' — must be one of {VALID_EVENTS}")
-
-    comments = data.get("comments", [])
-    if not isinstance(comments, list):
-        raise RuntimeError(f"'comments' must be a list, got {type(comments).__name__}")
-
-    for i, c in enumerate(comments):
-        if not isinstance(c, dict):
-            raise RuntimeError(f"Comment {i} must be an object, got {type(c).__name__}")
-        for required_key in ("path", "line", "body"):
-            if required_key not in c:
-                raise RuntimeError(f"Comment {i} missing required key '{required_key}'")
-
-    return {"event": event, "body": data.get("body", ""), "comments": comments}
+# ── Orchestrator ───────────────────────────────────────────
 
 
 async def review_pr(
@@ -184,9 +225,9 @@ async def review_pr(
                 )
                 raise
 
-            body = review_data["body"]
+            body = review_data.body
 
-            event = review_data["event"]
+            event = review_data.event
             downgraded = False
 
             # GitHub doesn't allow REQUEST_CHANGES or APPROVE on your own PR
@@ -199,12 +240,13 @@ async def review_pr(
             if result.stats_line:
                 body += f"\n\n📊 {result.stats_line}"
 
+            comments_dicts = [c.model_dump(exclude_none=True) for c in review_data.comments]
             await post_review(
                 repo,
                 pr_number,
                 event=event,
                 body=body,
-                comments=review_data["comments"] or None,
+                comments=comments_dicts or None,
             )
 
             # Best-effort cleanup — review is already posted, don't fail the task

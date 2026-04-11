@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from review import _fetch_linked_issues_section, _parse_linked_issues, _parse_review_file
+from review import (
+    ReviewOutput,
+    _fetch_linked_issues_section,
+    _parse_linked_issues,
+    _parse_review_file,
+)
 
 
 @pytest.fixture
@@ -24,9 +29,10 @@ class TestParseReviewFile:
     def test_parses_valid_approve(self, review_file: Path):
         _write(review_file, {"event": "APPROVE", "body": "LGTM", "comments": []})
         result = _parse_review_file(review_file)
-        assert result["event"] == "APPROVE"
-        assert result["body"] == "LGTM"
-        assert result["comments"] == []
+        assert isinstance(result, ReviewOutput)
+        assert result.event == "APPROVE"
+        assert result.body == "LGTM"
+        assert result.comments == []
 
     def test_parses_request_changes_with_comments(self, review_file: Path):
         _write(
@@ -38,19 +44,19 @@ class TestParseReviewFile:
             },
         )
         result = _parse_review_file(review_file)
-        assert result["event"] == "REQUEST_CHANGES"
-        assert len(result["comments"]) == 1
-        assert result["comments"][0]["path"] == "main.py"
+        assert result.event == "REQUEST_CHANGES"
+        assert len(result.comments) == 1
+        assert result.comments[0].path == "main.py"
 
     def test_defaults_body_to_empty_string(self, review_file: Path):
         _write(review_file, {"event": "APPROVE"})
         result = _parse_review_file(review_file)
-        assert result["body"] == ""
+        assert result.body == ""
 
     def test_defaults_comments_to_empty_list(self, review_file: Path):
         _write(review_file, {"event": "COMMENT", "body": "Looks fine"})
         result = _parse_review_file(review_file)
-        assert result["comments"] == []
+        assert result.comments == []
 
     def test_raises_when_file_missing(self, tmp_path: Path):
         missing = tmp_path / "nope.json"
@@ -59,22 +65,22 @@ class TestParseReviewFile:
 
     def test_raises_on_invalid_json(self, review_file: Path):
         review_file.write_text("not json {{{")
-        with pytest.raises(RuntimeError, match="not valid JSON"):
+        with pytest.raises(RuntimeError, match="validation failed"):
             _parse_review_file(review_file)
 
     def test_raises_on_non_object(self, review_file: Path):
         review_file.write_text('"just a string"')
-        with pytest.raises(RuntimeError, match="must be a JSON object"):
+        with pytest.raises(RuntimeError, match="validation failed"):
             _parse_review_file(review_file)
 
     def test_raises_on_invalid_event(self, review_file: Path):
         _write(review_file, {"event": "MERGE", "body": "lol"})
-        with pytest.raises(RuntimeError, match="Invalid review event"):
+        with pytest.raises(RuntimeError, match="validation failed"):
             _parse_review_file(review_file)
 
     def test_raises_on_missing_event(self, review_file: Path):
         _write(review_file, {"body": "no event field"})
-        with pytest.raises(RuntimeError, match="Invalid review event"):
+        with pytest.raises(RuntimeError, match="validation failed"):
             _parse_review_file(review_file)
 
     def test_raises_on_comment_missing_required_keys(self, review_file: Path):
@@ -82,7 +88,7 @@ class TestParseReviewFile:
             review_file,
             {"event": "APPROVE", "comments": [{"path": "f.py", "body": "x"}]},
         )
-        with pytest.raises(RuntimeError, match="missing required key 'line'"):
+        with pytest.raises(RuntimeError, match="validation failed"):
             _parse_review_file(review_file)
 
     def test_strips_markdown_code_fences(self, review_file: Path):
@@ -90,7 +96,7 @@ class TestParseReviewFile:
             '```json\n{"event": "APPROVE", "body": "Clean", "comments": []}\n```'
         )
         result = _parse_review_file(review_file)
-        assert result["event"] == "APPROVE"
+        assert result.event == "APPROVE"
 
     def test_handles_multiline_comment_body(self, review_file: Path):
         _write(
@@ -104,7 +110,20 @@ class TestParseReviewFile:
             },
         )
         result = _parse_review_file(review_file)
-        assert "Blocker" in result["comments"][0]["body"]
+        assert "Blocker" in result.comments[0].body
+
+    def test_parses_start_line(self, review_file: Path):
+        _write(
+            review_file,
+            {
+                "event": "COMMENT",
+                "body": "Multi-line",
+                "comments": [{"path": "a.py", "start_line": 1, "line": 5, "body": "Spans lines"}],
+            },
+        )
+        result = _parse_review_file(review_file)
+        assert result.comments[0].start_line == 1
+        assert result.comments[0].line == 5
 
 
 class TestParseLinkedIssues:

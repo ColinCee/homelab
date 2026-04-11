@@ -33,6 +33,7 @@ class CLIResult:
     api_time_seconds: int = 0
     session_time_seconds: int = 0
     models: dict[str, str] = field(default_factory=dict)
+    session_transcript: str | None = None
 
     @property
     def stats_line(self) -> str:
@@ -80,6 +81,9 @@ def _parse_stats(output: str) -> dict:
     return stats
 
 
+SESSION_TRANSCRIPT_FILE = ".copilot-session.md"
+
+
 async def run_copilot(
     worktree_path: Path,
     prompt: str,
@@ -88,6 +92,7 @@ async def run_copilot(
     effort: str = "high",
 ) -> CLIResult:
     """Run Copilot CLI in headless mode and return result with stats."""
+    transcript_path = worktree_path / SESSION_TRANSCRIPT_FILE
     cmd = [
         COPILOT_BINARY,
         "-p",
@@ -99,6 +104,7 @@ async def run_copilot(
         "--yolo",
         "--no-ask-user",
         "--autopilot",
+        f"--share={transcript_path}",
     ]
 
     env = os.environ.copy()
@@ -162,6 +168,13 @@ async def run_copilot(
     all_output = "\n".join(stdout_lines + stderr_lines)
     logger.info("Copilot CLI finished (%d bytes output)", len(output))
 
+    transcript = None
+    if transcript_path.exists():
+        transcript = transcript_path.read_text()
+        logger.info("Session transcript captured (%d bytes)", len(transcript))
+    else:
+        logger.warning("No session transcript found at %s", transcript_path)
+
     stats = _parse_stats(all_output)
     return CLIResult(
         output=output,
@@ -169,4 +182,5 @@ async def run_copilot(
         api_time_seconds=stats["api_time"],
         session_time_seconds=stats["session_time"],
         models=stats["models"],
+        session_transcript=transcript,
     )
