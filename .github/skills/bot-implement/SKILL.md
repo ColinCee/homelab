@@ -31,9 +31,11 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 - Prefer modifying existing tests over creating new test files
 - If you add a new module, add a corresponding test file
 
-## The Review Cycle
+## The Review
 
-After you finish, an automated review bot will review your changes. It checks for bugs, security issues, breaking changes, and operational risk. Each review round costs time and tokens — **aim for zero blockers on the first review.**
+After you finish, a single review round checks for bugs, security issues, breaking changes, and operational risk. If issues are found, you get **one fix attempt** — then the PR auto-merges. There is no re-review after the fix.
+
+Because there's only one cycle (implement → review → fix → merge), **aim for zero blockers on the first review.** Self-review thoroughly before finishing.
 
 ### Pre-completion checklist
 

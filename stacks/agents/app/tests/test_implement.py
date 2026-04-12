@@ -16,17 +16,19 @@ class TestImplementIssue:
     def _standard_mocks(
         self,
         *,
-        review_events: list[str],
+        review_event: str = "APPROVE",
         session_id: str | None = "sess-123",
         pr_sequence: list[dict] | None = None,
         ci_results: list[dict] | None = None,
         merge_result: dict | list[dict] | None = None,
+        review_threads: str = "",
     ):
         """Create the standard set of mocks for implement_issue tests.
 
         Args:
-            review_events: List of original_event values review_pr will return.
+            review_event: The original_event value review_pr will return.
             session_id: Session ID the CLI returns (None to test no-session path).
+            review_threads: Inline findings text for REQUEST_CHANGES reviews.
         """
         mock_cli_result = CLIResult(output="done", total_premium_requests=1, session_id=session_id)
         mock_fix_result = CLIResult(output="fixed", total_premium_requests=1, session_id=session_id)
@@ -65,16 +67,18 @@ class TestImplementIssue:
                 return_value=merge_result,
             )
 
-        review_results = [
-            {
-                "original_event": event,
-                "premium_requests": 1,
-                "review_threads": (
-                    "- **file.py:10**\n  bug here" if event == "REQUEST_CHANGES" else ""
-                ),
-            }
-            for event in review_events
-        ]
+        if review_event == "REQUEST_CHANGES" and not review_threads:
+            review_threads = "- **file.py:10**\n  bug here"
+        review_result = {
+            "original_event": review_event,
+            "premium_requests": 1,
+            "review_threads": review_threads,
+        }
+
+        # run_copilot: first call is implement, second (if any) is fix
+        copilot_side_effect = [mock_cli_result]
+        if review_event == "REQUEST_CHANGES":
+            copilot_side_effect.append(mock_fix_result)
 
         return [
             patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
@@ -87,14 +91,14 @@ class TestImplementIssue:
             patch(
                 "implement.run_copilot",
                 new_callable=AsyncMock,
-                side_effect=[mock_cli_result] + [mock_fix_result] * len(review_events),
+                side_effect=copilot_side_effect,
             ),
             patch("implement.commit_and_push", new_callable=AsyncMock, return_value="abc123"),
             patch("implement.create_pull_request", new_callable=AsyncMock, return_value=mock_pr),
             patch(
                 "implement.review_pr",
                 new_callable=AsyncMock,
-                side_effect=review_results,
+                return_value=review_result,
             ),
             patch(
                 "implement.get_pr",
@@ -124,8 +128,8 @@ class TestImplementIssue:
         return asyncio.run(run())
 
     def test_creates_pr_and_review_approves(self):
-        """Happy path: implement → PR → review approves on first pass."""
-        result = self._run_with_mocks(self._standard_mocks(review_events=["APPROVE"]))
+        """Happy path: implement → PR → review approves → merge."""
+        result = self._run_with_mocks(self._standard_mocks(review_event="APPROVE"))
         assert result["status"] == "complete"
         assert result["merged"] is True
         assert result["merge_commit_sha"] == "merge123"
@@ -134,7 +138,7 @@ class TestImplementIssue:
 
     def test_pr_body_uses_auto_close_keyword(self):
         """Generated PR body uses a GitHub auto-closing keyword."""
-        mocks = self._standard_mocks(review_events=["APPROVE"])
+        mocks = self._standard_mocks(review_event="APPROVE")
 
         async def run():
             with ExitStack() as stack:
@@ -148,19 +152,75 @@ class TestImplementIssue:
 
         asyncio.run(run())
 
-    def test_review_fix_loop_converges(self):
-        """Review requests changes, fix succeeds, second review approves."""
+    def test_review_requests_changes_then_fixes_and_merges(self):
+        """Single cycle: review requests changes → fix → merge (no re-review)."""
+        mocks = self._standard_mocks(review_event="REQUEST_CHANGES")
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                copilot_mock = entered[3]
+                commit_mock = entered[4]
+                review_mock = entered[6]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                # Review called once (no re-review)
+                review_mock.assert_awaited_once()
+                # Copilot called twice: implement + fix
+                assert copilot_mock.await_count == 2
+                # Commit called twice: initial + fix
+                assert commit_mock.await_count == 2
+                assert result["status"] == "complete"
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_review_failure_still_merges(self):
+        """Review errors don't block — lifecycle proceeds to merge."""
+        from copilot import TaskError
+
+        mocks = self._standard_mocks(review_event="APPROVE")
+        mocks[6] = patch(
+            "implement.review_pr",
+            new_callable=AsyncMock,
+            side_effect=TaskError("review exploded", premium_requests=1),
+        )
+
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "complete"
+        assert result["merged"] is True
+
+    def test_no_session_skips_fix_and_merges(self):
+        """Without session ID, fix is skipped but merge still proceeds."""
         result = self._run_with_mocks(
-            self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
+            self._standard_mocks(review_event="REQUEST_CHANGES", session_id=None)
         )
         assert result["status"] == "complete"
         assert result["merged"] is True
-        assert result["review_rounds"] == 2
+
+    def test_no_threads_skips_fix_and_merges(self):
+        """REQUEST_CHANGES with no inline findings skips fix, still merges."""
+        mocks = self._standard_mocks(review_event="REQUEST_CHANGES", review_threads="")
+        # Override review to return empty threads
+        mocks[6] = patch(
+            "implement.review_pr",
+            new_callable=AsyncMock,
+            return_value={
+                "original_event": "REQUEST_CHANGES",
+                "premium_requests": 1,
+                "review_threads": "",
+            },
+        )
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "complete"
+        assert result["merged"] is True
 
     def test_waits_for_pending_ci_before_merging(self):
         """Pending CI is polled until checks pass and the PR can be merged."""
         mocks = self._standard_mocks(
-            review_events=["APPROVE"],
+            review_event="APPROVE",
             pr_sequence=[
                 {
                     "state": "open",
@@ -212,7 +272,7 @@ class TestImplementIssue:
     def test_waits_when_branch_protection_blocks_merge_until_ci_finishes(self):
         """Protected branches can report blocked/unmergeable until required checks finish."""
         mocks = self._standard_mocks(
-            review_events=["APPROVE"],
+            review_event="APPROVE",
             pr_sequence=[
                 {
                     "state": "open",
@@ -265,7 +325,7 @@ class TestImplementIssue:
         """A mergeable non-clean state should not block a merge GitHub allows."""
         result = self._run_with_mocks(
             self._standard_mocks(
-                review_events=["APPROVE"],
+                review_event="APPROVE",
                 pr_sequence=[
                     {
                         "state": "open",
@@ -286,7 +346,7 @@ class TestImplementIssue:
     def test_retries_non_clean_merge_rejection_until_timeout_or_success(self):
         """Transient merge API rejections in non-clean states are retried."""
         mocks = self._standard_mocks(
-            review_events=["APPROVE"],
+            review_event="APPROVE",
             pr_sequence=[
                 {
                     "state": "open",
@@ -347,7 +407,7 @@ class TestImplementIssue:
         """GitHub's merge API is the sole authority — CI failure doesn't block."""
         result = self._run_with_mocks(
             self._standard_mocks(
-                review_events=["APPROVE"],
+                review_event="APPROVE",
                 ci_results=[
                     {
                         "state": "failure",
@@ -362,7 +422,7 @@ class TestImplementIssue:
     def test_merge_rejection_returns_partial(self):
         """Persistent merge rejection results in timeout partial."""
         mocks = self._standard_mocks(
-            review_events=["APPROVE"],
+            review_event="APPROVE",
             merge_result={
                 "merged": False,
                 "message": "Pull Request is not mergeable",
@@ -386,7 +446,7 @@ class TestImplementIssue:
         """Auto-merge refuses PRs that are no longer bot-authored."""
         result = self._run_with_mocks(
             self._standard_mocks(
-                review_events=["APPROVE"],
+                review_event="APPROVE",
                 pr_sequence=[
                     {
                         "state": "open",
@@ -406,7 +466,7 @@ class TestImplementIssue:
 
     def test_merge_polling_http_error_returns_partial(self):
         """GitHub polling errors stay explicit partial/manual-attention states."""
-        mocks = self._standard_mocks(review_events=["APPROVE"])
+        mocks = self._standard_mocks(review_event="APPROVE")
         mocks[8] = patch(
             "implement.get_commit_ci_status",
             new_callable=AsyncMock,
@@ -426,61 +486,8 @@ class TestImplementIssue:
         assert result["merged"] is False
         assert "GitHub merge polling failed" in result["error"]
 
-    def test_max_iterations_posts_comment(self):
-        """Exhausting all fix iterations returns max_iterations status."""
-        # 3 fixes + 1 final review = 4 review rounds, all REQUEST_CHANGES
-        result = self._run_with_mocks(self._standard_mocks(review_events=["REQUEST_CHANGES"] * 4))
-        assert result["status"] == "max_iterations"
-        assert result["review_rounds"] == 4
-
-    def test_no_session_id_returns_partial(self):
-        """Without session ID, cannot resume — returns partial after first review."""
-        result = self._run_with_mocks(
-            self._standard_mocks(review_events=["REQUEST_CHANGES"], session_id=None)
-        )
-        assert result["status"] == "partial"
-        assert "session resumption unavailable" in result["error"]
-
-    def test_no_threads_returns_partial(self):
-        """REQUEST_CHANGES with no inline findings returns partial."""
-        mocks = self._standard_mocks(review_events=["REQUEST_CHANGES"])
-        # Override review_pr to return REQUEST_CHANGES with no inline comments
-        mocks[6] = patch(
-            "implement.review_pr",
-            new_callable=AsyncMock,
-            return_value={
-                "original_event": "REQUEST_CHANGES",
-                "premium_requests": 1,
-                "review_threads": "",
-            },
-        )
-        result = self._run_with_mocks(mocks)
-        assert result["status"] == "partial"
-        assert "no inline comments" in result["error"]
-
     def test_accumulates_premium_requests(self):
-        """Premium requests from implement + review + fix are all accumulated."""
-        result = self._run_with_mocks(
-            self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
-        )
-        # 1 (implement) + 1 (review 1) + 1 (fix) + 1 (review 2) = 4
-        assert result["premium_requests"] == 4
-
-    def test_passes_previous_threads_to_re_review(self):
-        """On second review round, previous findings are passed as context."""
-        mocks = self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
-
-        async def run():
-            with ExitStack() as stack:
-                entered = [stack.enter_context(m) for m in mocks]
-                review_mock = entered[6]  # review_pr mock
-                from implement import implement_issue
-
-                await implement_issue(repo="user/repo", issue_number=42)
-
-                # First call: no previous context
-                assert review_mock.call_args_list[0].kwargs["previous_comments"] == ""
-                # Second call: previous findings threaded through
-                assert "file.py:10" in review_mock.call_args_list[1].kwargs["previous_comments"]
-
-        asyncio.run(run())
+        """Premium requests from implement + review + fix are accumulated."""
+        result = self._run_with_mocks(self._standard_mocks(review_event="REQUEST_CHANGES"))
+        # 1 (implement) + 1 (review) + 1 (fix) = 3
+        assert result["premium_requests"] == 3

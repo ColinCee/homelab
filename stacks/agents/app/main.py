@@ -55,7 +55,7 @@ def _implement_key(repo: str, issue_number: int) -> str:
 def _task_status_label(status: object) -> str:
     if status == "failed":
         return "failed"
-    if status in ("partial", "max_iterations"):
+    if status == "partial":
         return "partial"
     return "complete"
 
