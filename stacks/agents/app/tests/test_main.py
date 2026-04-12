@@ -37,6 +37,14 @@ def test_health():
     assert resp.json() == {"status": "ok"}
 
 
+@patch("main.reap_old_worktrees", new_callable=AsyncMock)
+def test_startup_reaps_old_worktrees(mock_reap):
+    with TestClient(app):
+        pass
+
+    mock_reap.assert_awaited_once()
+
+
 def test_metrics_endpoint_exposes_prometheus_text():
     resp = _client().get("/metrics")
     assert resp.status_code == 200
