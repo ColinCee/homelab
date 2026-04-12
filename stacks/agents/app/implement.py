@@ -254,59 +254,27 @@ async def _merge_when_eligible(
 
             ci_result = await get_commit_ci_status(repo, commit_sha)
             ci_status = ci_result.get("state", "none")
-            ci_description = ci_result.get("description", "Waiting for CI")
 
             if pr_data.get("mergeable") is None or mergeable_state == "unknown":
                 last_wait_reason = "GitHub is still calculating mergeability"
                 await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
                 continue
 
-            if ci_status in ("pending", "none"):
-                last_wait_reason = ci_description
+            if not pr_data.get("mergeable"):
+                last_wait_reason = f"PR is not mergeable ({mergeable_state}) — waiting"
                 await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
                 continue
 
-            if not pr_data.get("mergeable"):
-                return _lifecycle_result(
-                    status="partial",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=commit_sha,
-                    review_rounds=review_rounds,
-                    start=start,
-                    premium_requests=premium_requests,
-                    session_id=session_id,
-                    error=f"PR is not mergeable ({mergeable_state}) — needs manual attention",
-                    mergeable_state=mergeable_state,
-                    ci_status=ci_status,
-                )
-
-            # Let GitHub's merge API enforce branch protection rules.
-            # We don't pre-filter on CI failure because optional/informational
-            # checks would block us; the merge API rejects only when required
-            # checks are failing.
-
+            # Let GitHub's merge API be the sole authority on whether the PR
+            # can be merged. We don't pre-filter on CI status because
+            # optional/informational checks would block us — GitHub's API
+            # enforces required checks and rejects if they're not satisfied.
             merge_result = await merge_pull_request(repo, pr_number, sha=commit_sha)
             if not merge_result.get("merged"):
                 message = merge_result.get("message", "GitHub rejected squash merge")
-                if mergeable_state != "clean":
-                    last_wait_reason = f"GitHub rejected squash merge: {message}"
-                    await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
-                    continue
-
-                return _lifecycle_result(
-                    status="partial",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=commit_sha,
-                    review_rounds=review_rounds,
-                    start=start,
-                    premium_requests=premium_requests,
-                    session_id=session_id,
-                    error=f"GitHub rejected squash merge: {message}",
-                    mergeable_state=mergeable_state,
-                    ci_status=ci_status,
-                )
+                last_wait_reason = f"Merge not accepted: {message}"
+                await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
+                continue
 
             return _lifecycle_result(
                 status="complete",

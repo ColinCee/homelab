@@ -343,53 +343,44 @@ class TestImplementIssue:
 
         asyncio.run(run())
 
-    def test_ci_failure_returns_partial(self):
-        """Failed CI still tries the merge — GitHub enforces required checks."""
-        mocks = self._standard_mocks(
-            review_events=["APPROVE"],
-            ci_results=[
-                {
-                    "state": "failure",
-                    "description": "Required CI checks failed: check",
-                }
-            ],
-            merge_result={
-                "merged": False,
-                "message": "Required status check 'check' is failing",
-                "status_code": 405,
-            },
-        )
-
-        async def run():
-            with ExitStack() as stack:
-                entered = [stack.enter_context(m) for m in mocks]
-                merge_mock = entered[9]
-                from implement import implement_issue
-
-                result = await implement_issue(repo="user/repo", issue_number=42)
-
-                merge_mock.assert_awaited_once()
-                assert result["status"] == "partial"
-                assert result["merged"] is False
-                assert "GitHub rejected squash merge" in result["error"]
-
-        asyncio.run(run())
-
-    def test_merge_rejection_returns_partial(self):
-        """Branch-protection merge rejections remain partial instead of failing hard."""
+    def test_ci_failure_does_not_block_merge(self):
+        """GitHub's merge API is the sole authority — CI failure doesn't block."""
         result = self._run_with_mocks(
             self._standard_mocks(
                 review_events=["APPROVE"],
-                merge_result={
-                    "merged": False,
-                    "message": "Pull Request is not mergeable",
-                    "status_code": 405,
-                },
+                ci_results=[
+                    {
+                        "state": "failure",
+                        "description": "Optional check failed",
+                    }
+                ],
             )
         )
+        assert result["status"] == "complete"
+        assert result["merged"] is True
+
+    def test_merge_rejection_returns_partial(self):
+        """Persistent merge rejection results in timeout partial."""
+        mocks = self._standard_mocks(
+            review_events=["APPROVE"],
+            merge_result={
+                "merged": False,
+                "message": "Pull Request is not mergeable",
+                "status_code": 405,
+            },
+        )
+        # time.monotonic() call order:
+        # 1. implement_issue: start = 0
+        # 2. _merge_when_eligible: deadline = 0 + 900 = 900
+        # 3. while check (iter 1): 0 < 900 → enter
+        #    (loop body: get_pr, CI, merge rejected, sleep, continue)
+        # 4. while check (iter 2): 1000 >= 900 → exit loop
+        # 5. _lifecycle_result: elapsed = 1000 - 0 = 1000
+        mocks.append(patch("implement.time.monotonic", side_effect=[0, 0, 0, 1000, 1000]))
+        result = self._run_with_mocks(mocks)
         assert result["status"] == "partial"
         assert result["merged"] is False
-        assert "GitHub rejected squash merge" in result["error"]
+        assert "Timed out" in result["error"]
 
     def test_non_bot_pr_returns_partial(self):
         """Auto-merge refuses PRs that are no longer bot-authored."""
