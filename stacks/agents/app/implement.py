@@ -37,7 +37,16 @@ Fix all reported problems.
 
 {threads}
 
-Use the bot-implement skill for guidelines on how to make changes.
+## After Fixing
+
+Each fix round costs time and tokens — aim for zero new issues.
+
+1. **Self-review your fix for second-order effects.** If you changed control flow, \
+error handling, or added new API calls, audit the surrounding code for issues \
+your fix may have introduced (missing pagination, unhandled errors, new edge cases).
+2. **Run `mise run ci`** to validate lint, typecheck, and tests pass.
+3. **Check for committed artifacts.** Run `git status` and ensure no runtime files \
+(`.cleanup-after`, `.copilot-session.md`, `.copilot/`) would be staged by `git add -A`.
 """
 
 
