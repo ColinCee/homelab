@@ -227,6 +227,10 @@ def _parse_review_file(review_file: Path) -> ReviewOutput:
         ) from exc
 
 
+def _review_output_failure_comment(reason: str) -> str:
+    return f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{reason}\n```"
+
+
 # ── Orchestrator ───────────────────────────────────────────
 
 
@@ -298,15 +302,35 @@ async def review_pr(
             try:
                 review_data = _parse_review_file(worktree_path / REVIEW_OUTPUT_FILE)
             except RuntimeError as exc:
-                logger.error("Review output validation failed: %s", exc)
-                await comment_on_issue(
-                    repo,
-                    pr_number,
-                    f"⚠️ **Review failed** — CLI produced invalid output.\n\n```\n{exc}\n```",
+                logger.warning("Review output validation failed, retrying once: %s", exc)
+                retry_session_id = result.session_id or session_id
+                review_file = worktree_path / REVIEW_OUTPUT_FILE
+                review_file.unlink(missing_ok=True)
+
+                retry_result = await run_copilot(
+                    worktree_path,
+                    prompt,
+                    model=model,
+                    effort=reasoning_effort,
+                    session_id=retry_session_id,
                 )
-                raise TaskError(
-                    str(exc), premium_requests=result.total_premium_requests, commented=True
-                ) from exc
+                retry_result.total_premium_requests += result.total_premium_requests
+                result = retry_result
+
+                try:
+                    review_data = _parse_review_file(review_file)
+                except RuntimeError as retry_exc:
+                    logger.error("Review output validation failed after retry: %s", retry_exc)
+                    await comment_on_issue(
+                        repo,
+                        pr_number,
+                        _review_output_failure_comment(str(retry_exc)),
+                    )
+                    raise TaskError(
+                        str(retry_exc),
+                        premium_requests=result.total_premium_requests,
+                        commented=True,
+                    ) from retry_exc
 
             body = review_data.body
 

@@ -1,6 +1,7 @@
 """Tests for the implement lifecycle orchestrator."""
 
 import asyncio
+import itertools
 from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -508,6 +509,29 @@ class TestImplementIssue:
                 "status_code": 405,
             },
         )
+        pr_state = {
+            "state": "open",
+            "draft": False,
+            "merged": False,
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "user": {"login": "colins-homelab-bot[bot]"},
+            "head": {"ref": "agent/issue-42", "sha": "abc123"},
+        }
+        ci_state = {
+            "state": "success",
+            "description": "All required CI checks passed",
+        }
+        mocks[7] = patch(
+            "implement.get_pr",
+            new_callable=AsyncMock,
+            side_effect=itertools.repeat(pr_state),
+        )
+        mocks[8] = patch(
+            "implement.get_commit_ci_status",
+            new_callable=AsyncMock,
+            side_effect=itertools.repeat(ci_state),
+        )
         # time.monotonic() call order:
         # 1. implement_issue: start = 0
         # 2. _merge_when_eligible: deadline = 0 + 900 = 900
@@ -515,7 +539,12 @@ class TestImplementIssue:
         #    (loop body: get_pr, CI, merge rejected, sleep, continue)
         # 4. while check (iter 2): 1000 >= 900 → exit loop
         # 5. _lifecycle_result: elapsed = 1000 - 0 = 1000
-        mocks.append(patch("implement.time.monotonic", side_effect=[0, 0, 0, 1000, 1000]))
+        mocks.append(
+            patch(
+                "implement._monotonic",
+                side_effect=itertools.chain([0, 0, 0, 1000, 1000], itertools.repeat(1000)),
+            )
+        )
         result = self._run_with_mocks(mocks)
         assert result["status"] == "partial"
         assert result["merged"] is False

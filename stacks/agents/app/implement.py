@@ -36,6 +36,10 @@ STATUS_EMOJI = {
 }
 
 
+def _monotonic() -> float:
+    return time.monotonic()
+
+
 def _format_stats_comment(result: dict) -> str:
     """Format a lifecycle stats summary for posting on the PR."""
     status = result.get("status", "unknown")
@@ -122,7 +126,7 @@ def _lifecycle_result(
         "pr_url": pr_url,
         "commit_sha": commit_sha,
         "review_rounds": review_rounds,
-        "elapsed_seconds": time.monotonic() - start,
+        "elapsed_seconds": _monotonic() - start,
         "premium_requests": premium_requests,
         "merged": merged,
     }
@@ -153,10 +157,10 @@ async def _merge_when_eligible(
     session_id: str | None = None,
 ) -> dict:
     """Wait for a clean, green PR and squash-merge it when GitHub allows."""
-    deadline = time.monotonic() + MERGE_READY_TIMEOUT_SECONDS
+    deadline = _monotonic() + MERGE_READY_TIMEOUT_SECONDS
     last_wait_reason = "GitHub is still calculating mergeability"
 
-    while time.monotonic() < deadline:
+    while _monotonic() < deadline:
         mergeable_state = "unknown"
         ci_status: str | None = None
 
@@ -329,7 +333,7 @@ async def implement_issue(
 ) -> dict:
     """Implement a GitHub issue: branch → CLI → push → PR → review/fix → merge."""
     logger.info("Implementing issue %s#%d", repo, issue_number)
-    start = time.monotonic()
+    start = _monotonic()
     repo_url = f"https://github.com/{repo}.git"
     branch_name = f"agent/issue-{issue_number}"
 
