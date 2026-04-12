@@ -282,6 +282,26 @@ async def get_issue(repo: str, issue_number: int) -> dict:
         return resp.json()
 
 
+async def close_issue(repo: str, issue_number: int) -> None:
+    """Close an issue as completed."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"https://api.github.com/repos/{repo}/issues/{issue_number}",
+            headers=headers,
+            json={"state": "closed", "state_reason": "completed"},
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Failed to close issue #{issue_number} on {repo}: HTTP {resp.status_code}"
+            )
+
+
 async def get_pr(repo: str, pr_number: int) -> dict:
     """Fetch PR details (head branch, base, state)."""
     token = await get_token()

@@ -13,6 +13,7 @@ from git import cleanup_branch_worktree, commit_and_push, create_branch_worktree
 from github import (
     TRUSTED_ROLES,
     bot_login,
+    close_issue,
     comment_on_issue,
     create_pull_request,
     get_commit_ci_status,
@@ -659,6 +660,11 @@ async def implement_issue(
             premium_requests=total_premium_requests,
             session_id=implement_session_id,
         )
+
+        if lifecycle_result.get("status") == "complete":
+            with contextlib.suppress(Exception):
+                await close_issue(repo, issue_number)
+
         return lifecycle_result
 
     finally:
