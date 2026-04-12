@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from copilot import CLIResult
+from git import RebaseConflictError
 from implement import _cli_stage_stats, _format_stage_stats
 
 
@@ -452,6 +453,208 @@ class TestImplementIssue:
                 sleep_mock.assert_awaited_once()
                 merge_mock.assert_awaited_once()
                 assert result["status"] == "complete"
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_rebase_success_updates_sha_and_merges(self):
+        """Dirty PRs are rebased once, then merged with the new head SHA."""
+        rebased_sha = "rebased456"
+        mocks = self._standard_mocks(
+            review_event="APPROVE",
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": rebased_sha},
+                },
+            ],
+            ci_results=[
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+            ],
+        )
+        mocks[10] = patch("implement.comment_on_issue", new_callable=AsyncMock, return_value=2002)
+        mocks.append(
+            patch("implement.rebase_onto_main", new_callable=AsyncMock, return_value=rebased_sha)
+        )
+        mocks.append(patch("implement.update_comment", new_callable=AsyncMock))
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                ci_mock = entered[8]
+                merge_mock = entered[9]
+                sleep_mock = entered[12]
+                rebase_mock = entered[13]
+                update_mock = entered[14]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                rebase_mock.assert_awaited_once_with(
+                    Path("/tmp/wt"),
+                    repo_url="https://github.com/user/repo.git",
+                    token="token",
+                    repo="user/repo",
+                    branch="agent/issue-42",
+                )
+                assert ci_mock.await_args_list[1].args == ("user/repo", rebased_sha)
+                merge_mock.assert_awaited_once_with("user/repo", 99, sha=rebased_sha)
+                assert any(
+                    call.args == ("user/repo", 2002, "🔄 Rebasing onto main...")
+                    for call in update_mock.await_args_list
+                )
+                sleep_mock.assert_awaited_once()
+                assert result["status"] == "complete"
+                assert result["commit_sha"] == rebased_sha
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_rebase_conflict_returns_partial(self):
+        """Rebase conflicts abort the lifecycle with a manual-resolution partial."""
+        mocks = self._standard_mocks(
+            review_event="APPROVE",
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                }
+            ],
+            ci_results=[
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                }
+            ],
+        )
+        mocks[10] = patch("implement.comment_on_issue", new_callable=AsyncMock, return_value=2002)
+        mocks.append(
+            patch(
+                "implement.rebase_onto_main",
+                new_callable=AsyncMock,
+                side_effect=RebaseConflictError(
+                    "CONFLICT (content): Merge conflict in implement.py"
+                ),
+            )
+        )
+        mocks.append(patch("implement.update_comment", new_callable=AsyncMock))
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                merge_mock = entered[9]
+                rebase_mock = entered[13]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                rebase_mock.assert_awaited_once()
+                merge_mock.assert_not_awaited()
+                assert result["status"] == "partial"
+                assert result["merged"] is False
+                assert result["commit_sha"] == "abc123"
+                assert "Rebase onto main failed with conflicts" in result["error"]
+                assert "needs manual resolution" in result["error"]
+                assert "CONFLICT" in result["error"]
+
+        asyncio.run(run())
+
+    def test_rebase_only_attempted_once(self):
+        """A second dirty state waits instead of trying another rebase."""
+        rebased_sha = "rebased456"
+        mocks = self._standard_mocks(
+            review_event="APPROVE",
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": rebased_sha},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": rebased_sha},
+                },
+            ],
+            ci_results=[
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+                {
+                    "state": "pending",
+                    "description": "Required CI checks still running: check",
+                },
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+            ],
+        )
+        mocks[10] = patch("implement.comment_on_issue", new_callable=AsyncMock, return_value=2002)
+        mocks.append(
+            patch("implement.rebase_onto_main", new_callable=AsyncMock, return_value=rebased_sha)
+        )
+        mocks.append(patch("implement.update_comment", new_callable=AsyncMock))
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                merge_mock = entered[9]
+                sleep_mock = entered[12]
+                rebase_mock = entered[13]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                rebase_mock.assert_awaited_once()
+                assert sleep_mock.await_count == 2
+                merge_mock.assert_awaited_once_with("user/repo", 99, sha=rebased_sha)
+                assert result["status"] == "complete"
+                assert result["commit_sha"] == rebased_sha
                 assert result["merged"] is True
 
         asyncio.run(run())
