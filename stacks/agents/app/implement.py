@@ -23,6 +23,7 @@ STATUS_EMOJI = {
     "complete": "✅",
     "partial": "⚠️",
     "max_iterations": "⚠️",
+    "failed": "❌",
 }
 
 
@@ -67,7 +68,7 @@ Use the bot-implement skill for guidelines on how to make changes.
 
 FIX_PROMPT_TEMPLATE = """\
 The automated review found issues with your implementation of #{issue_number}. \
-Fix all reported problems.
+Fix all reported problems. Use the skill `bot-implement` for guidance.
 
 ## Review Findings
 
@@ -278,6 +279,17 @@ async def implement_issue(
                     implement_session_id = fix_result.session_id
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
+                lifecycle_result = {
+                    "status": "failed",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
+                    "error": f"Fix failed on round {review_round + 1}: {exc}",
+                }
                 raise TaskError(
                     f"Fix failed on round {review_round + 1}: {exc}",
                     premium_requests=total_premium_requests,
@@ -314,6 +326,17 @@ async def implement_issue(
                     return lifecycle_result
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
             except Exception as exc:
+                lifecycle_result = {
+                    "status": "failed",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "commit_sha": sha,
+                    "review_rounds": review_round + 1,
+                    "elapsed_seconds": time.monotonic() - start,
+                    "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
+                    "error": f"Commit/push failed on round {review_round + 1}: {exc}",
+                }
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
         # Exhausted all fix iterations — last review still requested changes
