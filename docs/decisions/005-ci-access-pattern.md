@@ -45,7 +45,7 @@ CI spins up a Tailscale ephemeral node (dies when workflow ends), then curls the
 
 Use Tailscale ephemeral nodes in CI workflows. Each workflow run:
 
-1. Installs Tailscale (`tailscale/github-action@v3`)
+1. Installs Tailscale (`tailscale/github-action@v4`)
 2. Connects with an ephemeral auth key (`oauth-client-id` + `oauth-secret`)
 3. Curls `http://beelink:8585/<endpoint>` on the tailnet
 4. Node auto-expires when the workflow ends
@@ -56,4 +56,5 @@ The agent API binds to `100.100.146.119:8585` (Tailscale IP only), unreachable f
 
 - [Tailscale GitHub Action](https://github.com/tailscale/github-action)
 - [ADR-004](004-isolated-review-agent.md) — agent architecture
-- `.github/workflows/code-review.yaml` — implementation
+- `.github/workflows/code-review.yaml` — review trigger
+- `.github/workflows/implement.yaml` — implement trigger

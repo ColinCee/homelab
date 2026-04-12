@@ -1,91 +1,131 @@
-# Setting Up the Isolated Review Agent
+# Operating the Agent Stack
 
-Manual steps to activate the isolated review agent ([ADR-004](../decisions/004-isolated-review-agent.md)).
+Setup, verification, and day-2 operations for the isolated agent service
+([ADR-004](../decisions/004-isolated-review-agent.md),
+[ADR-007](../decisions/007-agent-network-isolation.md),
+[ADR-008](../decisions/008-documentation-ownership.md)).
 
-## 1. Create GitHub App
+## Source-Owned Operational Contracts
 
-1. Go to **Settings → Developer Settings → GitHub Apps → New GitHub App**
+Use the runbook for procedure. Use source for exact values that drift easily.
+
+| Fact | Authoritative source |
+|------|----------------------|
+| HTTP request/response models and status payloads | `stacks/agents/app/main.py` |
+| Review JSON schema and linked-issue parsing | `stacks/agents/app/review.py` |
+| Implement loop and PR body auto-close behavior | `stacks/agents/app/implement.py` |
+| Bot identity, review posting, and 422 fallback behavior | `stacks/agents/app/github.py` |
+| CLI timeout and stats parsing assumptions | `stacks/agents/app/copilot.py` |
+| Worktree retention, cleanup markers, and force-push policy | `stacks/agents/app/git.py` |
+| Required deploy-time env vars | `stacks/agents/compose.yaml` and `stacks/agents/.env.example` |
+
+## 1. Create the GitHub App
+
+1. Go to **Settings → Developer Settings → GitHub Apps → New GitHub App**.
 2. Configure:
-   - **Name:** `homelab-review-bot`
+   - **Name:** match the bot identity expected by `github.py`
+     (currently `colins-homelab-bot`)
    - **Homepage URL:** `https://github.com/ColinCee/homelab`
-   - **Webhook:** Deactivate (we don't need it)
+   - **Webhook:** disabled
    - **Permissions:**
      - Pull Requests: **Read & Write**
      - Contents: **Read-only**
-   - **Where can this GitHub App be installed?** Only on this account
-3. Click **Create GitHub App**
-4. Note the **App ID** from the app's general settings page
-5. Generate a **Private Key** — downloads a `.pem` file
+     - Issues: **Read & Write**
+3. Create the app, note the **App ID**, and generate a **private key**.
+4. Install the app only on `ColinCee/homelab` and note the **Installation ID**.
 
-## 2. Install the App
+## 2. Create the Copilot token
 
-1. On the App page, click **Install App**
-2. Select **Only select repositories** → `ColinCee/homelab`
-3. Note the **Installation ID** from the URL (`/installations/<ID>`)
+Create a fine-grained personal access token for Copilot CLI:
 
-## 3. Create Fine-Grained PAT for Copilot CLI
-
-1. Go to **Settings → Developer Settings → Personal Access Tokens → Fine-grained tokens**
-   https://github.com/settings/personal-access-tokens/new
+1. Go to <https://github.com/settings/personal-access-tokens/new>.
 2. Configure:
    - **Name:** `homelab-copilot-cli`
-   - **Expiration:** 1 year (rotate before expiry)
    - **Resource owner:** `ColinCee`
-   - **Repository access:** Public repositories (read-only)
-   - **Account permissions → Copilot Requests:** Read-only
-3. Click **Generate token** and copy the value
+   - **Repository access:** public repositories
+   - **Account permissions → Copilot Requests:** **Read-only**
+3. Copy the token value.
 
-This token only grants Copilot LLM API access — it cannot modify repos or access GitHub APIs.
+This token is only for Copilot inference. The CLI should not get GitHub API
+write credentials.
 
-## 4. Deploy Secrets
+## 3. Configure Dokploy secrets
+
+Copy the private key to the Beelink:
 
 ```bash
-# Copy the private key to beelink
-scp ~/Downloads/homelab-review-bot.*.private-key.pem \
+scp ~/Downloads/colins-homelab-bot.*.private-key.pem \
   beelink:/home/colin/secrets/github-app.pem
 ```
 
-Set the following environment variables in the **Dokploy UI** for the agents compose service:
+Set the variables required by `stacks/agents/compose.yaml` in the Dokploy UI for
+the agent stack. The current operator-facing set is:
 
 | Variable | Value |
 |----------|-------|
-| `GITHUB_APP_ID` | From app settings page |
-| `GITHUB_APP_INSTALLATION_ID` | From installation URL |
+| `GITHUB_APP_ID` | GitHub App ID |
+| `GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID |
+| `GITHUB_APP_KEY_FILE` | Host path to the PEM file (for example `/home/colin/secrets/github-app.pem`) |
 | `COPILOT_GITHUB_TOKEN` | Fine-grained PAT with `Copilot Requests: Read` |
-| `GITHUB_APP_KEY_FILE` | `/home/colin/secrets/github-app.pem` |
 
-Dokploy writes these to `.env` next to the compose file, where Docker Compose reads them for variable interpolation.
+Dokploy writes these to `.env` next to the compose file, which is why CI can
+validate the compose using `stacks/agents/.env.example`.
 
-## 5. Deploy the Stack
+## 4. Deploy
 
-Dokploy auto-deploys from main on push. For manual deploy, use the Dokploy UI or:
+Dokploy auto-deploys from `main`. For a manual deploy:
 
 ```bash
 mise run deploy:agents
 ```
 
-## 6. Branch Protection
+## 5. Trigger workflows
 
-GitHub App bot approvals **do not count** toward required review counts (platform limitation). The repo uses a ruleset with:
+### Review a pull request
 
-- Required approvals: **0** (bot review is advisory)
-- Required status check: `check` (CI gates merges)
-- Dismiss stale reviews on push: enabled
+1. Comment `/review` on the PR.
+2. GitHub Actions connects over Tailscale and POSTs to `/review`.
+3. The agent returns `202 Accepted` immediately and works in the background.
 
-The workflow is: bot posts review → you read it, fix blockers → self-approve and merge.
+### Implement an issue
 
-## 7. Verify
+1. Add the `agent` label to the issue or comment `/implement`.
+2. The agent creates `agent/issue-<N>`, opens a PR, then runs the review/fix loop.
+
+## 6. Verify
+
+Smoke-test the API directly if needed:
 
 ```bash
-# Check agent is running
+# Health
 curl -sf http://beelink:8585/health
 
-# Test with a real PR (create a test PR first)
-curl -X POST http://beelink:8585/review \
+# Dispatch a review
+curl -sf -X POST http://beelink:8585/review \
   -H "Content-Type: application/json" \
-  -d '{"repo": "ColinCee/homelab", "pr_number": <PR_NUMBER>}'
-# Should return 202
+  -d '{"repo":"ColinCee/homelab","pr_number":123}'
 
 # Check review status
-curl http://beelink:8585/review/<PR_NUMBER>
+curl -sf 'http://beelink:8585/review/123?repo=ColinCee/homelab'
+
+# Dispatch an implementation
+curl -sf -X POST http://beelink:8585/implement \
+  -H "Content-Type: application/json" \
+  -d '{"repo":"ColinCee/homelab","issue_number":52}'
+
+# Check implementation status
+curl -sf 'http://beelink:8585/implement/52?repo=ColinCee/homelab'
 ```
+
+## 7. Operational Gotchas
+
+- **`/review` is manual-only.** The workflow does not auto-review on PR open,
+  synchronize, or ready-for-review.
+- **Self-review is informational.** When the bot reviews its own PR, GitHub
+  forces the review to be a `COMMENT`, so thread-resolution behavior differs
+  from a normal human review.
+- **Agent branches are disposable state.** Reruns can reuse the same
+  `agent/issue-*` branch name; pushes are force-updated intentionally.
+- **Worktree cleanup is deferred.** Crash-orphaned worktrees can linger until
+  the retention window expires because cleanup depends on marker files and the
+  periodic reaper, not only on graceful teardown.

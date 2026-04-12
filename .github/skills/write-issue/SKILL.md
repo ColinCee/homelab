@@ -44,6 +44,10 @@ Blast radius boundaries. The agent is good at making changes but needs to know w
 
 After creating the issue, trigger the bot by commenting `/implement` on the issue or adding the `agent` label. The `implement.yaml` workflow dispatches to the agent service.
 
+GitHub only auto-closes the issue on merge when the PR body uses a closing
+keyword such as `Closes #N`, `Fixes #N`, or `Resolves #N`. `Implements #N` is
+descriptive only.
+
 ## What to omit
 
 - **File lists and function signatures** — the agent explores the codebase itself

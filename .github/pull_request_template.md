@@ -9,5 +9,5 @@
 ## Checklist
 
 - [ ] `mise run ci` passes locally
-- [ ] Docs updated (if applicable)
+- [ ] Docs updated in the owning surface when architecture, security, workflow contracts, or recurring patterns changed
 - [ ] Tested on server (if infra change)

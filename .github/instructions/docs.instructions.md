@@ -6,6 +6,10 @@ applyTo: "docs/**/*.md"
 
 Plain markdown, viewable in GitHub or as an Obsidian vault. Encrypted private docs use git-crypt.
 
+Repo-wide ownership rules live in `docs/decisions/008-documentation-ownership.md`.
+Use that ADR as the canonical policy; this instruction file only adds
+docs-specific editing guidance.
+
 ## Structure
 
 - `docs/roadmap.md` — active work, planned items, and known limitations (solved items archived in ADRs)
@@ -50,3 +54,15 @@ ADRs follow this structure — keep it consistent:
 - Use tables for comparisons and status tracking
 - Include copy-pasteable commands in runbooks
 - Don't duplicate information — link to other docs or the README instead
+
+## Refresh Triggers
+
+Update docs in the same change when you modify:
+
+- architecture or security boundaries
+- operator workflows or trigger contracts
+- recurring patterns or tradeoffs future contributors must know
+
+Keep exact schemas, constants, payloads, timeout values, and other narrow
+implementation details in source code, tests, or docstrings. Public docs should
+explain the contract and point to the owning file instead of repeating it.
