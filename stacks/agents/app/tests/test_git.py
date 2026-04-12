@@ -205,7 +205,7 @@ class TestCreateWorktree:
         asyncio.run(run())
 
     def test_unstages_cli_artifacts(self):
-        """commit_and_push unstages .copilot-session.md and .copilot/ before committing."""
+        """commit_and_push unstages .copilot-session.md, .copilot/, and .cleanup-after."""
         calls = []
 
         async def mock_run(cmd, cwd=None):
@@ -240,9 +240,10 @@ class TestCreateWorktree:
 
             # Check git rm --cached was called for artifacts
             rm_calls = [c for c in calls if "rm" in c and "--cached" in c]
-            assert len(rm_calls) == 2
+            assert len(rm_calls) == 3
             assert any(".copilot-session.md" in c for c in rm_calls)
             assert any(".copilot" in c for c in rm_calls)
+            assert any(".cleanup-after" in c for c in rm_calls)
 
         asyncio.run(run())
 

@@ -212,7 +212,7 @@ async def commit_and_push(
 
     # Unstage CLI artifacts that git add -A may have picked up.
     # Worktrees don't inherit the repo's .gitignore, so we handle it here.
-    for artifact in (".copilot-session.md", ".copilot"):
+    for artifact in (".copilot-session.md", ".copilot", CLEANUP_MARKER_FILE):
         with contextlib.suppress(RuntimeError):
             await _run(["git", "rm", "--cached", "-rf", artifact], cwd=worktree_path)
 

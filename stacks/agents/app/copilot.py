@@ -131,7 +131,13 @@ async def run_copilot(
     # handles all GitHub operations with its own scoped token.
     env.pop("GH_TOKEN", None)
 
-    logger.info("Running Copilot CLI in %s (model=%s, effort=%s)", worktree_path, model, effort)
+    logger.info(
+        "Running Copilot CLI in %s (model=%s, effort=%s, resume=%s)",
+        worktree_path,
+        model,
+        effort,
+        session_id or "none",
+    )
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
