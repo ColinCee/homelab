@@ -29,10 +29,14 @@ Use the runbook for procedure. Use source for exact values that drift easily.
    - **Webhook:** disabled
    - **Permissions:**
      - Pull Requests: **Read & Write**
-     - Contents: **Read-only**
+     - Contents: **Read & Write**
      - Issues: **Read & Write**
 3. Create the app, note the **App ID**, and generate a **private key**.
 4. Install the app only on `ColinCee/homelab` and note the **Installation ID**.
+
+`Contents: Read & Write` is required for the implementation lifecycle: the
+orchestrator commits and force-pushes bot-owned `agent/issue-*` branches before
+opening or updating the PR.
 
 ## 2. Create the Copilot token
 

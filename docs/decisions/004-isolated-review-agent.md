@@ -108,7 +108,7 @@ Agent service (FastAPI)
 | Credential | Used by | Purpose |
 |------------|---------|---------|
 | `COPILOT_GITHUB_TOKEN` | Copilot CLI | Copilot Requests only |
-| GitHub App token | Orchestrator | Read issues/PRs, create PRs, post reviews/comments |
+| GitHub App token | Orchestrator | Read issues/PRs, push bot-owned branches, create PRs, post reviews/comments |
 
 What the CLI does **not** get:
 
