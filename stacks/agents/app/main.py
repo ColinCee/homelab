@@ -50,6 +50,7 @@ _review_status: dict[str, dict] = {}
 _implement_status: dict[str, dict] = {}
 
 REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
+IMPLEMENT_PROGRESS_PREFIX = "🔄 Implementing #"
 
 
 def _review_key(repo: str, pr_number: int) -> str:
@@ -85,7 +86,7 @@ def _review_progress_failure_comment(reason: str) -> str:
 
 
 def _implement_progress_comment(issue_number: int) -> str:
-    return f"🔄 Implementing #{issue_number}..."
+    return f"{IMPLEMENT_PROGRESS_PREFIX}{issue_number}..."
 
 
 def _implement_progress_success_comment(pr_number: int, pr_url: str) -> str:
@@ -104,23 +105,34 @@ async def _update_progress_comment(repo: str, comment_id: int | None, body: str)
         await update_comment(repo, comment_id, body)
 
 
-async def _start_review_progress_comment(repo: str, pr_number: int) -> int | None:
-    body = _review_progress_comment(pr_number)
+async def _start_progress_comment(
+    repo: str, issue_number: int, *, body: str, body_prefix: str
+) -> int | None:
     with contextlib.suppress(Exception):
-        comment_id = await find_issue_comment_by_body_prefix(
-            repo, pr_number, REVIEW_PROGRESS_PREFIX
-        )
+        comment_id = await find_issue_comment_by_body_prefix(repo, issue_number, body_prefix)
         if comment_id is not None:
             await update_comment(repo, comment_id, body)
             return comment_id
-        return await comment_on_issue(repo, pr_number, body)
+        return await comment_on_issue(repo, issue_number, body)
     return None
+
+
+async def _start_review_progress_comment(repo: str, pr_number: int) -> int | None:
+    return await _start_progress_comment(
+        repo,
+        pr_number,
+        body=_review_progress_comment(pr_number),
+        body_prefix=REVIEW_PROGRESS_PREFIX,
+    )
 
 
 async def _start_implement_progress_comment(repo: str, issue_number: int) -> int | None:
-    with contextlib.suppress(Exception):
-        return await comment_on_issue(repo, issue_number, _implement_progress_comment(issue_number))
-    return None
+    return await _start_progress_comment(
+        repo,
+        issue_number,
+        body=_implement_progress_comment(issue_number),
+        body_prefix=IMPLEMENT_PROGRESS_PREFIX,
+    )
 
 
 async def _get_trusted_issue_for_progress(repo: str, issue_number: int) -> dict | None:

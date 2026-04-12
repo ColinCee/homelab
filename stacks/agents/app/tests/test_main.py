@@ -348,10 +348,11 @@ def test_review_unexpected_failure_posts_generic_comment(
 
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
+@patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_updates_progress_comment_on_success(
-    mock_impl, _mock_issue, mock_comment, mock_update
+    mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
 ):
     mock_impl.return_value = {
         "status": "complete",
@@ -363,6 +364,7 @@ def test_implement_updates_progress_comment_on_success(
         _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
     )
 
+    mock_find_comment.assert_awaited_once_with("user/repo", 10, "🔄 Implementing #")
     mock_comment.assert_awaited_once_with("user/repo", 10, "🔄 Implementing #10...")
     mock_update.assert_awaited_once_with(
         "user/repo",
@@ -372,10 +374,39 @@ def test_implement_updates_progress_comment_on_success(
 
 
 @patch("main.update_comment", new_callable=AsyncMock)
-@patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=4004)
 @patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
-def test_implement_failure_posts_error_comment(mock_impl, _mock_issue, mock_comment, mock_update):
+def test_implement_reuses_stale_progress_comment(
+    mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
+):
+    mock_impl.return_value = {
+        "status": "complete",
+        "pr_number": 99,
+        "pr_url": "https://github.com/user/repo/pull/99",
+    }
+
+    asyncio.run(
+        _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_find_comment.assert_awaited_once_with("user/repo", 10, "🔄 Implementing #")
+    mock_comment.assert_not_called()
+    assert mock_update.await_args_list == [
+        call("user/repo", 4004, "🔄 Implementing #10..."),
+        call("user/repo", 4004, "✅ PR #99 created — https://github.com/user/repo/pull/99"),
+    ]
+
+
+@patch("main.update_comment", new_callable=AsyncMock)
+@patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
+@patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
+@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_failure_posts_error_comment(
+    mock_impl, _mock_issue, _mock_find_comment, mock_comment, mock_update
+):
     """When implement_issue raises, _run_implement updates progress and posts an error comment."""
     from copilot import TaskError
 
