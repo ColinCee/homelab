@@ -126,6 +126,9 @@ async def create_worktree(pr_number: int, repo_url: str, *, head_ref: str | None
             ["git", "worktree", "add", str(worktree_path), f"pr-{pr_number}"],
             cwd=BARE_CLONE_PATH,
         )
+        # Start retention tracking immediately so crash-orphaned worktrees
+        # can still age out even if graceful cleanup never runs.
+        _mark_worktree_for_cleanup(worktree_path, f"pr-{pr_number}")
 
     logger.info("Created worktree for PR #%d at %s", pr_number, worktree_path)
     return worktree_path
@@ -169,6 +172,9 @@ async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
             ["git", "worktree", "add", str(worktree_path), branch_name],
             cwd=BARE_CLONE_PATH,
         )
+        # Start retention tracking immediately so crash-orphaned worktrees
+        # can still age out even if graceful cleanup never runs.
+        _mark_worktree_for_cleanup(worktree_path, branch_name)
 
     logger.info("Created branch worktree %s at %s", branch_name, worktree_path)
     return worktree_path

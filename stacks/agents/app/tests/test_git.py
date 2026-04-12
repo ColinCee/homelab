@@ -51,6 +51,26 @@ class TestCreateWorktree:
 
         asyncio.run(run())
 
+    def test_marks_new_pr_worktree_for_cleanup(self):
+        async def mock_run(cmd, cwd=None):
+            return ""
+
+        async def run():
+            with (
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "_mark_worktree_for_cleanup") as mock_mark,
+                patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch("pathlib.Path.exists", return_value=False),
+                patch("pathlib.Path.mkdir"),
+            ):
+                path = await git_module.create_worktree(42, "https://github.com/user/repo.git")
+
+            assert path == Path("/tmp/test-reviews/pr-42")
+            mock_mark.assert_called_once_with(Path("/tmp/test-reviews/pr-42"), "pr-42")
+
+        asyncio.run(run())
+
     def test_reaps_expired_worktrees_before_creating(self):
         calls = []
 
@@ -85,6 +105,7 @@ class TestCreateWorktree:
             with (
                 patch.object(git_module, "_run", side_effect=mock_run),
                 patch.object(git_module, "_reap_old_worktrees_locked", new_callable=AsyncMock),
+                patch.object(git_module, "_mark_worktree_for_cleanup"),
                 patch.object(git_module, "_remove_worktree", new_callable=AsyncMock) as mock_remove,
                 patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
                 patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
@@ -260,6 +281,30 @@ class TestDeferredCleanup:
 
         marker = json.loads((worktree / ".cleanup-after").read_text())
         assert marker == {"expires_at": 170, "branch": "agent/issue-42"}
+
+    def test_create_branch_worktree_writes_marker_on_creation(self):
+        async def mock_run(cmd, cwd=None):
+            return ""
+
+        async def run():
+            with (
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "_mark_worktree_for_cleanup") as mock_mark,
+                patch.object(git_module, "BARE_CLONE_PATH", Path("/tmp/test-repo.git")),
+                patch.object(git_module, "REVIEWS_PATH", Path("/tmp/test-reviews")),
+                patch("pathlib.Path.exists", return_value=False),
+                patch("pathlib.Path.mkdir"),
+            ):
+                path = await git_module.create_branch_worktree(
+                    "agent/issue-42", "https://github.com/user/repo.git"
+                )
+
+            assert path == Path("/tmp/test-reviews/agent-issue-42")
+            mock_mark.assert_called_once_with(
+                Path("/tmp/test-reviews/agent-issue-42"), "agent/issue-42"
+            )
+
+        asyncio.run(run())
 
 
 class TestReapOldWorktrees:
