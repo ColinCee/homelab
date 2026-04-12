@@ -121,7 +121,34 @@ curl -sf -X POST http://beelink:8585/implement \
 curl -sf 'http://beelink:8585/implement/52?repo=ColinCee/homelab'
 ```
 
-## 7. Operational Gotchas
+## 7. Debugging
+
+SSH into the Beelink from any machine on the tailnet:
+
+```bash
+ssh beelink
+```
+
+View live agent logs (the container name is managed by Dokploy and may change):
+
+```bash
+# Find the agent container
+docker ps --filter "name=agent" --format '{{.Names}}'
+
+# Tail recent logs
+docker logs <container-name> --since 1h -f
+
+# Filter for orchestrator events (review rounds, pushes, errors)
+docker logs <container-name> --since 1h 2>&1 \
+  | grep -E "(Review round|Pushed|Review complete|Hit max|WARNING|ERROR)"
+```
+
+Each Copilot CLI invocation logs a `Requests  N Premium` line showing cost, and
+a `Session transcript captured` line showing the full agent reasoning. Review
+rounds are numbered (`Review round 1/4`), so you can trace the exact
+review→fix→re-review flow.
+
+## 8. Operational Gotchas
 
 - **`/review` is manual-only.** The workflow does not auto-review on PR open,
   synchronize, or ready-for-review.
