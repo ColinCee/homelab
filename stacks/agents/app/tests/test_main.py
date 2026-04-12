@@ -218,6 +218,32 @@ def test_implement_metrics_max_iterations_records_partial(mock_implement):
     assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 6.0
 
 
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_status_preserves_merge_details(mock_implement):
+    mock_implement.return_value = {
+        "status": "complete",
+        "merged": True,
+        "merge_commit_sha": "merge123",
+        "merge_method": "squash",
+        "premium_requests": 4,
+    }
+
+    asyncio.run(
+        _run_implement(
+            repo="user/repo",
+            issue_number=404,
+            model="gpt-5.4",
+            reasoning_effort="high",
+        )
+    )
+
+    status = _implement_status["user/repo#404"]
+    assert status["status"] == "complete"
+    assert status["merged"] is True
+    assert status["merge_commit_sha"] == "merge123"
+    assert status["merge_method"] == "squash"
+
+
 # --- Fire-and-forget safety: error comments on failures ---
 
 

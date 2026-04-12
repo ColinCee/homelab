@@ -1,5 +1,6 @@
 """GitHub API — App auth, REST, and GraphQL helpers."""
 
+import asyncio
 import logging
 import os
 import re
@@ -74,6 +75,9 @@ def reset_token_cache() -> None:
 
 _APP_SLUG = "colins-homelab-bot"
 _BOT_USER_ID = "274352150"  # stable across app renames
+_FAILING_CHECK_CONCLUSIONS = frozenset(
+    {"action_required", "cancelled", "failure", "stale", "startup_failure", "timed_out"}
+)
 
 # author_association values trusted for autonomous operations (implement, prompt context)
 TRUSTED_ROLES = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
@@ -295,6 +299,113 @@ async def get_pr(repo: str, pr_number: int) -> dict:
         return resp.json()
 
 
+def _describe_checks(check_names: list[str]) -> str:
+    """Render a stable, human-readable check list summary."""
+    unique_names = list(dict.fromkeys(name for name in check_names if name))
+    return ", ".join(unique_names) if unique_names else "unknown checks"
+
+
+async def _fetch_all_check_runs(
+    client: httpx.AsyncClient, repo: str, ref: str, headers: dict[str, str]
+) -> list[dict]:
+    """Fetch all check runs for a commit across paginated API responses."""
+    check_runs: list[dict] = []
+    page = 1
+    total_count: int | None = None
+
+    while True:
+        resp = await client.get(
+            f"https://api.github.com/repos/{repo}/commits/{ref}/check-runs",
+            headers=headers,
+            params={"per_page": 100, "page": page},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        batch = data.get("check_runs", [])
+        check_runs.extend(batch)
+
+        if total_count is None:
+            raw_total = data.get("total_count")
+            total_count = raw_total if isinstance(raw_total, int) else len(batch)
+
+        if not batch or len(batch) < 100 or len(check_runs) >= total_count:
+            return check_runs
+
+        page += 1
+
+
+async def get_commit_ci_status(repo: str, ref: str) -> dict:
+    """Fetch commit statuses + check runs and summarize CI state for a commit."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        status_resp, check_runs = await asyncio.gather(
+            client.get(
+                f"https://api.github.com/repos/{repo}/commits/{ref}/status",
+                headers=headers,
+            ),
+            _fetch_all_check_runs(client, repo, ref, headers),
+        )
+
+    status_resp.raise_for_status()
+
+    status_data = status_resp.json()
+    statuses = status_data.get("statuses", [])
+
+    failing_checks = [
+        status.get("context", "status")
+        for status in statuses
+        if status.get("state") in ("error", "failure")
+    ]
+    pending_checks = [
+        status.get("context", "status") for status in statuses if status.get("state") == "pending"
+    ]
+
+    for check_run in check_runs:
+        name = check_run.get("name", "check")
+        if check_run.get("status") != "completed" or check_run.get("conclusion") is None:
+            pending_checks.append(name)
+            continue
+
+        if check_run.get("conclusion") in _FAILING_CHECK_CONCLUSIONS:
+            failing_checks.append(name)
+
+    if failing_checks:
+        return {
+            "state": "failure",
+            "description": f"Required CI checks failed: {_describe_checks(failing_checks)}",
+            "failing_checks": failing_checks,
+            "pending_checks": pending_checks,
+        }
+
+    if pending_checks:
+        return {
+            "state": "pending",
+            "description": f"Required CI checks still running: {_describe_checks(pending_checks)}",
+            "failing_checks": failing_checks,
+            "pending_checks": pending_checks,
+        }
+
+    if statuses or check_runs:
+        return {
+            "state": "success",
+            "description": "All required CI checks passed",
+            "failing_checks": failing_checks,
+            "pending_checks": pending_checks,
+        }
+
+    return {
+        "state": "none",
+        "description": "No commit statuses or check runs reported yet",
+        "failing_checks": failing_checks,
+        "pending_checks": pending_checks,
+    }
+
+
 async def create_pull_request(
     repo: str,
     *,
@@ -323,6 +434,48 @@ async def create_pull_request(
         )
         resp.raise_for_status()
         return resp.json()
+
+
+async def merge_pull_request(
+    repo: str,
+    pr_number: int,
+    *,
+    sha: str | None = None,
+) -> dict:
+    """Attempt a squash merge without bypassing branch protection."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    payload: dict[str, str] = {"merge_method": "squash"}
+    if sha:
+        payload["sha"] = sha
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.put(
+            f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge",
+            headers=headers,
+            json=payload,
+        )
+
+    if resp.status_code == 200:
+        return resp.json()
+
+    if resp.status_code in (401, 403, 404, 405, 409, 422):
+        message = f"HTTP {resp.status_code}"
+        try:
+            response_data = resp.json()
+        except ValueError:
+            response_data = {}
+        else:
+            if isinstance(response_data.get("message"), str):
+                message = response_data["message"]
+
+        return {"merged": False, "message": message, "status_code": resp.status_code}
+
+    resp.raise_for_status()
+    return {}
 
 
 async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
