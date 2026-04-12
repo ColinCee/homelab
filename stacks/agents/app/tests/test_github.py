@@ -358,3 +358,93 @@ class TestMergePullRequest:
         assert result["merged"] is False
         assert result["status_code"] == 403
         assert result["message"] == "Resource not accessible by integration"
+
+
+class TestIssueComments:
+    def test_comment_on_issue_returns_comment_id(self):
+        comment_resp = httpx.Response(
+            201,
+            json={"id": 12345},
+            request=httpx.Request("POST", "https://api.github.com/comment"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.post",
+                    new_callable=AsyncMock,
+                    return_value=comment_resp,
+                ) as mock_post,
+            ):
+                result = await github.comment_on_issue("user/repo", 7, "hello")
+                return result, mock_post
+
+        result, mock_post = asyncio.run(run())
+        assert result == 12345
+        assert mock_post.await_args.kwargs["json"] == {"body": "hello"}
+
+    def test_update_comment_edits_existing_comment(self):
+        update_resp = httpx.Response(
+            200,
+            json={"id": 12345},
+            request=httpx.Request("PATCH", "https://api.github.com/comment"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.patch",
+                    new_callable=AsyncMock,
+                    return_value=update_resp,
+                ) as mock_patch,
+            ):
+                await github.update_comment("user/repo", 12345, "updated")
+                return mock_patch
+
+        mock_patch = asyncio.run(run())
+        assert (
+            mock_patch.await_args.args[0]
+            == "https://api.github.com/repos/user/repo/issues/comments/12345"
+        )
+        assert mock_patch.await_args.kwargs["json"] == {"body": "updated"}
+
+    def test_find_issue_comment_by_body_prefix_returns_latest_bot_comment(self):
+        comments_resp = httpx.Response(
+            200,
+            json=[
+                {
+                    "id": 1,
+                    "body": "🔄 Review in progress for PR #7...",
+                    "user": {"login": "someone-else"},
+                },
+                {
+                    "id": 2,
+                    "body": "✅ Review posted — see review above",
+                    "user": {"login": github.bot_login()},
+                },
+                {
+                    "id": 3,
+                    "body": "🔄 Review in progress for PR #7...",
+                    "user": {"login": github.bot_login()},
+                },
+            ],
+            request=httpx.Request("GET", "https://api.github.com/comments"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    return_value=comments_resp,
+                ),
+            ):
+                return await github.find_issue_comment_by_body_prefix(
+                    "user/repo", 7, "🔄 Review in progress for PR #"
+                )
+
+        result = asyncio.run(run())
+        assert result == 3

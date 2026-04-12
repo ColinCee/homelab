@@ -478,8 +478,8 @@ async def merge_pull_request(
     return {}
 
 
-async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
-    """Post a comment on an issue or PR."""
+async def comment_on_issue(repo: str, issue_number: int, body: str) -> int:
+    """Post a comment on an issue or PR and return the comment ID."""
     token = await get_token()
     headers = {
         "Authorization": f"Bearer {token}",
@@ -496,6 +496,72 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> None:
             raise RuntimeError(
                 f"Failed to comment on {repo}#{issue_number}: HTTP {resp.status_code}"
             )
+        data = resp.json()
+        comment_id = data.get("id")
+        if not isinstance(comment_id, int):
+            raise RuntimeError(f"Failed to comment on {repo}#{issue_number}: missing comment ID")
+        return comment_id
+
+
+async def update_comment(repo: str, comment_id: int, body: str) -> None:
+    """Edit an existing issue or PR comment."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.patch(
+            f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}",
+            headers=headers,
+            json={"body": body},
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Failed to update comment {comment_id} on {repo}: HTTP {resp.status_code}"
+            )
+
+
+async def find_issue_comment_by_body_prefix(
+    repo: str, issue_number: int, body_prefix: str
+) -> int | None:
+    """Find the latest bot-authored issue/PR comment whose body starts with a prefix."""
+    token = await get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    login = bot_login()
+    comments: list[dict] = []
+    page = 1
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while True:
+            resp = await client.get(
+                f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments",
+                headers=headers,
+                params={"per_page": 100, "page": page},
+            )
+            resp.raise_for_status()
+            batch = resp.json()
+            if not batch:
+                break
+            comments.extend(batch)
+            if len(batch) < 100:
+                break
+            page += 1
+
+    for comment in reversed(comments):
+        comment_id = comment.get("id")
+        body = comment.get("body")
+        author = comment.get("user", {}).get("login")
+        if author != login or not isinstance(body, str) or not isinstance(comment_id, int):
+            continue
+        if body.startswith(body_prefix):
+            return comment_id
+
+    return None
 
 
 def _parse_diff_right_lines(patch: str) -> list[int]:

@@ -13,7 +13,13 @@ from pydantic import BaseModel
 
 from copilot import TaskError
 from git import reap_old_worktrees
-from github import comment_on_issue
+from github import (
+    TRUSTED_ROLES,
+    comment_on_issue,
+    find_issue_comment_by_body_prefix,
+    get_issue,
+    update_comment,
+)
 from implement import implement_issue
 from metrics import (
     METRICS_REGISTRY,
@@ -43,6 +49,9 @@ REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
 _review_status: dict[str, dict] = {}
 _implement_status: dict[str, dict] = {}
 
+REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
+IMPLEMENT_PROGRESS_PREFIX = "🔄 Implementing #"
+
 
 def _review_key(repo: str, pr_number: int) -> str:
     return f"{repo}#{pr_number}"
@@ -66,6 +75,80 @@ def _premium_requests(result: dict[str, object] | None) -> int:
 
     premium_requests = result.get("premium_requests", 0)
     return premium_requests if isinstance(premium_requests, int) else 0
+
+
+def _review_progress_comment(pr_number: int) -> str:
+    return f"{REVIEW_PROGRESS_PREFIX}{pr_number}..."
+
+
+def _review_progress_failure_comment(reason: str) -> str:
+    return f"⚠️ Review failed — {reason}"
+
+
+def _implement_progress_comment(issue_number: int) -> str:
+    return f"{IMPLEMENT_PROGRESS_PREFIX}{issue_number}..."
+
+
+def _implement_progress_success_comment(pr_number: int, pr_url: str) -> str:
+    return f"✅ PR #{pr_number} created — {pr_url}"
+
+
+def _implement_progress_failure_comment(reason: str) -> str:
+    return f"⚠️ Implementation failed — {reason}"
+
+
+async def _update_progress_comment(repo: str, comment_id: int | None, body: str) -> None:
+    if comment_id is None:
+        return
+
+    with contextlib.suppress(Exception):
+        await update_comment(repo, comment_id, body)
+
+
+async def _start_progress_comment(
+    repo: str, issue_number: int, *, body: str, body_prefix: str
+) -> int | None:
+    with contextlib.suppress(Exception):
+        comment_id = await find_issue_comment_by_body_prefix(repo, issue_number, body_prefix)
+        if comment_id is not None:
+            await update_comment(repo, comment_id, body)
+            return comment_id
+        return await comment_on_issue(repo, issue_number, body)
+    return None
+
+
+async def _start_review_progress_comment(repo: str, pr_number: int) -> int | None:
+    return await _start_progress_comment(
+        repo,
+        pr_number,
+        body=_review_progress_comment(pr_number),
+        body_prefix=REVIEW_PROGRESS_PREFIX,
+    )
+
+
+async def _start_implement_progress_comment(repo: str, issue_number: int) -> int | None:
+    return await _start_progress_comment(
+        repo,
+        issue_number,
+        body=_implement_progress_comment(issue_number),
+        body_prefix=IMPLEMENT_PROGRESS_PREFIX,
+    )
+
+
+async def _get_trusted_issue_for_progress(repo: str, issue_number: int) -> dict | None:
+    try:
+        issue = await get_issue(repo, issue_number)
+    except Exception:
+        return None
+
+    author_role = issue.get("author_association", "NONE")
+    if author_role not in TRUSTED_ROLES:
+        raise ValueError(
+            f"Issue #{issue_number} author has role '{author_role}' — "
+            f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
+        )
+
+    return issue
 
 
 def _record_task_metrics(
@@ -204,6 +287,7 @@ async def _run_review(
     key = _review_key(repo, pr_number)
     status = "failed"
     premium_requests = 0
+    progress_comment_id = await _start_review_progress_comment(repo, pr_number)
     start = time.monotonic()
     TASK_IN_PROGRESS.labels(task_type="review").inc()
     try:
@@ -222,16 +306,27 @@ async def _run_review(
             "pr_number": pr_number,
             **result,
         }
+        await _update_progress_comment(
+            repo, progress_comment_id, "✅ Review posted — see review above"
+        )
     except TaskError as exc:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
         premium_requests = exc.premium_requests
+        await _update_progress_comment(
+            repo, progress_comment_id, _review_progress_failure_comment(str(exc))
+        )
         if not exc.commented:
             with contextlib.suppress(Exception):
                 await comment_on_issue(repo, pr_number, f"⚠️ **Review failed** — {exc}")
     except Exception:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
+        await _update_progress_comment(
+            repo,
+            progress_comment_id,
+            _review_progress_failure_comment("see agent logs for details."),
+        )
         with contextlib.suppress(Exception):
             await comment_on_issue(
                 repo, pr_number, "⚠️ **Review failed** — see agent logs for details."
@@ -252,14 +347,20 @@ async def _run_implement(
     key = _implement_key(repo, issue_number)
     status = "failed"
     premium_requests = 0
+    progress_comment_id: int | None = None
     start = time.monotonic()
     TASK_IN_PROGRESS.labels(task_type="implement").inc()
     try:
+        issue = await _get_trusted_issue_for_progress(repo, issue_number)
+        if issue is not None:
+            progress_comment_id = await _start_implement_progress_comment(repo, issue_number)
+
         result = await implement_issue(
             repo=repo,
             issue_number=issue_number,
             model=model,
             reasoning_effort=reasoning_effort,
+            issue=issue,
         )
         status = _task_status_label(result.get("status"))
         premium_requests = _premium_requests(result)
@@ -269,6 +370,12 @@ async def _run_implement(
             "issue_number": issue_number,
             **result,
         }
+        pr_number = result.get("pr_number")
+        pr_url = result.get("pr_url")
+        if isinstance(pr_number, int) and isinstance(pr_url, str):
+            await _update_progress_comment(
+                repo, progress_comment_id, _implement_progress_success_comment(pr_number, pr_url)
+            )
     except ValueError as exc:
         # Trust boundary rejection (untrusted author) — don't interact with the issue
         logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
@@ -285,6 +392,9 @@ async def _run_implement(
             "issue_number": issue_number,
         }
         premium_requests = exc.premium_requests
+        await _update_progress_comment(
+            repo, progress_comment_id, _implement_progress_failure_comment(str(exc))
+        )
         if not exc.commented:
             with contextlib.suppress(Exception):
                 await comment_on_issue(
@@ -299,6 +409,11 @@ async def _run_implement(
             "repo": repo,
             "issue_number": issue_number,
         }
+        await _update_progress_comment(
+            repo,
+            progress_comment_id,
+            _implement_progress_failure_comment("see agent logs for details."),
+        )
         with contextlib.suppress(Exception):
             await comment_on_issue(
                 repo,
