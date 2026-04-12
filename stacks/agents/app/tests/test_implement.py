@@ -344,7 +344,7 @@ class TestImplementIssue:
         asyncio.run(run())
 
     def test_ci_failure_returns_partial(self):
-        """Failed CI leaves the lifecycle in an explicit manual-attention state."""
+        """Failed CI still tries the merge — GitHub enforces required checks."""
         mocks = self._standard_mocks(
             review_events=["APPROVE"],
             ci_results=[
@@ -353,6 +353,11 @@ class TestImplementIssue:
                     "description": "Required CI checks failed: check",
                 }
             ],
+            merge_result={
+                "merged": False,
+                "message": "Required status check 'check' is failing",
+                "status_code": 405,
+            },
         )
 
         async def run():
@@ -363,11 +368,10 @@ class TestImplementIssue:
 
                 result = await implement_issue(repo="user/repo", issue_number=42)
 
-                merge_mock.assert_not_called()
+                merge_mock.assert_awaited_once()
                 assert result["status"] == "partial"
                 assert result["merged"] is False
-                assert result["ci_status"] == "failure"
-                assert "Required CI checks failed" in result["error"]
+                assert "GitHub rejected squash merge" in result["error"]
 
         asyncio.run(run())
 
