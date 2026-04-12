@@ -49,6 +49,8 @@ REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
 
 _review_status: dict[str, dict] = {}
 _review_tasks: dict[str, asyncio.Task[None]] = {}
+_review_locks: dict[str, asyncio.Lock] = {}
+_review_request_ids: dict[str, int] = {}
 _implement_status: dict[str, dict] = {}
 
 REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
@@ -194,31 +196,46 @@ async def handle_review(req: ReviewRequest):
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
+    lock = _review_locks.setdefault(key, asyncio.Lock())
+    existing_task: asyncio.Task[None] | None = None
 
-    existing_task = _review_tasks.get(key)
-    existing = _review_status.get(key)
+    async with lock:
+        request_id = _review_request_ids.get(key, 0) + 1
+        _review_request_ids[key] = request_id
+        existing_task = _review_tasks.get(key)
+        if existing_task and not existing_task.done():
+            existing_task.cancel()
+
     if existing_task and not existing_task.done():
-        existing_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await existing_task
 
-    prior_session_id = (
-        existing.get("session_id")
-        if existing and existing.get("status") not in {"in_progress", "cancelled"}
-        else None
-    )
+    async with lock:
+        if _review_request_ids.get(key) != request_id:
+            return {"status": "accepted", "pr_number": req.pr_number}
 
-    _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
-    task = asyncio.create_task(
-        _run_review(
-            repo=req.repo,
-            pr_number=req.pr_number,
-            model=model,
-            reasoning_effort=effort,
-            session_id=prior_session_id,
+        existing = _review_status.get(key)
+        prior_session_id = (
+            existing.get("session_id")
+            if existing and existing.get("status") not in {"in_progress", "cancelled"}
+            else None
         )
-    )
-    _review_tasks[key] = task
+
+        _review_status[key] = {
+            "status": "in_progress",
+            "repo": req.repo,
+            "pr_number": req.pr_number,
+        }
+        task = asyncio.create_task(
+            _run_review(
+                repo=req.repo,
+                pr_number=req.pr_number,
+                model=model,
+                reasoning_effort=effort,
+                session_id=prior_session_id,
+            )
+        )
+        _review_tasks[key] = task
 
     return {"status": "accepted", "pr_number": req.pr_number}
 

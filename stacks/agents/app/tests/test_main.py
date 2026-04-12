@@ -9,6 +9,8 @@ from fastapi.testclient import TestClient
 from main import (
     ReviewRequest,
     _implement_status,
+    _review_locks,
+    _review_request_ids,
     _review_status,
     _review_tasks,
     _run_implement,
@@ -32,11 +34,15 @@ def _metric_value(name: str, labels: dict[str, str]) -> float:
 @pytest.fixture(autouse=True)
 def reset_state():
     reset_metrics()
+    _review_locks.clear()
+    _review_request_ids.clear()
     _review_status.clear()
     _review_tasks.clear()
     _implement_status.clear()
     yield
     reset_metrics()
+    _review_locks.clear()
+    _review_request_ids.clear()
     _review_status.clear()
     _review_tasks.clear()
     _implement_status.clear()
@@ -129,6 +135,63 @@ def test_review_replaces_duplicate_in_flight():
         replacement_task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await replacement_task
+
+    asyncio.run(run())
+
+
+def test_review_coalesces_concurrent_replacements():
+    """Concurrent duplicate /review requests should only spawn one fresh task."""
+
+    async def run() -> None:
+        key = "user/repo#42"
+        replacement_tasks: list[asyncio.Task[None]] = []
+        cancellation_started = asyncio.Event()
+        release_cancellation = asyncio.Event()
+
+        async def stale_review() -> None:
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                cancellation_started.set()
+                await release_cancellation.wait()
+                raise
+
+        _review_status[key] = {
+            "status": "in_progress",
+            "repo": "user/repo",
+            "pr_number": 42,
+        }
+        existing_task = asyncio.create_task(stale_review())
+        _review_tasks[key] = existing_task
+        await asyncio.sleep(0)
+
+        def fake_create_task(coro):
+            coro.close()
+            task = asyncio.get_running_loop().create_task(asyncio.sleep(3600))
+            replacement_tasks.append(task)
+            return task
+
+        with patch("main.asyncio.create_task", side_effect=fake_create_task):
+            results_task = asyncio.gather(
+                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
+                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
+            )
+            await cancellation_started.wait()
+            release_cancellation.set()
+            results = await results_task
+
+        assert results == [
+            {"status": "accepted", "pr_number": 42},
+            {"status": "accepted", "pr_number": 42},
+        ]
+        assert existing_task.cancelled()
+        assert len(replacement_tasks) == 1
+        assert _review_tasks[key] is replacement_tasks[0]
+
+        for task in replacement_tasks:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
 
     asyncio.run(run())
 
