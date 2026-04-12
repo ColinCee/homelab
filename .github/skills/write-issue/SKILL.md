@@ -48,6 +48,10 @@ GitHub only auto-closes the issue on merge when the PR body uses a closing
 keyword such as `Closes #N`, `Fixes #N`, or `Resolves #N`. `Implements #N` is
 descriptive only.
 
+## Critical: everything goes in the body
+
+The implement bot only receives the issue **title and body**. It never sees issue comments, reactions, or linked PRs. All context, requirements, and constraints must be in the body itself. If you add information in a comment, the agent will never see it — rewrite the body instead.
+
 ## What to omit
 
 - **File lists and function signatures** — the agent explores the codebase itself
