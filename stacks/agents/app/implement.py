@@ -3,11 +3,12 @@
 import asyncio
 import contextlib
 import logging
+import re
 import time
 
 import httpx
 
-from copilot import TaskError, run_copilot
+from copilot import CLIResult, TaskError, run_copilot
 from git import cleanup_branch_worktree, commit_and_push, create_branch_worktree
 from github import (
     TRUSTED_ROLES,
@@ -19,6 +20,7 @@ from github import (
     get_pr,
     get_token,
     merge_pull_request,
+    update_comment,
 )
 from review import review_pr
 
@@ -37,6 +39,32 @@ STATUS_EMOJI = {
 
 def _monotonic() -> float:
     return time.monotonic()
+
+
+def _format_stage_stats(
+    *, premium_requests: int = 0, elapsed_seconds: float = 0, models: dict | None = None
+) -> str:
+    """Format a compact stats footer for a lifecycle stage comment."""
+    parts = []
+    if premium_requests:
+        parts.append(f"💰 {premium_requests} premium")
+    if elapsed_seconds:
+        minutes, secs = divmod(int(elapsed_seconds), 60)
+        parts.append(f"⏱️ {minutes}m {secs}s")
+    if models:
+        for model_name, detail in models.items():
+            clean = re.sub(r"\s*\(Est\..*?\)", "", detail).strip().rstrip(",")
+            parts.append(f"🤖 {model_name}: {clean}")
+    return " · ".join(parts)
+
+
+def _cli_stage_stats(result: CLIResult) -> str:
+    """Format stats from a CLIResult."""
+    return _format_stage_stats(
+        premium_requests=result.total_premium_requests,
+        elapsed_seconds=result.session_time_seconds,
+        models=result.models,
+    )
 
 
 def _format_stats_comment(result: dict) -> str:
@@ -399,17 +427,26 @@ async def implement_issue(
         pr_url = pr["html_url"]
         review_session_id: str | None = None
 
+        with contextlib.suppress(Exception):
+            impl_stats = _cli_stage_stats(result)
+            await comment_on_issue(
+                repo,
+                pr_number,
+                f"🏗️ **Implementation complete** — PR #{pr_number} created\n{impl_stats}",
+            )
+
         # Review/fix loop — up to MAX_REVIEW_ROUNDS rounds.
-        # Each stage posts a new comment (not edited) so the PR timeline
-        # preserves the full history for humans reading later.
+        # Each stage posts "in progress", then edits the same comment with
+        # stats when done. Separate comments per stage preserve history.
         review_rounds = 0
         for round_num in range(1, MAX_REVIEW_ROUNDS + 1):
+            round_label = f"round {round_num}/{MAX_REVIEW_ROUNDS}"
+            review_comment_id: int | None = None
             with contextlib.suppress(Exception):
-                round_label = f"round {round_num}/{MAX_REVIEW_ROUNDS}"
-                await comment_on_issue(
+                review_comment_id = await comment_on_issue(
                     repo,
                     pr_number,
-                    f"🔄 **Review {round_label}** in progress for PR #{pr_number}...",
+                    f"🔄 **Review {round_label}** in progress...",
                 )
 
             try:
@@ -424,6 +461,22 @@ async def implement_issue(
                 review_session_id = review_result.get("session_id")
                 original_event = review_result.get("original_event", "COMMENT")
                 review_rounds += 1
+
+                with contextlib.suppress(Exception):
+                    review_stats = _format_stage_stats(
+                        premium_requests=review_result.get("premium_requests", 0),
+                        elapsed_seconds=review_result.get("elapsed_seconds", 0),
+                        models=review_result.get("models"),
+                    )
+                    verdict = (
+                        "✅ approved" if original_event == "APPROVE" else "📋 changes requested"
+                    )
+                    body = f"🔍 **Review {round_label}** — {verdict}\n{review_stats}"
+                    if review_comment_id:
+                        await update_comment(repo, review_comment_id, body)
+                    else:
+                        await comment_on_issue(repo, pr_number, body)
+
                 logger.info(
                     "Review round %d/%d (%s) for %s#%d (PR #%d)",
                     round_num,
@@ -449,8 +502,9 @@ async def implement_issue(
                 break  # Approved or commented — no fix needed
 
             # Fix pass
+            fix_comment_id: int | None = None
             with contextlib.suppress(Exception):
-                await comment_on_issue(
+                fix_comment_id = await comment_on_issue(
                     repo,
                     pr_number,
                     f"🔧 **Fixing** review findings ({round_label})...",
@@ -501,6 +555,14 @@ async def implement_issue(
                 total_premium_requests += fix_result.total_premium_requests
                 if fix_result.session_id:
                     implement_session_id = fix_result.session_id
+
+                with contextlib.suppress(Exception):
+                    fix_stats = _cli_stage_stats(fix_result)
+                    body = f"🔧 **Fix {round_label}** complete\n{fix_stats}"
+                    if fix_comment_id:
+                        await update_comment(repo, fix_comment_id, body)
+                    else:
+                        await comment_on_issue(repo, pr_number, body)
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
                 lifecycle_result = _lifecycle_result(

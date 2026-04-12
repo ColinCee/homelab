@@ -9,6 +9,41 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 from copilot import CLIResult
+from implement import _cli_stage_stats, _format_stage_stats
+
+
+class TestFormatStageStats:
+    def test_formats_all_fields(self):
+        result = _format_stage_stats(
+            premium_requests=2,
+            elapsed_seconds=125,
+            models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
+        )
+        assert "💰 2 premium" in result
+        assert "⏱️ 2m 5s" in result
+        assert "🤖 gpt-5.4: 883.6k in, 17.7k out, 788.5k cached" in result
+
+    def test_strips_est_premium_from_models(self):
+        result = _format_stage_stats(
+            models={"gpt-5.4": "2.2m in, 28.9k out (Est. 1 Premium request)"},
+        )
+        assert "(Est." not in result
+        assert "2.2m in, 28.9k out" in result
+
+    def test_empty_when_no_data(self):
+        assert _format_stage_stats() == ""
+
+    def test_cli_stage_stats_from_result(self):
+        r = CLIResult(
+            output="",
+            total_premium_requests=1,
+            session_time_seconds=300,
+            models={"gpt-5.4": "1.2m in, 12k out"},
+        )
+        result = _cli_stage_stats(r)
+        assert "💰 1 premium" in result
+        assert "⏱️ 5m 0s" in result
+        assert "gpt-5.4" in result
 
 
 class TestImplementIssue:
