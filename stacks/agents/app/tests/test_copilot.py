@@ -1,12 +1,13 @@
 """Tests for Copilot CLI stats parsing."""
 
 import asyncio
+import signal
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from copilot import CLIResult, _parse_session_id, _parse_stats, _parse_time, run_copilot
+from copilot import CLIResult, TaskError, _parse_session_id, _parse_stats, _parse_time, run_copilot
 
 SAMPLE_OUTPUT = """\
 Hello world
@@ -158,6 +159,7 @@ class TestRunCopilot:
         share_args = [a for a in cmd if a.startswith("--share=")]
         assert len(share_args) == 1
         assert str(tmp_path / ".copilot-session.md") in share_args[0]
+        assert mock_exec.call_args.kwargs["start_new_session"] is True
 
     @patch("copilot.asyncio.create_subprocess_exec")
     def test_reads_transcript_when_present(self, mock_exec: AsyncMock, tmp_path: Path):
@@ -221,17 +223,20 @@ class TestRunCopilot:
 
         assert result.session_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
+    @patch("copilot.os.killpg")
     @patch("copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=asyncio.CancelledError)
     @patch("copilot.asyncio.create_subprocess_exec")
     def test_kills_process_when_cancelled(
         self,
         mock_exec: AsyncMock,
         _mock_wait_for: AsyncMock,
+        mock_killpg: Mock,
         tmp_path: Path,
     ):
         proc = AsyncMock()
         proc.returncode = 0
         proc.kill = Mock()
+        proc.pid = 12345
 
         stdout_stream = AsyncMock()
         stdout_stream.at_eof = lambda: True
@@ -249,5 +254,41 @@ class TestRunCopilot:
         with pytest.raises(asyncio.CancelledError):
             asyncio.run(run_copilot(tmp_path, "test prompt"))
 
-        proc.kill.assert_called_once()
+        mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
+        proc.kill.assert_not_called()
+        proc.wait.assert_awaited_once()
+
+    @patch("copilot.os.killpg")
+    @patch("copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError)
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_kills_process_group_when_timed_out(
+        self,
+        mock_exec: AsyncMock,
+        _mock_wait_for: AsyncMock,
+        mock_killpg: Mock,
+        tmp_path: Path,
+    ):
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.kill = Mock()
+        proc.pid = 67890
+
+        stdout_stream = AsyncMock()
+        stdout_stream.at_eof = lambda: True
+        stdout_stream.readline = AsyncMock(return_value=b"")
+
+        stderr_stream = AsyncMock()
+        stderr_stream.at_eof = lambda: True
+        stderr_stream.readline = AsyncMock(return_value=b"")
+
+        proc.stdout = stdout_stream
+        proc.stderr = stderr_stream
+        proc.wait = AsyncMock()
+        mock_exec.return_value = proc
+
+        with pytest.raises(TaskError, match="timed out"):
+            asyncio.run(run_copilot(tmp_path, "test prompt"))
+
+        mock_killpg.assert_called_once_with(67890, signal.SIGKILL)
+        proc.kill.assert_not_called()
         proc.wait.assert_awaited_once()

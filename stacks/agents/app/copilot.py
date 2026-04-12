@@ -5,6 +5,7 @@ import contextlib
 import logging
 import os
 import re
+import signal
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -139,14 +140,25 @@ async def run_copilot(
         session_id or "none",
     )
 
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=worktree_path,
-        stdin=asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-    )
+    if os.name == "posix":
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=worktree_path,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+            start_new_session=True,
+        )
+    else:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=worktree_path,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=env,
+        )
 
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
@@ -163,8 +175,12 @@ async def run_copilot(
                 logger.info("[copilot %s] %s", prefix, line)
 
     async def _stop_process() -> None:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+        if os.name == "posix" and proc.pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
         for task in (out_task, err_task):
             if task is not None:
                 task.cancel()
