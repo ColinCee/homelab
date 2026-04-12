@@ -7,13 +7,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from copilot import CLIResult, TaskError
 from review import (
+    REVIEW_OUTPUT_FILE,
     ReviewComment,
     ReviewOutput,
     _fetch_linked_issues_section,
     _format_review_threads,
     _parse_linked_issues,
     _parse_review_file,
+    review_pr,
 )
 
 
@@ -236,3 +239,153 @@ class TestFormatReviewThreads:
 
     def test_returns_empty_for_no_comments(self):
         assert _format_review_threads([]) == ""
+
+
+def _review_pr_data() -> dict:
+    return {
+        "title": "Improve review resilience",
+        "body": "Fixes #47",
+        "base": {"ref": "main"},
+        "head": {
+            "ref": "feature/review-retries",
+            "sha": "abc123",
+            "repo": {"full_name": "owner/repo"},
+        },
+        "user": {"login": "someone"},
+    }
+
+
+@patch("review.cleanup_worktree", new_callable=AsyncMock)
+@patch("review.dismiss_stale_reviews", new_callable=AsyncMock)
+@patch("review.post_review", new_callable=AsyncMock)
+@patch("review.bot_login", return_value="bot")
+@patch("review._parse_review_file")
+@patch("review.run_copilot", new_callable=AsyncMock)
+@patch("review.get_unresolved_threads", new_callable=AsyncMock, return_value="")
+@patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
+@patch("review.create_worktree", new_callable=AsyncMock)
+@patch("review.get_pr", new_callable=AsyncMock)
+def test_review_retries_once_on_parse_failure(
+    mock_get_pr,
+    mock_create_worktree,
+    _mock_linked_issues,
+    _mock_threads,
+    mock_run_copilot,
+    mock_parse_review_file,
+    _mock_bot_login,
+    mock_post_review,
+    _mock_dismiss_stale_reviews,
+    mock_cleanup_worktree,
+    tmp_path: Path,
+):
+    review_file = tmp_path / REVIEW_OUTPUT_FILE
+    review_file.write_text("broken")
+    mock_get_pr.return_value = _review_pr_data()
+    mock_create_worktree.return_value = tmp_path
+    mock_run_copilot.side_effect = [
+        CLIResult(output="first", total_premium_requests=1, session_id="retry-session"),
+        CLIResult(output="second", total_premium_requests=2, session_id="retry-session"),
+    ]
+    mock_parse_review_file.side_effect = [
+        RuntimeError("bad json"),
+        ReviewOutput(event="COMMENT", body="Looks good", comments=[]),
+    ]
+
+    result = asyncio.run(
+        review_pr(
+            repo="owner/repo",
+            pr_number=47,
+            model="gpt-5.4",
+            reasoning_effort="high",
+            session_id="previous-session",
+        )
+    )
+
+    assert mock_run_copilot.await_count == 2
+    assert mock_run_copilot.await_args_list[0].kwargs["session_id"] == "previous-session"
+    assert mock_run_copilot.await_args_list[1].kwargs["session_id"] == "retry-session"
+    mock_post_review.assert_awaited_once()
+    assert "💰 3 premium request(s)" in mock_post_review.await_args.kwargs["body"]
+    assert result["premium_requests"] == 3
+    mock_cleanup_worktree.assert_awaited_once_with(47)
+
+
+@patch("review.cleanup_worktree", new_callable=AsyncMock)
+@patch("review.comment_on_issue", new_callable=AsyncMock)
+@patch("review._parse_review_file")
+@patch("review.run_copilot", new_callable=AsyncMock)
+@patch("review.get_unresolved_threads", new_callable=AsyncMock, return_value="")
+@patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
+@patch("review.create_worktree", new_callable=AsyncMock)
+@patch("review.get_pr", new_callable=AsyncMock)
+def test_review_posts_error_after_parse_retry_fails(
+    mock_get_pr,
+    mock_create_worktree,
+    _mock_linked_issues,
+    _mock_threads,
+    mock_run_copilot,
+    mock_parse_review_file,
+    mock_comment_on_issue,
+    mock_cleanup_worktree,
+    tmp_path: Path,
+):
+    review_file = tmp_path / REVIEW_OUTPUT_FILE
+    review_file.write_text("broken")
+    mock_get_pr.return_value = _review_pr_data()
+    mock_create_worktree.return_value = tmp_path
+    mock_run_copilot.side_effect = [
+        CLIResult(output="first", total_premium_requests=1, session_id="retry-session"),
+        CLIResult(output="second", total_premium_requests=2, session_id="retry-session"),
+    ]
+    mock_parse_review_file.side_effect = [
+        RuntimeError("bad json"),
+        RuntimeError("still bad"),
+    ]
+
+    with pytest.raises(TaskError) as exc_info:
+        asyncio.run(
+            review_pr(
+                repo="owner/repo",
+                pr_number=47,
+                model="gpt-5.4",
+                reasoning_effort="high",
+            )
+        )
+
+    assert mock_run_copilot.await_count == 2
+    assert mock_run_copilot.await_args_list[1].kwargs["session_id"] == "retry-session"
+    mock_comment_on_issue.assert_awaited_once_with(
+        "owner/repo",
+        47,
+        "⚠️ **Review failed** — CLI produced invalid output.\n\n```\nstill bad\n```",
+    )
+    assert exc_info.value.premium_requests == 3
+    assert exc_info.value.commented is True
+    mock_cleanup_worktree.assert_awaited_once_with(47)
+
+
+@patch("review.cleanup_worktree", new_callable=AsyncMock)
+@patch("review.run_copilot", new_callable=AsyncMock)
+@patch("review.get_unresolved_threads", new_callable=AsyncMock, return_value="")
+@patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
+@patch("review.create_worktree", new_callable=AsyncMock)
+@patch("review.get_pr", new_callable=AsyncMock)
+def test_review_does_not_retry_cli_failures(
+    mock_get_pr,
+    mock_create_worktree,
+    _mock_linked_issues,
+    _mock_threads,
+    mock_run_copilot,
+    mock_cleanup_worktree,
+    tmp_path: Path,
+):
+    mock_get_pr.return_value = _review_pr_data()
+    mock_create_worktree.return_value = tmp_path
+    mock_run_copilot.side_effect = TaskError("cli crashed", premium_requests=4)
+
+    with pytest.raises(TaskError) as exc_info:
+        asyncio.run(review_pr(repo="owner/repo", pr_number=47))
+
+    mock_run_copilot.assert_awaited_once()
+    assert exc_info.value.premium_requests == 4
+    mock_cleanup_worktree.assert_awaited_once_with(47)

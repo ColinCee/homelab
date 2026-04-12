@@ -150,6 +150,9 @@ async def run_copilot(
 
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
+    out_task: asyncio.Task[None] | None = None
+    err_task: asyncio.Task[None] | None = None
+    stream_tasks: asyncio.Future[tuple[None, None]] | None = None
 
     async def _stream(stream: asyncio.StreamReader, lines: list[str], prefix: str) -> None:
         while not stream.at_eof():
@@ -159,21 +162,37 @@ async def run_copilot(
                 lines.append(line)
                 logger.info("[copilot %s] %s", prefix, line)
 
+    async def _stop_process() -> None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        for task in (out_task, err_task):
+            if task is not None:
+                task.cancel()
+        if stream_tasks is not None:
+            stream_tasks.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            if stream_tasks is not None:
+                await stream_tasks
+            else:
+                await asyncio.gather(*(task for task in (out_task, err_task) if task is not None))
+        with contextlib.suppress(ProcessLookupError):
+            await proc.wait()
+
     try:
         assert proc.stdout and proc.stderr
         out_task = asyncio.create_task(_stream(proc.stdout, stdout_lines, "agent"))
         err_task = asyncio.create_task(_stream(proc.stderr, stderr_lines, "meta"))
+        stream_tasks = asyncio.gather(out_task, err_task)
 
         # Wait for streams to EOF (happens when the process exits and pipes close).
         # The overall timeout covers both the process runtime and stream draining.
-        await asyncio.wait_for(asyncio.gather(out_task, err_task), timeout=TIMEOUT_SECONDS)
+        await asyncio.wait_for(stream_tasks, timeout=TIMEOUT_SECONDS)
         await proc.wait()
+    except asyncio.CancelledError:
+        await _stop_process()
+        raise
     except TimeoutError as err:
-        proc.kill()
-        out_task.cancel()
-        err_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await asyncio.gather(out_task, err_task)
+        await _stop_process()
         stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
         raise TaskError(
             f"Copilot CLI timed out after {TIMEOUT_SECONDS}s",

@@ -2,9 +2,11 @@
 
 import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
-from copilot import CLIResult, _parse_session_id, _parse_stats, _parse_time
+import pytest
+
+from copilot import CLIResult, _parse_session_id, _parse_stats, _parse_time, run_copilot
 
 SAMPLE_OUTPUT = """\
 Hello world
@@ -218,3 +220,34 @@ class TestRunCopilot:
         result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
 
         assert result.session_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+    @patch("copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=asyncio.CancelledError)
+    @patch("copilot.asyncio.create_subprocess_exec")
+    def test_kills_process_when_cancelled(
+        self,
+        mock_exec: AsyncMock,
+        _mock_wait_for: AsyncMock,
+        tmp_path: Path,
+    ):
+        proc = AsyncMock()
+        proc.returncode = 0
+        proc.kill = Mock()
+
+        stdout_stream = AsyncMock()
+        stdout_stream.at_eof = lambda: True
+        stdout_stream.readline = AsyncMock(return_value=b"")
+
+        stderr_stream = AsyncMock()
+        stderr_stream.at_eof = lambda: True
+        stderr_stream.readline = AsyncMock(return_value=b"")
+
+        proc.stdout = stdout_stream
+        proc.stderr = stderr_stream
+        proc.wait = AsyncMock()
+        mock_exec.return_value = proc
+
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(run_copilot(tmp_path, "test prompt"))
+
+        proc.kill.assert_called_once()
+        proc.wait.assert_awaited_once()

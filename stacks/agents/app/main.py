@@ -1,5 +1,6 @@
 """Agent service — FastAPI app for Beelink-hosted AI agents."""
 
+import asyncio
 import contextlib
 import logging
 import os
@@ -47,6 +48,7 @@ MODEL = os.environ.get("MODEL", "gpt-5.4")
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
 
 _review_status: dict[str, dict] = {}
+_review_tasks: dict[str, asyncio.Task[None]] = {}
 _implement_status: dict[str, dict] = {}
 
 REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
@@ -83,6 +85,10 @@ def _review_progress_comment(pr_number: int) -> str:
 
 def _review_progress_failure_comment(reason: str) -> str:
     return f"⚠️ Review failed — {reason}"
+
+
+def _review_progress_cancelled_comment() -> str:
+    return "⏹️ Review cancelled — superseded by newer /review request"
 
 
 def _implement_progress_comment(issue_number: int) -> str:
@@ -183,33 +189,36 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/review", status_code=202, response_model=None)
-async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks):
+async def handle_review(req: ReviewRequest):
     """Accept a review request and process it in the background."""
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
 
+    existing_task = _review_tasks.get(key)
     existing = _review_status.get(key)
-    if existing and existing["status"] == "in_progress":
-        return JSONResponse(
-            status_code=409,
-            content={"status": "already_in_progress", "pr_number": req.pr_number},
-        )
+    if existing_task and not existing_task.done():
+        existing_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await existing_task
 
     prior_session_id = (
-        existing.get("session_id") if existing and existing["status"] != "in_progress" else None
+        existing.get("session_id")
+        if existing and existing.get("status") not in {"in_progress", "cancelled"}
+        else None
     )
 
     _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
-
-    background_tasks.add_task(
-        _run_review,
-        repo=req.repo,
-        pr_number=req.pr_number,
-        model=model,
-        reasoning_effort=effort,
-        session_id=prior_session_id,
+    task = asyncio.create_task(
+        _run_review(
+            repo=req.repo,
+            pr_number=req.pr_number,
+            model=model,
+            reasoning_effort=effort,
+            session_id=prior_session_id,
+        )
     )
+    _review_tasks[key] = task
 
     return {"status": "accepted", "pr_number": req.pr_number}
 
@@ -287,10 +296,11 @@ async def _run_review(
     key = _review_key(repo, pr_number)
     status = "failed"
     premium_requests = 0
-    progress_comment_id = await _start_review_progress_comment(repo, pr_number)
     start = time.monotonic()
+    progress_comment_id: int | None = None
     TASK_IN_PROGRESS.labels(task_type="review").inc()
     try:
+        progress_comment_id = await _start_review_progress_comment(repo, pr_number)
         result = await review_pr(
             repo=repo,
             pr_number=pr_number,
@@ -309,6 +319,14 @@ async def _run_review(
         await _update_progress_comment(
             repo, progress_comment_id, "✅ Review posted — see review above"
         )
+    except asyncio.CancelledError:
+        logger.info("Review cancelled for %s#%d", repo, pr_number)
+        status = "cancelled"
+        _review_status[key] = {"status": "cancelled", "repo": repo, "pr_number": pr_number}
+        await _update_progress_comment(
+            repo, progress_comment_id, _review_progress_cancelled_comment()
+        )
+        raise
     except TaskError as exc:
         logger.exception("Review failed for %s#%d", repo, pr_number)
         _review_status[key] = {"status": "failed", "repo": repo, "pr_number": pr_number}
@@ -339,6 +357,9 @@ async def _run_review(
             premium_requests=premium_requests,
         )
         TASK_IN_PROGRESS.labels(task_type="review").dec()
+        current_task = asyncio.current_task()
+        if current_task is not None and _review_tasks.get(key) is current_task:
+            _review_tasks.pop(key, None)
 
 
 async def _run_implement(
