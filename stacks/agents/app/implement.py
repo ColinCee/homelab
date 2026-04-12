@@ -24,14 +24,13 @@ from review import review_pr
 
 logger = logging.getLogger(__name__)
 
-MAX_FIX_ITERATIONS = 3
+MAX_REVIEW_ROUNDS = 2
 MERGE_READY_TIMEOUT_SECONDS = 15 * 60
 MERGE_POLL_INTERVAL_SECONDS = 10
 
 STATUS_EMOJI = {
     "complete": "✅",
     "partial": "⚠️",
-    "max_iterations": "⚠️",
     "failed": "❌",
 }
 
@@ -43,7 +42,7 @@ def _format_stats_comment(result: dict) -> str:
     lines = [f"{emoji} **Implementation {status}**"]
 
     rounds = result.get("review_rounds", 0)
-    lines.append(f"- Review rounds: {rounds}/{MAX_FIX_ITERATIONS + 1}")
+    lines.append(f"- Review: {rounds} round{'s' if rounds != 1 else ''} (max {MAX_REVIEW_ROUNDS})")
 
     premium = result.get("premium_requests", 0)
     if premium:
@@ -88,7 +87,7 @@ Fix all reported problems. Use the skill `bot-implement` for guidance.
 
 ## After Fixing
 
-Each fix round costs time and tokens — aim for zero new issues.
+{round_context}
 
 1. **Self-review your fix for second-order effects.** If you changed control flow, \
 error handling, or added new API calls, audit the surrounding code for issues \
@@ -391,114 +390,82 @@ async def implement_issue(
 
         pr_number = pr["number"]
         pr_url = pr["html_url"]
+        review_session_id: str | None = None
 
-        # Review+fix loop — review first, then fix if needed.
-        # We allow MAX_FIX_ITERATIONS fix attempts. Each fix is followed by a
-        # re-review, so we run up to MAX_FIX_ITERATIONS + 1 review rounds
-        # (initial + one after each fix).
-        previous_review_threads = ""
-        for review_round in range(MAX_FIX_ITERATIONS + 1):
-            logger.info(
-                "Review round %d/%d for %s#%d (PR #%d)",
-                review_round + 1,
-                MAX_FIX_ITERATIONS + 1,
-                repo,
-                issue_number,
-                pr_number,
-            )
-
+        # Review/fix loop — up to MAX_REVIEW_ROUNDS rounds.
+        review_rounds = 0
+        for round_num in range(1, MAX_REVIEW_ROUNDS + 1):
             try:
                 review_result = await review_pr(
                     repo=repo,
                     pr_number=pr_number,
                     model=model,
                     reasoning_effort=reasoning_effort,
-                    previous_comments=previous_review_threads,
+                    session_id=review_session_id,
+                )
+                total_premium_requests += review_result.get("premium_requests", 0)
+                review_session_id = review_result.get("session_id")
+                original_event = review_result.get("original_event", "COMMENT")
+                review_rounds += 1
+                logger.info(
+                    "Review round %d/%d (%s) for %s#%d (PR #%d)",
+                    round_num,
+                    MAX_REVIEW_ROUNDS,
+                    original_event,
+                    repo,
+                    issue_number,
+                    pr_number,
                 )
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
-                logger.warning("Review failed on round %d: %s", review_round + 1, exc)
-                lifecycle_result = _lifecycle_result(
-                    status="partial",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=sha,
-                    review_rounds=review_round + 1,
-                    start=start,
-                    premium_requests=total_premium_requests,
-                    session_id=implement_session_id,
-                    error=f"Review failed on round {review_round + 1}: {exc}",
+                review_rounds += 1
+                logger.warning(
+                    "Review round %d failed for %s#%d: %s — proceeding to merge",
+                    round_num,
+                    repo,
+                    issue_number,
+                    exc,
                 )
-                return lifecycle_result
-
-            total_premium_requests += review_result.get("premium_requests", 0)
-            original_event = review_result.get("original_event", "COMMENT")
+                break  # Review errored — skip fix, go to merge
 
             if original_event != "REQUEST_CHANGES":
-                logger.info(
-                    "Review passed (%s) on round %d for %s#%d",
-                    original_event,
-                    review_round + 1,
+                break  # Approved or commented — no fix needed
+
+            # Fix pass
+            review_threads = review_result.get("review_threads", "")
+            if not review_threads or not implement_session_id:
+                reason = "no session ID" if not implement_session_id else "no inline findings"
+                logger.error(
+                    "Cannot fix review findings (%s) for %s#%d — needs manual attention",
+                    reason,
                     repo,
                     issue_number,
                 )
-                lifecycle_result = await _merge_when_eligible(
-                    repo=repo,
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    branch_name=branch_name,
-                    commit_sha=sha,
-                    review_rounds=review_round + 1,
-                    start=start,
-                    premium_requests=total_premium_requests,
-                    session_id=implement_session_id,
-                )
-                return lifecycle_result
-
-            # REQUEST_CHANGES — check if we have fix attempts remaining
-            if review_round == MAX_FIX_ITERATIONS:
-                # Final review after last fix still found issues
-                break
-
-            if not implement_session_id:
-                logger.warning(
-                    "Cannot resume session — no session ID captured. Stopping after review."
-                )
                 lifecycle_result = _lifecycle_result(
                     status="partial",
                     pr_number=pr_number,
                     pr_url=pr_url,
                     commit_sha=sha,
-                    review_rounds=review_round + 1,
+                    review_rounds=review_rounds,
                     start=start,
                     premium_requests=total_premium_requests,
                     session_id=implement_session_id,
-                    error="Review requested changes but session resumption unavailable",
+                    error=f"Review requested changes but fix cannot run ({reason})"
+                    " — needs manual attention",
                 )
                 return lifecycle_result
 
-            review_threads = review_result.get("review_threads", "")
-            if not review_threads:
-                logger.warning("REQUEST_CHANGES but no inline findings to fix")
-                lifecycle_result = _lifecycle_result(
-                    status="partial",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=sha,
-                    review_rounds=review_round + 1,
-                    start=start,
-                    premium_requests=total_premium_requests,
-                    session_id=implement_session_id,
-                    error="Review requested changes but no inline comments "
-                    "were posted — needs manual attention",
-                )
-                return lifecycle_result
-
+            is_final_round = round_num == MAX_REVIEW_ROUNDS
+            round_context = (
+                "This is your final fix round — there is no re-review after this. Get it right."
+                if is_final_round
+                else "After this fix, one more review round remains. Focus on correctness."
+            )
             fix_prompt = FIX_PROMPT_TEMPLATE.format(
                 issue_number=issue_number,
                 threads=review_threads,
+                round_context=round_context,
             )
-
             try:
                 fix_result = await run_copilot(
                     worktree_path,
@@ -517,82 +484,68 @@ async def implement_issue(
                     pr_number=pr_number,
                     pr_url=pr_url,
                     commit_sha=sha,
-                    review_rounds=review_round + 1,
+                    review_rounds=review_rounds,
                     start=start,
                     premium_requests=total_premium_requests,
                     session_id=implement_session_id,
-                    error=f"Fix failed on round {review_round + 1}: {exc}",
+                    error=f"Fix round {round_num} failed: {exc}",
                 )
                 raise TaskError(
-                    f"Fix failed on round {review_round + 1}: {exc}",
+                    f"Fix round {round_num} failed: {exc}",
                     premium_requests=total_premium_requests,
                 ) from exc
 
             try:
                 sha = await commit_and_push(
                     worktree_path,
-                    message=f"fix: address review feedback on #{issue_number} "
-                    f"(round {review_round + 1})",
+                    message=f"fix: address review feedback (round {round_num}) on #{issue_number}",
                     token=token,
                     repo=repo,
                     branch=branch_name,
                 )
-                previous_review_threads = review_threads
             except RuntimeError as exc:
                 if "No changes to commit" in str(exc):
-                    logger.warning(
-                        "No changes after fix round %d — needs manual attention",
-                        review_round + 1,
+                    logger.error(
+                        "Fix round %d produced no changes for %s#%d"
+                        " — review found issues but nothing was fixed",
+                        round_num,
+                        repo,
+                        issue_number,
                     )
                     lifecycle_result = _lifecycle_result(
                         status="partial",
                         pr_number=pr_number,
                         pr_url=pr_url,
                         commit_sha=sha,
-                        review_rounds=review_round + 1,
+                        review_rounds=review_rounds,
                         start=start,
                         premium_requests=total_premium_requests,
                         session_id=implement_session_id,
-                        error="Fix produced no changes — remaining findings need manual attention",
+                        error=f"Fix round {round_num} produced no changes"
+                        " — review issues unresolved, needs manual attention",
                     )
                     return lifecycle_result
-                lifecycle_result = _lifecycle_result(
-                    status="failed",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=sha,
-                    review_rounds=review_round + 1,
-                    start=start,
-                    premium_requests=total_premium_requests,
-                    session_id=implement_session_id,
-                    error=f"Commit/push failed on round {review_round + 1}: {exc}",
-                )
-                raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
-            except Exception as exc:
-                lifecycle_result = _lifecycle_result(
-                    status="failed",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    commit_sha=sha,
-                    review_rounds=review_round + 1,
-                    start=start,
-                    premium_requests=total_premium_requests,
-                    session_id=implement_session_id,
-                    error=f"Commit/push failed on round {review_round + 1}: {exc}",
-                )
-                raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
+                else:
+                    lifecycle_result = _lifecycle_result(
+                        status="failed",
+                        pr_number=pr_number,
+                        pr_url=pr_url,
+                        commit_sha=sha,
+                        review_rounds=review_rounds,
+                        start=start,
+                        premium_requests=total_premium_requests,
+                        session_id=implement_session_id,
+                        error=f"Commit/push failed: {exc}",
+                    )
+                    raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
-        # Exhausted all fix iterations — last review still requested changes
-        logger.warning(
-            "Hit max fix iterations (%d) for %s#%d", MAX_FIX_ITERATIONS, repo, issue_number
-        )
-
-        lifecycle_result = _lifecycle_result(
-            status="max_iterations",
+        lifecycle_result = await _merge_when_eligible(
+            repo=repo,
             pr_number=pr_number,
             pr_url=pr_url,
+            branch_name=branch_name,
             commit_sha=sha,
-            review_rounds=MAX_FIX_ITERATIONS + 1,
+            review_rounds=review_rounds,
             start=start,
             premium_requests=total_premium_requests,
             session_id=implement_session_id,

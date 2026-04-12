@@ -237,6 +237,7 @@ async def review_pr(
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
     previous_comments: str = "",
+    session_id: str | None = None,
 ) -> dict:
     """Full review pipeline: worktree → Copilot CLI → read JSON → post review.
 
@@ -245,6 +246,9 @@ async def review_pr(
             fallback for PREVIOUS_REVIEW_SECTION when get_unresolved_threads()
             returns empty (e.g. self-PR where COMMENT reviews don't create
             resolvable threads).
+        session_id: Session ID from a prior review. When provided, the CLI
+            resumes the conversation so the reviewer has full memory of what
+            it said in previous rounds.
     """
     logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
     start = time.monotonic()
@@ -285,6 +289,7 @@ async def review_pr(
             prompt,
             model=model,
             effort=reasoning_effort,
+            session_id=session_id,
         )
 
         # Everything after run_copilot can fail — wrap in a single handler
@@ -382,6 +387,7 @@ async def review_pr(
             "models": result.models,
             "original_event": review_data.event,
             "review_threads": _format_review_threads(review_data.comments),
+            "session_id": result.session_id,
         }
 
     finally:

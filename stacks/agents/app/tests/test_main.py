@@ -201,24 +201,6 @@ def test_implement_metrics_record_partial_status(mock_implement):
 
 
 @patch("main.implement_issue", new_callable=AsyncMock)
-def test_implement_metrics_max_iterations_records_partial(mock_implement):
-    mock_implement.return_value = {"status": "max_iterations", "premium_requests": 6}
-
-    asyncio.run(
-        _run_implement(
-            repo="user/repo",
-            issue_number=303,
-            model="gpt-5.4",
-            reasoning_effort="high",
-        )
-    )
-
-    labels = {"task_type": "implement", "status": "partial"}
-    assert _metric_value("agent_task_total", labels) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 6.0
-
-
-@patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_status_preserves_merge_details(mock_implement):
     mock_implement.return_value = {
         "status": "complete",
