@@ -19,6 +19,7 @@ from github import (
     get_pr,
     get_token,
     merge_pull_request,
+    update_comment,
 )
 from review import review_pr
 
@@ -394,10 +395,19 @@ async def implement_issue(
         pr_number = pr["number"]
         pr_url = pr["html_url"]
         review_session_id: str | None = None
+        review_progress_id: int | None = None
 
         # Review/fix loop — up to MAX_REVIEW_ROUNDS rounds.
         review_rounds = 0
         for round_num in range(1, MAX_REVIEW_ROUNDS + 1):
+            with contextlib.suppress(Exception):
+                round_label = f"round {round_num}/{MAX_REVIEW_ROUNDS}"
+                msg = f"🔄 **Review {round_label}** in progress for PR #{pr_number}..."
+                if review_progress_id:
+                    await update_comment(repo, review_progress_id, msg)
+                else:
+                    review_progress_id = await comment_on_issue(repo, pr_number, msg)
+
             try:
                 review_result = await review_pr(
                     repo=repo,
@@ -435,6 +445,14 @@ async def implement_issue(
                 break  # Approved or commented — no fix needed
 
             # Fix pass
+            with contextlib.suppress(Exception):
+                if review_progress_id:
+                    await update_comment(
+                        repo,
+                        review_progress_id,
+                        f"🔧 **Fixing** review findings ({round_label})...",
+                    )
+
             review_threads = review_result.get("review_threads", "")
             if not review_threads or not implement_session_id:
                 reason = "no session ID" if not implement_session_id else "no inline findings"
@@ -541,6 +559,15 @@ async def implement_issue(
                         error=f"Commit/push failed: {exc}",
                     )
                     raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
+
+        with contextlib.suppress(Exception):
+            if review_progress_id:
+                rounds_label = f"{review_rounds} round{'s' if review_rounds != 1 else ''}"
+                await update_comment(
+                    repo,
+                    review_progress_id,
+                    f"⏳ **Review complete** ({rounds_label}) — waiting for merge...",
+                )
 
         lifecycle_result = await _merge_when_eligible(
             repo=repo,
