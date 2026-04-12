@@ -19,7 +19,6 @@ from github import (
     get_pr,
     get_token,
     merge_pull_request,
-    update_comment,
 )
 from review import review_pr
 
@@ -399,18 +398,19 @@ async def implement_issue(
         pr_number = pr["number"]
         pr_url = pr["html_url"]
         review_session_id: str | None = None
-        review_progress_id: int | None = None
 
         # Review/fix loop — up to MAX_REVIEW_ROUNDS rounds.
+        # Each stage posts a new comment (not edited) so the PR timeline
+        # preserves the full history for humans reading later.
         review_rounds = 0
         for round_num in range(1, MAX_REVIEW_ROUNDS + 1):
             with contextlib.suppress(Exception):
                 round_label = f"round {round_num}/{MAX_REVIEW_ROUNDS}"
-                msg = f"🔄 **Review {round_label}** in progress for PR #{pr_number}..."
-                if review_progress_id:
-                    await update_comment(repo, review_progress_id, msg)
-                else:
-                    review_progress_id = await comment_on_issue(repo, pr_number, msg)
+                await comment_on_issue(
+                    repo,
+                    pr_number,
+                    f"🔄 **Review {round_label}** in progress for PR #{pr_number}...",
+                )
 
             try:
                 review_result = await review_pr(
@@ -450,12 +450,11 @@ async def implement_issue(
 
             # Fix pass
             with contextlib.suppress(Exception):
-                if review_progress_id:
-                    await update_comment(
-                        repo,
-                        review_progress_id,
-                        f"🔧 **Fixing** review findings ({round_label})...",
-                    )
+                await comment_on_issue(
+                    repo,
+                    pr_number,
+                    f"🔧 **Fixing** review findings ({round_label})...",
+                )
 
             review_threads = review_result.get("review_threads", "")
             if not review_threads or not implement_session_id:
@@ -565,13 +564,12 @@ async def implement_issue(
                     raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
         with contextlib.suppress(Exception):
-            if review_progress_id:
-                rounds_label = f"{review_rounds} round{'s' if review_rounds != 1 else ''}"
-                await update_comment(
-                    repo,
-                    review_progress_id,
-                    f"⏳ **Review complete** ({rounds_label}) — waiting for merge...",
-                )
+            rounds_label = f"{review_rounds} round{'s' if review_rounds != 1 else ''}"
+            await comment_on_issue(
+                repo,
+                pr_number,
+                f"⏳ **Review complete** ({rounds_label}) — waiting for merge...",
+            )
 
         lifecycle_result = await _merge_when_eligible(
             repo=repo,

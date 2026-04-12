@@ -90,6 +90,18 @@ def test_parse_models_with_millions():
     assert "2.2m in" in stats["models"]["gpt-5.4"]
 
 
+SAMPLE_OUTPUT_NEW_FORMAT = """\
+Changes   +488 -118
+Requests  1 Premium (15m 44s)
+Tokens    ↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)
+"""
+
+
+def test_parse_new_cli_format():
+    stats = _parse_stats(SAMPLE_OUTPUT_NEW_FORMAT)
+    assert stats["premium_requests"] == 1
+
+
 def test_stats_line_strips_est_premium():
     r = CLIResult(
         output="",

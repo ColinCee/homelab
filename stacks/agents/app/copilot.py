@@ -72,7 +72,7 @@ def _parse_stats(output: str) -> dict:
     for line in output.splitlines():
         line = line.strip()
 
-        if m := re.match(r"Total usage est:\s+(\d+)\s+Premium", line):
+        if m := re.match(r"(?:Total usage est:|Requests)\s+(\d+)\s+Premium", line):
             stats["premium_requests"] = int(m.group(1))
         elif m := re.match(r"API time spent:\s+(.+)", line):
             stats["api_time"] = _parse_time(m.group(1))
