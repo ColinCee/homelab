@@ -252,16 +252,17 @@ class TestImplementIssue:
         assert result["status"] == "complete"
         assert result["merged"] is True
 
-    def test_no_session_skips_fix_and_merges(self):
-        """Without session ID, fix is skipped but merge still proceeds."""
+    def test_no_session_bails_out_with_partial(self):
+        """Without session ID, fix can't run — returns partial for manual attention."""
         result = self._run_with_mocks(
             self._standard_mocks(review_event="REQUEST_CHANGES", session_id=None)
         )
-        assert result["status"] == "complete"
-        assert result["merged"] is True
+        assert result["status"] == "partial"
+        assert result["merged"] is False
+        assert "no session ID" in result["error"]
 
-    def test_no_threads_skips_fix_and_merges(self):
-        """REQUEST_CHANGES with no inline findings skips fix, still merges."""
+    def test_no_threads_bails_out_with_partial(self):
+        """REQUEST_CHANGES with no inline findings — returns partial for manual attention."""
         mocks = self._standard_mocks(review_event="REQUEST_CHANGES", review_threads="")
         # Override review to return empty threads
         mocks[6] = patch(
@@ -271,11 +272,29 @@ class TestImplementIssue:
                 "original_event": "REQUEST_CHANGES",
                 "premium_requests": 1,
                 "review_threads": "",
+                "session_id": "review-sess-1",
             },
         )
         result = self._run_with_mocks(mocks)
-        assert result["status"] == "complete"
-        assert result["merged"] is True
+        assert result["status"] == "partial"
+        assert result["merged"] is False
+        assert "no inline findings" in result["error"]
+
+    def test_fix_no_changes_bails_out_with_partial(self):
+        """Fix produces no file changes — returns partial for manual attention."""
+        mocks = self._standard_mocks(review_event="REQUEST_CHANGES")
+        mocks[4] = patch(
+            "implement.commit_and_push",
+            new_callable=AsyncMock,
+            side_effect=[
+                "abc123",  # initial commit succeeds
+                RuntimeError("No changes to commit"),  # fix commit fails
+            ],
+        )
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "partial"
+        assert result["merged"] is False
+        assert "no changes" in result["error"]
 
     def test_waits_for_pending_ci_before_merging(self):
         """Pending CI is polled until checks pass and the PR can be merged."""

@@ -435,8 +435,25 @@ async def implement_issue(
             review_threads = review_result.get("review_threads", "")
             if not review_threads or not implement_session_id:
                 reason = "no session ID" if not implement_session_id else "no inline findings"
-                logger.warning("Skipping fix (%s) — proceeding to merge", reason)
-                break
+                logger.error(
+                    "Cannot fix review findings (%s) for %s#%d — needs manual attention",
+                    reason,
+                    repo,
+                    issue_number,
+                )
+                lifecycle_result = _lifecycle_result(
+                    status="partial",
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    commit_sha=sha,
+                    review_rounds=review_rounds,
+                    start=start,
+                    premium_requests=total_premium_requests,
+                    session_id=implement_session_id,
+                    error=f"Review requested changes but fix cannot run ({reason})"
+                    " — needs manual attention",
+                )
+                return lifecycle_result
 
             is_final_round = round_num == MAX_REVIEW_ROUNDS
             round_context = (
@@ -488,10 +505,26 @@ async def implement_issue(
                 )
             except RuntimeError as exc:
                 if "No changes to commit" in str(exc):
-                    logger.warning(
-                        "Fix round %d produced no changes — proceeding to merge", round_num
+                    logger.error(
+                        "Fix round %d produced no changes for %s#%d"
+                        " — review found issues but nothing was fixed",
+                        round_num,
+                        repo,
+                        issue_number,
                     )
-                    break
+                    lifecycle_result = _lifecycle_result(
+                        status="partial",
+                        pr_number=pr_number,
+                        pr_url=pr_url,
+                        commit_sha=sha,
+                        review_rounds=review_rounds,
+                        start=start,
+                        premium_requests=total_premium_requests,
+                        session_id=implement_session_id,
+                        error=f"Fix round {round_num} produced no changes"
+                        " — review issues unresolved, needs manual attention",
+                    )
+                    return lifecycle_result
                 else:
                     lifecycle_result = _lifecycle_result(
                         status="failed",
