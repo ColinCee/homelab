@@ -19,6 +19,42 @@ logger = logging.getLogger(__name__)
 
 MAX_FIX_ITERATIONS = 3
 
+STATUS_EMOJI = {
+    "complete": "✅",
+    "partial": "⚠️",
+    "max_iterations": "⚠️",
+}
+
+
+def _format_stats_comment(result: dict) -> str:
+    """Format a lifecycle stats summary for posting on the PR."""
+    status = result.get("status", "unknown")
+    emoji = STATUS_EMOJI.get(status, "❓")
+    lines = [f"{emoji} **Implementation {status}**"]
+
+    rounds = result.get("review_rounds", 0)
+    lines.append(f"- Review rounds: {rounds}/{MAX_FIX_ITERATIONS + 1}")
+
+    premium = result.get("premium_requests", 0)
+    if premium:
+        lines.append(f"- Premium requests: {premium}")
+
+    elapsed = result.get("elapsed_seconds", 0)
+    if elapsed:
+        minutes, secs = divmod(int(elapsed), 60)
+        lines.append(f"- Elapsed: {minutes}m {secs}s")
+
+    session_id = result.get("session_id")
+    if session_id:
+        lines.append(f"- Session: `{session_id}`")
+
+    error = result.get("error")
+    if error:
+        lines.append(f"\n{error}")
+
+    return "\n".join(lines)
+
+
 IMPLEMENT_PROMPT_TEMPLATE = """\
 Implement the following GitHub issue in {repo}.
 
@@ -77,6 +113,7 @@ async def implement_issue(
 
     total_premium_requests = 0
     pr_number = None
+    lifecycle_result: dict | None = None
 
     try:
         worktree_path = await create_branch_worktree(branch_name, repo_url)
@@ -148,7 +185,7 @@ async def implement_issue(
             except TaskError as exc:
                 total_premium_requests += exc.premium_requests
                 logger.warning("Review failed on round %d: %s", review_round + 1, exc)
-                return {
+                lifecycle_result = {
                     "status": "partial",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
@@ -156,8 +193,10 @@ async def implement_issue(
                     "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
                     "error": f"Review failed on round {review_round + 1}: {exc}",
                 }
+                return lifecycle_result
 
             total_premium_requests += review_result.get("premium_requests", 0)
             original_event = review_result.get("original_event", "COMMENT")
@@ -170,7 +209,7 @@ async def implement_issue(
                     repo,
                     issue_number,
                 )
-                return {
+                lifecycle_result = {
                     "status": "complete",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
@@ -178,7 +217,9 @@ async def implement_issue(
                     "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
                 }
+                return lifecycle_result
 
             # REQUEST_CHANGES — check if we have fix attempts remaining
             if review_round == MAX_FIX_ITERATIONS:
@@ -189,7 +230,7 @@ async def implement_issue(
                 logger.warning(
                     "Cannot resume session — no session ID captured. Stopping after review."
                 )
-                return {
+                lifecycle_result = {
                     "status": "partial",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
@@ -197,13 +238,15 @@ async def implement_issue(
                     "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
                     "error": "Review requested changes but session resumption unavailable",
                 }
+                return lifecycle_result
 
             review_threads = review_result.get("review_threads", "")
             if not review_threads:
                 logger.warning("REQUEST_CHANGES but no inline findings to fix")
-                return {
+                lifecycle_result = {
                     "status": "partial",
                     "pr_number": pr_number,
                     "pr_url": pr_url,
@@ -211,9 +254,11 @@ async def implement_issue(
                     "review_rounds": review_round + 1,
                     "elapsed_seconds": time.monotonic() - start,
                     "premium_requests": total_premium_requests,
+                    "session_id": implement_session_id,
                     "error": "Review requested changes but no inline comments "
                     "were posted — needs manual attention",
                 }
+                return lifecycle_result
 
             fix_prompt = FIX_PROMPT_TEMPLATE.format(
                 issue_number=issue_number,
@@ -254,7 +299,7 @@ async def implement_issue(
                         "No changes after fix round %d — needs manual attention",
                         review_round + 1,
                     )
-                    return {
+                    lifecycle_result = {
                         "status": "partial",
                         "pr_number": pr_number,
                         "pr_url": pr_url,
@@ -262,9 +307,11 @@ async def implement_issue(
                         "review_rounds": review_round + 1,
                         "elapsed_seconds": time.monotonic() - start,
                         "premium_requests": total_premium_requests,
+                        "session_id": implement_session_id,
                         "error": "Fix produced no changes — remaining findings "
                         "need manual attention",
                     }
+                    return lifecycle_result
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
             except Exception as exc:
                 raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
@@ -273,15 +320,8 @@ async def implement_issue(
         logger.warning(
             "Hit max fix iterations (%d) for %s#%d", MAX_FIX_ITERATIONS, repo, issue_number
         )
-        with contextlib.suppress(Exception):
-            await comment_on_issue(
-                repo,
-                pr_number,
-                f"⚠️ Hit maximum fix iterations ({MAX_FIX_ITERATIONS}). "
-                "The remaining issues need manual attention.",
-            )
 
-        return {
+        lifecycle_result = {
             "status": "max_iterations",
             "pr_number": pr_number,
             "pr_url": pr_url,
@@ -289,7 +329,12 @@ async def implement_issue(
             "review_rounds": MAX_FIX_ITERATIONS + 1,
             "elapsed_seconds": time.monotonic() - start,
             "premium_requests": total_premium_requests,
+            "session_id": implement_session_id,
         }
+        return lifecycle_result
 
     finally:
+        if lifecycle_result and pr_number:
+            with contextlib.suppress(Exception):
+                await comment_on_issue(repo, pr_number, _format_stats_comment(lifecycle_result))
         await cleanup_branch_worktree(branch_name)
