@@ -187,7 +187,7 @@ async def get_unresolved_threads(repo: str, pr_number: int) -> str:
 
         lines = []
         for t in threads:
-            if t["isResolved"] or t["isOutdated"]:
+            if t["isResolved"]:
                 continue
             comments = t.get("comments", {}).get("nodes", [])
             if not comments:

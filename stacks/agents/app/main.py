@@ -113,6 +113,10 @@ async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks):
             content={"status": "already_in_progress", "pr_number": req.pr_number},
         )
 
+    prior_session_id = (
+        existing.get("session_id") if existing and existing["status"] != "in_progress" else None
+    )
+
     _review_status[key] = {"status": "in_progress", "repo": req.repo, "pr_number": req.pr_number}
 
     background_tasks.add_task(
@@ -121,6 +125,7 @@ async def handle_review(req: ReviewRequest, background_tasks: BackgroundTasks):
         pr_number=req.pr_number,
         model=model,
         reasoning_effort=effort,
+        session_id=prior_session_id,
     )
 
     return {"status": "accepted", "pr_number": req.pr_number}
@@ -193,7 +198,9 @@ async def get_implement_status(issue_number: int, repo: str = "") -> dict:
 # --- Background tasks ---
 
 
-async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort: str) -> None:
+async def _run_review(
+    *, repo: str, pr_number: int, model: str, reasoning_effort: str, session_id: str | None = None
+) -> None:
     key = _review_key(repo, pr_number)
     status = "failed"
     premium_requests = 0
@@ -205,6 +212,7 @@ async def _run_review(*, repo: str, pr_number: int, model: str, reasoning_effort
             pr_number=pr_number,
             model=model,
             reasoning_effort=reasoning_effort,
+            session_id=session_id,
         )
         status = _task_status_label(result.get("status"))
         premium_requests = _premium_requests(result)
