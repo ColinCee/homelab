@@ -2,6 +2,11 @@
 
 How to write and organize instructions and skills for this repo. Covers what goes where, how each mechanism works, and how to write effective content.
 
+Repo-wide documentation ownership lives in
+`docs/decisions/008-documentation-ownership.md`. Use that ADR as the single
+policy for code, README, public docs, private docs, and `.github/` docs. This
+guide only explains how the `.github/` layer fits into that system.
+
 ## Mechanisms
 
 | Mechanism | Location | When loaded | Use for |
@@ -14,8 +19,8 @@ How to write and organize instructions and skills for this repo. Covers what goe
 
 Always injected into every Copilot conversation — local, CLI, cloud agent. Keep this small and universal. Every token here competes with the user's actual task.
 
-**Put here:** repo structure, design philosophy, key commands, architecture overview.
-**Don't put here:** language-specific rules, workflow procedures, anything only relevant to certain files.
+**Put here:** repo structure, design philosophy, key commands, top-level workflow contracts.
+**Don't put here:** language-specific rules, exact schemas/constants/payloads, or procedures that belong in runbooks/skills.
 
 ### Scoped instructions (`instructions/*.md`)
 
@@ -28,14 +33,14 @@ applyTo: "stacks/agents/app/**/*.py"
 ```
 
 **Put here:** language conventions, module design rules, testing patterns, framework-specific guidance.
-**Don't put here:** universal repo info (that's global instructions), automated workflows (that's skills).
+**Don't put here:** universal repo info (that's global instructions), automated workflows (that's skills), or source-owned exact values that should stay in code.
 
 ### Skills (`skills/<name>/SKILL.md`)
 
 Loaded on-demand when the model decides the skill is relevant based on the `name` and `description` fields. Skills can include scripts, references, and templates alongside the SKILL.md.
 
-**Put here:** step-by-step workflows, automation procedures, output format templates, gotchas.
-**Don't put here:** coding conventions (use instructions), repo overview (use global instructions).
+**Put here:** step-by-step workflows, automation procedures, output format templates, gotchas agents will not infer from source alone.
+**Don't put here:** coding conventions (use instructions), repo overview (use global instructions), or duplicate copies of source-owned contracts.
 
 ## Writing scoped instructions
 
@@ -146,6 +151,18 @@ Is it a workflow with steps, output formats, or scripts?
 Is it only for the automated pipeline, not local use?
   → Yes → skill with user-invocable: false
 ```
+
+## When `.github/` docs must change
+
+- Update `.github/copilot-instructions.md` when repo-wide workflow contracts or
+  high-level architecture guidance changes.
+- Update scoped instructions when the conventions for a language, directory, or
+  framework change.
+- Update skills when the automation workflow, trigger semantics, or gotchas the
+  model will not infer have changed.
+- If a change only updates an exact schema, constant, timeout, env var name, or
+  payload shape, keep the authoritative change in source and link to that source
+  instead of copying it into `.github/`.
 
 ## Validation
 

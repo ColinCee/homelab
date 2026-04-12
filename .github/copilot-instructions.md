@@ -48,14 +48,14 @@ Internet
   └─ Tailscale → Admin access (SSH, Dokploy, HA, Grafana)
 
 Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), CrowdSec
-Agent: FastAPI on beelink:8585 — AI code review via Copilot CLI (GPT-5.4)
+Agent: FastAPI on beelink:8585 — AI review + issue implementation via Copilot CLI (GPT-5.4)
 Platform: Dokploy (manages container lifecycle, auto-deploys from main)
 ```
 
 ## Pull Request Workflow
 
-PRs require CI to pass and are squash-merged. Comment `/review` on a PR to trigger an AI review from `colins-homelab-bot[bot]`. Bot reviews are **advisory** — they inform but don't gate merges.
+PRs require CI to pass and are squash-merged. Comment `/review` on a PR to trigger an AI review from `colins-homelab-bot[bot]`. Label an issue `agent` or comment `/implement` to start autonomous implementation. Bot reviews are **advisory** — they inform but don't gate merges.
 
 ## Documenting Decisions
 
-When a decision affects architecture, security, or becomes a repeating pattern, document it as an ADR in `docs/decisions/`. See `docs.instructions.md` for the format and criteria. Small choices belong in runbooks or inline comments.
+When a decision affects architecture, security, workflow contracts, or becomes a repeating pattern, document it in the owning surface. ADRs cover architecture/security/pattern decisions; ADR-008 defines what belongs in code vs README/runbooks/private/.github docs. Small choices belong in runbooks or inline comments.

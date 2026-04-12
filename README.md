@@ -35,7 +35,7 @@ mise run check:vulnerabilities  # Scan images for CVEs
 | Loki | Log aggregation (30d retention) | Docker Compose (`stacks/observability/`) |
 | Grafana Alloy | Unified collector (host + container metrics/logs) | Docker Compose (`stacks/observability/`) |
 | CrowdSec | Collaborative IDS + firewall bouncer | Docker Compose (`stacks/crowdsec/`) |
-| Homelab Agent | AI code review via Copilot CLI (GPT-5.4) | Docker Compose (`stacks/agents/`) |
+| Homelab Agent | AI review + issue implementation via Copilot CLI (GPT-5.4) | Docker Compose (`stacks/agents/`) |
 | Dokploy | PaaS dashboard, logs, metrics, alerts | Docker Swarm (self-managed) |
 
 ## Hardware
@@ -98,21 +98,37 @@ UFW firewall active (deny all except Tailscale), CrowdSec IDS with collaborative
 
 All docs are plain markdown — open `docs/` as an Obsidian vault if you prefer.
 
+Documentation ownership rules and refresh triggers live in
+[ADR-008](docs/decisions/008-documentation-ownership.md).
+
+| Surface | Purpose |
+|---------|---------|
+| `README.md` | Repo map, operator quickstart, and index into deeper docs |
+| `docs/roadmap.md` | Active work, planned items, and current limitations |
+| `docs/decisions/` | Accepted architecture, security, and repeating-pattern decisions |
+| `docs/runbooks/` | Copy-pasteable operational procedures |
+| `docs/private/` | Encrypted sensitive docs (security posture, topology, credentials-adjacent ops) |
+| `.github/` | Agent-facing authoring guide, instructions, and skills |
+
 - **[Roadmap](docs/roadmap.md)** — active work, planned items, and known limitations
 - **[Security](docs/private/security.md)** — audit findings, hardening status, periodic checklist *(encrypted)*
 - **[Network](docs/private/network.md)** — topology, interfaces, traffic monitoring plan *(encrypted)*
+- **[Copilot Authoring Guide](.github/AUTHORING.md)** — how agent-facing `.github` docs are organized
 
 ### Decisions (append-only ADRs)
 
 - **[ADR-001: Dokploy](docs/decisions/001-dokploy.md)** — why Dokploy, what was considered, feature comparison
 - **[ADR-002: Repo Tooling](docs/decisions/002-repo-tooling.md)** — why mise + uv + Python
 - **[ADR-003: Observability](docs/decisions/003-observability.md)** — why GPAL stack, CrowdSec, Healthchecks.io
-- **[ADR-004: Isolated Review Agent](docs/decisions/004-isolated-review-agent.md)** — self-hosted AI review bot architecture
+- **[ADR-004: Isolated Agent Service](docs/decisions/004-isolated-review-agent.md)** — isolated review + implementation agent architecture
+- **[ADR-005: CI Access Pattern](docs/decisions/005-ci-access-pattern.md)** — how GitHub Actions reaches the Beelink safely
+- **[ADR-006: Dokploy GitOps](docs/decisions/006-dokploy-gitops.md)** — deploy flow and env var ownership in Dokploy
+- **[ADR-007: Agent Network Isolation](docs/decisions/007-agent-network-isolation.md)** — why outbound egress filtering is not the boundary
+- **[ADR-008: Documentation Ownership](docs/decisions/008-documentation-ownership.md)** — what belongs in code vs docs, and when docs must change
 
 ### Runbooks
 
 - **[Migration: Dokploy](docs/runbooks/migration.md)** — completed migration from Dockge/Tugtainer (reference)
 - **[Deploying Services](docs/runbooks/deploying-services.md)** — how to add new services (Dokploy Compose or local stack)
-- **[Isolated Review Agent](docs/runbooks/isolated-review-agent.md)** — setup and operation of the AI review bot
-
+- **[Operating the Agent Stack](docs/runbooks/isolated-review-agent.md)** — setup, verification, and day-2 operations for the agent service
 
