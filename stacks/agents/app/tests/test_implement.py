@@ -80,6 +80,22 @@ class TestImplementIssue:
         assert result["pr_number"] == 99
         assert result["review_rounds"] == 1
 
+    def test_pr_body_uses_auto_close_keyword(self):
+        """Generated PR body uses a GitHub auto-closing keyword."""
+        mocks = self._standard_mocks(review_events=["APPROVE"])
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                create_pr_mock = entered[5]
+                from implement import implement_issue
+
+                await implement_issue(repo="user/repo", issue_number=42)
+
+                assert "Closes #42." in create_pr_mock.await_args.kwargs["body"]
+
+        asyncio.run(run())
+
     def test_review_fix_loop_converges(self):
         """Review requests changes, fix succeeds, second review approves."""
         result = self._run_with_mocks(
