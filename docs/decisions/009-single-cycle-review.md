@@ -1,7 +1,7 @@
-# ADR-009: Single-Cycle Review in the Implement Lifecycle
+# ADR-009: Capped Review Cycle in the Implement Lifecycle
 
 **Date:** 2026-04-12
-**Status:** Accepted
+**Status:** Accepted (updated from single-cycle to 2-round cap)
 
 ## Context
 
@@ -43,13 +43,12 @@ instability instead of damping it.
 ### B. Single cycle: implement → review → fix → merge
 
 - Pros: Predictable cost (2–3 premium requests). Forces the reviewer to
-  front-load all findings. Forces the implementer to get it right in one pass.
-  Eliminates the contradictory-feedback failure mode.
+  front-load all findings. Eliminates the contradictory-feedback failure mode.
 - Cons: Real bugs found in the fix round won't be caught by a re-review. The
-  fix itself could introduce regressions.
-- **Verdict:** Accepted. The fix-round regression risk is mitigated by the
-  implementer's self-review checklist and `mise run ci`. The cost of missed
-  bugs is lower than the cost of non-convergent loops.
+  fix itself could introduce regressions. One round often isn't enough — the
+  reviewer catches real bugs that only surface after the first fix.
+- **Verdict:** Rejected (initially accepted, then revised). One round turned out
+  to be too aggressive — fix-round regressions shipped unchecked.
 
 ### C. Advisory-only review (no fix round)
 
@@ -59,14 +58,32 @@ instability instead of damping it.
 - **Verdict:** Rejected. One fix round is worth the cost. Zero is wasteful of
   good feedback.
 
+### D. Capped at 2 rounds: implement → review → fix → review → fix → merge
+
+- Pros: Catches fix-round regressions without unlimited looping. The second
+  review has full memory (session resume + prior threads). 2 rounds hit the
+  sweet spot from PR #76 data: rounds 1–4 found real bugs, divergence started
+  at round 5. With session resume providing memory, 2 rounds should capture
+  most value without the contradiction spiral.
+- Cons: Costs 1–2 more premium requests than single-cycle. Still possible for
+  the reviewer to contradict itself, but the cap prevents runaway loops.
+- **Verdict:** Accepted. 2 rounds capture the value of re-reviewing fixes
+  without the unbounded divergence of the original multi-round loop.
+
 ## Decision
 
-The implement lifecycle runs exactly one cycle:
+The implement lifecycle runs up to 2 review/fix cycles:
 
 1. **Implement** — Copilot CLI writes the code
-2. **Review** — single round, catches catastrophic bugs
-3. **Fix** — one pass if the review requested changes (no re-review)
-4. **Merge** — auto-merge via GitHub API
+2. **Review round 1** — catches bugs, security issues, breaking changes
+3. **Fix round 1** — if the review requested changes
+4. **Review round 2** — catches regressions from the fix (if round 1 had fixes)
+5. **Fix round 2** — if round 2 requests changes (final fix, no re-review)
+6. **Merge** — auto-merge via GitHub API
+
+If any review approves or errors out, the loop breaks early and proceeds to
+merge. If a fix produces no changes, the loop breaks. The cap prevents the
+contradiction spiral observed in PR #76 rounds 5–7.
 
 The review is mandatory but advisory in the sense that review failure doesn't
 block merge. If the review errors out (API failure, timeout), the lifecycle
@@ -74,24 +91,25 @@ proceeds to merge. If the review requests changes but provides no inline
 findings or the session can't be resumed, the lifecycle skips the fix and
 merges anyway.
 
-Both skills (`bot-review`, `bot-implement`) are updated to make the single-cycle
-contract explicit. The reviewer knows there's one shot — it must front-load
-everything.
+Both the reviewer and implementer sessions resume across rounds — the reviewer
+sees its own prior comments (via session resume + unresolved threads), and the
+implementer has full conversation history for context-aware fixes.
 
 ## Known Risks
 
-- **Fix-round regressions ship uncaught.** The fix could introduce new bugs
-  that a re-review would have caught. Mitigated by: the implementer's
-  self-review checklist, `mise run ci`, and the fact that a human can still
-  `/review` the PR manually before or after merge.
-- **Reviewer may not front-load.** Despite the skill saying "one round only,"
+- **Round 2 contradiction.** The reviewer may still contradict round 1 findings
+  in round 2. Mitigated by: session resume giving the reviewer memory of what
+  it said, and the hard cap preventing a spiral.
+- **Cost increase.** 2 rounds costs 1–2 more premium requests than single-cycle.
+  Acceptable given the bug-catching value demonstrated by PR #76 rounds 1–4.
+- **Reviewer may not front-load.** Despite the skill saying "at most 2 rounds,"
   the model may still hold back findings. This is a model behaviour issue, not
   an architecture issue — monitor and adjust the skill prompt if needed.
 
 ## References
 
-- PR #76: 8-round review cycle that motivated this change
-- PR #78: Implementation of single-cycle flow
-- `stacks/agents/app/implement.py`: Lifecycle orchestrator
-- `.github/skills/bot-review/SKILL.md`: Review skill with single-round language
-- `.github/skills/bot-implement/SKILL.md`: Implement skill with one-cycle contract
+- PR #76: 8-round review cycle that motivated the original single-cycle decision
+- PR #78: Implementation of capped review cycle
+- `stacks/agents/app/implement.py`: Lifecycle orchestrator (MAX_REVIEW_ROUNDS)
+- `.github/skills/bot-review/SKILL.md`: Review skill with 2-round language
+- `.github/skills/bot-implement/SKILL.md`: Implement skill with capped-cycle contract

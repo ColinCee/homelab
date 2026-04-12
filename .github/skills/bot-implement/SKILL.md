@@ -33,9 +33,9 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 
 ## The Review
 
-After you finish, a single review round checks for bugs, security issues, breaking changes, and operational risk. If issues are found, you get **one fix attempt** — then the PR auto-merges. There is no re-review after the fix.
+After you finish, there are up to 2 review rounds that check for bugs, security issues, breaking changes, and operational risk. If the review requests changes, you get a fix attempt — then a second review may follow. After the final fix, the PR auto-merges.
 
-Because there's only one cycle (implement → review → fix → merge), **aim for zero blockers on the first review.** Self-review thoroughly before finishing.
+Because the review cycle is capped at 2 rounds (review → fix → review → fix → merge), **aim for zero blockers on the first review.** Self-review thoroughly before finishing.
 
 ### Pre-completion checklist
 

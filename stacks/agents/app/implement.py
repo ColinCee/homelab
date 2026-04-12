@@ -24,6 +24,7 @@ from review import review_pr
 
 logger = logging.getLogger(__name__)
 
+MAX_REVIEW_ROUNDS = 2
 MERGE_READY_TIMEOUT_SECONDS = 15 * 60
 MERGE_POLL_INTERVAL_SECONDS = 10
 
@@ -40,7 +41,8 @@ def _format_stats_comment(result: dict) -> str:
     emoji = STATUS_EMOJI.get(status, "❓")
     lines = [f"{emoji} **Implementation {status}**"]
 
-    lines.append("- Review: single round (advisory)")
+    rounds = result.get("review_rounds", 0)
+    lines.append(f"- Review: {rounds} round{'s' if rounds != 1 else ''} (max {MAX_REVIEW_ROUNDS})")
 
     premium = result.get("premium_requests", 0)
     if premium:
@@ -85,7 +87,7 @@ Fix all reported problems. Use the skill `bot-implement` for guidance.
 
 ## After Fixing
 
-This is your only fix round — there is no re-review. Get it right.
+{round_context}
 
 1. **Self-review your fix for second-order effects.** If you changed control flow, \
 error handling, or added new API calls, audit the surrounding code for issues \
@@ -388,98 +390,121 @@ async def implement_issue(
 
         pr_number = pr["number"]
         pr_url = pr["html_url"]
+        review_session_id: str | None = None
 
-        # Single cycle: review → fix (if needed) → merge. No re-review.
-        try:
-            review_result = await review_pr(
-                repo=repo,
-                pr_number=pr_number,
-                model=model,
-                reasoning_effort=reasoning_effort,
-            )
-            total_premium_requests += review_result.get("premium_requests", 0)
-            original_event = review_result.get("original_event", "COMMENT")
-            logger.info(
-                "Review complete (%s) for %s#%d (PR #%d)",
-                original_event,
-                repo,
-                issue_number,
-                pr_number,
-            )
-        except TaskError as exc:
-            total_premium_requests += exc.premium_requests
-            logger.warning(
-                "Review failed for %s#%d: %s — proceeding to merge",
-                repo,
-                issue_number,
-                exc,
-            )
-            original_event = "ERROR"
-
-        # Fix pass — if the review requested changes, attempt one fix round.
-        if original_event == "REQUEST_CHANGES":
-            review_threads = review_result.get("review_threads", "")
-            if review_threads and implement_session_id:
-                fix_prompt = FIX_PROMPT_TEMPLATE.format(
-                    issue_number=issue_number,
-                    threads=review_threads,
+        # Review/fix loop — up to MAX_REVIEW_ROUNDS rounds.
+        review_rounds = 0
+        for round_num in range(1, MAX_REVIEW_ROUNDS + 1):
+            try:
+                review_result = await review_pr(
+                    repo=repo,
+                    pr_number=pr_number,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    session_id=review_session_id,
                 )
-                try:
-                    fix_result = await run_copilot(
-                        worktree_path,
-                        fix_prompt,
-                        model=model,
-                        effort=reasoning_effort,
-                        session_id=implement_session_id,
+                total_premium_requests += review_result.get("premium_requests", 0)
+                review_session_id = review_result.get("session_id")
+                original_event = review_result.get("original_event", "COMMENT")
+                review_rounds += 1
+                logger.info(
+                    "Review round %d/%d (%s) for %s#%d (PR #%d)",
+                    round_num,
+                    MAX_REVIEW_ROUNDS,
+                    original_event,
+                    repo,
+                    issue_number,
+                    pr_number,
+                )
+            except TaskError as exc:
+                total_premium_requests += exc.premium_requests
+                review_rounds += 1
+                logger.warning(
+                    "Review round %d failed for %s#%d: %s — proceeding to merge",
+                    round_num,
+                    repo,
+                    issue_number,
+                    exc,
+                )
+                break  # Review errored — skip fix, go to merge
+
+            if original_event != "REQUEST_CHANGES":
+                break  # Approved or commented — no fix needed
+
+            # Fix pass
+            review_threads = review_result.get("review_threads", "")
+            if not review_threads or not implement_session_id:
+                reason = "no session ID" if not implement_session_id else "no inline findings"
+                logger.warning("Skipping fix (%s) — proceeding to merge", reason)
+                break
+
+            is_final_round = round_num == MAX_REVIEW_ROUNDS
+            round_context = (
+                "This is your final fix round — there is no re-review after this. Get it right."
+                if is_final_round
+                else "After this fix, one more review round remains. Focus on correctness."
+            )
+            fix_prompt = FIX_PROMPT_TEMPLATE.format(
+                issue_number=issue_number,
+                threads=review_threads,
+                round_context=round_context,
+            )
+            try:
+                fix_result = await run_copilot(
+                    worktree_path,
+                    fix_prompt,
+                    model=model,
+                    effort=reasoning_effort,
+                    session_id=implement_session_id,
+                )
+                total_premium_requests += fix_result.total_premium_requests
+                if fix_result.session_id:
+                    implement_session_id = fix_result.session_id
+            except TaskError as exc:
+                total_premium_requests += exc.premium_requests
+                lifecycle_result = _lifecycle_result(
+                    status="failed",
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    commit_sha=sha,
+                    review_rounds=review_rounds,
+                    start=start,
+                    premium_requests=total_premium_requests,
+                    session_id=implement_session_id,
+                    error=f"Fix round {round_num} failed: {exc}",
+                )
+                raise TaskError(
+                    f"Fix round {round_num} failed: {exc}",
+                    premium_requests=total_premium_requests,
+                ) from exc
+
+            try:
+                sha = await commit_and_push(
+                    worktree_path,
+                    message=f"fix: address review feedback (round {round_num}) on #{issue_number}",
+                    token=token,
+                    repo=repo,
+                    branch=branch_name,
+                )
+            except RuntimeError as exc:
+                if "No changes to commit" in str(exc):
+                    logger.warning(
+                        "Fix round %d produced no changes — proceeding to merge", round_num
                     )
-                    total_premium_requests += fix_result.total_premium_requests
-                    if fix_result.session_id:
-                        implement_session_id = fix_result.session_id
-                except TaskError as exc:
-                    total_premium_requests += exc.premium_requests
+                    break
+                else:
                     lifecycle_result = _lifecycle_result(
                         status="failed",
                         pr_number=pr_number,
                         pr_url=pr_url,
                         commit_sha=sha,
-                        review_rounds=1,
+                        review_rounds=review_rounds,
                         start=start,
                         premium_requests=total_premium_requests,
                         session_id=implement_session_id,
-                        error=f"Fix failed: {exc}",
+                        error=f"Commit/push failed: {exc}",
                     )
-                    raise TaskError(
-                        f"Fix failed: {exc}",
-                        premium_requests=total_premium_requests,
-                    ) from exc
-
-                try:
-                    sha = await commit_and_push(
-                        worktree_path,
-                        message=f"fix: address review feedback on #{issue_number}",
-                        token=token,
-                        repo=repo,
-                        branch=branch_name,
-                    )
-                except RuntimeError as exc:
-                    if "No changes to commit" in str(exc):
-                        logger.warning("Fix produced no changes — proceeding to merge")
-                    else:
-                        lifecycle_result = _lifecycle_result(
-                            status="failed",
-                            pr_number=pr_number,
-                            pr_url=pr_url,
-                            commit_sha=sha,
-                            review_rounds=1,
-                            start=start,
-                            premium_requests=total_premium_requests,
-                            session_id=implement_session_id,
-                            error=f"Commit/push failed: {exc}",
-                        )
-                        raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
-            else:
-                reason = "no session ID" if not implement_session_id else "no inline findings"
-                logger.warning("Skipping fix (%s) — proceeding to merge", reason)
+                    raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
         lifecycle_result = await _merge_when_eligible(
             repo=repo,
@@ -487,7 +512,7 @@ async def implement_issue(
             pr_url=pr_url,
             branch_name=branch_name,
             commit_sha=sha,
-            review_rounds=1,
+            review_rounds=review_rounds,
             start=start,
             premium_requests=total_premium_requests,
             session_id=implement_session_id,

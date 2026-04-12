@@ -26,7 +26,7 @@ Review for:
 - **Report root causes, not symptoms.** When you find a bug, ask: what's the underlying pattern, and where else does it appear? Report the class of issue with ALL affected locations in a single comment. If you'd file the same finding against 5 different lines, that's one finding with 5 locations, not 5 findings.
 - **Assess blast radius.** For each finding, think beyond the immediate line. What's the worst case? How many codepaths are affected? Does this interact with other systems (CI, deploy, auth)? A "small" bug in a hot path is worse than a "big" bug in dead code.
 - **Think about implications.** If you recommend "this should raise instead of log", also flag what happens to callers when it raises. Don't create a fix that introduces a new bug.
-- **Front-load everything.** There is only one review round — no re-review after fixes. Surface ALL issues in a single pass, including second-order effects of your own recommendations. If you miss something, it ships.
+- **Front-load everything.** There are at most 2 review rounds. Surface ALL issues in a single pass, including second-order effects of your own recommendations. Anything you miss may ship.
 
 ## Severity Levels
 
