@@ -40,6 +40,20 @@ Blast radius boundaries. The agent is good at making changes but needs to know w
 
 > `/review` must continue to work independently for human-triggered reviews. Accumulated premium_requests must still be accurate for metrics.
 
+## Labels
+
+Apply labels when creating or updating issues:
+
+| Label | When to use |
+|-------|-------------|
+| `agent` | Triggers autonomous implementation. Add when the issue is ready for the bot. |
+| `agent-failed` | Agent tried but couldn't complete. Needs human attention or a rewritten issue. |
+| `priority/high` | Actively blocking or degrading agent reliability. Work on these first. |
+| `priority/low` | Backlog — nice to have, no urgency. |
+| `bug` | Something is broken. |
+| `enhancement` | New feature or improvement. |
+| `documentation` | Docs-only change. |
+
 ## Triggering implementation
 
 After creating the issue, trigger the bot by commenting `/implement` on the issue or adding the `agent` label. The `implement.yaml` workflow dispatches to the agent service.
