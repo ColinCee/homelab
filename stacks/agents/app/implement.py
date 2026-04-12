@@ -42,7 +42,12 @@ def _monotonic() -> float:
 
 
 def _format_stage_stats(
-    *, premium_requests: int = 0, elapsed_seconds: float = 0, models: dict | None = None
+    *,
+    premium_requests: int = 0,
+    elapsed_seconds: float = 0,
+    api_time_seconds: int = 0,
+    effort: str = "",
+    models: dict | None = None,
 ) -> str:
     """Format a compact stats footer for a lifecycle stage comment."""
     parts = []
@@ -50,7 +55,13 @@ def _format_stage_stats(
         parts.append(f"💰 {premium_requests} premium")
     if elapsed_seconds:
         minutes, secs = divmod(int(elapsed_seconds), 60)
-        parts.append(f"⏱️ {minutes}m {secs}s")
+        time_str = f"⏱️ {minutes}m {secs}s"
+        if api_time_seconds:
+            am, as_ = divmod(api_time_seconds, 60)
+            time_str += f" (API: {am}m {as_}s)"
+        parts.append(time_str)
+    if effort:
+        parts.append(f"🧠 {effort}")
     if models:
         for model_name, detail in models.items():
             clean = re.sub(r"\s*\(Est\..*?\)", "", detail).strip().rstrip(",")
@@ -58,11 +69,13 @@ def _format_stage_stats(
     return " · ".join(parts)
 
 
-def _cli_stage_stats(result: CLIResult) -> str:
+def _cli_stage_stats(result: CLIResult, effort: str = "") -> str:
     """Format stats from a CLIResult."""
     return _format_stage_stats(
         premium_requests=result.total_premium_requests,
         elapsed_seconds=result.session_time_seconds,
+        api_time_seconds=result.api_time_seconds,
+        effort=effort,
         models=result.models,
     )
 
@@ -428,7 +441,7 @@ async def implement_issue(
         review_session_id: str | None = None
 
         with contextlib.suppress(Exception):
-            impl_stats = _cli_stage_stats(result)
+            impl_stats = _cli_stage_stats(result, effort=reasoning_effort)
             await comment_on_issue(
                 repo,
                 pr_number,
@@ -466,6 +479,8 @@ async def implement_issue(
                     review_stats = _format_stage_stats(
                         premium_requests=review_result.get("premium_requests", 0),
                         elapsed_seconds=review_result.get("elapsed_seconds", 0),
+                        api_time_seconds=review_result.get("api_time_seconds", 0),
+                        effort=review_result.get("reasoning_effort", ""),
                         models=review_result.get("models"),
                     )
                     verdict = (
@@ -557,7 +572,7 @@ async def implement_issue(
                     implement_session_id = fix_result.session_id
 
                 with contextlib.suppress(Exception):
-                    fix_stats = _cli_stage_stats(fix_result)
+                    fix_stats = _cli_stage_stats(fix_result, effort=reasoning_effort)
                     body = f"🔧 **Fix {round_label}** complete\n{fix_stats}"
                     if fix_comment_id:
                         await update_comment(repo, fix_comment_id, body)

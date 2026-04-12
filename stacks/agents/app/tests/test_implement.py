@@ -23,6 +23,24 @@ class TestFormatStageStats:
         assert "⏱️ 2m 5s" in result
         assert "🤖 gpt-5.4: 883.6k in, 17.7k out, 788.5k cached" in result
 
+    def test_includes_api_time(self):
+        result = _format_stage_stats(
+            elapsed_seconds=900,
+            api_time_seconds=723,
+        )
+        assert "⏱️ 15m 0s (API: 12m 3s)" in result
+
+    def test_omits_api_time_when_zero(self):
+        result = _format_stage_stats(elapsed_seconds=60)
+        assert "(API:" not in result
+
+    def test_includes_effort(self):
+        result = _format_stage_stats(
+            premium_requests=1,
+            effort="high",
+        )
+        assert "🧠 high" in result
+
     def test_strips_est_premium_from_models(self):
         result = _format_stage_stats(
             models={"gpt-5.4": "2.2m in, 28.9k out (Est. 1 Premium request)"},
@@ -37,12 +55,14 @@ class TestFormatStageStats:
         r = CLIResult(
             output="",
             total_premium_requests=1,
+            api_time_seconds=180,
             session_time_seconds=300,
             models={"gpt-5.4": "1.2m in, 12k out"},
         )
-        result = _cli_stage_stats(r)
+        result = _cli_stage_stats(r, effort="high")
         assert "💰 1 premium" in result
-        assert "⏱️ 5m 0s" in result
+        assert "⏱️ 5m 0s (API: 3m 0s)" in result
+        assert "🧠 high" in result
         assert "gpt-5.4" in result
 
 

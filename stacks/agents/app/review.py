@@ -406,6 +406,7 @@ async def review_pr(
         return {
             "model": model,
             "elapsed_seconds": elapsed,
+            "api_time_seconds": result.api_time_seconds,
             "reasoning_effort": reasoning_effort,
             "premium_requests": result.total_premium_requests,
             "models": result.models,
