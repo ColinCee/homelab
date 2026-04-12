@@ -5,13 +5,23 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import httpx
+
 from copilot import CLIResult
 
 
 class TestImplementIssue:
     """Tests for implement_issue() — the unified implement+review+fix lifecycle."""
 
-    def _standard_mocks(self, *, review_events: list[str], session_id: str | None = "sess-123"):
+    def _standard_mocks(
+        self,
+        *,
+        review_events: list[str],
+        session_id: str | None = "sess-123",
+        pr_sequence: list[dict] | None = None,
+        ci_results: list[dict] | None = None,
+        merge_result: dict | list[dict] | None = None,
+    ):
         """Create the standard set of mocks for implement_issue tests.
 
         Args:
@@ -26,6 +36,34 @@ class TestImplementIssue:
             "author_association": "OWNER",
         }
         mock_pr = {"number": 99, "html_url": "https://github.com/user/repo/pull/99"}
+        mock_live_pr = {
+            "state": "open",
+            "draft": False,
+            "merged": False,
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "merge_commit_sha": None,
+            "user": {"login": "colins-homelab-bot[bot]"},
+            "head": {"ref": "agent/issue-42", "sha": "abc123"},
+        }
+        if pr_sequence is None:
+            pr_sequence = [mock_live_pr]
+        if ci_results is None:
+            ci_results = [{"state": "success", "description": "All required CI checks passed"}]
+        if merge_result is None:
+            merge_result = {"merged": True, "sha": "merge123"}
+        if isinstance(merge_result, list):
+            merge_patch = patch(
+                "implement.merge_pull_request",
+                new_callable=AsyncMock,
+                side_effect=merge_result,
+            )
+        else:
+            merge_patch = patch(
+                "implement.merge_pull_request",
+                new_callable=AsyncMock,
+                return_value=merge_result,
+            )
 
         review_results = [
             {
@@ -58,8 +96,20 @@ class TestImplementIssue:
                 new_callable=AsyncMock,
                 side_effect=review_results,
             ),
+            patch(
+                "implement.get_pr",
+                new_callable=AsyncMock,
+                side_effect=pr_sequence,
+            ),
+            patch(
+                "implement.get_commit_ci_status",
+                new_callable=AsyncMock,
+                side_effect=ci_results,
+            ),
+            merge_patch,
             patch("implement.comment_on_issue", new_callable=AsyncMock),
             patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+            patch("implement.asyncio.sleep", new_callable=AsyncMock),
         ]
 
     def _run_with_mocks(self, mocks):
@@ -77,6 +127,8 @@ class TestImplementIssue:
         """Happy path: implement → PR → review approves on first pass."""
         result = self._run_with_mocks(self._standard_mocks(review_events=["APPROVE"]))
         assert result["status"] == "complete"
+        assert result["merged"] is True
+        assert result["merge_commit_sha"] == "merge123"
         assert result["pr_number"] == 99
         assert result["review_rounds"] == 1
 
@@ -102,7 +154,277 @@ class TestImplementIssue:
             self._standard_mocks(review_events=["REQUEST_CHANGES", "APPROVE"])
         )
         assert result["status"] == "complete"
+        assert result["merged"] is True
         assert result["review_rounds"] == 2
+
+    def test_waits_for_pending_ci_before_merging(self):
+        """Pending CI is polled until checks pass and the PR can be merged."""
+        mocks = self._standard_mocks(
+            review_events=["APPROVE"],
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": None,
+                    "mergeable_state": "unknown",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+            ],
+            ci_results=[
+                {
+                    "state": "pending",
+                    "description": "Required CI checks still running: check",
+                },
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+            ],
+        )
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                merge_mock = entered[9]
+                sleep_mock = entered[12]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                sleep_mock.assert_awaited_once()
+                merge_mock.assert_awaited_once()
+                assert result["status"] == "complete"
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_waits_when_branch_protection_blocks_merge_until_ci_finishes(self):
+        """Protected branches can report blocked/unmergeable until required checks finish."""
+        mocks = self._standard_mocks(
+            review_events=["APPROVE"],
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": False,
+                    "mergeable_state": "blocked",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+            ],
+            ci_results=[
+                {
+                    "state": "pending",
+                    "description": "Required CI checks still running: check",
+                },
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+            ],
+        )
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                merge_mock = entered[9]
+                sleep_mock = entered[12]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                sleep_mock.assert_awaited_once()
+                merge_mock.assert_awaited_once()
+                assert result["status"] == "complete"
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_merges_when_state_is_non_clean_but_github_accepts(self):
+        """A mergeable non-clean state should not block a merge GitHub allows."""
+        result = self._run_with_mocks(
+            self._standard_mocks(
+                review_events=["APPROVE"],
+                pr_sequence=[
+                    {
+                        "state": "open",
+                        "draft": False,
+                        "merged": False,
+                        "mergeable": True,
+                        "mergeable_state": "unstable",
+                        "user": {"login": "colins-homelab-bot[bot]"},
+                        "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                    }
+                ],
+            )
+        )
+        assert result["status"] == "complete"
+        assert result["merged"] is True
+        assert result["mergeable_state"] == "unstable"
+
+    def test_retries_non_clean_merge_rejection_until_timeout_or_success(self):
+        """Transient merge API rejections in non-clean states are retried."""
+        mocks = self._standard_mocks(
+            review_events=["APPROVE"],
+            pr_sequence=[
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "unstable",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+                {
+                    "state": "open",
+                    "draft": False,
+                    "merged": False,
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "user": {"login": "colins-homelab-bot[bot]"},
+                    "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                },
+            ],
+            ci_results=[
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+                {
+                    "state": "success",
+                    "description": "All required CI checks passed",
+                },
+            ],
+            merge_result=[
+                {
+                    "merged": False,
+                    "message": "Branch protection settings are still evaluating",
+                    "status_code": 405,
+                },
+                {"merged": True, "sha": "merge123"},
+            ],
+        )
+
+        async def run():
+            with ExitStack() as stack:
+                entered = [stack.enter_context(m) for m in mocks]
+                merge_mock = entered[9]
+                sleep_mock = entered[12]
+                from implement import implement_issue
+
+                result = await implement_issue(repo="user/repo", issue_number=42)
+
+                assert merge_mock.await_count == 2
+                sleep_mock.assert_awaited_once()
+                assert result["status"] == "complete"
+                assert result["merged"] is True
+
+        asyncio.run(run())
+
+    def test_ci_failure_does_not_block_merge(self):
+        """GitHub's merge API is the sole authority — CI failure doesn't block."""
+        result = self._run_with_mocks(
+            self._standard_mocks(
+                review_events=["APPROVE"],
+                ci_results=[
+                    {
+                        "state": "failure",
+                        "description": "Optional check failed",
+                    }
+                ],
+            )
+        )
+        assert result["status"] == "complete"
+        assert result["merged"] is True
+
+    def test_merge_rejection_returns_partial(self):
+        """Persistent merge rejection results in timeout partial."""
+        mocks = self._standard_mocks(
+            review_events=["APPROVE"],
+            merge_result={
+                "merged": False,
+                "message": "Pull Request is not mergeable",
+                "status_code": 405,
+            },
+        )
+        # time.monotonic() call order:
+        # 1. implement_issue: start = 0
+        # 2. _merge_when_eligible: deadline = 0 + 900 = 900
+        # 3. while check (iter 1): 0 < 900 → enter
+        #    (loop body: get_pr, CI, merge rejected, sleep, continue)
+        # 4. while check (iter 2): 1000 >= 900 → exit loop
+        # 5. _lifecycle_result: elapsed = 1000 - 0 = 1000
+        mocks.append(patch("implement.time.monotonic", side_effect=[0, 0, 0, 1000, 1000]))
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "partial"
+        assert result["merged"] is False
+        assert "Timed out" in result["error"]
+
+    def test_non_bot_pr_returns_partial(self):
+        """Auto-merge refuses PRs that are no longer bot-authored."""
+        result = self._run_with_mocks(
+            self._standard_mocks(
+                review_events=["APPROVE"],
+                pr_sequence=[
+                    {
+                        "state": "open",
+                        "draft": False,
+                        "merged": False,
+                        "mergeable": True,
+                        "mergeable_state": "clean",
+                        "user": {"login": "someone-else"},
+                        "head": {"ref": "agent/issue-42", "sha": "abc123"},
+                    }
+                ],
+            )
+        )
+        assert result["status"] == "partial"
+        assert result["merged"] is False
+        assert "not bot-authored" in result["error"]
+
+    def test_merge_polling_http_error_returns_partial(self):
+        """GitHub polling errors stay explicit partial/manual-attention states."""
+        mocks = self._standard_mocks(review_events=["APPROVE"])
+        mocks[8] = patch(
+            "implement.get_commit_ci_status",
+            new_callable=AsyncMock,
+            side_effect=httpx.HTTPStatusError(
+                "403 Forbidden",
+                request=httpx.Request("GET", "https://api.github.com/status"),
+                response=httpx.Response(
+                    403,
+                    request=httpx.Request("GET", "https://api.github.com/status"),
+                ),
+            ),
+        )
+
+        result = self._run_with_mocks(mocks)
+        assert result["status"] == "partial"
+        assert result["pr_number"] == 99
+        assert result["merged"] is False
+        assert "GitHub merge polling failed" in result["error"]
 
     def test_max_iterations_posts_comment(self):
         """Exhausting all fix iterations returns max_iterations status."""

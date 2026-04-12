@@ -133,3 +133,228 @@ class TestParseDiffRightLines:
         assert 30 in result  # context
         assert 31 in result  # added (start_line)
         assert 32 in result  # context
+
+
+class TestGetCommitCIStatus:
+    def test_reports_success_when_checks_pass(self):
+        status_resp = httpx.Response(
+            200,
+            json={"state": "pending", "statuses": [], "total_count": 0},
+            request=httpx.Request("GET", "https://api.github.com/status"),
+        )
+        checks_resp = httpx.Response(
+            200,
+            json={
+                "total_count": 1,
+                "check_runs": [{"name": "check", "status": "completed", "conclusion": "success"}],
+            },
+            request=httpx.Request("GET", "https://api.github.com/check-runs"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    side_effect=[status_resp, checks_resp],
+                ),
+            ):
+                return await github.get_commit_ci_status("user/repo", "abc123")
+
+        result = asyncio.run(run())
+        assert result["state"] == "success"
+        assert result["description"] == "All required CI checks passed"
+
+    def test_reports_pending_when_checks_are_running(self):
+        status_resp = httpx.Response(
+            200,
+            json={"state": "pending", "statuses": [], "total_count": 0},
+            request=httpx.Request("GET", "https://api.github.com/status"),
+        )
+        checks_resp = httpx.Response(
+            200,
+            json={
+                "total_count": 1,
+                "check_runs": [{"name": "check", "status": "queued", "conclusion": None}],
+            },
+            request=httpx.Request("GET", "https://api.github.com/check-runs"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    side_effect=[status_resp, checks_resp],
+                ),
+            ):
+                return await github.get_commit_ci_status("user/repo", "abc123")
+
+        result = asyncio.run(run())
+        assert result["state"] == "pending"
+        assert "still running" in result["description"]
+
+    def test_reports_failure_when_a_check_fails(self):
+        status_resp = httpx.Response(
+            200,
+            json={"state": "pending", "statuses": [], "total_count": 0},
+            request=httpx.Request("GET", "https://api.github.com/status"),
+        )
+        checks_resp = httpx.Response(
+            200,
+            json={
+                "total_count": 1,
+                "check_runs": [{"name": "check", "status": "completed", "conclusion": "failure"}],
+            },
+            request=httpx.Request("GET", "https://api.github.com/check-runs"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    side_effect=[status_resp, checks_resp],
+                ),
+            ):
+                return await github.get_commit_ci_status("user/repo", "abc123")
+
+        result = asyncio.run(run())
+        assert result["state"] == "failure"
+        assert result["failing_checks"] == ["check"]
+
+    def test_reports_none_when_no_ci_signals_exist(self):
+        status_resp = httpx.Response(
+            200,
+            json={"state": "pending", "statuses": [], "total_count": 0},
+            request=httpx.Request("GET", "https://api.github.com/status"),
+        )
+        checks_resp = httpx.Response(
+            200,
+            json={"total_count": 0, "check_runs": []},
+            request=httpx.Request("GET", "https://api.github.com/check-runs"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    side_effect=[status_resp, checks_resp],
+                ),
+            ):
+                return await github.get_commit_ci_status("user/repo", "abc123")
+
+        result = asyncio.run(run())
+        assert result["state"] == "none"
+
+    def test_paginates_check_runs_before_reporting_success(self):
+        status_resp = httpx.Response(
+            200,
+            json={"state": "pending", "statuses": [], "total_count": 0},
+            request=httpx.Request("GET", "https://api.github.com/status"),
+        )
+        checks_page_one = httpx.Response(
+            200,
+            json={
+                "total_count": 101,
+                "check_runs": [
+                    {"name": f"check-{i}", "status": "completed", "conclusion": "success"}
+                    for i in range(100)
+                ],
+            },
+            request=httpx.Request("GET", "https://api.github.com/check-runs?page=1"),
+        )
+        checks_page_two = httpx.Response(
+            200,
+            json={
+                "total_count": 101,
+                "check_runs": [{"name": "late-check", "status": "queued", "conclusion": None}],
+            },
+            request=httpx.Request("GET", "https://api.github.com/check-runs?page=2"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.get",
+                    new_callable=AsyncMock,
+                    side_effect=[status_resp, checks_page_one, checks_page_two],
+                ),
+            ):
+                return await github.get_commit_ci_status("user/repo", "abc123")
+
+        result = asyncio.run(run())
+        assert result["state"] == "pending"
+        assert result["pending_checks"] == ["late-check"]
+
+
+class TestMergePullRequest:
+    def test_uses_squash_merge_with_head_sha(self):
+        merge_resp = httpx.Response(
+            200,
+            json={"merged": True, "sha": "merge123"},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=merge_resp,
+                ) as mock_put,
+            ):
+                result = await github.merge_pull_request("user/repo", 7, sha="abc123")
+                return result, mock_put
+
+        result, mock_put = asyncio.run(run())
+        assert result["merged"] is True
+        assert mock_put.await_args.kwargs["json"] == {
+            "merge_method": "squash",
+            "sha": "abc123",
+        }
+
+    def test_returns_manual_attention_payload_for_merge_rejection(self):
+        merge_resp = httpx.Response(
+            405,
+            json={"message": "Pull Request is not mergeable"},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("httpx.AsyncClient.put", new_callable=AsyncMock, return_value=merge_resp),
+            ):
+                return await github.merge_pull_request("user/repo", 7, sha="abc123")
+
+        result = asyncio.run(run())
+        assert result["merged"] is False
+        assert result["status_code"] == 405
+        assert result["message"] == "Pull Request is not mergeable"
+
+    def test_returns_manual_attention_payload_for_forbidden_merge(self):
+        merge_resp = httpx.Response(
+            403,
+            json={"message": "Resource not accessible by integration"},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("httpx.AsyncClient.put", new_callable=AsyncMock, return_value=merge_resp),
+            ):
+                return await github.merge_pull_request("user/repo", 7, sha="abc123")
+
+        result = asyncio.run(run())
+        assert result["merged"] is False
+        assert result["status_code"] == 403
+        assert result["message"] == "Resource not accessible by integration"
