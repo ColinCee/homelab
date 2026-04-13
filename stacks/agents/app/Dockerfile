@@ -1,8 +1,12 @@
-FROM python:3.14-slim
+FROM python:3.14.4-slim
 
 # Pin tool versions for reproducible builds and supply-chain safety.
+# renovate: datasource=github-releases depName=jdx/mise
 ARG MISE_VERSION=v2026.2.1
+# renovate: datasource=github-releases depName=github/copilot-cli
 ARG COPILOT_CLI_VERSION=v1.0.25
+# renovate: datasource=github-releases depName=cli/cli
+ARG GH_VERSION=2.89.0
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
@@ -17,12 +21,8 @@ RUN curl -fsSL "https://github.com/github/copilot-cli/releases/download/${COPILO
     chmod +x /usr/local/bin/copilot
 
 # Install gh CLI for GitHub API access
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
-    | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
-    | tee /etc/apt/sources.list.d/github-cli.list > /dev/null && \
-    apt-get update && apt-get install -y --no-install-recommends gh && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+    | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
 
 # Install mise and provision all dev tools (shellcheck, actionlint, trivy)
 # so the Copilot CLI has the same toolchain as local dev.

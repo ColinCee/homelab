@@ -2,7 +2,7 @@
 name = "homelab-agent"
 version = "0.1.0"
 description = "Self-hosted AI agent service for PR review and coding tasks"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.115",
     "httpx>=0.28",
@@ -19,7 +19,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]

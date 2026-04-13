@@ -72,3 +72,4 @@ The implement bot only receives the issue **title and body**. It never sees issu
 - **Implementation order** — the agent handles dependency ordering
 - **How to test** — the agent has `mise run ci` and testing conventions
 - **Codebase structure** — the agent can read it; instructions and skills cover conventions
+- **Workflow file changes** — the agent cannot modify `.github/workflows/`. If an issue requires workflow edits, note them in a separate "Out of scope (human follow-up)" section so the agent knows to skip them

@@ -17,7 +17,7 @@ jobs:
       github.event.comment.body == '/implement' &&
       contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
       github.event.comment.author_association))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       issues: write

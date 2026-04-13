@@ -46,6 +46,7 @@ You start in a worktree on the `agent/issue-{N}` branch, set up by the orchestra
 - **Never modify `.github/workflows/`** — workflow changes require human review
 - **Never commit secrets, API keys, or credentials** to the repository
 - **Never access or modify `docs/private/`** — these are encrypted files you cannot read
+- **If an issue includes out-of-scope work** (e.g., workflow edits), implement everything you can and list the remaining items under a "Human follow-up" heading in the PR description. Do not attempt to modify restricted files.
 
 ## Self-Review Checklist
 
