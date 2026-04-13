@@ -16,7 +16,7 @@ services:
       - ./dashboards:/var/lib/grafana/dashboards:ro
 
   prometheus:
-    image: prom/prometheus:v3.11.1
+    image: prom/prometheus:v3.11.2
     restart: unless-stopped
     command:
       - --web.enable-remote-write-receiver
