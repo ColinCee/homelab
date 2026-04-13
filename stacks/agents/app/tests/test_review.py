@@ -3,12 +3,14 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
-from copilot import CLIResult
-from review import (
+from review import review_pr
+from review.orchestrator import (
     _fetch_linked_issues_section,
     _parse_linked_issues,
-    review_pr,
 )
+from services.copilot import CLIResult
+
+_MOD = "review.orchestrator"
 
 
 class TestParseLinkedIssues:
@@ -53,7 +55,7 @@ class TestFetchLinkedIssuesSection:
 
         assert asyncio.run(run()) == ""
 
-    @patch("review.get_issue", new_callable=AsyncMock)
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_fetches_and_formats_linked_issue(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
             "title": "Bug",
@@ -68,7 +70,7 @@ class TestFetchLinkedIssuesSection:
         assert "### #10: Bug" in result
         assert "Fix it" in result
 
-    @patch("review.get_issue", new_callable=AsyncMock)
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_skips_issues_that_fail_to_fetch(self, mock_get_issue: AsyncMock):
         mock_get_issue.side_effect = RuntimeError("not found")
 
@@ -77,7 +79,7 @@ class TestFetchLinkedIssuesSection:
 
         assert asyncio.run(run()) == ""
 
-    @patch("review.get_issue", new_callable=AsyncMock)
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_handles_issue_with_no_body(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
             "title": "No body",
@@ -91,7 +93,7 @@ class TestFetchLinkedIssuesSection:
         result = asyncio.run(run())
         assert "_No body._" in result
 
-    @patch("review.get_issue", new_callable=AsyncMock)
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_skips_untrusted_issue_authors(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
             "title": "Evil",
@@ -104,7 +106,7 @@ class TestFetchLinkedIssuesSection:
 
         assert asyncio.run(run()) == ""
 
-    @patch("review.get_issue", new_callable=AsyncMock)
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_includes_collaborator_issues(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
             "title": "Feature",
@@ -141,10 +143,10 @@ class TestReviewPr:
 
         async def run():
             with (
-                patch("review.get_token", new_callable=AsyncMock, return_value="token"),
-                patch("review.get_pr", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_pr", new_callable=AsyncMock, return_value=pr_data),
                 patch(
-                    "review.get_issue",
+                    f"{_MOD}.get_issue",
                     new_callable=AsyncMock,
                     return_value={
                         "title": "Bug",
@@ -152,9 +154,9 @@ class TestReviewPr:
                         "author_association": "OWNER",
                     },
                 ),
-                patch("review.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),
-                patch("review.run_copilot", new_callable=AsyncMock, return_value=cli_result),
-                patch("review.cleanup_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),
+                patch(f"{_MOD}.run_copilot", new_callable=AsyncMock, return_value=cli_result),
+                patch(f"{_MOD}.cleanup_worktree", new_callable=AsyncMock),
             ):
                 return await review_pr(repo="user/repo", pr_number=1)
 
@@ -175,13 +177,13 @@ class TestReviewPr:
 
         async def run():
             with (
-                patch("review.get_token", new_callable=AsyncMock, return_value="my-token"),
-                patch("review.get_pr", new_callable=AsyncMock, return_value=pr_data),
-                patch("review.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="my-token"),
+                patch(f"{_MOD}.get_pr", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),
                 patch(
-                    "review.run_copilot", new_callable=AsyncMock, return_value=cli_result
+                    f"{_MOD}.run_copilot", new_callable=AsyncMock, return_value=cli_result
                 ) as mock_cli,
-                patch("review.cleanup_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_worktree", new_callable=AsyncMock),
             ):
                 await review_pr(repo="user/repo", pr_number=1)
                 return mock_cli

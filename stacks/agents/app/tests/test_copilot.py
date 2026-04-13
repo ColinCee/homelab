@@ -7,7 +7,14 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from copilot import CLIResult, TaskError, _parse_session_id, _parse_stats, _parse_time, run_copilot
+from services.copilot import (
+    CLIResult,
+    TaskError,
+    _parse_session_id,
+    _parse_stats,
+    _parse_time,
+    run_copilot,
+)
 
 SAMPLE_OUTPUT = """\
 Hello world
@@ -168,13 +175,13 @@ class TestRunCopilot:
         proc.wait = AsyncMock()
         return proc
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_share_flag_in_command(self, mock_exec: AsyncMock, tmp_path: Path):
         """Verifies --share flag is passed to the CLI."""
         proc = self._make_mock_process("done")
         mock_exec.return_value = proc
 
-        asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+        asyncio.run(run_copilot(tmp_path, "test prompt"))
 
         cmd = mock_exec.call_args[0]
         share_args = [a for a in cmd if a.startswith("--share=")]
@@ -182,7 +189,7 @@ class TestRunCopilot:
         assert str(tmp_path / ".copilot-session.md") in share_args[0]
         assert mock_exec.call_args.kwargs["start_new_session"] is True
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_reads_transcript_when_present(self, mock_exec: AsyncMock, tmp_path: Path):
         """Verifies session transcript is read from the --share output file."""
         transcript_content = "# Session\n\n## Turn 1\n\nUser: test prompt\n"
@@ -192,47 +199,45 @@ class TestRunCopilot:
         proc = self._make_mock_process("done")
         mock_exec.return_value = proc
 
-        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+        result = asyncio.run(run_copilot(tmp_path, "test prompt"))
 
         assert result.session_transcript == transcript_content
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_transcript_none_when_file_missing(self, mock_exec: AsyncMock, tmp_path: Path):
         """Transcript is None when --share file doesn't exist."""
         proc = self._make_mock_process("done")
         mock_exec.return_value = proc
 
-        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+        result = asyncio.run(run_copilot(tmp_path, "test prompt"))
 
         assert result.session_transcript is None
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_resume_flag_in_command(self, mock_exec: AsyncMock, tmp_path: Path):
         """When session_id is provided, --resume flag is passed to the CLI."""
         proc = self._make_mock_process("done")
         mock_exec.return_value = proc
 
-        asyncio.run(
-            __import__("copilot").run_copilot(tmp_path, "fix prompt", session_id="abc-123-def-456")
-        )
+        asyncio.run(run_copilot(tmp_path, "fix prompt", session_id="abc-123-def-456"))
 
         cmd = mock_exec.call_args[0]
         resume_args = [a for a in cmd if a.startswith("--resume=")]
         assert resume_args == ["--resume=abc-123-def-456"]
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_no_resume_flag_without_session_id(self, mock_exec: AsyncMock, tmp_path: Path):
         """Without session_id, no --resume flag is passed."""
         proc = self._make_mock_process("done")
         mock_exec.return_value = proc
 
-        asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+        asyncio.run(run_copilot(tmp_path, "test prompt"))
 
         cmd = mock_exec.call_args[0]
         resume_args = [a for a in cmd if a.startswith("--resume=")]
         assert resume_args == []
 
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_session_id_parsed_from_output(self, mock_exec: AsyncMock, tmp_path: Path):
         """Session ID is extracted from CLI stdout."""
         proc = self._make_mock_process(
@@ -240,13 +245,17 @@ class TestRunCopilot:
         )
         mock_exec.return_value = proc
 
-        result = asyncio.run(__import__("copilot").run_copilot(tmp_path, "test prompt"))
+        result = asyncio.run(run_copilot(tmp_path, "test prompt"))
 
         assert result.session_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
-    @patch("copilot.os.killpg")
-    @patch("copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=asyncio.CancelledError)
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.os.killpg")
+    @patch(
+        "services.copilot.asyncio.wait_for",
+        new_callable=AsyncMock,
+        side_effect=asyncio.CancelledError,
+    )
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_kills_process_when_cancelled(
         self,
         mock_exec: AsyncMock,
@@ -279,9 +288,9 @@ class TestRunCopilot:
         proc.kill.assert_not_called()
         proc.wait.assert_awaited_once()
 
-    @patch("copilot.os.killpg")
-    @patch("copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError)
-    @patch("copilot.asyncio.create_subprocess_exec")
+    @patch("services.copilot.os.killpg")
+    @patch("services.copilot.asyncio.wait_for", new_callable=AsyncMock, side_effect=TimeoutError)
+    @patch("services.copilot.asyncio.create_subprocess_exec")
     def test_kills_process_group_when_timed_out(
         self,
         mock_exec: AsyncMock,

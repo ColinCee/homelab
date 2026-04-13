@@ -428,7 +428,7 @@ def test_review_failure_posts_error_comment(
     mock_review, _mock_find_comment, mock_comment, mock_update
 ):
     """When review_pr raises, _run_review updates progress and posts an error comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_review.side_effect = TaskError("CLI timed out", premium_requests=3)
 
@@ -454,7 +454,7 @@ def test_review_failure_skips_comment_when_already_commented(
     mock_review, _mock_find_comment, mock_comment, mock_update
 ):
     """When TaskError has commented=True, _run_review only updates the progress comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_review.side_effect = TaskError("parse error", premium_requests=1, commented=True)
 
@@ -552,7 +552,7 @@ def test_implement_failure_posts_error_comment(
     mock_impl, _mock_issue, _mock_find_comment, mock_comment, mock_update
 ):
     """When implement_issue raises, _run_implement updates progress and posts an error comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_impl.side_effect = TaskError("CLI crashed", premium_requests=5)
 

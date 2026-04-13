@@ -12,15 +12,6 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
-from copilot import TaskError
-from git import reap_old_worktrees
-from github import (
-    TRUSTED_ROLES,
-    comment_on_issue,
-    find_issue_comment_by_body_prefix,
-    get_issue,
-    update_comment,
-)
 from implement import implement_issue
 from metrics import (
     METRICS_REGISTRY,
@@ -30,6 +21,15 @@ from metrics import (
     TASK_TOTAL,
 )
 from review import review_pr
+from services.copilot import TaskError
+from services.git import reap_old_worktrees
+from services.github import (
+    TRUSTED_ROLES,
+    comment_on_issue,
+    find_issue_comment_by_body_prefix,
+    get_issue,
+    update_comment,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, mock_open, patch
 
 import httpx
 
-import github
+import services.github as github
 
 
 class TestGenerateJWT:
@@ -100,7 +100,7 @@ class TestFindPrByBranch:
 
         async def run():
             with (
-                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
                     "httpx.AsyncClient.get",
                     new_callable=AsyncMock,
@@ -122,7 +122,7 @@ class TestFindPrByBranch:
 
         async def run():
             with (
-                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
                     "httpx.AsyncClient.get",
                     new_callable=AsyncMock,
@@ -145,7 +145,7 @@ class TestIssueComments:
 
         async def run():
             with (
-                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
                     "httpx.AsyncClient.post",
                     new_callable=AsyncMock,
@@ -168,7 +168,7 @@ class TestIssueComments:
 
         async def run():
             with (
-                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
                     "httpx.AsyncClient.patch",
                     new_callable=AsyncMock,
@@ -210,7 +210,7 @@ class TestIssueComments:
 
         async def run():
             with (
-                patch("github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
                     "httpx.AsyncClient.get",
                     new_callable=AsyncMock,

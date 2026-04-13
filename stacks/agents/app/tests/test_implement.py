@@ -7,13 +7,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from copilot import CLIResult, TaskError
-from implement import _cli_stage_stats, _format_stage_stats, implement_issue
+from implement import implement_issue
+from services.copilot import CLIResult, TaskError
+from stats import cli_stage_stats, format_stage_stats
+
+_MOD = "implement.orchestrator"
 
 
 class TestFormatStageStats:
     def test_formats_all_fields(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             premium_requests=2,
             elapsed_seconds=125,
             models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
@@ -23,49 +26,49 @@ class TestFormatStageStats:
         assert "🤖 gpt-5.4: 883.6k in, 17.7k out, 788.5k cached" in result
 
     def test_includes_api_time(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             elapsed_seconds=900,
             api_time_seconds=723,
         )
         assert "⏱️ 15m 0s (API: 12m 3s)" in result
 
     def test_omits_api_time_when_zero(self):
-        result = _format_stage_stats(elapsed_seconds=60)
+        result = format_stage_stats(elapsed_seconds=60)
         assert "(API:" not in result
 
     def test_includes_effort(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             premium_requests=1,
             effort="high",
         )
         assert "🧠 high" in result
 
     def test_strips_est_premium_from_models(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             models={"gpt-5.4": "2.2m in, 28.9k out (Est. 1 Premium request)"},
         )
         assert "(Est." not in result
         assert "2.2m in, 28.9k out" in result
 
     def test_empty_when_no_data(self):
-        assert _format_stage_stats() == ""
+        assert format_stage_stats() == ""
 
     def test_tokens_line_when_no_models(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             premium_requests=1,
             tokens_line="↑ 1.1m • ↓ 18.9k • 1.0m (cached)",
         )
         assert "📊 ↑ 1.1m • ↓ 18.9k • 1.0m (cached)" in result
 
     def test_models_preferred_over_tokens_line(self):
-        result = _format_stage_stats(
+        result = format_stage_stats(
             models={"gpt-5.4": "1.2m in, 12k out"},
             tokens_line="↑ 1.1m • ↓ 18.9k",
         )
         assert "🤖 gpt-5.4" in result
         assert "📊" not in result
 
-    def test_cli_stage_stats_from_result(self):
+    def testcli_stage_stats_from_result(self):
         r = CLIResult(
             output="",
             total_premium_requests=1,
@@ -73,20 +76,20 @@ class TestFormatStageStats:
             session_time_seconds=300,
             models={"gpt-5.4": "1.2m in, 12k out"},
         )
-        result = _cli_stage_stats(r, effort="high")
+        result = cli_stage_stats(r, effort="high")
         assert "💰 1 premium" in result
         assert "⏱️ 5m 0s (API: 3m 0s)" in result
         assert "🧠 high" in result
         assert "gpt-5.4" in result
 
-    def test_cli_stage_stats_new_format(self):
+    def testcli_stage_stats_new_format(self):
         r = CLIResult(
             output="",
             total_premium_requests=1,
             session_time_seconds=376,
             tokens_line="↑ 1.1m • ↓ 18.9k • 1.0m (cached) • 11.7k (reasoning)",
         )
-        result = _cli_stage_stats(r, effort="high")
+        result = cli_stage_stats(r, effort="high")
         assert "💰 1 premium" in result
         assert "⏱️ 6m 16s" in result
         assert "📊 ↑ 1.1m" in result
@@ -112,26 +115,26 @@ class TestImplementIssue:
     def _base_mocks(self, *, pr_data=None, cli_result=None):
         """Return standard patches for implement_issue tests."""
         return [
-            patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
-            patch("implement.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+            patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+            patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
             patch(
-                "implement.create_branch_worktree",
+                "implement.orchestrator.create_branch_worktree",
                 new_callable=AsyncMock,
                 return_value=Path("/tmp/wt"),
             ),
             patch(
-                "implement.run_copilot",
+                "implement.orchestrator.run_copilot",
                 new_callable=AsyncMock,
                 return_value=cli_result or self.MOCK_CLI_RESULT,
             ),
             patch(
-                "implement.find_pr_by_branch",
+                "implement.orchestrator.find_pr_by_branch",
                 new_callable=AsyncMock,
                 return_value=pr_data,
             ),
-            patch("implement.close_issue", new_callable=AsyncMock),
-            patch("implement.comment_on_issue", new_callable=AsyncMock),
-            patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+            patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
+            patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+            patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
         ]
 
     def _run(self, mocks, **kwargs):
@@ -193,9 +196,9 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
-                patch("implement.get_issue", new_callable=AsyncMock, return_value=untrusted_issue),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=untrusted_issue),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
 
@@ -208,22 +211,22 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
-                patch("implement.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
-                    "implement.create_branch_worktree",
+                    "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
                     return_value=Path("/tmp/wt"),
                 ),
                 patch(
-                    "implement.run_copilot",
+                    "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
                     return_value=self.MOCK_CLI_RESULT,
                 ) as mock_cli,
-                patch("implement.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
-                patch("implement.close_issue", new_callable=AsyncMock),
-                patch("implement.comment_on_issue", new_callable=AsyncMock),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
                 return mock_cli
@@ -242,22 +245,22 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
-                patch("implement.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
-                    "implement.create_branch_worktree",
+                    "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
                     return_value=Path("/tmp/wt"),
                 ),
                 patch(
-                    "implement.run_copilot",
+                    "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
                     return_value=self.MOCK_CLI_RESULT,
                 ),
-                patch("implement.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
-                patch("implement.close_issue", new_callable=AsyncMock) as mock_close,
-                patch("implement.comment_on_issue", new_callable=AsyncMock),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
+                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
                 return mock_close
@@ -276,22 +279,22 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
-                patch("implement.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
-                    "implement.create_branch_worktree",
+                    "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
                     return_value=Path("/tmp/wt"),
                 ),
                 patch(
-                    "implement.run_copilot",
+                    "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
                     return_value=self.MOCK_CLI_RESULT,
                 ),
-                patch("implement.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
-                patch("implement.close_issue", new_callable=AsyncMock) as mock_close,
-                patch("implement.comment_on_issue", new_callable=AsyncMock),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
+                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
                 return mock_close
@@ -305,23 +308,23 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
-                    "implement.get_issue",
+                    "implement.orchestrator.get_issue",
                     new_callable=AsyncMock,
                     return_value=self.MOCK_ISSUE,
                 ),
                 patch(
-                    "implement.create_branch_worktree",
+                    "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
                     return_value=Path("/tmp/wt"),
                 ),
                 patch(
-                    "implement.run_copilot",
+                    "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
                     side_effect=cli_error,
                 ),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
 
@@ -347,23 +350,23 @@ class TestImplementIssue:
 
         async def run():
             with (
-                patch("implement.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(
-                    "implement.get_issue",
+                    "implement.orchestrator.get_issue",
                     new_callable=AsyncMock,
                     return_value=self.MOCK_ISSUE,
                 ),
                 patch(
-                    "implement.create_branch_worktree",
+                    "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
                     return_value=Path("/tmp/wt"),
                 ),
                 patch(
-                    "implement.run_copilot",
+                    "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
                     side_effect=cli_error,
                 ),
-                patch("implement.cleanup_branch_worktree", new_callable=AsyncMock) as mock_cleanup,
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock) as mock_cleanup,
             ):
                 with pytest.raises(TaskError):
                     await implement_issue(repo="user/repo", issue_number=42)

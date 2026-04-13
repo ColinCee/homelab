@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import git as git_module
+import services.git as git_module
 
 
 class TestRunCommand:
@@ -215,7 +215,7 @@ class TestDeferredCleanup:
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
                 patch.object(git_module, "WORKTREE_RETENTION_SECONDS", 3600),
-                patch("git.time.time", return_value=1_700_000_000),
+                patch("services.git.time.time", return_value=1_700_000_000),
             ):
                 await git_module.cleanup_worktree(42)
 
@@ -232,7 +232,7 @@ class TestDeferredCleanup:
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
                 patch.object(git_module, "WORKTREE_RETENTION_SECONDS", 120),
-                patch("git.time.time", return_value=50),
+                patch("services.git.time.time", return_value=50),
             ):
                 await git_module.cleanup_branch_worktree("agent/issue-42")
 
@@ -286,7 +286,7 @@ class TestReapOldWorktrees:
         async def run():
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
-                patch("git.time.time", return_value=20),
+                patch("services.git.time.time", return_value=20),
                 patch.object(
                     git_module, "_remove_named_worktree", new_callable=AsyncMock
                 ) as mock_remove,

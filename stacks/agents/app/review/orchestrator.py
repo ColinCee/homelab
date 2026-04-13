@@ -4,9 +4,9 @@ import logging
 import re
 import time
 
-from copilot import run_copilot
-from git import cleanup_worktree, create_worktree
-from github import (
+from services.copilot import run_copilot
+from services.git import cleanup_worktree, create_worktree
+from services.github import (
     TRUSTED_ROLES,
     get_issue,
     get_pr,
