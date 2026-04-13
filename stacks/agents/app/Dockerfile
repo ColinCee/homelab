@@ -33,7 +33,7 @@ ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 RUN MISE_VERSION="${MISE_VERSION}" curl https://mise.run | sh
-COPY mise.toml /mise/config.toml
+COPY stacks/agents/app/mise.docker.toml /mise/config.toml
 RUN mise install --yes && mise reshim
 
 WORKDIR /app
