@@ -111,7 +111,9 @@ async def review_pr(
         head_ref = pr_data.get("head", {}).get("ref")
         head_repo = pr_data.get("head", {}).get("repo", {}).get("full_name")
         if head_repo != repo:
-            head_ref = None
+            raise ValueError(
+                f"PR #{pr_number} is from fork '{head_repo}' — refusing to review with GH_TOKEN"
+            )
 
         worktree_path = await create_worktree(pr_number, repo_url, head_ref=head_ref)
 

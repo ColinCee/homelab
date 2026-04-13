@@ -1,7 +1,7 @@
 # ADR-009: Capped Review Cycle in the Implement Lifecycle
 
 **Date:** 2026-04-12
-**Status:** Accepted (updated from single-cycle to 2-round cap; enforcement moved from orchestrator constant to skill file per ADR-010)
+**Status:** Superseded by ADR-010 (enforcement moved from orchestrator to CLI skill file)
 
 ## Context
 

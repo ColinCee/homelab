@@ -165,18 +165,35 @@ class TestImplementIssue:
         assert result["premium_requests"] == 5
 
     def test_partial_when_pr_not_merged(self):
-        """CLI creates PR but doesn't merge → status partial."""
+        """CLI creates PR but doesn't merge and no auto-merge → status partial."""
         pr_data = {
             "number": 99,
             "html_url": "https://github.com/user/repo/pull/99",
             "merged_at": None,
             "merged": False,
+            "auto_merge": None,
         }
         mocks = self._base_mocks(pr_data=pr_data)
         result = self._run(mocks)
         assert result["status"] == "partial"
         assert result["merged"] is False
         assert "manual attention" in result["error"]
+
+    def test_complete_when_auto_merge_enabled(self):
+        """CLI enables auto-merge → status complete, issue not closed (GitHub handles it)."""
+        pr_data = {
+            "number": 99,
+            "html_url": "https://github.com/user/repo/pull/99",
+            "merged_at": None,
+            "merged": False,
+            "auto_merge": {"enabled_by": {"login": "bot"}, "merge_method": "squash"},
+        }
+        mocks = self._base_mocks(pr_data=pr_data)
+        result = self._run(mocks)
+        assert result["status"] == "complete"
+        assert result["merged"] is False
+        assert result["auto_merge"] is True
+        assert "error" not in result
 
     def test_failed_when_no_pr_created(self):
         """CLI doesn't create a PR → status failed."""

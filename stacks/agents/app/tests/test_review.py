@@ -190,3 +190,25 @@ class TestReviewPr:
 
         mock_cli = asyncio.run(run())
         assert mock_cli.await_args.kwargs["github_token"] == "my-token"
+
+    def test_rejects_fork_prs(self):
+        """PRs from forks are rejected to prevent giving GH_TOKEN to untrusted code."""
+        pr_data = {
+            "title": "Malicious PR",
+            "body": "Fixes #1",
+            "base": {"ref": "main"},
+            "head": {"ref": "evil-branch", "repo": {"full_name": "attacker/repo"}},
+        }
+
+        async def run():
+            with (
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_pr", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.cleanup_worktree", new_callable=AsyncMock),
+            ):
+                return await review_pr(repo="user/repo", pr_number=1)
+
+        import pytest
+
+        with pytest.raises(ValueError, match="fork"):
+            asyncio.run(run())

@@ -96,6 +96,7 @@ async def implement_issue(
             pr_number = pr_data["number"]
             pr_url = pr_data["html_url"]
             merged = pr_data.get("merged_at") is not None or pr_data.get("merged", False)
+            auto_merge = pr_data.get("auto_merge") is not None
 
             if merged:
                 with contextlib.suppress(Exception):
@@ -106,6 +107,19 @@ async def implement_issue(
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "merged": True,
+                    "elapsed_seconds": elapsed,
+                    "premium_requests": total_premium_requests,
+                    "session_id": result.session_id,
+                }
+            elif auto_merge:
+                # Auto-merge enabled — CLI did its job, GitHub will merge
+                # when CI passes and auto-close the issue via "Closes #N"
+                result_dict = {
+                    "status": "complete",
+                    "pr_number": pr_number,
+                    "pr_url": pr_url,
+                    "merged": False,
+                    "auto_merge": True,
                     "elapsed_seconds": elapsed,
                     "premium_requests": total_premium_requests,
                     "session_id": result.session_id,

@@ -97,7 +97,11 @@ def _implement_progress_comment(issue_number: int) -> str:
     return f"{IMPLEMENT_PROGRESS_PREFIX}{issue_number}..."
 
 
-def _implement_progress_success_comment(pr_number: int, pr_url: str) -> str:
+def _implement_progress_success_comment(
+    pr_number: int, pr_url: str, auto_merge: bool = False
+) -> str:
+    if auto_merge:
+        return f"✅ PR #{pr_number} created (auto-merge enabled) — {pr_url}"
     return f"✅ PR #{pr_number} created — {pr_url}"
 
 
@@ -410,9 +414,12 @@ async def _run_implement(
         }
         pr_number = result.get("pr_number")
         pr_url = result.get("pr_url")
+        auto_merge = result.get("auto_merge", False)
         if isinstance(pr_number, int) and isinstance(pr_url, str):
             await _update_progress_comment(
-                repo, progress_comment_id, _implement_progress_success_comment(pr_number, pr_url)
+                repo,
+                progress_comment_id,
+                _implement_progress_success_comment(pr_number, pr_url, auto_merge=auto_merge),
             )
     except ValueError as exc:
         # Trust boundary rejection (untrusted author) — don't interact with the issue

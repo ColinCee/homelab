@@ -149,6 +149,20 @@ def test_parse_session_id_from_markdown_transcript():
     assert _parse_session_id(output) == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 
+class TestRedactSecrets:
+    def test_redacts_gh_token(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.setenv("GH_TOKEN", "ghs_s3cr3t_token_value")
+        from services.copilot import _redact_secrets
+
+        assert _redact_secrets("token is ghs_s3cr3t_token_value here") == "token is [REDACTED] here"
+
+    def test_leaves_text_unchanged_without_secrets(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        from services.copilot import _redact_secrets
+
+        assert _redact_secrets("normal output") == "normal output"
+
+
 class TestRunCopilot:
     def _make_mock_process(self, stdout_text: str = "", returncode: int = 0):
         """Create a mock subprocess that yields stdout_text line by line."""
