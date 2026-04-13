@@ -265,7 +265,9 @@ def _review_pr_data() -> dict:
 @patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
 @patch("review.create_worktree", new_callable=AsyncMock)
 @patch("review.get_pr", new_callable=AsyncMock)
+@patch("review.get_token", new_callable=AsyncMock, return_value="token")
 def test_review_retries_once_on_parse_failure(
+    _mock_get_token,
     mock_get_pr,
     mock_create_worktree,
     _mock_linked_issues,
@@ -303,7 +305,9 @@ def test_review_retries_once_on_parse_failure(
 
     assert mock_run_copilot.await_count == 2
     assert mock_run_copilot.await_args_list[0].kwargs["session_id"] == "previous-session"
+    assert mock_run_copilot.await_args_list[0].kwargs["github_token"] == "token"
     assert mock_run_copilot.await_args_list[1].kwargs["session_id"] == "retry-session"
+    assert mock_run_copilot.await_args_list[1].kwargs["github_token"] == "token"
     mock_post_review.assert_awaited_once()
     assert "💰 3 premium request(s)" in mock_post_review.await_args.kwargs["body"]
     assert result["premium_requests"] == 3
@@ -318,7 +322,9 @@ def test_review_retries_once_on_parse_failure(
 @patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
 @patch("review.create_worktree", new_callable=AsyncMock)
 @patch("review.get_pr", new_callable=AsyncMock)
+@patch("review.get_token", new_callable=AsyncMock, return_value="token")
 def test_review_posts_error_after_parse_retry_fails(
+    _mock_get_token,
     mock_get_pr,
     mock_create_worktree,
     _mock_linked_issues,
@@ -370,7 +376,9 @@ def test_review_posts_error_after_parse_retry_fails(
 @patch("review._fetch_linked_issues_section", new_callable=AsyncMock, return_value="")
 @patch("review.create_worktree", new_callable=AsyncMock)
 @patch("review.get_pr", new_callable=AsyncMock)
+@patch("review.get_token", new_callable=AsyncMock, return_value="token")
 def test_review_does_not_retry_cli_failures(
+    _mock_get_token,
     mock_get_pr,
     mock_create_worktree,
     _mock_linked_issues,

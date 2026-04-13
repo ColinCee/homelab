@@ -128,8 +128,13 @@ async def run_copilot(
     model: str = "gpt-5.4",
     effort: str = "high",
     session_id: str | None = None,
+    github_token: str | None = None,
 ) -> CLIResult:
-    """Run Copilot CLI in headless mode and return result with stats."""
+    """Run Copilot CLI in headless mode and return result with stats.
+
+    When github_token is provided, GH_TOKEN is set in the CLI environment,
+    giving it full repo access (push, PR creation, reviews, merge).
+    """
     transcript_path = worktree_path / SESSION_TRANSCRIPT_FILE
     cmd = [
         COPILOT_BINARY,
@@ -149,9 +154,10 @@ async def run_copilot(
         cmd.append(f"--resume={session_id}")
 
     env = os.environ.copy()
-    # Ensure the CLI never inherits GitHub API access — the orchestrator
-    # handles all GitHub operations with its own scoped token.
-    env.pop("GH_TOKEN", None)
+    if github_token:
+        env["GH_TOKEN"] = github_token
+    else:
+        env.pop("GH_TOKEN", None)
 
     logger.info(
         "Running Copilot CLI in %s (model=%s, effort=%s, resume=%s)",

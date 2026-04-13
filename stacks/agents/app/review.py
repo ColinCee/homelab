@@ -18,6 +18,7 @@ from github import (
     get_diff_valid_lines,
     get_issue,
     get_pr,
+    get_token,
     get_unresolved_threads,
     post_review,
 )
@@ -257,6 +258,7 @@ async def review_pr(
     logger.info("Starting review for %s#%d (model=%s)", repo, pr_number, model)
     start = time.monotonic()
     repo_url = f"https://github.com/{repo}.git"
+    token = await get_token()
 
     try:
         pr_data = await get_pr(repo, pr_number)
@@ -294,6 +296,7 @@ async def review_pr(
             model=model,
             effort=reasoning_effort,
             session_id=session_id,
+            github_token=token,
         )
 
         # Everything after run_copilot can fail — wrap in a single handler
@@ -313,6 +316,7 @@ async def review_pr(
                     model=model,
                     effort=reasoning_effort,
                     session_id=retry_session_id,
+                    github_token=token,
                 )
                 retry_result.total_premium_requests += result.total_premium_requests
                 result = retry_result

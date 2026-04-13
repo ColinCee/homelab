@@ -484,13 +484,14 @@ async def implement_issue(
             body=issue_data.get("body") or "(no description)",
         )
 
-        # Agent gets NO GitHub API access — it only edits local files.
-        # The orchestrator handles all git/GitHub operations with the App token.
+        # CLI gets full repo access via GH_TOKEN for git push, PR creation,
+        # review posting, and merge operations.
         result = await run_copilot(
             worktree_path,
             prompt,
             model=model,
             effort=reasoning_effort,
+            github_token=token,
         )
         total_premium_requests += result.total_premium_requests
         implement_session_id = result.session_id
@@ -646,6 +647,7 @@ async def implement_issue(
                     model=model,
                     effort=reasoning_effort,
                     session_id=implement_session_id,
+                    github_token=token,
                 )
                 total_premium_requests += fix_result.total_premium_requests
                 if fix_result.session_id:
