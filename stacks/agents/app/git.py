@@ -35,6 +35,10 @@ class CleanupMarker:
     branch: str
 
 
+class RebaseConflictError(RuntimeError):
+    """Raised when rebasing onto main hits file-level conflicts."""
+
+
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
     """Run a command asynchronously, raising on failure."""
     proc = await asyncio.create_subprocess_exec(
@@ -197,6 +201,30 @@ async def reap_old_worktrees() -> None:
         await _reap_old_worktrees_locked()
 
 
+async def _force_push(worktree_path: Path, *, token: str, repo: str, branch: str) -> None:
+    """Force-push the current HEAD while keeping the token out of argv."""
+    askpass_script = worktree_path / ".git-askpass.sh"
+    askpass_script.write_text(f"#!/bin/sh\necho '{token}'\n")
+    askpass_script.chmod(0o700)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "git",
+            "push",
+            f"https://x-access-token@github.com/{repo}.git",
+            f"HEAD:refs/heads/{branch}",
+            "--force",
+            cwd=worktree_path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "GIT_ASKPASS": str(askpass_script)},
+        )
+        _stdout, stderr = await proc.communicate()
+        if proc.returncode != 0:
+            raise RuntimeError(f"git push failed (exit {proc.returncode})\n{stderr.decode()}")
+    finally:
+        askpass_script.unlink(missing_ok=True)
+
+
 async def commit_and_push(
     worktree_path: Path, *, message: str, token: str, repo: str, branch: str
 ) -> str:
@@ -245,30 +273,37 @@ async def commit_and_push(
     )
 
     sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
-
-    # Push using GIT_ASKPASS to keep the token out of command args and error messages
-    askpass_script = worktree_path / ".git-askpass.sh"
-    askpass_script.write_text(f"#!/bin/sh\necho '{token}'\n")
-    askpass_script.chmod(0o700)
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "push",
-            f"https://x-access-token@github.com/{repo}.git",
-            f"HEAD:refs/heads/{branch}",
-            "--force",
-            cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**__import__("os").environ, "GIT_ASKPASS": str(askpass_script)},
-        )
-        _stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"git push failed (exit {proc.returncode})\n{stderr.decode()}")
-    finally:
-        askpass_script.unlink(missing_ok=True)
+    await _force_push(worktree_path, token=token, repo=repo, branch=branch)
 
     logger.info("Pushed %s to %s/%s", sha[:8], repo, branch)
+    return sha
+
+
+async def rebase_onto_main(
+    worktree_path: Path, *, repo_url: str, token: str, repo: str, branch: str
+) -> str:
+    """Rebase a branch worktree onto the latest main and force-push the result."""
+    async with _repo_lock:
+        await init_bare_clone(repo_url)
+
+    proc = await asyncio.create_subprocess_exec(
+        "git",
+        "rebase",
+        "main",
+        cwd=worktree_path,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        await _run(["git", "rebase", "--abort"], cwd=worktree_path)
+        stderr_text = stderr.decode().strip() or "git rebase failed"
+        raise RebaseConflictError(stderr_text)
+
+    sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
+    await _force_push(worktree_path, token=token, repo=repo, branch=branch)
+
+    logger.info("Rebased %s onto main at %s", branch, sha[:8])
     return sha
 
 

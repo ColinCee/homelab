@@ -5,11 +5,18 @@ import contextlib
 import logging
 import re
 import time
+from pathlib import Path
 
 import httpx
 
 from copilot import CLIResult, TaskError, run_copilot
-from git import cleanup_branch_worktree, commit_and_push, create_branch_worktree
+from git import (
+    RebaseConflictError,
+    cleanup_branch_worktree,
+    commit_and_push,
+    create_branch_worktree,
+    rebase_onto_main,
+)
 from github import (
     TRUSTED_ROLES,
     bot_login,
@@ -30,6 +37,7 @@ logger = logging.getLogger(__name__)
 MAX_REVIEW_ROUNDS = 2
 MERGE_READY_TIMEOUT_SECONDS = 15 * 60
 MERGE_POLL_INTERVAL_SECONDS = 10
+REBASE_HEAD_PROPAGATION_GRACE_SECONDS = 3 * MERGE_POLL_INTERVAL_SECONDS
 
 STATUS_EMOJI = {
     "complete": "✅",
@@ -191,15 +199,22 @@ async def _merge_when_eligible(
     pr_number: int,
     pr_url: str,
     branch_name: str,
+    worktree_path: Path,
+    token: str,
+    repo_url: str,
     commit_sha: str,
     review_rounds: int,
     start: float,
     premium_requests: int,
+    review_progress_id: int | None = None,
     session_id: str | None = None,
 ) -> dict:
     """Wait for a clean, green PR and squash-merge it when GitHub allows."""
     deadline = _monotonic() + MERGE_READY_TIMEOUT_SECONDS
     last_wait_reason = "GitHub is still calculating mergeability"
+    rebase_attempted = False
+    previous_commit_sha: str | None = None
+    head_sync_deadline: float | None = None
 
     while _monotonic() < deadline:
         mergeable_state = "unknown"
@@ -284,6 +299,28 @@ async def _merge_when_eligible(
 
             current_sha = current_head.get("sha")
             if current_sha != commit_sha:
+                if (
+                    previous_commit_sha is not None
+                    and current_sha == previous_commit_sha
+                    and head_sync_deadline is not None
+                ):
+                    if _monotonic() < head_sync_deadline:
+                        last_wait_reason = "Waiting for GitHub to reflect rebased PR head"
+                        await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
+                        continue
+                    return _lifecycle_result(
+                        status="partial",
+                        pr_number=pr_number,
+                        pr_url=pr_url,
+                        commit_sha=commit_sha,
+                        review_rounds=review_rounds,
+                        start=start,
+                        premium_requests=premium_requests,
+                        session_id=session_id,
+                        error="PR head did not update to the rebased commit"
+                        " — needs manual attention",
+                        mergeable_state=mergeable_state,
+                    )
                 return _lifecycle_result(
                     status="partial",
                     pr_number=pr_number,
@@ -296,6 +333,8 @@ async def _merge_when_eligible(
                     error="PR head changed after review — needs manual attention",
                     mergeable_state=mergeable_state,
                 )
+            previous_commit_sha = None
+            head_sync_deadline = None
 
             ci_result = await get_commit_ci_status(repo, commit_sha)
             ci_status = ci_result.get("state", "none")
@@ -306,6 +345,41 @@ async def _merge_when_eligible(
                 continue
 
             if not pr_data.get("mergeable"):
+                if mergeable_state == "dirty" and not rebase_attempted:
+                    rebase_attempted = True
+                    with contextlib.suppress(Exception):
+                        if review_progress_id is not None:
+                            await update_comment(
+                                repo, review_progress_id, "🔄 Rebasing onto main..."
+                            )
+                    try:
+                        previous_commit_sha = commit_sha
+                        commit_sha = await rebase_onto_main(
+                            worktree_path,
+                            repo_url=repo_url,
+                            token=token,
+                            repo=repo,
+                            branch=branch_name,
+                        )
+                        head_sync_deadline = _monotonic() + REBASE_HEAD_PROPAGATION_GRACE_SECONDS
+                        last_wait_reason = "Rebased onto main — waiting for CI"
+                        await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
+                        continue
+                    except RebaseConflictError as exc:
+                        return _lifecycle_result(
+                            status="partial",
+                            pr_number=pr_number,
+                            pr_url=pr_url,
+                            commit_sha=commit_sha,
+                            review_rounds=review_rounds,
+                            start=start,
+                            premium_requests=premium_requests,
+                            session_id=session_id,
+                            error="Rebase onto main failed with conflicts"
+                            f" — needs manual resolution: {exc}",
+                            mergeable_state=mergeable_state,
+                            ci_status=ci_status,
+                        )
                 last_wait_reason = f"PR is not mergeable ({mergeable_state}) — waiting"
                 await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
                 continue
@@ -641,9 +715,10 @@ async def implement_issue(
                     )
                     raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
+        review_progress_id: int | None = None
         with contextlib.suppress(Exception):
             rounds_label = f"{review_rounds} round{'s' if review_rounds != 1 else ''}"
-            await comment_on_issue(
+            review_progress_id = await comment_on_issue(
                 repo,
                 pr_number,
                 f"⏳ **Review complete** ({rounds_label}) — waiting for merge...",
@@ -654,10 +729,14 @@ async def implement_issue(
             pr_number=pr_number,
             pr_url=pr_url,
             branch_name=branch_name,
+            worktree_path=worktree_path,
+            token=token,
+            repo_url=repo_url,
             commit_sha=sha,
             review_rounds=review_rounds,
             start=start,
             premium_requests=total_premium_requests,
+            review_progress_id=review_progress_id,
             session_id=implement_session_id,
         )
 

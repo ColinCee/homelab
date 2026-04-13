@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 import git as git_module
 
 
@@ -244,6 +246,128 @@ class TestCreateWorktree:
             assert any(".copilot-session.md" in c for c in rm_calls)
             assert any(".copilot" in c for c in rm_calls)
             assert any(".cleanup-after" in c for c in rm_calls)
+
+        asyncio.run(run())
+
+
+class TestCommitAndPush:
+    def test_force_push_extracted(self):
+        async def mock_run(cmd, cwd=None):
+            if cmd[:3] == ["git", "rev-parse", "HEAD"]:
+                return "abc123"
+            return ""
+
+        async def run():
+            with (
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_force_push,
+                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            ):
+                diff_proc = AsyncMock()
+                diff_proc.communicate.return_value = (b"", b"")
+                diff_proc.returncode = 1
+                mock_exec.return_value = diff_proc
+
+                sha = await git_module.commit_and_push(
+                    Path("/tmp/wt"),
+                    message="test",
+                    token="tok",
+                    repo="user/repo",
+                    branch="main",
+                )
+
+            assert sha == "abc123"
+            mock_force_push.assert_awaited_once_with(
+                Path("/tmp/wt"),
+                token="tok",
+                repo="user/repo",
+                branch="main",
+            )
+
+        asyncio.run(run())
+
+
+class TestRebaseOntoMain:
+    def test_rebase_onto_main_success(self):
+        async def run():
+            with (
+                patch.object(
+                    git_module,
+                    "init_bare_clone",
+                    new_callable=AsyncMock,
+                    return_value=Path("/tmp/repo.git"),
+                ) as mock_init,
+                patch.object(
+                    git_module, "_run", new_callable=AsyncMock, return_value="rebased456"
+                ) as mock_run,
+                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_push,
+                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+            ):
+                rebase_proc = AsyncMock()
+                rebase_proc.communicate.return_value = (b"", b"")
+                rebase_proc.returncode = 0
+                mock_exec.return_value = rebase_proc
+
+                sha = await git_module.rebase_onto_main(
+                    Path("/tmp/wt"),
+                    repo_url="https://github.com/user/repo.git",
+                    token="tok",
+                    repo="user/repo",
+                    branch="agent/issue-42",
+                )
+
+            assert sha == "rebased456"
+            mock_init.assert_awaited_once_with("https://github.com/user/repo.git")
+            mock_run.assert_awaited_once_with(["git", "rev-parse", "HEAD"], cwd=Path("/tmp/wt"))
+            mock_push.assert_awaited_once_with(
+                Path("/tmp/wt"),
+                token="tok",
+                repo="user/repo",
+                branch="agent/issue-42",
+            )
+            mock_exec.assert_awaited_once_with(
+                "git",
+                "rebase",
+                "main",
+                cwd=Path("/tmp/wt"),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+        asyncio.run(run())
+
+    def test_rebase_onto_main_conflict_aborts(self):
+        async def run():
+            with (
+                patch.object(
+                    git_module,
+                    "init_bare_clone",
+                    new_callable=AsyncMock,
+                    return_value=Path("/tmp/repo.git"),
+                ),
+                patch.object(git_module, "_run", new_callable=AsyncMock) as mock_run,
+                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_push,
+                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
+                pytest.raises(git_module.RebaseConflictError, match="CONFLICT"),
+            ):
+                rebase_proc = AsyncMock()
+                rebase_proc.communicate.return_value = (
+                    b"",
+                    b"CONFLICT (content): Merge conflict in git.py\n",
+                )
+                rebase_proc.returncode = 1
+                mock_exec.return_value = rebase_proc
+
+                await git_module.rebase_onto_main(
+                    Path("/tmp/wt"),
+                    repo_url="https://github.com/user/repo.git",
+                    token="tok",
+                    repo="user/repo",
+                    branch="agent/issue-42",
+                )
+
+            mock_run.assert_awaited_once_with(["git", "rebase", "--abort"], cwd=Path("/tmp/wt"))
+            mock_push.assert_not_awaited()
 
         asyncio.run(run())
 
