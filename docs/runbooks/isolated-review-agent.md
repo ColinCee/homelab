@@ -1,8 +1,7 @@
 # Operating the Agent Stack
 
-Setup, verification, and day-2 operations for the isolated agent service
-([ADR-004](../decisions/004-isolated-review-agent.md),
-[ADR-007](../decisions/007-agent-network-isolation.md),
+Setup, verification, and day-2 operations for the agent service
+([ADR-010](../decisions/010-agent-security-model.md),
 [ADR-008](../decisions/008-documentation-ownership.md)).
 
 ## Source-Owned Operational Contracts
@@ -12,18 +11,19 @@ Use the runbook for procedure. Use source for exact values that drift easily.
 | Fact | Authoritative source |
 |------|----------------------|
 | HTTP request/response models and status payloads | `stacks/agents/app/main.py` |
-| Review JSON schema and linked-issue parsing | `stacks/agents/app/review.py` |
-| Implement loop and PR body auto-close behavior | `stacks/agents/app/implement.py` |
-| Bot identity, review posting, and 422 fallback behavior | `stacks/agents/app/github.py` |
-| CLI timeout and stats parsing assumptions | `stacks/agents/app/copilot.py` |
-| Worktree retention, cleanup markers, and force-push policy | `stacks/agents/app/git.py` |
+| Review orchestrator and linked-issue parsing | `stacks/agents/app/review/orchestrator.py` |
+| Implement orchestrator and trust validation | `stacks/agents/app/implement/orchestrator.py` |
+| GitHub API helpers and bot identity | `stacks/agents/app/services/github.py` |
+| CLI timeout and stats parsing | `stacks/agents/app/services/copilot.py` |
+| Worktree lifecycle and cleanup markers | `stacks/agents/app/services/git.py` |
+| Implement/review lifecycle contract | `.github/skills/bot-implement/SKILL.md`, `.github/skills/bot-review/SKILL.md` |
 | Required deploy-time env vars | `stacks/agents/compose.yaml` and `stacks/agents/.env.example` |
 
 ## 1. Create the GitHub App
 
 1. Go to **Settings → Developer Settings → GitHub Apps → New GitHub App**.
 2. Configure:
-   - **Name:** match the bot identity expected by `github.py`
+   - **Name:** match the bot identity expected by `services/github.py`
      (currently `colins-homelab-bot`)
    - **Homepage URL:** `https://github.com/ColinCee/homelab`
    - **Webhook:** disabled
@@ -35,7 +35,7 @@ Use the runbook for procedure. Use source for exact values that drift easily.
 4. Install the app only on `ColinCee/homelab` and note the **Installation ID**.
 
 `Contents: Read & Write` is required for the implementation lifecycle: the
-orchestrator commits and force-pushes bot-owned `agent/issue-*` branches before
+CLI commits and pushes to bot-owned `agent/issue-*` branches before
 opening or updating the PR.
 
 ## 2. Create the Copilot token
@@ -50,8 +50,8 @@ Create a fine-grained personal access token for Copilot CLI:
    - **Account permissions → Copilot Requests:** **Read-only**
 3. Copy the token value.
 
-This token is only for Copilot inference. The CLI should not get GitHub API
-write credentials.
+This token is only for Copilot inference. It is separate from the `GH_TOKEN`
+(GitHub App installation token) that gives the CLI repo access.
 
 ## 3. Configure Dokploy secrets
 
@@ -94,7 +94,8 @@ mise run deploy:agents
 ### Implement an issue
 
 1. Add the `agent` label to the issue or comment `/implement`.
-2. The agent creates `agent/issue-<N>`, opens a PR, then runs the review/fix loop.
+2. The agent creates `agent/issue-<N>`, and the CLI handles the full lifecycle:
+   implement → self-review → fix (up to 2 rounds) → mark ready → merge.
 
 ## 6. Verify
 
@@ -138,15 +139,13 @@ docker ps --filter "name=agent" --format '{{.Names}}'
 # Tail recent logs
 docker logs <container-name> --since 1h -f
 
-# Filter for orchestrator events (review rounds, pushes, errors)
+# Filter for orchestrator events
 docker logs <container-name> --since 1h 2>&1 \
-  | grep -E "(Review round|Pushed|Review complete|Hit max|WARNING|ERROR)"
+  | grep -E "(Implementing|Starting review|Review complete|WARNING|ERROR)"
 ```
 
 Each Copilot CLI invocation logs a `Requests  N Premium` line showing cost, and
-a `Session transcript captured` line showing the full agent reasoning. Review
-rounds are numbered (`Review round 1/4`), so you can trace the exact
-review→fix→re-review flow.
+a `Session transcript captured` line showing the full agent reasoning.
 
 ## 8. Operational Gotchas
 

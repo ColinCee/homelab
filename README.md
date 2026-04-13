@@ -115,20 +115,11 @@ Documentation ownership rules and refresh triggers live in
 - **[Network](docs/private/network.md)** — topology, interfaces, traffic monitoring plan *(encrypted)*
 - **[Copilot Authoring Guide](.github/AUTHORING.md)** — how agent-facing `.github` docs are organized
 
-### Decisions (append-only ADRs)
+### [Decisions](docs/decisions/) (append-only ADRs)
 
-- **[ADR-001: Dokploy](docs/decisions/001-dokploy.md)** — why Dokploy, what was considered, feature comparison
-- **[ADR-002: Repo Tooling](docs/decisions/002-repo-tooling.md)** — why mise + uv + Python
-- **[ADR-003: Observability](docs/decisions/003-observability.md)** — why GPAL stack, CrowdSec, Healthchecks.io
-- **[ADR-004: Isolated Agent Service](docs/decisions/004-isolated-review-agent.md)** — isolated review + implementation agent architecture
-- **[ADR-005: CI Access Pattern](docs/decisions/005-ci-access-pattern.md)** — how GitHub Actions reaches the Beelink safely
-- **[ADR-006: Dokploy GitOps](docs/decisions/006-dokploy-gitops.md)** — deploy flow and env var ownership in Dokploy
-- **[ADR-007: Agent Network Isolation](docs/decisions/007-agent-network-isolation.md)** — why outbound egress filtering is not the boundary
-- **[ADR-008: Documentation Ownership](docs/decisions/008-documentation-ownership.md)** — what belongs in code vs docs, and when docs must change
+Browse [`docs/decisions/`](docs/decisions/) for the full list. ADRs are numbered sequentially — each captures an architecture, security, or repeating-pattern decision with tradeoffs and alternatives considered.
 
-### Runbooks
+### [Runbooks](docs/runbooks/)
 
-- **[Migration: Dokploy](docs/runbooks/migration.md)** — completed migration from Dockge/Tugtainer (reference)
-- **[Deploying Services](docs/runbooks/deploying-services.md)** — how to add new services (Dokploy Compose or local stack)
-- **[Operating the Agent Stack](docs/runbooks/isolated-review-agent.md)** — setup, verification, and day-2 operations for the agent service
+Browse [`docs/runbooks/`](docs/runbooks/) for operational procedures — deploying services, operating the agent stack, and migration references.
 

@@ -191,6 +191,6 @@ branch protection enforced — which is exactly what the agent is.
   superseded credential scoping rationale (network model unchanged)
 - [ADR-009: Capped Review Cycle](009-capped-review-cycle.md) — unchanged,
   2-round cap now enforced by skill file instead of orchestrator code
-- `stacks/agents/app/copilot.py` — line 154 strips `GH_TOKEN` (to be removed)
+- `stacks/agents/app/services/copilot.py` — CLI subprocess wrapper, injects `GH_TOKEN`
 - `stacks/agents/compose.yaml` — container security settings
 - `.github/skills/bot-implement/SKILL.md` — skill-based control plane
