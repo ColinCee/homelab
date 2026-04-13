@@ -14,6 +14,7 @@ from services.github import (
     get_token,
 )
 from stats import STATUS_EMOJI, format_stage_stats
+from trust import is_trusted_content_author
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,12 @@ async def implement_issue(
     issue_data = issue
     if issue_data is None:
         issue_data = await get_issue(repo, issue_number)
+
+    if not is_trusted_content_author(issue_data):
+        raise ValueError(
+            f"Issue #{issue_number} author is not trusted — "
+            "refusing to inject untrusted content into CLI prompt"
+        )
 
     total_premium_requests = 0
     result_dict: dict | None = None

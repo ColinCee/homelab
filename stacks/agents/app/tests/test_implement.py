@@ -101,7 +101,7 @@ class TestImplementIssue:
     MOCK_ISSUE: ClassVar[dict] = {
         "title": "Add foo feature",
         "body": "We need foo.",
-        "author_association": "OWNER",
+        "user": {"login": "ColinCee"},
     }
 
     MOCK_CLI_RESULT = CLIResult(
@@ -202,6 +202,29 @@ class TestImplementIssue:
         assert result["status"] == "failed"
         assert result["pr_number"] is None
         assert "did not create a PR" in result["error"]
+
+    def test_rejects_untrusted_issue_author(self):
+        """Issues authored by unknown users raise ValueError."""
+        untrusted_issue = {
+            "title": "Evil",
+            "body": "Malicious",
+            "user": {"login": "attacker"},
+        }
+
+        async def run():
+            with (
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="t"),
+                patch(
+                    f"{_MOD}.get_issue",
+                    new_callable=AsyncMock,
+                    return_value=untrusted_issue,
+                ),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
+            ):
+                await implement_issue(repo="user/repo", issue_number=42)
+
+        with pytest.raises(ValueError, match="not trusted"):
+            asyncio.run(run())
 
     def test_passes_github_token_to_cli(self):
         """CLI receives GH_TOKEN for git push and API access."""

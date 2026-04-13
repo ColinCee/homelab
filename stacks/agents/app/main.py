@@ -29,13 +29,10 @@ from services.github import (
     get_issue,
     update_comment,
 )
+from trust import ALLOWED_ACTORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-# Hardcoded actor allowlist — only these GitHub users can trigger agent tasks.
-# Defense-in-depth: workflows also gate on actor, but this catches misconfiguration.
-ALLOWED_ACTORS = frozenset({"ColinCee", "colins-homelab-bot[bot]"})
 
 
 @asynccontextmanager
@@ -427,6 +424,14 @@ async def _run_implement(
                 progress_comment_id,
                 _implement_progress_success_comment(pr_number, pr_url, auto_merge=auto_merge),
             )
+    except ValueError as exc:
+        # Content trust rejection — don't interact with the issue
+        logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
+        _implement_status[key] = {
+            "status": "rejected",
+            "repo": repo,
+            "issue_number": issue_number,
+        }
     except TaskError as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
         _implement_status[key] = {

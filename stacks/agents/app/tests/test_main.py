@@ -589,3 +589,19 @@ def test_implement_failure_posts_error_comment(
     assert mock_comment.await_args_list[0] == call("user/repo", 10, "🔄 Implementing #10...")
     assert "Implementation failed" in mock_comment.await_args_list[1].args[2]
     mock_update.assert_awaited_once_with("user/repo", 3003, "⚠️ Implementation failed — CLI crashed")
+
+
+@patch("main.comment_on_issue", new_callable=AsyncMock)
+@patch("main._get_issue_for_progress", new_callable=AsyncMock)
+@patch("main.implement_issue", new_callable=AsyncMock)
+def test_implement_content_rejection_does_not_post_comment(mock_impl, mock_issue, mock_comment):
+    """Content trust rejection should not post a progress or error comment."""
+    mock_issue.return_value = {"title": "x"}
+    mock_impl.side_effect = ValueError("not trusted")
+
+    asyncio.run(
+        _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
+    )
+
+    mock_comment.assert_not_called()
+    assert _implement_status["user/repo#10"]["status"] == "rejected"

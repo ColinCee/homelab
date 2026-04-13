@@ -62,7 +62,7 @@ class TestFetchLinkedIssuesSection:
         mock_get_issue.return_value = {
             "title": "Bug",
             "body": "Fix it",
-            "author_association": "OWNER",
+            "user": {"login": "ColinCee"},
         }
 
         async def run():
@@ -86,7 +86,7 @@ class TestFetchLinkedIssuesSection:
         mock_get_issue.return_value = {
             "title": "No body",
             "body": None,
-            "author_association": "OWNER",
+            "user": {"login": "ColinCee"},
         }
 
         async def run():
@@ -100,7 +100,7 @@ class TestFetchLinkedIssuesSection:
         mock_get_issue.return_value = {
             "title": "Evil",
             "body": "Malicious prompt",
-            "author_association": "NONE",
+            "user": {"login": "attacker"},
         }
 
         async def run():
@@ -109,18 +109,16 @@ class TestFetchLinkedIssuesSection:
         assert asyncio.run(run()) == ""
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
-    def test_includes_collaborator_issues(self, mock_get_issue: AsyncMock):
+    def test_rejects_issue_with_missing_user(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
-            "title": "Feature",
-            "body": "Add it",
-            "author_association": "COLLABORATOR",
+            "title": "No user field",
+            "body": "Suspicious",
         }
 
         async def run():
-            return await _fetch_linked_issues_section("user/repo", "Fixes #3")
+            return await _fetch_linked_issues_section("user/repo", "Fixes #5")
 
-        result = asyncio.run(run())
-        assert "### #3: Feature" in result
+        assert asyncio.run(run()) == ""
 
 
 class TestReviewPr:
@@ -153,7 +151,7 @@ class TestReviewPr:
                     return_value={
                         "title": "Bug",
                         "body": "Fix",
-                        "author_association": "OWNER",
+                        "user": {"login": "ColinCee"},
                     },
                 ),
                 patch(f"{_MOD}.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),

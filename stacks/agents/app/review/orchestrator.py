@@ -11,6 +11,7 @@ from services.github import (
     get_pr,
     get_token,
 )
+from trust import is_trusted_content_author
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,6 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     Only includes issues authored by trusted roles to prevent prompt
     injection via attacker-controlled issue bodies.
     """
-    trusted_roles = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
     issue_numbers = _parse_linked_issues(description)
     if not issue_numbers:
         return ""
@@ -64,12 +64,10 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     for num in issue_numbers:
         try:
             issue = await get_issue(repo, num)
-            author_role = issue.get("author_association", "NONE")
-            if author_role not in trusted_roles:
+            if not is_trusted_content_author(issue):
                 logger.warning(
-                    "Skipping linked issue #%d — author role '%s' not trusted",
+                    "Skipping linked issue #%d — author not trusted for prompt injection",
                     num,
-                    author_role,
                 )
                 continue
             title = issue.get("title", "")

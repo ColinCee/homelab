@@ -49,8 +49,9 @@ destructive actions.
 
 | Control | Enforcement |
 |---------|-------------|
-| Actor allowlist | Hardcoded `ALLOWED_ACTORS` set in the orchestrator (`main.py`). Both `/review` and `/implement` endpoints reject requests from actors not in the allowlist with 403. Defense-in-depth — workflows also gate on actor role, but this catches workflow misconfiguration. |
-| Fork PR rejection | Review endpoint rejects fork PRs (where the head repo differs from the base repo). Prevents untrusted code from triggering agent reviews. |
+| Actor allowlist | Hardcoded `ALLOWED_ACTORS` in `trust.py` — single source of truth. Both `/review` and `/implement` endpoints reject unknown triggering actors with 403. Workflows also gate on `author_association` (free, prevents the run). |
+| Content trust | Issue/PR bodies injected into CLI prompts are checked against `ALLOWED_ACTORS` via `user.login`. Linked issues from untrusted authors are silently skipped; untrusted issue authors for `/implement` raise `ValueError`. Prevents prompt injection via attacker-controlled content. |
+| Fork PR rejection | Review endpoint rejects fork PRs (where the head repo differs from the base repo, including deleted forks). Prevents untrusted code from triggering agent reviews with GH_TOKEN. |
 | Skill file separation | The `.github/skills/` files are trusted instructions committed by repo owners. Untrusted content (issue bodies) is clearly delineated as user input in the prompt, not system instructions. |
 | Branch protection | Even if the CLI is tricked into pushing to main, GitHub branch protection rules reject it. Requires CI to pass and blocks force-push. |
 | Token scope | The App token is scoped to a single repository. Even a fully compromised CLI cannot access other repositories, org settings, or admin operations. |
