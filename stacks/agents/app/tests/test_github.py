@@ -107,7 +107,7 @@ class TestFindPrByBranch:
                     return_value=pr_resp,
                 ),
             ):
-                return await github.find_pr_by_branch("user/repo", "user:agent/issue-1")
+                return await github.find_pr_by_branch("user/repo", "agent/issue-1")
 
         result = asyncio.run(run())
         assert result is not None
@@ -129,7 +129,7 @@ class TestFindPrByBranch:
                     return_value=pr_resp,
                 ),
             ):
-                return await github.find_pr_by_branch("user/repo", "user:agent/issue-1")
+                return await github.find_pr_by_branch("user/repo", "agent/issue-1")
 
         result = asyncio.run(run())
         assert result is None

@@ -88,8 +88,7 @@ async def implement_issue(
         total_premium_requests += result.total_premium_requests
 
         # Check what the CLI accomplished
-        owner = repo.split("/")[0]
-        pr_data = await find_pr_by_branch(repo, f"{owner}:{branch_name}")
+        pr_data = await find_pr_by_branch(repo, branch_name)
 
         elapsed = _monotonic() - start
 
