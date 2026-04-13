@@ -1,4 +1,4 @@
-"""Git operations — bare clone, worktrees, branches, and push."""
+"""Git operations — bare clone, worktrees, and cleanup."""
 
 import asyncio
 import contextlib
@@ -9,8 +9,6 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-
-from github import bot_email, bot_login
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +31,6 @@ _repo_lock = asyncio.Lock()
 class CleanupMarker:
     expires_at: int
     branch: str
-
-
-class RebaseConflictError(RuntimeError):
-    """Raised when rebasing onto main hits file-level conflicts."""
 
 
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
@@ -199,112 +193,6 @@ async def reap_old_worktrees() -> None:
     """Delete worktrees whose cleanup retention window has expired."""
     async with _repo_lock:
         await _reap_old_worktrees_locked()
-
-
-async def _force_push(worktree_path: Path, *, token: str, repo: str, branch: str) -> None:
-    """Force-push the current HEAD while keeping the token out of argv."""
-    askpass_script = worktree_path / ".git-askpass.sh"
-    askpass_script.write_text(f"#!/bin/sh\necho '{token}'\n")
-    askpass_script.chmod(0o700)
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "git",
-            "push",
-            f"https://x-access-token@github.com/{repo}.git",
-            f"HEAD:refs/heads/{branch}",
-            "--force",
-            cwd=worktree_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env={**os.environ, "GIT_ASKPASS": str(askpass_script)},
-        )
-        _stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            raise RuntimeError(f"git push failed (exit {proc.returncode})\n{stderr.decode()}")
-    finally:
-        askpass_script.unlink(missing_ok=True)
-
-
-async def commit_and_push(
-    worktree_path: Path, *, message: str, token: str, repo: str, branch: str
-) -> str:
-    """Stage all changes, commit, and push to the remote branch. Returns commit SHA."""
-    # Auto-format and fix lint issues before staging. The CLI agent doesn't
-    # run our pre-commit hooks, so the orchestrator ensures clean commits.
-    with contextlib.suppress(RuntimeError):
-        await _run(["ruff", "format", "."], cwd=worktree_path)
-    with contextlib.suppress(RuntimeError):
-        await _run(["ruff", "check", "--fix", "."], cwd=worktree_path)
-
-    await _run(["git", "add", "-A"], cwd=worktree_path)
-
-    # Unstage CLI artifacts that git add -A may have picked up.
-    # Worktrees don't inherit the repo's .gitignore, so we handle it here.
-    for artifact in (".copilot-session.md", ".copilot", CLEANUP_MARKER_FILE):
-        with contextlib.suppress(RuntimeError):
-            await _run(["git", "rm", "--cached", "-rf", artifact], cwd=worktree_path)
-
-    # git diff --cached --quiet returns 0 if NO changes staged
-    proc = await asyncio.create_subprocess_exec(
-        "git",
-        "diff",
-        "--cached",
-        "--quiet",
-        cwd=worktree_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    await proc.communicate()
-    if proc.returncode == 0:
-        raise RuntimeError("No changes to commit")
-
-    await _run(
-        [
-            "git",
-            "-c",
-            f"user.name={bot_login()}",
-            "-c",
-            f"user.email={bot_email()}",
-            "commit",
-            "-m",
-            message,
-        ],
-        cwd=worktree_path,
-    )
-
-    sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
-    await _force_push(worktree_path, token=token, repo=repo, branch=branch)
-
-    logger.info("Pushed %s to %s/%s", sha[:8], repo, branch)
-    return sha
-
-
-async def rebase_onto_main(
-    worktree_path: Path, *, repo_url: str, token: str, repo: str, branch: str
-) -> str:
-    """Rebase a branch worktree onto the latest main and force-push the result."""
-    async with _repo_lock:
-        await init_bare_clone(repo_url)
-
-    proc = await asyncio.create_subprocess_exec(
-        "git",
-        "rebase",
-        "main",
-        cwd=worktree_path,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        await _run(["git", "rebase", "--abort"], cwd=worktree_path)
-        stderr_text = stderr.decode().strip() or "git rebase failed"
-        raise RebaseConflictError(stderr_text)
-
-    sha = await _run(["git", "rev-parse", "HEAD"], cwd=worktree_path)
-    await _force_push(worktree_path, token=token, repo=repo, branch=branch)
-
-    logger.info("Rebased %s onto main at %s", branch, sha[:8])
-    return sha
 
 
 async def _remove_named_worktree(worktree_path: Path, branch_name: str) -> None:
