@@ -9,6 +9,8 @@ ARG MISE_VERSION=v2026.2.1
 ARG COPILOT_CLI_VERSION=v1.0.25
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=2.89.0
+# renovate: datasource=github-releases depName=moby/moby
+ARG DOCKER_VERSION=28.2.2
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
 COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
@@ -25,6 +27,10 @@ RUN curl -fsSL "https://github.com/github/copilot-cli/releases/download/${COPILO
 # Install gh CLI for GitHub API access
 RUN curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
     | tar -xz --strip-components=2 -C /usr/local/bin "gh_${GH_VERSION}_linux_amd64/bin/gh"
+
+# Install Docker CLI for spawning ephemeral worker containers (ADR-011)
+RUN curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION}.tgz" \
+    | tar -xz --strip-components=1 -C /usr/local/bin docker/docker
 
 # Install mise and provision all dev tools (shellcheck, actionlint, trivy)
 # so the Copilot CLI has the same toolchain as local dev.
@@ -59,4 +65,5 @@ ENV PATH="/mise/shims:/app/.venv/bin:$PATH"
 
 EXPOSE 8585
 ENTRYPOINT ["/entrypoint.sh"]
+# API mode (default) — override with 'python -m worker' for ephemeral workers
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]
