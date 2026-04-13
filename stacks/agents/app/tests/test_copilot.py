@@ -162,6 +162,14 @@ class TestRedactSecrets:
 
         assert _redact_secrets("normal output") == "normal output"
 
+    def test_redacts_extra_secrets(self, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("GH_TOKEN", raising=False)
+        from services.copilot import _redact_secrets
+
+        extras = frozenset({"ghs_injected_token"})
+        result = _redact_secrets("error: ghs_injected_token leaked", extras)
+        assert result == "error: [REDACTED] leaked"
+
 
 class TestRunCopilot:
     def _make_mock_process(self, stdout_text: str = "", returncode: int = 0):

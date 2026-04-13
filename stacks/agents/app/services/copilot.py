@@ -20,13 +20,16 @@ TIMEOUT_SECONDS = 1800
 _redact_env_keys = ("GH_TOKEN", "COPILOT_GITHUB_TOKEN", "GITHUB_TOKEN")
 
 
-def _redact_secrets(text: str) -> str:
+def _redact_secrets(text: str, extra_secrets: frozenset[str] = frozenset()) -> str:
     """Replace known secret values with [REDACTED] in text."""
     result = text
     for key in _redact_env_keys:
         val = os.environ.get(key)
         if val and val in result:
             result = result.replace(val, "[REDACTED]")
+    for secret in extra_secrets:
+        if secret in result:
+            result = result.replace(secret, "[REDACTED]")
     return result
 
 
@@ -167,8 +170,10 @@ async def run_copilot(
         cmd.append(f"--resume={session_id}")
 
     env = os.environ.copy()
+    secrets: frozenset[str] = frozenset()
     if github_token:
         env["GH_TOKEN"] = github_token
+        secrets = frozenset({github_token})
     else:
         env.pop("GH_TOKEN", None)
 
@@ -210,7 +215,7 @@ async def run_copilot(
         while not stream.at_eof():
             raw = await stream.readline()
             if raw:
-                line = _redact_secrets(raw.decode().rstrip())
+                line = _redact_secrets(raw.decode().rstrip(), secrets)
                 lines.append(line)
                 logger.info("[copilot %s] %s", prefix, line)
 
@@ -256,7 +261,7 @@ async def run_copilot(
         ) from err
 
     if proc.returncode != 0:
-        error = _redact_secrets("\n".join(stderr_lines) or "\n".join(stdout_lines))
+        error = _redact_secrets("\n".join(stderr_lines) or "\n".join(stdout_lines), secrets)
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
         stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
         raise TaskError(
