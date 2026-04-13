@@ -94,19 +94,6 @@ class TestFetchLinkedIssuesSection:
         assert "_No body._" in result
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
-    def test_skips_untrusted_issue_authors(self, mock_get_issue: AsyncMock):
-        mock_get_issue.return_value = {
-            "title": "Evil",
-            "body": "Malicious prompt",
-            "author_association": "NONE",
-        }
-
-        async def run():
-            return await _fetch_linked_issues_section("user/repo", "Fixes #5")
-
-        assert asyncio.run(run()) == ""
-
-    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_includes_collaborator_issues(self, mock_get_issue: AsyncMock):
         mock_get_issue.return_value = {
             "title": "Feature",

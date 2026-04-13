@@ -7,7 +7,6 @@ import time
 from services.copilot import TaskError, run_copilot
 from services.git import cleanup_branch_worktree, create_branch_worktree
 from services.github import (
-    TRUSTED_ROLES,
     close_issue,
     comment_on_issue,
     find_pr_by_branch,
@@ -57,13 +56,6 @@ async def implement_issue(
     issue_data = issue
     if issue_data is None:
         issue_data = await get_issue(repo, issue_number)
-
-    author_role = issue_data.get("author_association", "NONE")
-    if author_role not in TRUSTED_ROLES:
-        raise ValueError(
-            f"Issue #{issue_number} author has role '{author_role}' — "
-            f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
-        )
 
     total_premium_requests = 0
     result_dict: dict | None = None

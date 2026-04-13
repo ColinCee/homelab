@@ -24,7 +24,6 @@ from review import review_pr
 from services.copilot import TaskError
 from services.git import reap_old_worktrees
 from services.github import (
-    TRUSTED_ROLES,
     comment_on_issue,
     find_issue_comment_by_body_prefix,
     get_issue,
@@ -151,20 +150,11 @@ async def _start_implement_progress_comment(repo: str, issue_number: int) -> int
     )
 
 
-async def _get_trusted_issue_for_progress(repo: str, issue_number: int) -> dict | None:
+async def _get_issue_for_progress(repo: str, issue_number: int) -> dict | None:
     try:
-        issue = await get_issue(repo, issue_number)
+        return await get_issue(repo, issue_number)
     except Exception:
         return None
-
-    author_role = issue.get("author_association", "NONE")
-    if author_role not in TRUSTED_ROLES:
-        raise ValueError(
-            f"Issue #{issue_number} author has role '{author_role}' — "
-            f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
-        )
-
-    return issue
 
 
 def _record_task_metrics(
@@ -409,7 +399,7 @@ async def _run_implement(
     start = time.monotonic()
     TASK_IN_PROGRESS.labels(task_type="implement").inc()
     try:
-        issue = await _get_trusted_issue_for_progress(repo, issue_number)
+        issue = await _get_issue_for_progress(repo, issue_number)
         if issue is not None:
             progress_comment_id = await _start_implement_progress_comment(repo, issue_number)
 
@@ -437,14 +427,6 @@ async def _run_implement(
                 progress_comment_id,
                 _implement_progress_success_comment(pr_number, pr_url, auto_merge=auto_merge),
             )
-    except ValueError as exc:
-        # Trust boundary rejection (untrusted author) — don't interact with the issue
-        logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
-        _implement_status[key] = {
-            "status": "rejected",
-            "repo": repo,
-            "issue_number": issue_number,
-        }
     except TaskError as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
         _implement_status[key] = {

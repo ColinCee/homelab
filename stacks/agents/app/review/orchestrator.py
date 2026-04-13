@@ -7,7 +7,6 @@ import time
 from services.copilot import run_copilot
 from services.git import cleanup_worktree, create_worktree
 from services.github import (
-    TRUSTED_ROLES,
     get_issue,
     get_pr,
     get_token,
@@ -64,14 +63,6 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     for num in issue_numbers:
         try:
             issue = await get_issue(repo, num)
-            author_role = issue.get("author_association", "NONE")
-            if author_role not in TRUSTED_ROLES:
-                logger.warning(
-                    "Skipping linked issue #%d — author role '%s' not trusted",
-                    num,
-                    author_role,
-                )
-                continue
             title = issue.get("title", "")
             body = issue.get("body") or "_No body._"
             parts.append(f"### #{num}: {title}\n\n{body}")

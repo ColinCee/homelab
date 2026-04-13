@@ -74,9 +74,6 @@ def reset_token_cache() -> None:
 _APP_SLUG = "colins-homelab-bot"
 _BOT_USER_ID = "274352150"  # stable across app renames
 
-# author_association values trusted for autonomous operations (implement, prompt context)
-TRUSTED_ROLES = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
-
 
 def bot_login() -> str:
     """The bot's GitHub login (e.g. 'colins-homelab-bot[bot]')."""

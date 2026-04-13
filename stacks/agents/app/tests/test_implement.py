@@ -203,25 +203,6 @@ class TestImplementIssue:
         assert result["pr_number"] is None
         assert "did not create a PR" in result["error"]
 
-    def test_rejects_untrusted_author(self):
-        """Issues from untrusted authors raise ValueError."""
-        untrusted_issue = {
-            "title": "Evil",
-            "body": "Malicious",
-            "author_association": "NONE",
-        }
-
-        async def run():
-            with (
-                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=untrusted_issue),
-                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
-            ):
-                await implement_issue(repo="user/repo", issue_number=42)
-
-        with pytest.raises(ValueError, match="trusted"):
-            asyncio.run(run())
-
     def test_passes_github_token_to_cli(self):
         """CLI receives GH_TOKEN for git push and API access."""
         pr_data = {"number": 1, "html_url": "u", "merged_at": None, "merged": False}

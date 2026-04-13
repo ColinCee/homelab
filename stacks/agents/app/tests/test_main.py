@@ -518,7 +518,7 @@ def test_review_unexpected_failure_posts_generic_comment(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_updates_progress_comment_on_success(
     mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
@@ -545,7 +545,7 @@ def test_implement_updates_progress_comment_on_success(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=4004)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_reuses_stale_progress_comment(
     mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
@@ -571,7 +571,7 @@ def test_implement_reuses_stale_progress_comment(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_failure_posts_error_comment(
     mock_impl, _mock_issue, _mock_find_comment, mock_comment, mock_update
@@ -589,19 +589,3 @@ def test_implement_failure_posts_error_comment(
     assert mock_comment.await_args_list[0] == call("user/repo", 10, "🔄 Implementing #10...")
     assert "Implementation failed" in mock_comment.await_args_list[1].args[2]
     mock_update.assert_awaited_once_with("user/repo", 3003, "⚠️ Implementation failed — CLI crashed")
-
-
-@patch("main.comment_on_issue", new_callable=AsyncMock)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock)
-@patch("main.implement_issue", new_callable=AsyncMock)
-def test_implement_rejection_does_not_post_comment(mock_impl, mock_issue, mock_comment):
-    """Trust-boundary rejection should not post a progress or error comment."""
-    mock_issue.side_effect = ValueError("untrusted author")
-
-    asyncio.run(
-        _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
-    )
-
-    mock_comment.assert_not_called()
-    mock_impl.assert_not_called()
-    assert _implement_status["user/repo#10"]["status"] == "rejected"
