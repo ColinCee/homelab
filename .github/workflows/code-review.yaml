@@ -50,6 +50,9 @@ jobs:
         with:
           app-id: ${{ vars.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          # Token must outlive the workflow job — the agent runs for 10-30 min
+          # after dispatch. Token expires after 1h naturally (GitHub App limit).
+          skip-token-revoke: true
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
