@@ -1,20 +1,21 @@
 """GitHub API — token management and REST helpers."""
 
 import logging
+from contextvars import ContextVar
 
 import httpx
 
 logger = logging.getLogger(__name__)
 
 # Token provided per-request by the workflow (via actions/create-github-app-token).
-# Global is fine — runs are serialized per task type in a single-user system.
-_active_token: str | None = None
+# ContextVar ensures each asyncio task has its own token copy, so concurrent
+# review + implement runs can't overwrite each other's credentials.
+_active_token: ContextVar[str | None] = ContextVar("github_token", default=None)
 
 
 def set_token(token: str) -> None:
     """Store the GitHub token provided by the calling workflow."""
-    global _active_token
-    _active_token = token
+    _active_token.set(token)
 
 
 async def get_token() -> str:
@@ -22,15 +23,15 @@ async def get_token() -> str:
 
     Raises RuntimeError if no token has been provided.
     """
-    if not _active_token:
+    token = _active_token.get()
+    if not token:
         raise RuntimeError("No GitHub token available — workflow must pass github_token in request")
-    return _active_token
+    return token
 
 
 def reset_token_cache() -> None:
     """Clear the active token (for testing)."""
-    global _active_token
-    _active_token = None
+    _active_token.set(None)
 
 
 _APP_SLUG = "colins-homelab-bot"

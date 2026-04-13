@@ -21,8 +21,6 @@ _redact_env_keys = ("GH_TOKEN", "COPILOT_GITHUB_TOKEN", "GITHUB_TOKEN")
 
 # Allowlisted env vars for CLI subprocess — keeps server secrets
 # (GITHUB_APP_*, orchestration tokens) out of the autonomous CLI.
-# Note: /secrets/github-app.pem is still readable on disk by the agent user;
-# env filtering prevents env-based exfiltration but not filesystem access.
 _CLI_ENV_ALLOWLIST = frozenset(
     {
         "PATH",
