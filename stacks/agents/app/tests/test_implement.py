@@ -52,6 +52,21 @@ class TestFormatStageStats:
     def test_empty_when_no_data(self):
         assert _format_stage_stats() == ""
 
+    def test_tokens_line_when_no_models(self):
+        result = _format_stage_stats(
+            premium_requests=1,
+            tokens_line="↑ 1.1m • ↓ 18.9k • 1.0m (cached)",
+        )
+        assert "📊 ↑ 1.1m • ↓ 18.9k • 1.0m (cached)" in result
+
+    def test_models_preferred_over_tokens_line(self):
+        result = _format_stage_stats(
+            models={"gpt-5.4": "1.2m in, 12k out"},
+            tokens_line="↑ 1.1m • ↓ 18.9k",
+        )
+        assert "🤖 gpt-5.4" in result
+        assert "📊" not in result
+
     def test_cli_stage_stats_from_result(self):
         r = CLIResult(
             output="",
@@ -65,6 +80,18 @@ class TestFormatStageStats:
         assert "⏱️ 5m 0s (API: 3m 0s)" in result
         assert "🧠 high" in result
         assert "gpt-5.4" in result
+
+    def test_cli_stage_stats_new_format(self):
+        r = CLIResult(
+            output="",
+            total_premium_requests=1,
+            session_time_seconds=376,
+            tokens_line="↑ 1.1m • ↓ 18.9k • 1.0m (cached) • 11.7k (reasoning)",
+        )
+        result = _cli_stage_stats(r, effort="high")
+        assert "💰 1 premium" in result
+        assert "⏱️ 6m 16s" in result
+        assert "📊 ↑ 1.1m" in result
 
 
 class TestImplementIssue:

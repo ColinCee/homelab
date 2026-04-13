@@ -410,6 +410,7 @@ async def review_pr(
             "reasoning_effort": reasoning_effort,
             "premium_requests": result.total_premium_requests,
             "models": result.models,
+            "tokens_line": result.tokens_line,
             "original_event": review_data.event,
             "review_threads": _format_review_threads(review_data.comments),
             "session_id": result.session_id,

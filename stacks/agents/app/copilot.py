@@ -37,6 +37,7 @@ class CLIResult:
     api_time_seconds: int = 0
     session_time_seconds: int = 0
     models: dict[str, str] = field(default_factory=dict)
+    tokens_line: str = ""
     session_transcript: str | None = None
     session_id: str | None = None
 
@@ -48,6 +49,8 @@ class CLIResult:
             # Strip redundant "(Est. N Premium request(s))" — shown separately
             clean = re.sub(r"\s*\(Est\..*?\)", "", detail).strip().rstrip(",")
             parts.append(f"🤖 {model_name} ({clean})")
+        if self.tokens_line:
+            parts.append(f"📊 {self.tokens_line}")
         if self.total_premium_requests:
             parts.append(f"💰 {self.total_premium_requests} premium request(s)")
         if self.session_time_seconds:
@@ -66,18 +69,36 @@ def _parse_time(value: str) -> int:
 
 
 def _parse_stats(output: str) -> dict:
-    """Parse CLI session stats from non-silent output."""
+    """Parse CLI session stats from non-silent output.
+
+    Handles both old and new CLI formats:
+      Old: Total usage est: 3 Premium requests / API time spent: 6m 29s / ...
+      New: Requests 1 Premium (15m 44s) / Tokens ↑ 5.5m • ↓ 34.0k • ...
+    """
     stats: dict = {"premium_requests": 0, "api_time": 0, "session_time": 0, "models": {}}
 
     for line in output.splitlines():
         line = line.strip()
 
+        # Premium requests — old: "Total usage est: 3 Premium"
+        #                    new: "Requests 1 Premium (15m 44s)"
         if m := re.match(r"(?:Total usage est:|Requests)\s+(\d+)\s+Premium", line):
             stats["premium_requests"] = int(m.group(1))
+            # New format embeds session time in parentheses on the same line
+            if t := re.search(r"\((\d+m\s*\d*s?)\)", line):
+                stats["session_time"] = _parse_time(t.group(1))
+
+        # Old format only
         elif m := re.match(r"API time spent:\s+(.+)", line):
             stats["api_time"] = _parse_time(m.group(1))
         elif m := re.match(r"Total session time:\s+(.+)", line):
             stats["session_time"] = _parse_time(m.group(1))
+
+        # Tokens — new: "Tokens ↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)"
+        elif m := re.match(r"Tokens\s+(.+)", line):
+            stats["tokens_line"] = m.group(1).strip()
+
+        # Model usage — old: "gpt-5.4  5.5m in, 34.0k out ..."
         elif m := re.match(r"^\s*(\S+)\s+([\d.]+[km]?\s+in,\s+[\d.]+[km]?\s+out.*)", line):
             model_name = m.group(1)
             if model_name not in ("Total", "Breakdown"):
@@ -247,6 +268,7 @@ async def run_copilot(
         api_time_seconds=stats["api_time"],
         session_time_seconds=stats["session_time"],
         models=stats["models"],
+        tokens_line=stats.get("tokens_line", ""),
         session_transcript=transcript,
         session_id=parsed_session_id,
     )
