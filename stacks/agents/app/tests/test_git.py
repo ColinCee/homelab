@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-import git as git_module
+import services.git as git_module
 
 
 class TestRunCommand:
@@ -158,7 +158,6 @@ class TestCreateWorktree:
 
     def test_fetch_raises_after_all_retries_exhausted(self):
         """Fetch raises after exhausting all retry attempts."""
-        import pytest
 
         async def mock_run(cmd, cwd=None):
             if "fetch" in cmd and "pull/" in " ".join(cmd):
@@ -206,171 +205,6 @@ class TestCreateWorktree:
 
         asyncio.run(run())
 
-    def test_unstages_cli_artifacts(self):
-        """commit_and_push unstages .copilot-session.md, .copilot/, and .cleanup-after."""
-        calls = []
-
-        async def mock_run(cmd, cwd=None):
-            calls.append(cmd)
-            return "abc123"
-
-        async def run():
-            with (
-                patch.object(git_module, "_run", side_effect=mock_run),
-                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
-                patch("pathlib.Path.write_text"),
-                patch("pathlib.Path.chmod"),
-                patch("pathlib.Path.unlink"),
-            ):
-                # git diff --cached --quiet → returncode 1 (has changes)
-                diff_proc = AsyncMock()
-                diff_proc.communicate.return_value = (b"", b"")
-                diff_proc.returncode = 1
-                # git push → success
-                push_proc = AsyncMock()
-                push_proc.communicate.return_value = (b"", b"")
-                push_proc.returncode = 0
-                mock_exec.side_effect = [diff_proc, push_proc]
-
-                await git_module.commit_and_push(
-                    Path("/tmp/wt"),
-                    message="test",
-                    token="tok",
-                    repo="user/repo",
-                    branch="main",
-                )
-
-            # Check git rm --cached was called for artifacts
-            rm_calls = [c for c in calls if "rm" in c and "--cached" in c]
-            assert len(rm_calls) == 3
-            assert any(".copilot-session.md" in c for c in rm_calls)
-            assert any(".copilot" in c for c in rm_calls)
-            assert any(".cleanup-after" in c for c in rm_calls)
-
-        asyncio.run(run())
-
-
-class TestCommitAndPush:
-    def test_force_push_extracted(self):
-        async def mock_run(cmd, cwd=None):
-            if cmd[:3] == ["git", "rev-parse", "HEAD"]:
-                return "abc123"
-            return ""
-
-        async def run():
-            with (
-                patch.object(git_module, "_run", side_effect=mock_run),
-                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_force_push,
-                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
-            ):
-                diff_proc = AsyncMock()
-                diff_proc.communicate.return_value = (b"", b"")
-                diff_proc.returncode = 1
-                mock_exec.return_value = diff_proc
-
-                sha = await git_module.commit_and_push(
-                    Path("/tmp/wt"),
-                    message="test",
-                    token="tok",
-                    repo="user/repo",
-                    branch="main",
-                )
-
-            assert sha == "abc123"
-            mock_force_push.assert_awaited_once_with(
-                Path("/tmp/wt"),
-                token="tok",
-                repo="user/repo",
-                branch="main",
-            )
-
-        asyncio.run(run())
-
-
-class TestRebaseOntoMain:
-    def test_rebase_onto_main_success(self):
-        async def run():
-            with (
-                patch.object(
-                    git_module,
-                    "init_bare_clone",
-                    new_callable=AsyncMock,
-                    return_value=Path("/tmp/repo.git"),
-                ) as mock_init,
-                patch.object(
-                    git_module, "_run", new_callable=AsyncMock, return_value="rebased456"
-                ) as mock_run,
-                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_push,
-                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
-            ):
-                rebase_proc = AsyncMock()
-                rebase_proc.communicate.return_value = (b"", b"")
-                rebase_proc.returncode = 0
-                mock_exec.return_value = rebase_proc
-
-                sha = await git_module.rebase_onto_main(
-                    Path("/tmp/wt"),
-                    repo_url="https://github.com/user/repo.git",
-                    token="tok",
-                    repo="user/repo",
-                    branch="agent/issue-42",
-                )
-
-            assert sha == "rebased456"
-            mock_init.assert_awaited_once_with("https://github.com/user/repo.git")
-            mock_run.assert_awaited_once_with(["git", "rev-parse", "HEAD"], cwd=Path("/tmp/wt"))
-            mock_push.assert_awaited_once_with(
-                Path("/tmp/wt"),
-                token="tok",
-                repo="user/repo",
-                branch="agent/issue-42",
-            )
-            mock_exec.assert_awaited_once_with(
-                "git",
-                "rebase",
-                "main",
-                cwd=Path("/tmp/wt"),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-        asyncio.run(run())
-
-    def test_rebase_onto_main_conflict_aborts(self):
-        async def run():
-            with (
-                patch.object(
-                    git_module,
-                    "init_bare_clone",
-                    new_callable=AsyncMock,
-                    return_value=Path("/tmp/repo.git"),
-                ),
-                patch.object(git_module, "_run", new_callable=AsyncMock) as mock_run,
-                patch.object(git_module, "_force_push", new_callable=AsyncMock) as mock_push,
-                patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec,
-                pytest.raises(git_module.RebaseConflictError, match="CONFLICT"),
-            ):
-                rebase_proc = AsyncMock()
-                rebase_proc.communicate.return_value = (
-                    b"",
-                    b"CONFLICT (content): Merge conflict in git.py\n",
-                )
-                rebase_proc.returncode = 1
-                mock_exec.return_value = rebase_proc
-
-                await git_module.rebase_onto_main(
-                    Path("/tmp/wt"),
-                    repo_url="https://github.com/user/repo.git",
-                    token="tok",
-                    repo="user/repo",
-                    branch="agent/issue-42",
-                )
-
-            mock_run.assert_awaited_once_with(["git", "rebase", "--abort"], cwd=Path("/tmp/wt"))
-            mock_push.assert_not_awaited()
-
-        asyncio.run(run())
-
 
 class TestDeferredCleanup:
     def test_cleanup_worktree_writes_marker(self, tmp_path: Path):
@@ -381,7 +215,7 @@ class TestDeferredCleanup:
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
                 patch.object(git_module, "WORKTREE_RETENTION_SECONDS", 3600),
-                patch("git.time.time", return_value=1_700_000_000),
+                patch("services.git.time.time", return_value=1_700_000_000),
             ):
                 await git_module.cleanup_worktree(42)
 
@@ -398,7 +232,7 @@ class TestDeferredCleanup:
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
                 patch.object(git_module, "WORKTREE_RETENTION_SECONDS", 120),
-                patch("git.time.time", return_value=50),
+                patch("services.git.time.time", return_value=50),
             ):
                 await git_module.cleanup_branch_worktree("agent/issue-42")
 
@@ -452,7 +286,7 @@ class TestReapOldWorktrees:
         async def run():
             with (
                 patch.object(git_module, "REVIEWS_PATH", tmp_path),
-                patch("git.time.time", return_value=20),
+                patch("services.git.time.time", return_value=20),
                 patch.object(
                     git_module, "_remove_named_worktree", new_callable=AsyncMock
                 ) as mock_remove,

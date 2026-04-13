@@ -7,7 +7,7 @@ user-invocable: false
 
 # Implementation Skill
 
-You are implementing a GitHub issue. The issue details are provided in the prompt.
+You are implementing a GitHub issue. The issue details are provided in the prompt. You have full repo access via `GH_TOKEN` — you own the entire lifecycle from code changes through merge.
 
 ## Process
 
@@ -15,48 +15,58 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 2. Explore the codebase to understand the relevant code and conventions
 3. Make the necessary changes — follow existing patterns
 4. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
-5. Self-review against the checklist below before finishing
+5. Self-review against the checklist below
+6. Commit, push, and create a draft PR
+7. Self-review the PR, fix issues (up to 2 rounds), then mark ready and merge
+
+## Git Workflow
+
+You start in a worktree on the `agent/issue-{N}` branch, set up by the orchestrator. From here:
+
+1. **Commit** — use conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`). Add the trailer: `Co-authored-by: colins-homelab-bot[bot] <colins-homelab-bot[bot]@users.noreply.github.com>`
+2. **Push** — `git push origin agent/issue-{N}`. Force-push is fine on agent branches.
+3. **Create draft PR** — `gh pr create --draft --title "..." --body "Closes #N\n\n..."`. Always link the issue with `Closes #N` in the body.
+4. **Wait for CI** — `gh pr checks --watch` until all checks pass. Fix failures before proceeding.
+5. **Self-review** — review your own diff critically. Look for the issues in the checklist below. Fix anything you find and push again.
+6. **Mark ready** — `gh pr ready` when CI passes and you're satisfied with the code.
+7. **Merge** — `gh pr merge --squash --auto` to squash-merge after all checks pass.
 
 ## Rules
 
-- **Do NOT commit, push, or create pull requests** — the orchestrator handles all git operations
-- **Do NOT run `git add`, `git commit`, `git push`, or `gh pr create`**
-- Focus on making correct, complete code changes in the working directory
 - Follow existing code patterns and conventions
 - Keep changes minimal — solve the issue, don't refactor unrelated code
-
-## Quality
-
 - Every change should be tested if test infrastructure exists
 - Prefer modifying existing tests over creating new test files
 - If you add a new module, add a corresponding test file
 
-## The Review
+## Safety
 
-After you finish, there are up to 2 review rounds that check for bugs, security issues, breaking changes, and operational risk. If the review requests changes, you get a fix attempt — then a second review may follow. After the final fix, the PR auto-merges.
+- **Never force-push to main** — only push to your `agent/issue-{N}` branch
+- **Never log, print, or commit tokens or credentials**
+- **Never modify `.github/workflows/`** — workflow changes require human review
+- **Never commit secrets, API keys, or credentials** to the repository
+- **Never access or modify `docs/private/`** — these are encrypted files you cannot read
 
-Because the review cycle is capped at 2 rounds (review → fix → review → fix → merge), **aim for zero blockers on the first review.** Self-review thoroughly before finishing.
+## Self-Review Checklist
 
-### Pre-completion checklist
+Before creating the PR, self-review against these questions:
 
-Before finishing your work, self-review against these questions:
-
-- **Error handling:** If a multi-step operation produces state that matters (metrics, audit logs, side effects), ensure that state is captured regardless of which step fails. Think about the whole operation, not individual calls — one handler around the entire post-critical section beats wrapping each call separately.
-- **New types or patterns:** If you introduce a new exception class, status value, or convention, grep for all call sites using the old version and migrate them. Don't leave a mix of old and new.
+- **Error handling:** If a multi-step operation produces state that matters (metrics, audit logs, side effects), ensure that state is captured regardless of which step fails.
+- **New types or patterns:** If you introduce a new exception class, status value, or convention, grep for all call sites using the old version and migrate them.
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
-- **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed (including workflows, polling loops, API responses)?
+- **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
 
 ## Gotchas
 
-- **`mise run ci` includes type-checking (`ty`).** `ty` does not support `# type: ignore` comments — they are silently ignored. If the type checker complains about dynamic attribute access, use typed dataclasses or exceptions instead of monkey-patching attributes onto objects.
-- **Docker service names don't resolve across separate compose stacks.** Use Tailscale IPs (`100.x.x.x`) or `host.docker.internal`, not hostnames like `service-name:port`, when one stack needs to reach another.
-- **GitHub API rejects APPROVE and REQUEST_CHANGES on your own PRs.** If the bot creates a PR and then reviews it, the review must be downgraded to COMMENT or the API returns 422.
+- **`mise run ci` includes type-checking (`ty`).** `ty` does not support `# type: ignore` comments. Use typed dataclasses or exceptions instead of monkey-patching.
+- **Docker service names don't resolve across separate compose stacks.** Use Tailscale IPs (`100.x.x.x`) or `host.docker.internal`.
+- **GitHub API rejects APPROVE and REQUEST_CHANGES on your own PRs.** Self-reviews must use `COMMENT` event or `gh pr review --comment`.
 
 ## Responding to Review Feedback
 
-When fixing issues raised by the review bot (or any reviewer):
+When fixing issues raised by reviewers:
 
-1. **Read all comments first.** Don't start fixing the first one you see. Read every comment and identify the underlying patterns — 5 comments about missing error handling are one issue, not five.
-2. **Grep for the pattern.** For each identified pattern, search the full codebase for every instance. If the reviewer found it in one file, assume it exists in others.
-3. **Fix everything in one pass.** Address all instances of all patterns in a single commit. Multiple round-trips waste tokens and time.
+1. **Read all comments first.** Identify the underlying patterns — 5 comments about missing error handling are one issue, not five.
+2. **Grep for the pattern.** For each identified pattern, search the full codebase for every instance.
+3. **Fix everything in one pass.** Address all instances of all patterns in a single commit.

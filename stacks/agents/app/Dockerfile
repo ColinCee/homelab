@@ -1,13 +1,18 @@
 FROM python:3.14-slim
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Pin tool versions for reproducible builds and supply-chain safety.
+ARG MISE_VERSION=v2026.2.1
+ARG COPILOT_CLI_VERSION=v1.0.25
+
+# renovate: datasource=docker depName=ghcr.io/astral-sh/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Copilot CLI standalone binary
-RUN curl -fsSL https://github.com/github/copilot-cli/releases/latest/download/copilot-linux-x64.tar.gz \
+RUN curl -fsSL "https://github.com/github/copilot-cli/releases/download/${COPILOT_CLI_VERSION}/copilot-linux-x64.tar.gz" \
     | tar -xz -C /usr/local/bin/ && \
     chmod +x /usr/local/bin/copilot
 
@@ -27,8 +32,8 @@ ENV MISE_DATA_DIR="/mise"
 ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
-RUN curl https://mise.run | sh
-COPY mise.toml /mise/config.toml
+RUN MISE_VERSION="${MISE_VERSION}" curl https://mise.run | sh
+COPY stacks/agents/app/mise.docker.toml /mise/config.toml
 RUN mise install --yes && mise reshim
 
 WORKDIR /app

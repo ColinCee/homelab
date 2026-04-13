@@ -13,17 +13,18 @@ Style is enforced by ruff and ty — see `stacks/agents/app/pyproject.toml` for 
 The agent service (`stacks/agents/app/`) is a FastAPI app that:
 
 1. Receives requests (e.g., `/review`) with minimal input (repo + PR number)
-2. Runs Copilot CLI in headless mode in an isolated worktree
-3. Reads CLI output (JSON files, stdout) and handles all GitHub API interactions (posting reviews, creating PRs, commenting)
+2. Sets up a worktree and generates a GitHub App token
+3. Dispatches to Copilot CLI with full repo access (`GH_TOKEN`) — the CLI owns the full lifecycle
 
 ### Key files
 
 - `main.py` — FastAPI endpoints, request/response models
-- `review.py` — PR review orchestrator (deep module, narrow interface)
-- `implement.py` — Issue implementation + fix orchestrator
-- `copilot.py` — Copilot CLI subprocess wrapper, returns `CLIResult` with parsed stats
-- `git.py` — Git operations: bare clone, worktrees, branches, commit and push
-- `github.py` — GitHub API: App auth (JWT → installation token), REST, GraphQL helpers
+- `review/orchestrator.py` — PR review orchestrator (thin dispatcher)
+- `implement/orchestrator.py` — Issue implementation orchestrator (thin dispatcher)
+- `services/copilot.py` — Copilot CLI subprocess wrapper, returns `CLIResult` with parsed stats
+- `services/git.py` — Git operations: bare clone, worktrees, branches
+- `services/github.py` — GitHub API: App auth (JWT → installation token), REST helpers
+- `stats.py` — shared stats formatting for lifecycle stage comments
 - `tests/` — unit tests, one per module (mock external calls at boundaries)
 
 ## Testing

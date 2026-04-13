@@ -1,0 +1,6 @@
+# Docker-only mise config — only tools the Copilot CLI needs.
+# Python and uv are provided by the base image and Dockerfile.
+[tools]
+shellcheck = "latest"
+actionlint = "latest"
+trivy = "latest"

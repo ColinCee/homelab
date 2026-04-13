@@ -22,7 +22,7 @@ Not: "The fix loop needs improvement."
 
 Observable, testable success criteria. If the agent can't verify it with `mise run ci` or by checking behavior, it's not concrete enough.
 
-> A single `/implement` call owns the full lifecycle: implement → review → fix → re-review, looping until clean or capped at 3 iterations. The implementor session is resumed for fixes. The reviewer is always a fresh session.
+> A single `/implement` call owns the full lifecycle: implement → self-review → fix (up to 2 rounds) → mark ready → merge. The CLI session handles all git operations, PR creation, and review.
 
 Not: "Make the implement flow better."
 

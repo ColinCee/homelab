@@ -44,6 +44,13 @@ jobs:
             exit 1
           fi
 
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
@@ -52,11 +59,21 @@ jobs:
           tags: tag:ci
 
       - name: Trigger review on Beelink agent
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "$REPO" \
+            --argjson pr "$PR_NUMBER" \
+            --arg actor "${{ github.actor }}" \
+            --arg token "$APP_TOKEN" \
+            '{repo:$repo, pr_number:$pr,
+              triggered_by:$actor, github_token:$token}')
+
           HTTP_CODE=$(curl -sf --max-time 30 \
             -X POST "http://beelink:8585/review" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}" \
+            -d "$PAYLOAD" \
             -o /dev/null -w "%{http_code}")
 
           if [ "$HTTP_CODE" != "202" ]; then

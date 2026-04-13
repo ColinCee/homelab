@@ -71,10 +71,10 @@ to the owner instead of repeating exact detail.
 
 These are intentionally owned by code, not prose:
 
-- review output schema and examples → `stacks/agents/app/review.py`
-- CLI timeout and stderr-based stats parsing → `stacks/agents/app/copilot.py`
-- bot identity and 422 review fallback behavior → `stacks/agents/app/github.py`
-- worktree cleanup markers, retention semantics, and agent branch push strategy → `stacks/agents/app/git.py`
+- CLI timeout and stats parsing → `stacks/agents/app/services/copilot.py`
+- bot identity and GitHub API helpers → `stacks/agents/app/services/github.py`
+- worktree lifecycle and cleanup markers → `stacks/agents/app/services/git.py`
+- stats formatting for lifecycle comments → `stacks/agents/app/stats.py`
 
 ## When Docs Must Change
 

@@ -132,8 +132,8 @@ From [agentskills.io best practices](https://agentskills.io/skill-creation/best-
 
 **Source references** — point at code instead of duplicating it:
 ```markdown
-Read `stacks/agents/app/review.py` for the `ReviewOutput` and
-`ReviewComment` models — they define the schema and include examples.
+Read `stacks/agents/app/services/github.py` for the GitHub API helpers
+— they define the auth model and available operations.
 ```
 
 ## Decision tree: where does this go?

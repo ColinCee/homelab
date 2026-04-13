@@ -16,6 +16,45 @@ COPILOT_BINARY = "/usr/local/bin/copilot"
 # This should never fire during normal operation; productive runs complete well under this.
 TIMEOUT_SECONDS = 1800
 
+# Tokens to redact from CLI output before logging or including in errors.
+_redact_env_keys = ("GH_TOKEN", "COPILOT_GITHUB_TOKEN", "GITHUB_TOKEN")
+
+# Allowlisted env vars for CLI subprocess — keeps server secrets
+# (GITHUB_APP_*, orchestration tokens) out of the autonomous CLI.
+_CLI_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TERM",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "COPILOT_GITHUB_TOKEN",
+        "MISE_DATA_DIR",
+        "MISE_CONFIG_DIR",
+        "MISE_CACHE_DIR",
+    }
+)
+
+
+def _redact_secrets(text: str, extra_secrets: frozenset[str] = frozenset()) -> str:
+    """Replace known secret values with [REDACTED] in text."""
+    result = text
+    for key in _redact_env_keys:
+        val = os.environ.get(key)
+        if val and val in result:
+            result = result.replace(val, "[REDACTED]")
+    for secret in extra_secrets:
+        if secret in result:
+            result = result.replace(secret, "[REDACTED]")
+    return result
+
 
 class TaskError(Exception):
     """Wraps a post-CLI failure, preserving the premium request count for metrics."""
@@ -128,8 +167,13 @@ async def run_copilot(
     model: str = "gpt-5.4",
     effort: str = "high",
     session_id: str | None = None,
+    github_token: str | None = None,
 ) -> CLIResult:
-    """Run Copilot CLI in headless mode and return result with stats."""
+    """Run Copilot CLI in headless mode and return result with stats.
+
+    When github_token is provided, GH_TOKEN is set in the CLI environment,
+    giving it full repo access (push, PR creation, reviews, merge).
+    """
     transcript_path = worktree_path / SESSION_TRANSCRIPT_FILE
     cmd = [
         COPILOT_BINARY,
@@ -148,10 +192,13 @@ async def run_copilot(
     if session_id:
         cmd.append(f"--resume={session_id}")
 
-    env = os.environ.copy()
-    # Ensure the CLI never inherits GitHub API access — the orchestrator
-    # handles all GitHub operations with its own scoped token.
-    env.pop("GH_TOKEN", None)
+    env = {k: v for k, v in os.environ.items() if k in _CLI_ENV_ALLOWLIST}
+    secrets: frozenset[str] = frozenset()
+    if github_token:
+        env["GH_TOKEN"] = github_token
+        secrets = frozenset({github_token})
+    else:
+        env.pop("GH_TOKEN", None)
 
     logger.info(
         "Running Copilot CLI in %s (model=%s, effort=%s, resume=%s)",
@@ -191,7 +238,7 @@ async def run_copilot(
         while not stream.at_eof():
             raw = await stream.readline()
             if raw:
-                line = raw.decode().rstrip()
+                line = _redact_secrets(raw.decode().rstrip(), secrets)
                 lines.append(line)
                 logger.info("[copilot %s] %s", prefix, line)
 
@@ -237,7 +284,7 @@ async def run_copilot(
         ) from err
 
     if proc.returncode != 0:
-        error = "\n".join(stderr_lines) or "\n".join(stdout_lines)
+        error = _redact_secrets("\n".join(stderr_lines) or "\n".join(stdout_lines), secrets)
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
         stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
         raise TaskError(

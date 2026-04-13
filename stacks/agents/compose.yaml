@@ -20,14 +20,10 @@ services:
     environment:
       - MODEL=gpt-5.4
       - REASONING_EFFORT=high
-      - GITHUB_APP_ID=${GITHUB_APP_ID:?}
-      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
-      - GITHUB_APP_PRIVATE_KEY_PATH=/secrets/github-app.pem
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
     volumes:
       - repo-cache:/repo.git
       - reviews:/reviews
-      - ${GITHUB_APP_KEY_FILE:-/home/colin/secrets/github-app.pem}:/secrets/github-app.pem:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s

@@ -1,6 +1,7 @@
 """Tests for the agent service."""
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, call, patch
 
 import pytest
@@ -19,6 +20,19 @@ from main import (
     handle_review,
 )
 from metrics import METRICS_REGISTRY, reset_metrics
+
+_ACTOR = "ColinCee"
+_TOKEN = "ghs_test_token"
+
+
+def _review_req(**kwargs: Any) -> ReviewRequest:
+    defaults: dict[str, Any] = {
+        "repo": "user/repo",
+        "pr_number": 42,
+        "triggered_by": _ACTOR,
+        "github_token": _TOKEN,
+    }
+    return ReviewRequest(**(defaults | kwargs))
 
 
 def _client():
@@ -81,7 +95,7 @@ def test_review_returns_202_accepted(mock_create_task):
 
         mock_create_task.side_effect = fake_create_task
 
-        result = await handle_review(ReviewRequest(repo="user/repo", pr_number=1))
+        result = await handle_review(_review_req(pr_number=1))
 
         assert result == {"status": "accepted", "pr_number": 1}
         assert _review_tasks["user/repo#1"] is task
@@ -96,6 +110,20 @@ def test_review_returns_202_accepted(mock_create_task):
 def test_review_missing_fields():
     resp = _client().post("/review", json={"pr_number": 1})
     assert resp.status_code == 422
+
+
+def test_review_rejects_unknown_actor():
+    resp = _client().post(
+        "/review",
+        json={
+            "repo": "user/repo",
+            "pr_number": 1,
+            "triggered_by": "evil-user",
+            "github_token": _TOKEN,
+        },
+    )
+    assert resp.status_code == 403
+    assert "not allowed" in resp.json()["error"]
 
 
 def test_review_status_not_found():
@@ -124,7 +152,7 @@ def test_review_replaces_duplicate_in_flight():
             return replacement_task
 
         with patch("main.asyncio.create_task", side_effect=fake_create_task) as mock_create_task:
-            result = await handle_review(ReviewRequest(repo="user/repo", pr_number=42))
+            result = await handle_review(_review_req())
 
         assert result == {"status": "accepted", "pr_number": 42}
         assert existing_task.cancelled()
@@ -173,8 +201,8 @@ def test_review_coalesces_concurrent_replacements():
 
         with patch("main.asyncio.create_task", side_effect=fake_create_task):
             results_task = asyncio.gather(
-                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
-                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
+                handle_review(_review_req()),
+                handle_review(_review_req()),
             )
             await cancellation_started.wait()
             release_cancellation.set()
@@ -204,7 +232,12 @@ def test_implement_returns_202_accepted(mock_impl):
     mock_impl.return_value = {"pr_number": 99, "elapsed_seconds": 5.0}
     resp = _client().post(
         "/implement",
-        json={"repo": "user/repo", "issue_number": 10},
+        json={
+            "repo": "user/repo",
+            "issue_number": 10,
+            "triggered_by": "ColinCee",
+            "github_token": _TOKEN,
+        },
     )
     assert resp.status_code == 202
     data = resp.json()
@@ -215,6 +248,20 @@ def test_implement_returns_202_accepted(mock_impl):
 def test_implement_missing_fields():
     resp = _client().post("/implement", json={"issue_number": 1})
     assert resp.status_code == 422
+
+
+def test_implement_rejects_unknown_actor():
+    resp = _client().post(
+        "/implement",
+        json={
+            "repo": "user/repo",
+            "issue_number": 10,
+            "triggered_by": "evil-user",
+            "github_token": _TOKEN,
+        },
+    )
+    assert resp.status_code == 403
+    assert "not allowed" in resp.json()["error"]
 
 
 def test_implement_status_not_found():
@@ -235,7 +282,12 @@ def test_implement_rejects_duplicate_in_flight(mock_impl):
     try:
         resp = _client().post(
             "/implement",
-            json={"repo": "user/repo", "issue_number": 10},
+            json={
+                "repo": "user/repo",
+                "issue_number": 10,
+                "triggered_by": "ColinCee",
+                "github_token": _TOKEN,
+            },
         )
         assert resp.status_code == 409
         assert resp.json()["status"] == "already_in_progress"
@@ -428,7 +480,7 @@ def test_review_failure_posts_error_comment(
     mock_review, _mock_find_comment, mock_comment, mock_update
 ):
     """When review_pr raises, _run_review updates progress and posts an error comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_review.side_effect = TaskError("CLI timed out", premium_requests=3)
 
@@ -454,7 +506,7 @@ def test_review_failure_skips_comment_when_already_commented(
     mock_review, _mock_find_comment, mock_comment, mock_update
 ):
     """When TaskError has commented=True, _run_review only updates the progress comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_review.side_effect = TaskError("parse error", premium_requests=1, commented=True)
 
@@ -493,7 +545,7 @@ def test_review_unexpected_failure_posts_generic_comment(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_updates_progress_comment_on_success(
     mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
@@ -520,7 +572,7 @@ def test_implement_updates_progress_comment_on_success(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=4004)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_reuses_stale_progress_comment(
     mock_impl, _mock_issue, mock_find_comment, mock_comment, mock_update
@@ -546,13 +598,13 @@ def test_implement_reuses_stale_progress_comment(
 @patch("main.update_comment", new_callable=AsyncMock)
 @patch("main.comment_on_issue", new_callable=AsyncMock, return_value=3003)
 @patch("main.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
+@patch("main._get_issue_for_progress", new_callable=AsyncMock, return_value={"title": "x"})
 @patch("main.implement_issue", new_callable=AsyncMock)
 def test_implement_failure_posts_error_comment(
     mock_impl, _mock_issue, _mock_find_comment, mock_comment, mock_update
 ):
     """When implement_issue raises, _run_implement updates progress and posts an error comment."""
-    from copilot import TaskError
+    from services.copilot import TaskError
 
     mock_impl.side_effect = TaskError("CLI crashed", premium_requests=5)
 
@@ -567,16 +619,16 @@ def test_implement_failure_posts_error_comment(
 
 
 @patch("main.comment_on_issue", new_callable=AsyncMock)
-@patch("main._get_trusted_issue_for_progress", new_callable=AsyncMock)
+@patch("main._get_issue_for_progress", new_callable=AsyncMock)
 @patch("main.implement_issue", new_callable=AsyncMock)
-def test_implement_rejection_does_not_post_comment(mock_impl, mock_issue, mock_comment):
-    """Trust-boundary rejection should not post a progress or error comment."""
-    mock_issue.side_effect = ValueError("untrusted author")
+def test_implement_content_rejection_does_not_post_comment(mock_impl, mock_issue, mock_comment):
+    """Content trust rejection should not post a progress or error comment."""
+    mock_issue.return_value = {"title": "x"}
+    mock_impl.side_effect = ValueError("not trusted")
 
     asyncio.run(
         _run_implement(repo="user/repo", issue_number=10, model="gpt-5.4", reasoning_effort="high")
     )
 
     mock_comment.assert_not_called()
-    mock_impl.assert_not_called()
     assert _implement_status["user/repo#10"]["status"] == "rejected"

@@ -1,7 +1,7 @@
 # ADR-009: Capped Review Cycle in the Implement Lifecycle
 
 **Date:** 2026-04-12
-**Status:** Accepted (updated from single-cycle to 2-round cap)
+**Status:** Superseded by ADR-010 (enforcement moved from orchestrator to CLI skill file)
 
 ## Context
 
@@ -110,6 +110,6 @@ implementer has full conversation history for context-aware fixes.
 
 - PR #76: 8-round review cycle that motivated the original single-cycle decision
 - PR #78: Implementation of capped review cycle
-- `stacks/agents/app/implement.py`: Lifecycle orchestrator (MAX_REVIEW_ROUNDS)
-- `.github/skills/bot-review/SKILL.md`: Review skill with 2-round language
-- `.github/skills/bot-implement/SKILL.md`: Implement skill with capped-cycle contract
+- `stacks/agents/app/implement/orchestrator.py` — lifecycle orchestrator (thin dispatcher)
+- `.github/skills/bot-implement/SKILL.md` — CLI skill with 2-round lifecycle contract
+- `.github/skills/bot-review/SKILL.md` — review skill with 2-round language

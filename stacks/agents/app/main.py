@@ -12,15 +12,6 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
-from copilot import TaskError
-from git import reap_old_worktrees
-from github import (
-    TRUSTED_ROLES,
-    comment_on_issue,
-    find_issue_comment_by_body_prefix,
-    get_issue,
-    update_comment,
-)
 from implement import implement_issue
 from metrics import (
     METRICS_REGISTRY,
@@ -30,6 +21,16 @@ from metrics import (
     TASK_TOTAL,
 )
 from review import review_pr
+from services.copilot import TaskError
+from services.git import reap_old_worktrees
+from services.github import (
+    comment_on_issue,
+    find_issue_comment_by_body_prefix,
+    get_issue,
+    set_token,
+    update_comment,
+)
+from trust import ALLOWED_ACTORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
@@ -97,7 +98,11 @@ def _implement_progress_comment(issue_number: int) -> str:
     return f"{IMPLEMENT_PROGRESS_PREFIX}{issue_number}..."
 
 
-def _implement_progress_success_comment(pr_number: int, pr_url: str) -> str:
+def _implement_progress_success_comment(
+    pr_number: int, pr_url: str, auto_merge: bool = False
+) -> str:
+    if auto_merge:
+        return f"✅ PR #{pr_number} created (auto-merge enabled) — {pr_url}"
     return f"✅ PR #{pr_number} created — {pr_url}"
 
 
@@ -143,20 +148,11 @@ async def _start_implement_progress_comment(repo: str, issue_number: int) -> int
     )
 
 
-async def _get_trusted_issue_for_progress(repo: str, issue_number: int) -> dict | None:
+async def _get_issue_for_progress(repo: str, issue_number: int) -> dict | None:
     try:
-        issue = await get_issue(repo, issue_number)
+        return await get_issue(repo, issue_number)
     except Exception:
         return None
-
-    author_role = issue.get("author_association", "NONE")
-    if author_role not in TRUSTED_ROLES:
-        raise ValueError(
-            f"Issue #{issue_number} author has role '{author_role}' — "
-            f"only {TRUSTED_ROLES} are trusted for autonomous implementation"
-        )
-
-    return issue
 
 
 def _record_task_metrics(
@@ -171,6 +167,8 @@ def _record_task_metrics(
 class ReviewRequest(BaseModel):
     repo: str
     pr_number: int
+    triggered_by: str
+    github_token: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -178,6 +176,8 @@ class ReviewRequest(BaseModel):
 class ImplementRequest(BaseModel):
     repo: str
     issue_number: int
+    triggered_by: str
+    github_token: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -193,6 +193,12 @@ async def health() -> dict[str, str]:
 @app.post("/review", status_code=202, response_model=None)
 async def handle_review(req: ReviewRequest):
     """Accept a review request and process it in the background."""
+    if req.triggered_by not in ALLOWED_ACTORS:
+        return JSONResponse(
+            status_code=403,
+            content={"error": f"Actor '{req.triggered_by}' is not allowed"},
+        )
+    set_token(req.github_token)
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
@@ -261,6 +267,12 @@ async def get_review_status(pr_number: int, repo: str = "") -> dict:
 @app.post("/implement", status_code=202, response_model=None)
 async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTasks):
     """Accept an implementation request and process it in the background."""
+    if req.triggered_by not in ALLOWED_ACTORS:
+        return JSONResponse(
+            status_code=403,
+            content={"error": f"Actor '{req.triggered_by}' is not allowed"},
+        )
+    set_token(req.github_token)
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _implement_key(req.repo, req.issue_number)
@@ -389,7 +401,7 @@ async def _run_implement(
     start = time.monotonic()
     TASK_IN_PROGRESS.labels(task_type="implement").inc()
     try:
-        issue = await _get_trusted_issue_for_progress(repo, issue_number)
+        issue = await _get_issue_for_progress(repo, issue_number)
         if issue is not None:
             progress_comment_id = await _start_implement_progress_comment(repo, issue_number)
 
@@ -410,12 +422,15 @@ async def _run_implement(
         }
         pr_number = result.get("pr_number")
         pr_url = result.get("pr_url")
+        auto_merge = result.get("auto_merge", False)
         if isinstance(pr_number, int) and isinstance(pr_url, str):
             await _update_progress_comment(
-                repo, progress_comment_id, _implement_progress_success_comment(pr_number, pr_url)
+                repo,
+                progress_comment_id,
+                _implement_progress_success_comment(pr_number, pr_url, auto_merge=auto_merge),
             )
     except ValueError as exc:
-        # Trust boundary rejection (untrusted author) — don't interact with the issue
+        # Content trust rejection — don't interact with the issue
         logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
         _implement_status[key] = {
             "status": "rejected",

@@ -7,7 +7,7 @@ user-invocable: false
 
 # Code Review Skill
 
-You are a code reviewer. Review changes in the context of the full codebase — use grep and view to understand how changed code is used elsewhere.
+You are a code reviewer. You have full repo access via `GH_TOKEN`. Review changes in the context of the full codebase — use grep and view to understand how changed code is used elsewhere.
 
 ## Review Focus
 
@@ -55,30 +55,48 @@ auditing for the same pattern elsewhere, say so.
 
 Where `{severity}` is either `🚫 **Blocker**` or `💡 **Suggestion**`.
 
-The pattern name after the severity tag is required — it names the class of issue so the fixer knows to grep for similar instances. "Missing error handling" not "this function doesn't catch exceptions". One class = one comment, even if it appears in multiple locations.
+The pattern name after the severity tag is required — it names the class of issue so the fixer knows to grep for similar instances.
 
-## Review Output
+## Posting Reviews
 
-You do NOT have GitHub API access. Write your review as a JSON file at `.copilot-review.json` in the repository root. The orchestrator will read this file and post the review on your behalf — you own the content, the orchestrator owns the delivery.
+Post your review directly using `gh`:
 
-Read `stacks/agents/app/review.py` for the `ReviewOutput` and `ReviewComment` Pydantic models — they define the exact schema and include examples. That file is the single source of truth for the output format.
+```bash
+# For a clean approval:
+gh pr review --approve --body "✅ **Approved** — no issues found.
 
-### `body` format
+<1-2 sentence summary of design direction>
 
-Start with a verdict banner:
+---"
 
-- `✅ **Approved** — no issues found.` when event is APPROVE
-- `🚫 **Changes requested** — see inline comments.` when event is REQUEST_CHANGES
+# For changes requested (with inline comments):
+gh pr review --request-changes \
+  --body "🚫 **Changes requested** — see inline comments.
 
-Follow with 1-2 sentences on the overall design direction — is the approach sound, and what's the main risk? Do NOT repeat or summarize inline comments. The body is the forest; comments are the trees. End with `\n\n---`.
+<1-2 sentence summary of design direction and main risk>
+
+---"
+```
+
+For inline comments, use `gh api` to post a review with comments:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/{number}/reviews \
+  --method POST \
+  -f event=REQUEST_CHANGES \
+  -f body="🚫 **Changes requested** — ..." \
+  -f 'comments[][path]=file.py' \
+  -f 'comments[][line]=42' \
+  -f 'comments[][body]=🚫 **Blocker** — ...'
+```
+
+Read the PR diff with `gh pr diff` to understand what changed.
 
 ### Rules
 
-- `event` must be `"REQUEST_CHANGES"` if you have blocker-severity comments, otherwise `"APPROVE"`
-- `comments` is an array of inline comments (can be empty for a clean approval)
-- Each comment needs `path` (relative file path), `line` (line number in the new file), and `body`
-- For multi-line comments, add `start_line` (first line) alongside `line` (last line)
-- If the code looks good, set `event` to `"APPROVE"` with an empty `comments` array
+- Use `REQUEST_CHANGES` if you have blocker-severity comments, otherwise `APPROVE`
+- The body should summarize the overall design direction — don't repeat inline comments
+- If reviewing your own PR (bot-authored), use `--comment` instead of `--approve` or `--request-changes` (GitHub rejects self-approvals)
 
 ## Previous Review Threads
 

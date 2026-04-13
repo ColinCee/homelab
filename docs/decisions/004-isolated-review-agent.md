@@ -1,7 +1,7 @@
 # ADR-004: Isolated Agent Service
 
 **Date:** 2026-04-07
-**Status:** Accepted
+**Status:** Superseded by [ADR-010](010-agent-security-model.md)
 
 ## Context
 
