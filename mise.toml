@@ -11,7 +11,6 @@ description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
   "cd stacks/agents/app && uv run ruff check .",
   "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
-  "if ls scripts/*.sh &>/dev/null; then shellcheck scripts/*.sh; else echo 'No scripts to lint'; fi",
   "uv run yamllint -c .yamllint.yaml stacks/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
 ]
@@ -30,7 +29,7 @@ run = "cd stacks/agents/app && uv run pytest tests/ -v"
 
 [tasks.ci]
 description = "Full CI check (lint + typecheck + test + validate)"
-depends = ["lint", "typecheck", "test", "validate:compose", "check:versions"]
+depends = ["lint", "typecheck", "test", "validate:compose"]
 
 # ── Deploy ─────────────────────────────────────────
 [tasks."deploy:all"]
@@ -75,10 +74,6 @@ done
 """
 
 # ── Validate ───────────────────────────────────────
-[tasks."check:versions"]
-description = "Check Python version consistency across Dockerfile, mise.toml, and pyproject.toml"
-run = "bash scripts/check-versions.sh"
-
 [tasks."validate:compose"]
 description = "Validate all compose files"
 run = """

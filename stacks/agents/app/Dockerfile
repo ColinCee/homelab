@@ -1,6 +1,8 @@
 FROM python:3.14.4-slim
 
 # Pin tool versions for reproducible builds and supply-chain safety.
+# Renovate tracks each ARG via the datasource comments below.
+# When bumping Python, also update: mise.toml (python), pyproject.toml (requires-python, target-version) x2.
 # renovate: datasource=github-releases depName=jdx/mise
 ARG MISE_VERSION=v2026.2.1
 # renovate: datasource=github-releases depName=github/copilot-cli
