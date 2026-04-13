@@ -19,6 +19,31 @@ TIMEOUT_SECONDS = 1800
 # Tokens to redact from CLI output before logging or including in errors.
 _redact_env_keys = ("GH_TOKEN", "COPILOT_GITHUB_TOKEN", "GITHUB_TOKEN")
 
+# Allowlisted env vars for CLI subprocess — keeps server secrets
+# (GITHUB_APP_*, orchestration tokens) out of the autonomous CLI.
+# Note: /secrets/github-app.pem is still readable on disk by the agent user;
+# env filtering prevents env-based exfiltration but not filesystem access.
+_CLI_ENV_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TERM",
+        "TMPDIR",
+        "TMP",
+        "TEMP",
+        "COPILOT_GITHUB_TOKEN",
+        "MISE_DATA_DIR",
+        "MISE_CONFIG_DIR",
+        "MISE_CACHE_DIR",
+    }
+)
+
 
 def _redact_secrets(text: str, extra_secrets: frozenset[str] = frozenset()) -> str:
     """Replace known secret values with [REDACTED] in text."""
@@ -169,7 +194,7 @@ async def run_copilot(
     if session_id:
         cmd.append(f"--resume={session_id}")
 
-    env = os.environ.copy()
+    env = {k: v for k, v in os.environ.items() if k in _CLI_ENV_ALLOWLIST}
     secrets: frozenset[str] = frozenset()
     if github_token:
         env["GH_TOKEN"] = github_token

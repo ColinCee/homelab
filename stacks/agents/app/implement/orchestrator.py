@@ -3,6 +3,7 @@
 import contextlib
 import logging
 import time
+from datetime import UTC, datetime
 
 from services.copilot import TaskError, run_copilot
 from services.git import cleanup_branch_worktree, create_branch_worktree
@@ -23,6 +24,10 @@ def _monotonic() -> float:
     return time.monotonic()
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
 IMPLEMENT_PROMPT_TEMPLATE = """\
 Implement the following GitHub issue in {repo}.
 
@@ -32,6 +37,28 @@ Implement the following GitHub issue in {repo}.
 
 Use the bot-implement skill for guidelines on how to make changes.
 """
+
+
+def _is_stale_pr(pr_data: dict, run_start: datetime) -> bool:
+    """Check if a PR predates the current run (reused branch name).
+
+    A PR is stale if it was closed without merging, or merged before
+    this run started (leftover from a previous implementation attempt).
+    """
+    state = pr_data.get("state")
+    merged_at_str = pr_data.get("merged_at")
+
+    # Closed without merging — definitely stale
+    if state == "closed" and not merged_at_str:
+        return True
+
+    # Merged before this run started — leftover from a previous run
+    if merged_at_str:
+        merged_at = datetime.fromisoformat(merged_at_str.replace("Z", "+00:00"))
+        if merged_at < run_start:
+            return True
+
+    return False
 
 
 async def implement_issue(
@@ -50,6 +77,7 @@ async def implement_issue(
     """
     logger.info("Implementing issue %s#%d", repo, issue_number)
     start = _monotonic()
+    start_wall = _utcnow()
     repo_url = f"https://github.com/{repo}.git"
     branch_name = f"agent/issue-{issue_number}"
 
@@ -88,6 +116,16 @@ async def implement_issue(
 
         # Check what the CLI accomplished
         pr_data = await find_pr_by_branch(repo, branch_name)
+
+        if pr_data and _is_stale_pr(pr_data, start_wall):
+            logger.warning(
+                "Ignoring stale PR #%d for %s (state=%s, merged_at=%s)",
+                pr_data["number"],
+                branch_name,
+                pr_data.get("state"),
+                pr_data.get("merged_at"),
+            )
+            pr_data = None
 
         elapsed = _monotonic() - start
 

@@ -112,8 +112,7 @@ access the host.
 | `cap_add` (minimal) | Only CHOWN, FOWNER, SETUID, SETGID — needed for entrypoint user switching |
 | Memory/CPU limits | `mem_limit: 2g`, `cpus: 2.0` — prevents resource exhaustion |
 | No Docker socket | Container cannot spawn or manage other containers |
-| No host filesystem | Only named volumes (`repo-cache`, `reviews`) and the read-only secrets mount |
-| Read-only secrets | `/secrets/github-app.pem:ro` — App private key is read-only |
+| No host filesystem | Only named volumes (`repo-cache`, `reviews`) — no secrets mounted |
 | Non-root execution | `entrypoint.sh` drops to `agent:agent` user after volume setup |
 
 **Residual risk:** Kernel exploits could bypass container isolation. Mitigated
@@ -128,16 +127,16 @@ on the host.
 
 | Control | Enforcement |
 |---------|-------------|
-| No secrets in repo | All credentials live in `/home/colin/secrets/` on the host, not in the git repo |
+| No secrets in repo | All credentials live in GitHub Actions secrets or Dokploy env, not in the git repo |
 | git-crypt | `docs/private/` is encrypted at rest. The CLI has no decryption key — these files appear as binary blobs in the worktree. |
 | `access.md` gitignored | Local credentials file is never committed and doesn't exist in the container |
-| Volume isolation | Named volumes (`repo-cache`, `reviews`) contain only git data — no host secrets mounted beyond the App key |
-| Read-only key mount | The App private key is mounted read-only. The CLI can read it (it's in the container filesystem), but this is the same key the orchestrator already uses — no new exposure. |
+| Volume isolation | Named volumes (`repo-cache`, `reviews`) contain only git data — no host secrets mounted |
+| No PEM in container | The GitHub App private key never enters the container. Tokens are minted by `actions/create-github-app-token` in the workflow and passed per-request. The PEM stays in GitHub Actions secrets. |
+| Env allowlist | CLI subprocess gets only allowlisted env vars — `COPILOT_GITHUB_TOKEN`, `PATH`, `HOME`, etc. Server secrets (if any) are excluded. |
 
-**Residual risk:** The CLI can read the App private key file. This is an
-existing exposure (the key was always in the container at `/secrets/`), not a
-new one introduced by giving the CLI `GH_TOKEN`. The key could generate tokens,
-but those tokens have the same scope as `GH_TOKEN` itself.
+**Residual risk:** The CLI receives a 1-hour `GH_TOKEN` that could be
+exfiltrated. Mitigated by: token scope (single-repo), short lifetime, and
+output redaction.
 
 ### 6. Destructive actions
 
@@ -180,8 +179,6 @@ repo-scoped token" rather than "CLI has no GitHub token."
    branch protection (can't reach main without CI passing) and PR review
 3. **Compromised CLI has repo write access** — mitigated by single-repo scope,
    1-hour token expiry, no admin permissions
-4. **App private key is readable by CLI** — existing exposure, not new. Key
-   generates tokens with the same scope as `GH_TOKEN`.
 
 These risks are equivalent to giving a junior developer scoped repo access with
 branch protection enforced — which is exactly what the agent is.

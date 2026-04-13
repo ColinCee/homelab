@@ -1,83 +1,46 @@
-"""Tests for GitHub API — auth, REST, and GraphQL helpers."""
+"""Tests for GitHub API — token management and REST helpers."""
 
 import asyncio
-import time
-from unittest.mock import AsyncMock, mock_open, patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 
 import services.github as github
 
 
-class TestGenerateJWT:
-    def test_generates_valid_jwt(self):
-        import jwt
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import rsa
-
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode()
-
-        token = github._generate_jwt("12345", pem)
-
-        public_key = private_key.public_key()
-        decoded = jwt.decode(token, public_key, algorithms=["RS256"])
-        assert decoded["iss"] == "12345"
-        assert decoded["exp"] - decoded["iat"] == 660  # 60s past + 10min
-
-
-class TestGetToken:
-    def test_returns_token_from_api(self):
-        from cryptography.hazmat.primitives import serialization
-        from cryptography.hazmat.primitives.asymmetric import rsa
-
-        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption(),
-        ).decode()
-
-        github.reset_token_cache()
-
-        env = {
-            "GITHUB_APP_ID": "12345",
-            "GITHUB_APP_INSTALLATION_ID": "67890",
-            "GITHUB_APP_PRIVATE_KEY_PATH": "/fake/key.pem",
-        }
-
-        mock_resp = httpx.Response(
-            200,
-            json={"token": "ghs_test_token_123"},
-            request=httpx.Request("POST", "https://api.github.com/test"),
-        )
-
-        async def run():
-            with (
-                patch.dict("os.environ", env),
-                patch("builtins.open", mock_open(read_data=pem)),
-                patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp),
-            ):
-                return await github.get_token()
-
-        token = asyncio.run(run())
-        assert token == "ghs_test_token_123"
-
-    def test_returns_cached_token(self):
-        github._cached_token = "cached_token"
-        github._token_expires_at = time.time() + 3600
+class TestTokenManagement:
+    def test_returns_provided_token(self):
+        github.set_token("ghs_test_token_123")
 
         async def run():
             return await github.get_token()
 
         token = asyncio.run(run())
-        assert token == "cached_token"
-
+        assert token == "ghs_test_token_123"
         github.reset_token_cache()
+
+    def test_raises_when_no_token_set(self):
+        github.reset_token_cache()
+
+        async def run():
+            return await github.get_token()
+
+        import pytest
+
+        with pytest.raises(RuntimeError, match="No GitHub token available"):
+            asyncio.run(run())
+
+    def test_reset_clears_token(self):
+        github.set_token("token")
+        github.reset_token_cache()
+
+        async def run():
+            return await github.get_token()
+
+        import pytest
+
+        with pytest.raises(RuntimeError):
+            asyncio.run(run())
 
 
 class TestBotLogin:

@@ -27,6 +27,7 @@ from services.github import (
     comment_on_issue,
     find_issue_comment_by_body_prefix,
     get_issue,
+    set_token,
     update_comment,
 )
 from trust import ALLOWED_ACTORS
@@ -167,6 +168,7 @@ class ReviewRequest(BaseModel):
     repo: str
     pr_number: int
     triggered_by: str
+    github_token: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -175,6 +177,7 @@ class ImplementRequest(BaseModel):
     repo: str
     issue_number: int
     triggered_by: str
+    github_token: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -195,6 +198,7 @@ async def handle_review(req: ReviewRequest):
             status_code=403,
             content={"error": f"Actor '{req.triggered_by}' is not allowed"},
         )
+    set_token(req.github_token)
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
@@ -268,6 +272,7 @@ async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTa
             status_code=403,
             content={"error": f"Actor '{req.triggered_by}' is not allowed"},
         )
+    set_token(req.github_token)
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _implement_key(req.repo, req.issue_number)

@@ -1,6 +1,10 @@
 FROM python:3.14-slim
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+# Pin tool versions for reproducible builds and supply-chain safety.
+ARG MISE_VERSION=v2026.2.1
+
+# renovate: datasource=docker depName=ghcr.io/astral-sh/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates && \
@@ -27,7 +31,7 @@ ENV MISE_DATA_DIR="/mise"
 ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
-RUN curl https://mise.run | sh
+RUN MISE_VERSION="${MISE_VERSION}" curl https://mise.run | sh
 COPY mise.toml /mise/config.toml
 RUN mise install --yes && mise reshim
 

@@ -43,6 +43,13 @@ jobs:
           gh api "/repos/$REPO/issues/$ISSUE_NUMBER/reactions" \
             --method POST -f content='rocket' --silent
 
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
         with:
@@ -51,11 +58,21 @@ jobs:
           tags: tag:ci
 
       - name: Trigger implementation on Beelink agent
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
+          PAYLOAD=$(jq -n \
+            --arg repo "$REPO" \
+            --argjson issue "$ISSUE_NUMBER" \
+            --arg actor "${{ github.actor }}" \
+            --arg token "$APP_TOKEN" \
+            '{repo:$repo, issue_number:$issue,
+              triggered_by:$actor, github_token:$token}')
+
           HTTP_CODE=$(curl -sf --max-time 30 \
             -X POST "http://beelink:8585/implement" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"$REPO\",\"issue_number\":$ISSUE_NUMBER,\"triggered_by\":\"${{ github.actor }}\"}" \
+            -d "$PAYLOAD" \
             -o /dev/null -w "%{http_code}")
 
           if [ "$HTTP_CODE" != "202" ]; then

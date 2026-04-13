@@ -1,6 +1,7 @@
 """Tests for the implement lifecycle orchestrator."""
 
 import asyncio
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 from unittest.mock import AsyncMock, patch
@@ -12,6 +13,9 @@ from services.copilot import CLIResult, TaskError
 from stats import cli_stage_stats, format_stage_stats
 
 _MOD = "implement.orchestrator"
+
+# Fixed time for tests — all mock merged_at values should be after this
+_TEST_START = datetime(2024, 12, 31, tzinfo=UTC)
 
 
 class TestFormatStageStats:
@@ -115,6 +119,7 @@ class TestImplementIssue:
     def _base_mocks(self, *, pr_data=None, cli_result=None):
         """Return standard patches for implement_issue tests."""
         return [
+            patch(f"{_MOD}._utcnow", return_value=_TEST_START),
             patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
             patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
             patch(
@@ -232,6 +237,7 @@ class TestImplementIssue:
 
         async def run():
             with (
+                patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
@@ -266,6 +272,7 @@ class TestImplementIssue:
 
         async def run():
             with (
+                patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
@@ -300,6 +307,7 @@ class TestImplementIssue:
 
         async def run():
             with (
+                patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
                 patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
                 patch(
@@ -364,6 +372,34 @@ class TestImplementIssue:
         mocks = self._base_mocks(pr_data=pr_data, cli_result=cli_result)
         result = self._run(mocks)
         assert result["premium_requests"] == 7
+
+    def test_ignores_stale_merged_pr_from_previous_run(self):
+        """A PR merged before this run started is ignored (reused branch name)."""
+        stale_pr = {
+            "number": 50,
+            "html_url": "https://github.com/user/repo/pull/50",
+            "state": "closed",
+            "merged_at": "2024-06-01T00:00:00Z",
+            "merged": True,
+        }
+        mocks = self._base_mocks(pr_data=stale_pr)
+        result = self._run(mocks)
+        assert result["status"] == "failed"
+        assert result["pr_number"] is None
+
+    def test_ignores_closed_unmerged_pr(self):
+        """A closed-without-merge PR is ignored (stale branch)."""
+        closed_pr = {
+            "number": 50,
+            "html_url": "https://github.com/user/repo/pull/50",
+            "state": "closed",
+            "merged_at": None,
+            "merged": False,
+        }
+        mocks = self._base_mocks(pr_data=closed_pr)
+        result = self._run(mocks)
+        assert result["status"] == "failed"
+        assert result["pr_number"] is None
 
     def test_always_cleans_up_worktree(self):
         """Worktree is cleaned up even on failure."""

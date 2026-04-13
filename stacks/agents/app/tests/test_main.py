@@ -21,10 +21,16 @@ from main import (
 from metrics import METRICS_REGISTRY, reset_metrics
 
 _ACTOR = "ColinCee"
+_TOKEN = "ghs_test_token"
 
 
 def _review_req(**kwargs) -> ReviewRequest:
-    defaults = {"repo": "user/repo", "pr_number": 42, "triggered_by": _ACTOR}
+    defaults = {
+        "repo": "user/repo",
+        "pr_number": 42,
+        "triggered_by": _ACTOR,
+        "github_token": _TOKEN,
+    }
     return ReviewRequest(**(defaults | kwargs))
 
 
@@ -108,7 +114,12 @@ def test_review_missing_fields():
 def test_review_rejects_unknown_actor():
     resp = _client().post(
         "/review",
-        json={"repo": "user/repo", "pr_number": 1, "triggered_by": "evil-user"},
+        json={
+            "repo": "user/repo",
+            "pr_number": 1,
+            "triggered_by": "evil-user",
+            "github_token": _TOKEN,
+        },
     )
     assert resp.status_code == 403
     assert "not allowed" in resp.json()["error"]
@@ -220,7 +231,12 @@ def test_implement_returns_202_accepted(mock_impl):
     mock_impl.return_value = {"pr_number": 99, "elapsed_seconds": 5.0}
     resp = _client().post(
         "/implement",
-        json={"repo": "user/repo", "issue_number": 10, "triggered_by": "ColinCee"},
+        json={
+            "repo": "user/repo",
+            "issue_number": 10,
+            "triggered_by": "ColinCee",
+            "github_token": _TOKEN,
+        },
     )
     assert resp.status_code == 202
     data = resp.json()
@@ -236,7 +252,12 @@ def test_implement_missing_fields():
 def test_implement_rejects_unknown_actor():
     resp = _client().post(
         "/implement",
-        json={"repo": "user/repo", "issue_number": 10, "triggered_by": "evil-user"},
+        json={
+            "repo": "user/repo",
+            "issue_number": 10,
+            "triggered_by": "evil-user",
+            "github_token": _TOKEN,
+        },
     )
     assert resp.status_code == 403
     assert "not allowed" in resp.json()["error"]
@@ -260,7 +281,12 @@ def test_implement_rejects_duplicate_in_flight(mock_impl):
     try:
         resp = _client().post(
             "/implement",
-            json={"repo": "user/repo", "issue_number": 10, "triggered_by": "ColinCee"},
+            json={
+                "repo": "user/repo",
+                "issue_number": 10,
+                "triggered_by": "ColinCee",
+                "github_token": _TOKEN,
+            },
         )
         assert resp.status_code == 409
         assert resp.json()["status"] == "already_in_progress"
