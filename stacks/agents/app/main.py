@@ -34,6 +34,10 @@ from services.github import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
+# Hardcoded actor allowlist — only these GitHub users can trigger agent tasks.
+# Defense-in-depth: workflows also gate on actor, but this catches misconfiguration.
+ALLOWED_ACTORS = frozenset({"ColinCee", "colins-homelab-bot[bot]"})
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -175,6 +179,7 @@ def _record_task_metrics(
 class ReviewRequest(BaseModel):
     repo: str
     pr_number: int
+    triggered_by: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -182,6 +187,7 @@ class ReviewRequest(BaseModel):
 class ImplementRequest(BaseModel):
     repo: str
     issue_number: int
+    triggered_by: str
     model: str | None = None
     reasoning_effort: str | None = None
 
@@ -197,6 +203,11 @@ async def health() -> dict[str, str]:
 @app.post("/review", status_code=202, response_model=None)
 async def handle_review(req: ReviewRequest):
     """Accept a review request and process it in the background."""
+    if req.triggered_by not in ALLOWED_ACTORS:
+        return JSONResponse(
+            status_code=403,
+            content={"error": f"Actor '{req.triggered_by}' is not allowed"},
+        )
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _review_key(req.repo, req.pr_number)
@@ -265,6 +276,11 @@ async def get_review_status(pr_number: int, repo: str = "") -> dict:
 @app.post("/implement", status_code=202, response_model=None)
 async def handle_implement(req: ImplementRequest, background_tasks: BackgroundTasks):
     """Accept an implementation request and process it in the background."""
+    if req.triggered_by not in ALLOWED_ACTORS:
+        return JSONResponse(
+            status_code=403,
+            content={"error": f"Actor '{req.triggered_by}' is not allowed"},
+        )
     model = req.model or MODEL
     effort = req.reasoning_effort or REASONING_EFFORT
     key = _implement_key(req.repo, req.issue_number)

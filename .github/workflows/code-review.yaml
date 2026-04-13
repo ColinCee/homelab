@@ -56,7 +56,7 @@ jobs:
           HTTP_CODE=$(curl -sf --max-time 30 \
             -X POST "http://beelink:8585/review" \
             -H "Content-Type: application/json" \
-            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER}" \
+            -d "{\"repo\":\"$REPO\",\"pr_number\":$PR_NUMBER,\"triggered_by\":\"${{ github.actor }}\"}" \
             -o /dev/null -w "%{http_code}")
 
           if [ "$HTTP_CODE" != "202" ]; then

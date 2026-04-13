@@ -20,6 +20,13 @@ from main import (
 )
 from metrics import METRICS_REGISTRY, reset_metrics
 
+_ACTOR = "ColinCee"
+
+
+def _review_req(**kwargs) -> ReviewRequest:
+    defaults = {"repo": "user/repo", "pr_number": 42, "triggered_by": _ACTOR}
+    return ReviewRequest(**(defaults | kwargs))
+
 
 def _client():
     return TestClient(app)
@@ -81,7 +88,7 @@ def test_review_returns_202_accepted(mock_create_task):
 
         mock_create_task.side_effect = fake_create_task
 
-        result = await handle_review(ReviewRequest(repo="user/repo", pr_number=1))
+        result = await handle_review(_review_req(pr_number=1))
 
         assert result == {"status": "accepted", "pr_number": 1}
         assert _review_tasks["user/repo#1"] is task
@@ -96,6 +103,15 @@ def test_review_returns_202_accepted(mock_create_task):
 def test_review_missing_fields():
     resp = _client().post("/review", json={"pr_number": 1})
     assert resp.status_code == 422
+
+
+def test_review_rejects_unknown_actor():
+    resp = _client().post(
+        "/review",
+        json={"repo": "user/repo", "pr_number": 1, "triggered_by": "evil-user"},
+    )
+    assert resp.status_code == 403
+    assert "not allowed" in resp.json()["error"]
 
 
 def test_review_status_not_found():
@@ -124,7 +140,7 @@ def test_review_replaces_duplicate_in_flight():
             return replacement_task
 
         with patch("main.asyncio.create_task", side_effect=fake_create_task) as mock_create_task:
-            result = await handle_review(ReviewRequest(repo="user/repo", pr_number=42))
+            result = await handle_review(_review_req())
 
         assert result == {"status": "accepted", "pr_number": 42}
         assert existing_task.cancelled()
@@ -173,8 +189,8 @@ def test_review_coalesces_concurrent_replacements():
 
         with patch("main.asyncio.create_task", side_effect=fake_create_task):
             results_task = asyncio.gather(
-                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
-                handle_review(ReviewRequest(repo="user/repo", pr_number=42)),
+                handle_review(_review_req()),
+                handle_review(_review_req()),
             )
             await cancellation_started.wait()
             release_cancellation.set()
@@ -204,7 +220,7 @@ def test_implement_returns_202_accepted(mock_impl):
     mock_impl.return_value = {"pr_number": 99, "elapsed_seconds": 5.0}
     resp = _client().post(
         "/implement",
-        json={"repo": "user/repo", "issue_number": 10},
+        json={"repo": "user/repo", "issue_number": 10, "triggered_by": "ColinCee"},
     )
     assert resp.status_code == 202
     data = resp.json()
@@ -215,6 +231,15 @@ def test_implement_returns_202_accepted(mock_impl):
 def test_implement_missing_fields():
     resp = _client().post("/implement", json={"issue_number": 1})
     assert resp.status_code == 422
+
+
+def test_implement_rejects_unknown_actor():
+    resp = _client().post(
+        "/implement",
+        json={"repo": "user/repo", "issue_number": 10, "triggered_by": "evil-user"},
+    )
+    assert resp.status_code == 403
+    assert "not allowed" in resp.json()["error"]
 
 
 def test_implement_status_not_found():
@@ -235,7 +260,7 @@ def test_implement_rejects_duplicate_in_flight(mock_impl):
     try:
         resp = _client().post(
             "/implement",
-            json={"repo": "user/repo", "issue_number": 10},
+            json={"repo": "user/repo", "issue_number": 10, "triggered_by": "ColinCee"},
         )
         assert resp.status_code == 409
         assert resp.json()["status"] == "already_in_progress"
