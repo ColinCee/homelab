@@ -1,6 +1,7 @@
 """Tests for the agent service."""
 
 import asyncio
+from typing import Any
 from unittest.mock import AsyncMock, call, patch
 
 import pytest
@@ -24,8 +25,8 @@ _ACTOR = "ColinCee"
 _TOKEN = "ghs_test_token"
 
 
-def _review_req(**kwargs) -> ReviewRequest:
-    defaults = {
+def _review_req(**kwargs: Any) -> ReviewRequest:
+    defaults: dict[str, Any] = {
         "repo": "user/repo",
         "pr_number": 42,
         "triggered_by": _ACTOR,
