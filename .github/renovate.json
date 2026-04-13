@@ -11,5 +11,16 @@
   ],
   "docker-compose": {
     "fileMatch": ["stacks/.+/compose\\.yaml$"]
-  }
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "fileMatch": ["stacks/agents/app/Dockerfile$"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[^ ]+) depName=(?<depName>[^\\n]+)\\nARG [A-Z_]+=v?(?<currentValue>.+)"
+      ],
+      "datasourceTemplate": "{{{datasource}}}",
+      "depNameTemplate": "{{{depName}}}"
+    }
+  ]
 }

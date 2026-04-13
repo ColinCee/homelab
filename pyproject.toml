@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Colin Cheung", email = "11246116+ColinCee@users.noreply.github.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = []
 
 [dependency-groups]
@@ -18,7 +18,7 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
