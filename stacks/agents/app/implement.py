@@ -57,6 +57,7 @@ def _format_stage_stats(
     api_time_seconds: int = 0,
     effort: str = "",
     models: dict | None = None,
+    tokens_line: str = "",
 ) -> str:
     """Format a compact stats footer for a lifecycle stage comment."""
     parts = []
@@ -75,6 +76,8 @@ def _format_stage_stats(
         for model_name, detail in models.items():
             clean = re.sub(r"\s*\(Est\..*?\)", "", detail).strip().rstrip(",")
             parts.append(f"🤖 {model_name}: {clean}")
+    elif tokens_line:
+        parts.append(f"📊 {tokens_line}")
     return " · ".join(parts)
 
 
@@ -86,6 +89,7 @@ def _cli_stage_stats(result: CLIResult, effort: str = "") -> str:
         api_time_seconds=result.api_time_seconds,
         effort=effort,
         models=result.models,
+        tokens_line=result.tokens_line,
     )
 
 
@@ -557,6 +561,7 @@ async def implement_issue(
                         api_time_seconds=review_result.get("api_time_seconds", 0),
                         effort=review_result.get("reasoning_effort", ""),
                         models=review_result.get("models"),
+                        tokens_line=review_result.get("tokens_line", ""),
                     )
                     verdict = (
                         "✅ approved" if original_event == "APPROVE" else "📋 changes requested"

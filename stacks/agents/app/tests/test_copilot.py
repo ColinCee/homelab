@@ -100,6 +100,15 @@ Tokens    ↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)
 def test_parse_new_cli_format():
     stats = _parse_stats(SAMPLE_OUTPUT_NEW_FORMAT)
     assert stats["premium_requests"] == 1
+    assert stats["session_time"] == 15 * 60 + 44
+    assert stats["tokens_line"] == "↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)"
+    assert stats["models"] == {}
+
+
+def test_parse_new_format_short_time():
+    stats = _parse_stats("Requests  3 Premium (6m 16s)\n")
+    assert stats["premium_requests"] == 3
+    assert stats["session_time"] == 6 * 60 + 16
 
 
 def test_stats_line_strips_est_premium():
