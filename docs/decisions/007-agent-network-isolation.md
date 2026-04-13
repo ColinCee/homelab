@@ -1,7 +1,7 @@
 # ADR-007: Agent Network Isolation
 
 **Date:** 2026-04-09
-**Status:** Accepted
+**Status:** Superseded by [ADR-010](010-agent-security-model.md) (network model unchanged; credential scoping rationale updated)
 
 ## Context
 
