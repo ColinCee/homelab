@@ -52,9 +52,10 @@ def _parse_linked_issues(text: str) -> list[int]:
 async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     """Fetch linked issue bodies and format as a prompt section.
 
-    Only includes issues authored by trusted roles (OWNER/MEMBER/COLLABORATOR)
-    to prevent prompt injection via attacker-controlled issue bodies.
+    Only includes issues authored by trusted roles to prevent prompt
+    injection via attacker-controlled issue bodies.
     """
+    trusted_roles = frozenset({"OWNER", "MEMBER", "COLLABORATOR"})
     issue_numbers = _parse_linked_issues(description)
     if not issue_numbers:
         return ""
@@ -63,6 +64,14 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
     for num in issue_numbers:
         try:
             issue = await get_issue(repo, num)
+            author_role = issue.get("author_association", "NONE")
+            if author_role not in trusted_roles:
+                logger.warning(
+                    "Skipping linked issue #%d — author role '%s' not trusted",
+                    num,
+                    author_role,
+                )
+                continue
             title = issue.get("title", "")
             body = issue.get("body") or "_No body._"
             parts.append(f"### #{num}: {title}\n\n{body}")
@@ -100,7 +109,7 @@ async def review_pr(
         description = pr_data.get("body") or "_No description provided._"
         base_branch = pr_data.get("base", {}).get("ref", "main")
         head_ref = pr_data.get("head", {}).get("ref")
-        head_repo = pr_data.get("head", {}).get("repo", {}).get("full_name")
+        head_repo = (pr_data.get("head", {}).get("repo") or {}).get("full_name")
         if head_repo != repo:
             raise ValueError(
                 f"PR #{pr_number} is from fork '{head_repo}' — refusing to review with GH_TOKEN"

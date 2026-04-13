@@ -3,6 +3,8 @@
 import asyncio
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from review import review_pr
 from review.orchestrator import (
     _fetch_linked_issues_section,
@@ -92,6 +94,19 @@ class TestFetchLinkedIssuesSection:
 
         result = asyncio.run(run())
         assert "_No body._" in result
+
+    @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
+    def test_skips_untrusted_issue_authors(self, mock_get_issue: AsyncMock):
+        mock_get_issue.return_value = {
+            "title": "Evil",
+            "body": "Malicious prompt",
+            "author_association": "NONE",
+        }
+
+        async def run():
+            return await _fetch_linked_issues_section("user/repo", "Fixes #5")
+
+        assert asyncio.run(run()) == ""
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_includes_collaborator_issues(self, mock_get_issue: AsyncMock):
@@ -195,7 +210,25 @@ class TestReviewPr:
             ):
                 return await review_pr(repo="user/repo", pr_number=1)
 
-        import pytest
+        with pytest.raises(ValueError, match="fork"):
+            asyncio.run(run())
+
+    def test_rejects_deleted_fork_repo(self):
+        """PRs where the fork repo was deleted (repo: null) are also rejected."""
+        pr_data = {
+            "title": "Deleted fork PR",
+            "body": "",
+            "base": {"ref": "main"},
+            "head": {"ref": "branch", "repo": None},
+        }
+
+        async def run():
+            with (
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_pr", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.cleanup_worktree", new_callable=AsyncMock),
+            ):
+                return await review_pr(repo="user/repo", pr_number=1)
 
         with pytest.raises(ValueError, match="fork"):
             asyncio.run(run())
