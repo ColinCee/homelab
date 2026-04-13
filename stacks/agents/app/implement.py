@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 MAX_REVIEW_ROUNDS = 2
 MERGE_READY_TIMEOUT_SECONDS = 15 * 60
 MERGE_POLL_INTERVAL_SECONDS = 10
+REBASE_HEAD_PROPAGATION_GRACE_SECONDS = 3 * MERGE_POLL_INTERVAL_SECONDS
 
 STATUS_EMOJI = {
     "complete": "✅",
@@ -212,6 +213,8 @@ async def _merge_when_eligible(
     deadline = _monotonic() + MERGE_READY_TIMEOUT_SECONDS
     last_wait_reason = "GitHub is still calculating mergeability"
     rebase_attempted = False
+    previous_commit_sha: str | None = None
+    head_sync_deadline: float | None = None
 
     while _monotonic() < deadline:
         mergeable_state = "unknown"
@@ -296,6 +299,28 @@ async def _merge_when_eligible(
 
             current_sha = current_head.get("sha")
             if current_sha != commit_sha:
+                if (
+                    previous_commit_sha is not None
+                    and current_sha == previous_commit_sha
+                    and head_sync_deadline is not None
+                ):
+                    if _monotonic() < head_sync_deadline:
+                        last_wait_reason = "Waiting for GitHub to reflect rebased PR head"
+                        await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
+                        continue
+                    return _lifecycle_result(
+                        status="partial",
+                        pr_number=pr_number,
+                        pr_url=pr_url,
+                        commit_sha=commit_sha,
+                        review_rounds=review_rounds,
+                        start=start,
+                        premium_requests=premium_requests,
+                        session_id=session_id,
+                        error="PR head did not update to the rebased commit"
+                        " — needs manual attention",
+                        mergeable_state=mergeable_state,
+                    )
                 return _lifecycle_result(
                     status="partial",
                     pr_number=pr_number,
@@ -308,6 +333,8 @@ async def _merge_when_eligible(
                     error="PR head changed after review — needs manual attention",
                     mergeable_state=mergeable_state,
                 )
+            previous_commit_sha = None
+            head_sync_deadline = None
 
             ci_result = await get_commit_ci_status(repo, commit_sha)
             ci_status = ci_result.get("state", "none")
@@ -326,6 +353,7 @@ async def _merge_when_eligible(
                                 repo, review_progress_id, "🔄 Rebasing onto main..."
                             )
                     try:
+                        previous_commit_sha = commit_sha
                         commit_sha = await rebase_onto_main(
                             worktree_path,
                             repo_url=repo_url,
@@ -333,6 +361,7 @@ async def _merge_when_eligible(
                             repo=repo,
                             branch=branch_name,
                         )
+                        head_sync_deadline = _monotonic() + REBASE_HEAD_PROPAGATION_GRACE_SECONDS
                         last_wait_reason = "Rebased onto main — waiting for CI"
                         await asyncio.sleep(MERGE_POLL_INTERVAL_SECONDS)
                         continue
