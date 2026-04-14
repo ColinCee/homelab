@@ -2,11 +2,13 @@
 
 import asyncio
 import contextlib
+import fcntl
 import json
 import logging
 import os
 import shutil
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,11 +21,12 @@ DEFAULT_WORKTREE_RETENTION_SECONDS = 14 * 86400
 WORKTREE_RETENTION_SECONDS = int(
     os.environ.get("WORKTREE_RETENTION_SECONDS", str(DEFAULT_WORKTREE_RETENTION_SECONDS))
 )
+REPO_LOCK_FILE = ".repo-setup.lock"
 
 if WORKTREE_RETENTION_SECONDS < 0:
     raise ValueError("WORKTREE_RETENTION_SECONDS must be non-negative")
 
-# Serializes all git operations on the shared bare clone
+# Serializes git operations within a single worker process.
 _repo_lock = asyncio.Lock()
 
 
@@ -45,6 +48,41 @@ async def _run(cmd: list[str], cwd: Path | None = None) -> str:
     if proc.returncode != 0:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{stderr.decode()}")
     return stdout.decode().strip()
+
+
+def _repo_lock_path() -> Path:
+    # The shared /reviews volume exists before the bare clone does, so the
+    # setup lock has to live here instead of inside /repo.git.
+    return REVIEWS_PATH / REPO_LOCK_FILE
+
+
+def _acquire_repo_file_lock() -> int:
+    os.makedirs(REVIEWS_PATH, exist_ok=True)
+    fd = os.open(_repo_lock_path(), os.O_RDWR | os.O_CREAT, 0o666)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _release_repo_file_lock(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+@contextlib.asynccontextmanager
+async def _hold_repo_lock() -> AsyncIterator[None]:
+    """Serialize shared bare-clone mutations across tasks and containers."""
+    async with _repo_lock:
+        fd = await asyncio.to_thread(_acquire_repo_file_lock)
+        try:
+            yield
+        finally:
+            await asyncio.to_thread(_release_repo_file_lock, fd)
 
 
 async def init_bare_clone(repo_url: str) -> Path:
@@ -82,7 +120,7 @@ async def create_worktree(pr_number: int, repo_url: str, *, head_ref: str | None
     """
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
 
-    async with _repo_lock:
+    async with _hold_repo_lock():
         await _reap_old_worktrees_locked()
 
         if worktree_path.exists():
@@ -136,7 +174,7 @@ async def cleanup_worktree(pr_number: int) -> None:
     """Mark a PR worktree for deferred cleanup."""
     worktree_path = REVIEWS_PATH / f"pr-{pr_number}"
 
-    async with _repo_lock:
+    async with _hold_repo_lock():
         _mark_worktree_for_cleanup(worktree_path, f"pr-{pr_number}")
         await _reap_old_worktrees_locked()
 
@@ -147,7 +185,7 @@ async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
     """Create a new branch from origin/main and a worktree for it."""
     worktree_path = REVIEWS_PATH / branch_name.replace("/", "-")
 
-    async with _repo_lock:
+    async with _hold_repo_lock():
         await _reap_old_worktrees_locked()
 
         if worktree_path.exists():
@@ -182,7 +220,7 @@ async def cleanup_branch_worktree(branch_name: str) -> None:
     """Mark a branch worktree for deferred cleanup."""
     worktree_path = REVIEWS_PATH / branch_name.replace("/", "-")
 
-    async with _repo_lock:
+    async with _hold_repo_lock():
         _mark_worktree_for_cleanup(worktree_path, branch_name)
         await _reap_old_worktrees_locked()
 
@@ -191,12 +229,12 @@ async def cleanup_branch_worktree(branch_name: str) -> None:
 
 async def reap_old_worktrees() -> None:
     """Delete worktrees whose cleanup retention window has expired."""
-    async with _repo_lock:
+    async with _hold_repo_lock():
         await _reap_old_worktrees_locked()
 
 
 async def _remove_named_worktree(worktree_path: Path, branch_name: str) -> None:
-    """Remove a worktree and its branch ref. Caller must hold _repo_lock."""
+    """Remove a worktree and its branch ref. Caller must hold the repo lock."""
     bare_clone_exists = (BARE_CLONE_PATH / "HEAD").exists()
 
     if worktree_path.exists():
@@ -222,7 +260,7 @@ async def _remove_named_worktree(worktree_path: Path, branch_name: str) -> None:
 
 
 async def _remove_worktree(worktree_path: Path, pr_number: int) -> None:
-    """Remove a PR worktree directory and its branch ref. Caller must hold _repo_lock."""
+    """Remove a PR worktree directory and its branch ref. Caller must hold the repo lock."""
     await _remove_named_worktree(worktree_path, f"pr-{pr_number}")
 
 
@@ -275,7 +313,7 @@ def _read_cleanup_marker(worktree_path: Path) -> CleanupMarker | None:
 
 
 async def _reap_old_worktrees_locked() -> None:
-    """Delete expired worktrees. Caller must hold _repo_lock."""
+    """Delete expired worktrees. Caller must hold the repo lock."""
     if not REVIEWS_PATH.exists():
         return
 

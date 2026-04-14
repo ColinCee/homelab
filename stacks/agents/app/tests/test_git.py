@@ -25,6 +25,34 @@ class TestRunCommand:
         asyncio.run(run())
 
 
+class TestRepoLock:
+    def test_acquire_repo_file_lock_creates_lock_file(self, tmp_path: Path):
+        with patch.object(git_module, "REVIEWS_PATH", tmp_path):
+            fd = git_module._acquire_repo_file_lock()
+
+        try:
+            assert (tmp_path / git_module.REPO_LOCK_FILE).exists()
+        finally:
+            git_module._release_repo_file_lock(fd)
+
+    def test_hold_repo_lock_acquires_and_releases_shared_lock(self, tmp_path: Path):
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(
+                    git_module, "_acquire_repo_file_lock", return_value=123
+                ) as mock_acquire,
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                async with git_module._hold_repo_lock():
+                    pass
+
+            mock_acquire.assert_called_once_with()
+            mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
+
+
 class TestCreateWorktree:
     def test_creates_worktree_for_pr(self):
         calls = []
@@ -309,3 +337,23 @@ class TestReapOldWorktrees:
         asyncio.run(run())
 
         assert not worktree.exists()
+
+    def test_reap_old_worktrees_uses_shared_repo_lock(self, tmp_path: Path):
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(
+                    git_module, "_reap_old_worktrees_locked", new_callable=AsyncMock
+                ) as mock_reap,
+                patch.object(
+                    git_module, "_acquire_repo_file_lock", return_value=123
+                ) as mock_acquire,
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                await git_module.reap_old_worktrees()
+
+            mock_reap.assert_awaited_once()
+            mock_acquire.assert_called_once_with()
+            mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
