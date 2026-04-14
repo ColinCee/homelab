@@ -116,6 +116,15 @@ async def spawn_worker(
         "no-new-privileges:true",
         "--cap-drop",
         "ALL",
+        # entrypoint.sh needs chown/runuser to drop from root to agent user
+        "--cap-add",
+        "CHOWN",
+        "--cap-add",
+        "FOWNER",
+        "--cap-add",
+        "SETUID",
+        "--cap-add",
+        "SETGID",
     ]
 
     for key, value in env.items():
