@@ -189,8 +189,8 @@ branch protection enforced — which is exactly what the agent is.
   credential isolation model
 - [ADR-007: Agent Network Isolation](007-agent-network-isolation.md) —
   superseded credential scoping rationale (network model unchanged)
-- [ADR-009: Capped Review Cycle](009-capped-review-cycle.md) — unchanged,
-  2-round cap now enforced by skill file instead of orchestrator code
+- [ADR-009: Capped Review Cycle](009-capped-review-cycle.md) — superseded
+  lifecycle control now enforced by skill files
 - `stacks/agents/app/services/copilot.py` — CLI subprocess wrapper, injects `GH_TOKEN`
 - `stacks/agents/compose.yaml` — container security settings
 - `.github/skills/bot-implement/SKILL.md` — skill-based control plane
