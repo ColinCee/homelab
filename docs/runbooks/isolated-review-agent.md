@@ -147,6 +147,23 @@ docker logs <container-name> --since 1h 2>&1 \
 Each Copilot CLI invocation logs a `Requests  N Premium` line showing cost, and
 a `Session transcript captured` line showing the full agent reasoning.
 
+Session transcripts and worktrees are retained in the `reviews` Docker volume
+(14-day default). To access them:
+
+```bash
+# Find the agent container
+AGENT=$(docker ps --filter "name=agent" --format '{{.Names}}')
+
+# List retained worktrees
+docker exec $AGENT ls /reviews/
+
+# Read a review session transcript
+docker exec $AGENT cat /reviews/pr-<N>/.copilot-session.md
+
+# Read an implement session transcript
+docker exec $AGENT cat /reviews/agent-issue-<N>/.copilot-session.md
+```
+
 ## 8. Operational Gotchas
 
 - **`/review` is manual-only.** The workflow does not auto-review on PR open,
