@@ -2,6 +2,11 @@ services:
   crowdsec:
     image: crowdsecurity/crowdsec:v1.7.7
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "cscli", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     environment:
       COLLECTIONS: "crowdsecurity/linux crowdsecurity/sshd"
       GID: "${DOCKER_GID:-999}"
