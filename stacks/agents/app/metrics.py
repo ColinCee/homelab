@@ -3,7 +3,7 @@
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
 
 TASK_TYPES = ("review", "implement", "fix")
-TASK_STATUSES = ("complete", "failed", "partial")
+TASK_STATUSES = ("complete", "failed", "partial", "rejected")
 
 METRICS_REGISTRY = CollectorRegistry()
 

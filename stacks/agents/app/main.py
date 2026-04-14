@@ -21,6 +21,7 @@ from metrics import (
 )
 from services.docker import (
     cleanup_orphaned_workers,
+    discover_running_workers,
     get_logs,
     get_own_image,
     is_worker_running,
@@ -40,7 +41,39 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await reap_old_worktrees()
-    await cleanup_orphaned_workers()
+
+    # Harvest metrics from workers that completed while we were down
+    for w in await cleanup_orphaned_workers():
+        result = parse_worker_result(str(w.get("logs", "")))
+        fallback = "failed"
+        status = _task_status_label(result.get("status", fallback))
+        premium = _premium_requests(result)
+        _record_task_metrics(
+            task_type=str(w["task_type"]),
+            status=status,
+            duration_seconds=float(w.get("duration_seconds", 0)),
+            premium_requests=premium,
+        )
+        logger.info(
+            "Harvested metrics from orphaned worker %s #%s (status=%s, premium=%d)",
+            w["task_type"],
+            w["number"],
+            status,
+            premium,
+        )
+
+    # Reconnect monitors for workers still running from a previous API process
+    for w in await discover_running_workers():
+        task_type = str(w["task_type"])
+        number = int(w["number"])
+        container_id = str(w["container_id"])
+        started_at = float(w.get("started_at", 0))
+        elapsed = time.time() - started_at if started_at > 0 else 0
+        approx_start = time.monotonic() - elapsed
+        TASK_IN_PROGRESS.labels(task_type=task_type).inc()
+        _spawn_monitor(container_id, task_type=task_type, number=number, start=approx_start)
+        logger.info("Reconnected monitor for running worker %s #%d", task_type, number)
+
     yield
 
 
@@ -55,11 +88,9 @@ _monitor_tasks: dict[str, asyncio.Task[None]] = {}
 
 
 def _task_status_label(status: object) -> str:
-    if status == "failed":
-        return "failed"
-    if status == "partial":
-        return "partial"
-    return "complete"
+    if status in ("complete", "failed", "partial", "rejected"):
+        return str(status)
+    return "failed"
 
 
 def _premium_requests(result: dict[str, object] | None) -> int:

@@ -11,6 +11,7 @@ from main import (
     ReviewRequest,
     _monitor_tasks,
     _monitor_worker,
+    _task_status_label,
     app,
     handle_review,
 )
@@ -45,14 +46,83 @@ def test_health():
     assert resp.json() == {"status": "ok"}
 
 
-@patch("main.cleanup_orphaned_workers", new_callable=AsyncMock)
+# --- Status label tests ---
+
+
+def test_task_status_label_known_statuses():
+    assert _task_status_label("complete") == "complete"
+    assert _task_status_label("failed") == "failed"
+    assert _task_status_label("partial") == "partial"
+    assert _task_status_label("rejected") == "rejected"
+
+
+def test_task_status_label_unknown_defaults_to_failed():
+    assert _task_status_label("whatever") == "failed"
+    assert _task_status_label("") == "failed"
+    assert _task_status_label(None) == "failed"
+
+
+# --- Startup tests ---
+
+
+@patch("main.discover_running_workers", new_callable=AsyncMock, return_value=[])
+@patch("main.cleanup_orphaned_workers", new_callable=AsyncMock, return_value=[])
 @patch("main.reap_old_worktrees", new_callable=AsyncMock)
-def test_startup_reaps_worktrees_and_orphans(mock_reap, mock_cleanup):
+def test_startup_reaps_worktrees_and_orphans(mock_reap, mock_cleanup, mock_discover):
     with TestClient(app):
         pass
 
     mock_reap.assert_awaited_once()
     mock_cleanup.assert_awaited_once()
+    mock_discover.assert_awaited_once()
+
+
+@patch("main.discover_running_workers", new_callable=AsyncMock, return_value=[])
+@patch("main.cleanup_orphaned_workers", new_callable=AsyncMock)
+@patch("main.reap_old_worktrees", new_callable=AsyncMock)
+def test_startup_harvests_metrics_from_orphans(mock_reap, mock_cleanup, mock_discover):
+    """Startup should record metrics from stopped workers before removing them."""
+    mock_cleanup.return_value = [
+        {
+            "task_type": "review",
+            "number": 42,
+            "logs": '{"status": "complete", "premium_requests": 5}\n',
+            "duration_seconds": 300.0,
+        }
+    ]
+
+    with TestClient(app):
+        pass
+
+    assert _metric_value("agent_task_total", {"task_type": "review", "status": "complete"}) == 1.0
+    assert _metric_value("agent_premium_requests_total", {"task_type": "review"}) == 5.0
+
+
+@patch("main._spawn_monitor")
+@patch("main.discover_running_workers", new_callable=AsyncMock)
+@patch("main.cleanup_orphaned_workers", new_callable=AsyncMock, return_value=[])
+@patch("main.reap_old_worktrees", new_callable=AsyncMock)
+def test_startup_reconnects_monitors_for_running_workers(
+    mock_reap, mock_cleanup, mock_discover, mock_monitor
+):
+    """Startup should reconnect monitors for workers still running."""
+    mock_discover.return_value = [
+        {
+            "container_id": "abc123",
+            "task_type": "implement",
+            "number": 10,
+            "started_at": 1000000.0,
+        }
+    ]
+
+    with TestClient(app):
+        pass
+
+    mock_monitor.assert_called_once()
+    call_kwargs = mock_monitor.call_args
+    assert call_kwargs.args[0] == "abc123"
+    assert call_kwargs.kwargs["task_type"] == "implement"
+    assert call_kwargs.kwargs["number"] == 10
 
 
 def test_metrics_endpoint_exposes_prometheus_text():
@@ -271,6 +341,21 @@ def test_monitor_records_metrics_on_failure(mock_wait, mock_logs, mock_rm):
     assert _metric_value("agent_task_total", {"task_type": "implement", "status": "failed"}) == 1.0
     assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 3.0
     mock_rm.assert_awaited_once_with("abc123")
+
+
+@patch("main.remove_container", new_callable=AsyncMock)
+@patch("main.get_logs", new_callable=AsyncMock)
+@patch("main.wait_container", new_callable=AsyncMock)
+def test_monitor_records_rejected_status(mock_wait, mock_logs, mock_rm):
+    """Monitor should record 'rejected' status correctly, not as 'complete'."""
+    mock_wait.return_value = 1
+    mock_logs.return_value = '{"status": "rejected", "premium_requests": 0}\n'
+
+    asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
+
+    assert (
+        _metric_value("agent_task_total", {"task_type": "implement", "status": "rejected"}) == 1.0
+    )
 
 
 @patch("main.remove_container", new_callable=AsyncMock)

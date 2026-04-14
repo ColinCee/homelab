@@ -5,9 +5,13 @@ restarts (ADR-011). Workers use the same image with a different entrypoint.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
+import re
 import socket
+from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +61,24 @@ async def get_own_image() -> str:
 def _worker_name(task_type: str, number: int) -> str:
     """Generate a deterministic worker container name."""
     return f"worker-{task_type}-{number}"
+
+
+def _parse_worker_name(name: str) -> tuple[str, int] | None:
+    """Parse 'worker-review-42' → ('review', 42). Returns None if invalid."""
+    parts = name.split("-", 2)
+    if len(parts) != 3 or parts[0] != "worker":
+        return None
+    try:
+        return parts[1], int(parts[2])
+    except ValueError:
+        return None
+
+
+def _parse_docker_timestamp(ts: str) -> float:
+    """Parse a Docker timestamp (RFC 3339 with nanoseconds) to Unix epoch."""
+    # Truncate nanosecond precision to microsecond for datetime.fromisoformat
+    ts = re.sub(r"(\.\d{6})\d+", r"\1", ts.strip())
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
 
 
 async def spawn_worker(
@@ -178,31 +200,124 @@ def parse_worker_result(logs: str) -> dict:
     return {}
 
 
-async def cleanup_orphaned_workers() -> None:
-    """Remove any stopped worker containers left from a previous API run.
+async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
+    """Remove stopped worker containers and return their info for metric harvesting.
 
     Called on startup to clean up containers that weren't reaped because
-    the API was restarted while monitoring them.
+    the API was restarted while monitoring them. Returns parsed info so
+    main.py can record metrics before the data is lost.
     """
+    harvested: list[dict[str, Any]] = []
     try:
         output = await _run_docker(
             "ps", "-a", "--filter", "name=worker-", "--format", "{{.Names}} {{.Status}}"
         )
     except RuntimeError:
         logger.warning("Docker not available — skipping orphaned worker cleanup")
-        return
+        return harvested
 
     if not output:
-        return
+        return harvested
 
     for line in output.splitlines():
         parts = line.strip().split(None, 1)
         if len(parts) < 2:
             continue
         name, status = parts[0], parts[1]
-        if status.startswith("Exited"):
-            try:
+        if not status.startswith("Exited"):
+            continue
+
+        parsed = _parse_worker_name(name)
+        if parsed is None:
+            with contextlib.suppress(RuntimeError):
                 await _run_docker("rm", name)
-                logger.info("Cleaned up orphaned worker container %s", name)
-            except RuntimeError:
-                logger.warning("Failed to clean up container %s", name)
+            continue
+
+        task_type, number = parsed
+
+        # Harvest logs and timestamps before removing
+        logs = ""
+        duration = 0.0
+        with contextlib.suppress(RuntimeError):
+            logs = await _run_docker("logs", name)
+
+        try:
+            ts_output = await _run_docker(
+                "inspect", "--format", "{{.State.StartedAt}} {{.State.FinishedAt}}", name
+            )
+            ts_parts = ts_output.strip().split()
+            if len(ts_parts) == 2:
+                started = _parse_docker_timestamp(ts_parts[0])
+                finished = _parse_docker_timestamp(ts_parts[1])
+                duration = max(0.0, finished - started)
+        except Exception:
+            pass
+
+        harvested.append(
+            {
+                "task_type": task_type,
+                "number": number,
+                "logs": logs,
+                "duration_seconds": duration,
+            }
+        )
+
+        try:
+            await _run_docker("rm", name)
+            logger.info("Cleaned up orphaned worker container %s", name)
+        except RuntimeError:
+            logger.warning("Failed to clean up container %s", name)
+
+    return harvested
+
+
+async def discover_running_workers() -> list[dict[str, Any]]:
+    """Find running worker containers left from a previous API run.
+
+    Called on startup to reconnect monitors for workers that outlived
+    the previous API process. Returns info needed to spawn monitors.
+    """
+    try:
+        output = await _run_docker(
+            "ps",
+            "--filter",
+            "name=worker-",
+            "--filter",
+            "status=running",
+            "--format",
+            "{{.ID}} {{.Names}}",
+        )
+    except RuntimeError:
+        return []
+
+    if not output:
+        return []
+
+    workers: list[dict[str, Any]] = []
+    for line in output.splitlines():
+        parts = line.strip().split()
+        if len(parts) < 2:
+            continue
+        container_id, name = parts[0], parts[1]
+        parsed = _parse_worker_name(name)
+        if parsed is None:
+            continue
+        task_type, number = parsed
+
+        started_at = 0.0
+        try:
+            ts = await _run_docker("inspect", "--format", "{{.State.StartedAt}}", container_id)
+            started_at = _parse_docker_timestamp(ts)
+        except Exception:
+            pass
+
+        workers.append(
+            {
+                "container_id": container_id,
+                "task_type": task_type,
+                "number": number,
+                "started_at": started_at,
+            }
+        )
+
+    return workers

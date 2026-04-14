@@ -111,7 +111,7 @@ access the host.
 | `cap_drop: ALL` | Drops all Linux capabilities |
 | `cap_add` (minimal) | Only CHOWN, FOWNER, SETUID, SETGID — needed for entrypoint user switching |
 | Memory/CPU limits | `mem_limit: 2g`, `cpus: 2.0` — prevents resource exhaustion |
-| No Docker socket | Container cannot spawn or manage other containers |
+| Docker socket (API only) | API container has socket mount for spawning workers ([ADR-011](011-docker-socket-for-workers.md)). Worker containers do not get socket access. |
 | No host filesystem | Only named volumes (`repo-cache`, `reviews`) — no secrets mounted |
 | Non-root execution | `entrypoint.sh` drops to `agent:agent` user after volume setup |
 

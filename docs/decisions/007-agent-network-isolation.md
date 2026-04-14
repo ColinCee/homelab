@@ -80,7 +80,7 @@ Accept unrestricted outbound network access. The security boundary is:
 3. **Prompt-injection defenses** — implementation only trusts issues from
    trusted roles; review thread context includes only bot-authored comments.
 4. **Runtime hardening** — non-root container, dropped capabilities, no new privileges.
-5. **No host access** — no Docker socket, no host filesystem mounts, no personal credentials.
+5. **No host access** — no Docker socket (see [ADR-011](docs/decisions/011-docker-socket-for-workers.md) for the exception), no host filesystem mounts, no personal credentials.
 
 Even with an egress allowlist, data could still leave through GitHub or other
 allowed APIs. The more important controls are who can trigger the agent and what

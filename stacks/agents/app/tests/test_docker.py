@@ -5,8 +5,11 @@ import os
 from unittest.mock import AsyncMock, patch
 
 from services.docker import (
+    _parse_docker_timestamp,
+    _parse_worker_name,
     _worker_name,
     cleanup_orphaned_workers,
+    discover_running_workers,
     get_own_image,
     is_worker_running,
     parse_worker_result,
@@ -18,6 +21,32 @@ from services.docker import (
 def test_worker_name_format():
     assert _worker_name("review", 42) == "worker-review-42"
     assert _worker_name("implement", 10) == "worker-implement-10"
+
+
+def test_parse_worker_name_valid():
+    assert _parse_worker_name("worker-review-42") == ("review", 42)
+    assert _parse_worker_name("worker-implement-10") == ("implement", 10)
+
+
+def test_parse_worker_name_invalid():
+    assert _parse_worker_name("not-a-worker") is None
+    assert _parse_worker_name("worker-review") is None
+    assert _parse_worker_name("worker-review-abc") is None
+    assert _parse_worker_name("") is None
+
+
+def test_parse_docker_timestamp():
+    ts = "2026-04-14T00:30:00.123456789Z"
+    epoch = _parse_docker_timestamp(ts)
+    assert isinstance(epoch, float)
+    assert epoch > 0
+
+
+def test_parse_docker_timestamp_no_nanos():
+    ts = "2026-04-14T00:30:00Z"
+    epoch = _parse_docker_timestamp(ts)
+    assert isinstance(epoch, float)
+    assert epoch > 0
 
 
 def test_parse_worker_result_extracts_json():
@@ -152,27 +181,35 @@ def test_stop_worker_handles_nonexistent(mock_docker):
 
 
 @patch("services.docker._run_docker", new_callable=AsyncMock)
-def test_cleanup_orphaned_workers_removes_exited(mock_docker):
+def test_cleanup_orphaned_workers_removes_exited_and_harvests(mock_docker):
+    """Cleanup should harvest logs/timestamps and return info for metrics."""
     mock_docker.side_effect = [
         "worker-review-42 Exited (0) 5 minutes ago",  # ps -a
+        '{"status": "complete", "premium_requests": 5}\n',  # logs
+        "2026-04-14T00:00:00Z 2026-04-14T00:10:00Z",  # inspect timestamps
         "",  # rm
     ]
 
-    asyncio.run(cleanup_orphaned_workers())
+    harvested = asyncio.run(cleanup_orphaned_workers())
 
-    assert mock_docker.call_count == 2
-    rm_call = mock_docker.call_args_list[1]
-    assert rm_call.args[0] == "rm"
-    assert rm_call.args[1] == "worker-review-42"
+    assert len(harvested) == 1
+    assert harvested[0]["task_type"] == "review"
+    assert harvested[0]["number"] == 42
+    assert "complete" in str(harvested[0]["logs"])
+    assert harvested[0]["duration_seconds"] == 600.0
+
+    rm_call = [c for c in mock_docker.call_args_list if c.args[0] == "rm"]
+    assert len(rm_call) == 1
+    assert rm_call[0].args[1] == "worker-review-42"
 
 
 @patch("services.docker._run_docker", new_callable=AsyncMock)
 def test_cleanup_orphaned_workers_skips_running(mock_docker):
     mock_docker.return_value = "worker-review-42 Up 5 minutes"
 
-    asyncio.run(cleanup_orphaned_workers())
+    harvested = asyncio.run(cleanup_orphaned_workers())
 
-    # Only the ps call, no rm
+    assert harvested == []
     assert mock_docker.call_count == 1
 
 
@@ -180,4 +217,58 @@ def test_cleanup_orphaned_workers_skips_running(mock_docker):
 def test_cleanup_handles_no_docker(mock_docker):
     """Should not crash when Docker is unavailable."""
     mock_docker.side_effect = RuntimeError("docker not found")
-    asyncio.run(cleanup_orphaned_workers())  # Should not raise
+    harvested = asyncio.run(cleanup_orphaned_workers())
+    assert harvested == []
+
+
+@patch("services.docker._run_docker", new_callable=AsyncMock)
+def test_cleanup_handles_log_failure_gracefully(mock_docker):
+    """Cleanup should still remove containers even if log retrieval fails."""
+    mock_docker.side_effect = [
+        "worker-implement-10 Exited (1) 2 minutes ago",  # ps -a
+        RuntimeError("logs failed"),  # logs
+        "2026-04-14T00:00:00Z 2026-04-14T00:05:00Z",  # inspect timestamps
+        "",  # rm
+    ]
+
+    harvested = asyncio.run(cleanup_orphaned_workers())
+
+    assert len(harvested) == 1
+    assert harvested[0]["logs"] == ""
+    assert harvested[0]["duration_seconds"] == 300.0
+
+
+@patch("services.docker._run_docker", new_callable=AsyncMock)
+def test_discover_running_workers_finds_containers(mock_docker):
+    mock_docker.side_effect = [
+        "abc123 worker-review-42",  # ps --filter running
+        "2026-04-14T00:00:00Z",  # inspect StartedAt
+    ]
+
+    workers = asyncio.run(discover_running_workers())
+
+    assert len(workers) == 1
+    assert workers[0]["container_id"] == "abc123"
+    assert workers[0]["task_type"] == "review"
+    assert workers[0]["number"] == 42
+    started_at = workers[0]["started_at"]
+    assert isinstance(started_at, float)
+    assert started_at > 0
+
+
+@patch("services.docker._run_docker", new_callable=AsyncMock)
+def test_discover_running_workers_returns_empty_when_none(mock_docker):
+    mock_docker.return_value = ""
+
+    workers = asyncio.run(discover_running_workers())
+
+    assert workers == []
+
+
+@patch("services.docker._run_docker", new_callable=AsyncMock)
+def test_discover_running_workers_handles_docker_unavailable(mock_docker):
+    mock_docker.side_effect = RuntimeError("docker not found")
+
+    workers = asyncio.run(discover_running_workers())
+
+    assert workers == []
