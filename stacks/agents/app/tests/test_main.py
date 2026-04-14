@@ -52,9 +52,12 @@ def test_health():
 
 
 def test_health_reports_startup_validation_failure():
-    with _client() as client:
+    client = _client()
+    try:
         app.state.startup_validation_error = "Startup validation failed: broken env"
         resp = client.get("/health")
+    finally:
+        client.close()
 
     assert resp.status_code == 503
     assert resp.json() == {
