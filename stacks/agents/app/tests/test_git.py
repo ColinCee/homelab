@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -21,6 +22,65 @@ class TestRunCommand:
 
                 with __import__("pytest").raises(RuntimeError, match="Command failed"):
                     await git_module._run(["git", "status"])
+
+        asyncio.run(run())
+
+
+class TestRepoLock:
+    def test_acquire_repo_file_lock_creates_lock_file(self, tmp_path: Path):
+        with patch.object(git_module, "REVIEWS_PATH", tmp_path):
+            fd = git_module._acquire_repo_file_lock()
+
+        try:
+            assert (tmp_path / git_module.REPO_LOCK_FILE).exists()
+        finally:
+            git_module._release_repo_file_lock(fd)
+
+    def test_hold_repo_lock_acquires_and_releases_shared_lock(self, tmp_path: Path):
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(
+                    git_module, "_acquire_repo_file_lock", return_value=123
+                ) as mock_acquire,
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                async with git_module._hold_repo_lock():
+                    pass
+
+            mock_acquire.assert_called_once_with()
+            mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
+
+    def test_hold_repo_lock_releases_shared_lock_when_cancelled(self, tmp_path: Path):
+        acquire_started = threading.Event()
+        allow_acquire_to_finish = threading.Event()
+
+        def block_then_acquire() -> int:
+            acquire_started.set()
+            allow_acquire_to_finish.wait()
+            return 123
+
+        async def wait_for_lock() -> None:
+            async with git_module._hold_repo_lock():
+                pytest.fail("cancelled acquisition should not enter the critical section")
+
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(git_module, "_acquire_repo_file_lock", side_effect=block_then_acquire),
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                task = asyncio.create_task(wait_for_lock())
+                await asyncio.to_thread(acquire_started.wait)
+                task.cancel()
+                allow_acquire_to_finish.set()
+
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+            mock_release.assert_called_once_with(123)
 
         asyncio.run(run())
 
@@ -309,3 +369,23 @@ class TestReapOldWorktrees:
         asyncio.run(run())
 
         assert not worktree.exists()
+
+    def test_reap_old_worktrees_uses_shared_repo_lock(self, tmp_path: Path):
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(
+                    git_module, "_reap_old_worktrees_locked", new_callable=AsyncMock
+                ) as mock_reap,
+                patch.object(
+                    git_module, "_acquire_repo_file_lock", return_value=123
+                ) as mock_acquire,
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                await git_module.reap_old_worktrees()
+
+            mock_reap.assert_awaited_once()
+            mock_acquire.assert_called_once_with()
+            mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
