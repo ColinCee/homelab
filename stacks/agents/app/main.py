@@ -159,14 +159,16 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             duration_seconds=duration,
             premium_requests=premium,
         )
+        error = result.get("error", "")
         logger.info(
-            "Worker %s #%d finished (exit=%d, status=%s, duration=%.0fs, premium=%d)",
+            "Worker %s #%d finished (exit=%d, status=%s, duration=%.0fs, premium=%d%s)",
             task_type,
             number,
             exit_code,
             status,
             duration,
             premium,
+            f", error={error}" if error else "",
         )
     except Exception:
         logger.exception("Monitor failed for worker %s #%d", task_type, number)
