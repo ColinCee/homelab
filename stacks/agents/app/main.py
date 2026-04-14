@@ -19,7 +19,6 @@ from metrics import (
     TASK_IN_PROGRESS,
     TASK_TOTAL,
 )
-from runtime_env import RequiredEnvironmentError, validate_required_env
 from services.docker import (
     cleanup_orphaned_workers,
     discover_running_workers,
@@ -38,63 +37,9 @@ from trust import ALLOWED_ACTORS
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
-API_REQUIRED_ENV_VARS = (
-    "GITHUB_APP_ID",
-    "GITHUB_APP_INSTALLATION_ID",
-    "GITHUB_APP_KEY_FILE",
-    "COPILOT_GITHUB_TOKEN",
-)
-_STARTUP_FAILURE_EXIT_DELAY_SECONDS = 35.0
-
-
-def _startup_validation_error() -> str | None:
-    error = getattr(app.state, "startup_validation_error", None)
-    return error if isinstance(error, str) and error else None
-
-
-def _service_unavailable_response() -> JSONResponse | None:
-    error = _startup_validation_error()
-    if error is None:
-        return None
-    return JSONResponse(status_code=503, content={"error": error})
-
-
-def _should_validate_api_env() -> bool:
-    return "PYTEST_CURRENT_TEST" not in os.environ
-
-
-def _validate_api_startup_env() -> None:
-    validate_required_env(API_REQUIRED_ENV_VARS)
-
-
-async def _exit_after_startup_validation_failure() -> None:
-    # Let Docker observe the unhealthy /health response before the process exits.
-    await asyncio.sleep(_STARTUP_FAILURE_EXIT_DELAY_SECONDS)
-    os._exit(1)
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    _app.state.startup_validation_error = None
-    exit_task: asyncio.Task[None] | None = None
-
-    if _should_validate_api_env():
-        try:
-            _validate_api_startup_env()
-        except RequiredEnvironmentError as exc:
-            message = f"Startup validation failed: {exc}"
-            _app.state.startup_validation_error = message
-            logger.error(message)
-            exit_task = asyncio.create_task(_exit_after_startup_validation_failure())
-            try:
-                yield
-            finally:
-                if exit_task is not None:
-                    exit_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await exit_task
-            return
-
     await reap_old_worktrees()
 
     # Harvest metrics from workers that completed while we were down
@@ -133,7 +78,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Homelab Agent Service", version="0.7.0", lifespan=lifespan)
-app.state.startup_validation_error = None
 app.mount("/metrics", make_asgi_app(registry=METRICS_REGISTRY))
 
 MODEL = os.environ.get("MODEL", "gpt-5.4")
@@ -183,11 +127,8 @@ class ImplementRequest(BaseModel):
     reasoning_effort: str | None = None
 
 
-@app.get("/health", response_model=None)
-async def health() -> JSONResponse | dict[str, str]:
-    error = _startup_validation_error()
-    if error is not None:
-        return JSONResponse(status_code=503, content={"status": "error", "error": error})
+@app.get("/health")
+async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -253,8 +194,6 @@ def _spawn_monitor(container_id: str, *, task_type: str, number: int, start: flo
 @app.post("/review", status_code=202, response_model=None)
 async def handle_review(req: ReviewRequest):
     """Accept a review request and spawn a worker container."""
-    if unavailable := _service_unavailable_response():
-        return unavailable
     if req.triggered_by not in ALLOWED_ACTORS:
         return JSONResponse(
             status_code=403,
@@ -290,11 +229,9 @@ async def handle_review(req: ReviewRequest):
     return {"status": "accepted", "pr_number": req.pr_number}
 
 
-@app.get("/review/{pr_number}", response_model=None)
-async def get_review_status(pr_number: int, repo: str = "") -> JSONResponse | dict[str, str | int]:
+@app.get("/review/{pr_number}")
+async def get_review_status(pr_number: int, repo: str = "") -> dict[str, str | int]:
     """Check the status of a review by checking the worker container."""
-    if unavailable := _service_unavailable_response():
-        return unavailable
     running = await is_worker_running("review", pr_number)
     if running:
         return {"status": "in_progress", "pr_number": pr_number}
@@ -307,8 +244,6 @@ async def get_review_status(pr_number: int, repo: str = "") -> JSONResponse | di
 @app.post("/implement", status_code=202, response_model=None)
 async def handle_implement(req: ImplementRequest):
     """Accept an implementation request and spawn a worker container."""
-    if unavailable := _service_unavailable_response():
-        return unavailable
     if req.triggered_by not in ALLOWED_ACTORS:
         return JSONResponse(
             status_code=403,
@@ -351,13 +286,9 @@ async def handle_implement(req: ImplementRequest):
     return {"status": "accepted", "issue_number": req.issue_number}
 
 
-@app.get("/implement/{issue_number}", response_model=None)
-async def get_implement_status(
-    issue_number: int, repo: str = ""
-) -> JSONResponse | dict[str, str | int]:
+@app.get("/implement/{issue_number}")
+async def get_implement_status(issue_number: int, repo: str = "") -> dict[str, str | int]:
     """Check the status of an implementation by checking the worker container."""
-    if unavailable := _service_unavailable_response():
-        return unavailable
     running = await is_worker_running("implement", issue_number)
     if running:
         return {"status": "in_progress", "issue_number": issue_number}

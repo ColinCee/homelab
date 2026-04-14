@@ -1,44 +1,50 @@
-"""Tests for runtime environment validation helpers."""
+"""Tests for runtime environment settings."""
 
 import pytest
+from pydantic import ValidationError
 
-from runtime_env import RequiredEnvironmentError, missing_required_env, validate_required_env
+from runtime_env import ApiSettings, WorkerSettings
 
 
-def test_missing_required_env_lists_missing_and_empty_values():
-    missing = missing_required_env(
-        ("GITHUB_APP_ID", "COPILOT_GITHUB_TOKEN", "MODEL"),
-        {
-            "GITHUB_APP_ID": "",
-            "COPILOT_GITHUB_TOKEN": "token",
-            "MODEL": "gpt-5.4",
-        },
+def test_api_settings_rejects_missing_vars():
+    with pytest.raises(ValidationError):
+        ApiSettings()  # type: ignore[call-arg]
+
+
+def test_api_settings_accepts_valid_env():
+    settings = ApiSettings(
+        github_app_id="123",
+        github_app_installation_id="456",
+        github_app_key_file="/key.pem",
+        copilot_github_token="tok",
     )
-
-    assert missing == ("GITHUB_APP_ID",)
-
-
-def test_validate_required_env_raises_clear_error_for_multiple_names():
-    with pytest.raises(RequiredEnvironmentError) as exc_info:
-        validate_required_env(
-            ("GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID"),
-            {"GITHUB_APP_ID": "", "GITHUB_APP_INSTALLATION_ID": ""},
-        )
-
-    assert exc_info.value.names == ("GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID")
-    assert (
-        str(exc_info.value) == "Required environment variables are missing or empty: "
-        "GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID"
-    )
+    assert settings.github_app_id == "123"
+    assert settings.model == "gpt-5.4"
 
 
-def test_validate_required_env_accepts_populated_values():
-    validate_required_env(
-        ("TASK_TYPE", "REPO", "NUMBER", "GH_TOKEN"),
-        {
-            "TASK_TYPE": "review",
-            "REPO": "user/repo",
-            "NUMBER": "42",
-            "GH_TOKEN": "ghs_test",
-        },
-    )
+def test_worker_settings_accepts_legacy_env_aliases(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("WORKER_TASK", "review")
+    monkeypatch.setenv("WORKER_REPO", "user/repo")
+    monkeypatch.setenv("WORKER_PR_NUMBER", "42")
+    monkeypatch.setenv("GH_TOKEN", "ghs_test")
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    assert settings.task_type == "review"
+    assert settings.repo == "user/repo"
+    assert settings.number == 42
+
+
+def test_worker_settings_prefers_canonical_names(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TASK_TYPE", "implement")
+    monkeypatch.setenv("REPO", "user/repo")
+    monkeypatch.setenv("NUMBER", "10")
+    monkeypatch.setenv("GH_TOKEN", "ghs_test")
+    monkeypatch.setenv("WORKER_TASK", "review")  # should be ignored
+
+    settings = WorkerSettings()  # type: ignore[call-arg]
+    assert settings.task_type == "implement"
+
+
+def test_worker_settings_rejects_missing_vars():
+    with pytest.raises(ValidationError):
+        WorkerSettings(_env_file=None)  # type: ignore[call-arg]

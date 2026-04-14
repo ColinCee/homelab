@@ -18,9 +18,6 @@ services:
     ports:
       - "100.100.146.119:8585:8585"
     environment:
-      - GITHUB_APP_ID=${GITHUB_APP_ID:?}
-      - GITHUB_APP_INSTALLATION_ID=${GITHUB_APP_INSTALLATION_ID:?}
-      - GITHUB_APP_KEY_FILE=${GITHUB_APP_KEY_FILE:?}
       - MODEL=gpt-5.4
       - REASONING_EFFORT=high
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}

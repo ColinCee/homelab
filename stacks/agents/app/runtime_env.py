@@ -1,29 +1,32 @@
-"""Runtime environment validation helpers."""
+"""Runtime environment configuration via Pydantic Settings."""
 
-import os
-from collections.abc import Iterable, Mapping
-
-
-class RequiredEnvironmentError(RuntimeError):
-    """Raised when one or more required environment variables are missing."""
-
-    def __init__(self, names: Iterable[str]):
-        self.names = tuple(names)
-        plural = "variable is" if len(self.names) == 1 else "variables are"
-        joined = ", ".join(self.names)
-        super().__init__(f"Required environment {plural} missing or empty: {joined}")
+from pydantic import AliasChoices, Field
+from pydantic_settings import BaseSettings
 
 
-def missing_required_env(
-    names: Iterable[str], environ: Mapping[str, str] | None = None
-) -> tuple[str, ...]:
-    """Return required env vars whose values are missing or empty."""
-    env = os.environ if environ is None else environ
-    return tuple(name for name in names if not env.get(name))
+class ApiSettings(BaseSettings):
+    """Required environment for the API container."""
+
+    github_app_id: str
+    github_app_installation_id: str
+    github_app_key_file: str
+    copilot_github_token: str
+    model: str = "gpt-5.4"
+    reasoning_effort: str = "high"
 
 
-def validate_required_env(names: Iterable[str], environ: Mapping[str, str] | None = None) -> None:
-    """Raise when any required env vars are missing or empty."""
-    missing = missing_required_env(names, environ)
-    if missing:
-        raise RequiredEnvironmentError(missing)
+class WorkerSettings(BaseSettings):
+    """Required environment for ephemeral worker containers."""
+
+    task_type: str = Field(validation_alias=AliasChoices("TASK_TYPE", "WORKER_TASK"))
+    repo: str = Field(validation_alias=AliasChoices("REPO", "WORKER_REPO"))
+    number: int = Field(
+        validation_alias=AliasChoices("NUMBER", "WORKER_ISSUE_NUMBER", "WORKER_PR_NUMBER")
+    )
+    gh_token: str
+    copilot_github_token: str = ""
+    model: str = "gpt-5.4"
+    reasoning_effort: str = "high"
+    session_id: str | None = Field(
+        default=None, validation_alias=AliasChoices("SESSION_ID", "WORKER_SESSION_ID")
+    )

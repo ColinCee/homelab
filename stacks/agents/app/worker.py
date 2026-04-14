@@ -10,12 +10,11 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 import sys
 
 from implement import implement_issue
 from review import review_pr
-from runtime_env import RequiredEnvironmentError
+from runtime_env import WorkerSettings
 from services.copilot import TaskError
 from services.github import (
     comment_on_issue,
@@ -30,38 +29,6 @@ logger = logging.getLogger(__name__)
 
 REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
 IMPLEMENT_PROGRESS_PREFIX = "🔄 Implementing #"
-
-_WORKER_REQUIRED_ENV_ALIASES = {
-    "TASK_TYPE": ("WORKER_TASK",),
-    "REPO": ("WORKER_REPO",),
-    "NUMBER": ("WORKER_ISSUE_NUMBER", "WORKER_PR_NUMBER"),
-    "GH_TOKEN": (),
-}
-
-
-def _env_value(name: str, *aliases: str) -> str | None:
-    for key in (name, *aliases):
-        value = os.environ.get(key)
-        if value:
-            return value
-    return None
-
-
-def _validate_worker_startup_env() -> None:
-    missing = [
-        name
-        for name, aliases in _WORKER_REQUIRED_ENV_ALIASES.items()
-        if _env_value(name, *aliases) is None
-    ]
-    if missing:
-        raise RequiredEnvironmentError(missing)
-
-
-def _require_env(name: str, *aliases: str) -> str:
-    value = _env_value(name, *aliases)
-    if value is None:
-        raise RequiredEnvironmentError((name,))
-    return value
 
 
 async def _start_progress_comment(
@@ -201,40 +168,44 @@ async def _run_review(
 async def main() -> int:
     """Worker entrypoint — dispatch to the appropriate task handler."""
     try:
-        _validate_worker_startup_env()
-    except RequiredEnvironmentError as exc:
+        settings = WorkerSettings()  # type: ignore[call-arg]
+    except Exception as exc:
         logger.error("Worker startup validation failed: %s", exc)
         return 1
 
-    task_type = _require_env("TASK_TYPE", "WORKER_TASK")
-    repo = _require_env("REPO", "WORKER_REPO")
-    gh_token = _require_env("GH_TOKEN")
-    number = int(_require_env("NUMBER", "WORKER_ISSUE_NUMBER", "WORKER_PR_NUMBER"))
-    model = os.environ.get("MODEL", "gpt-5.4")
-    effort = os.environ.get("REASONING_EFFORT", "high")
+    set_token(settings.gh_token)
 
-    set_token(gh_token)
+    if settings.task_type == "implement":
+        logger.info("Worker starting: implement %s#%d", settings.repo, settings.number)
+        result = await _run_implement(
+            settings.repo, settings.number, settings.model, settings.reasoning_effort
+        )
 
-    if task_type == "implement":
-        issue_number = number
-        logger.info("Worker starting: implement %s#%d", repo, issue_number)
-        result = await _run_implement(repo, issue_number, model, effort)
-
-    elif task_type == "review":
-        pr_number = number
-        session_id = _env_value("SESSION_ID", "WORKER_SESSION_ID")
-        logger.info("Worker starting: review %s#%d", repo, pr_number)
-        result = await _run_review(repo, pr_number, model, effort, session_id)
+    elif settings.task_type == "review":
+        logger.info("Worker starting: review %s#%d", settings.repo, settings.number)
+        result = await _run_review(
+            settings.repo,
+            settings.number,
+            settings.model,
+            settings.reasoning_effort,
+            settings.session_id,
+        )
 
     else:
-        logger.error("Unknown task type: %s", task_type)
+        logger.error("Unknown task type: %s", settings.task_type)
         return 1
 
     # Write result as JSON to stdout for the API monitor to parse
     print(json.dumps(result), flush=True)
 
     status = result.get("status", "unknown")
-    logger.info("Worker finished: %s %s#%s → %s", task_type, repo, number, status)
+    logger.info(
+        "Worker finished: %s %s#%s → %s",
+        settings.task_type,
+        settings.repo,
+        settings.number,
+        status,
+    )
     return 0 if status in ("complete", "partial") else 1
 
 

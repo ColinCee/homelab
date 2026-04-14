@@ -5,8 +5,6 @@ import json
 import os
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 
 @patch.dict(
     os.environ,
@@ -225,20 +223,12 @@ def test_unknown_task_type_returns_one():
         assert exit_code == 1
 
 
-def test_missing_env_var_raises():
+def test_missing_env_var_returns_one():
     with patch.dict(os.environ, {}, clear=True):
-        from worker import _require_env
+        from worker import main
 
-        with pytest.raises(RuntimeError, match="TASK_TYPE"):
-            _require_env("TASK_TYPE", "WORKER_TASK")
-
-
-def test_worker_startup_validation_names_all_missing_variables():
-    with patch.dict(os.environ, {}, clear=True):
-        from worker import _validate_worker_startup_env
-
-        with pytest.raises(RuntimeError, match="TASK_TYPE, REPO, NUMBER, GH_TOKEN"):
-            _validate_worker_startup_env()
+        exit_code = asyncio.run(main())
+        assert exit_code == 1
 
 
 def test_worker_supports_legacy_worker_env_aliases(capsys):
