@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -48,6 +49,37 @@ class TestRepoLock:
                     pass
 
             mock_acquire.assert_called_once_with()
+            mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
+
+    def test_hold_repo_lock_releases_shared_lock_when_cancelled(self, tmp_path: Path):
+        acquire_started = threading.Event()
+        allow_acquire_to_finish = threading.Event()
+
+        def block_then_acquire() -> int:
+            acquire_started.set()
+            allow_acquire_to_finish.wait()
+            return 123
+
+        async def wait_for_lock() -> None:
+            async with git_module._hold_repo_lock():
+                pytest.fail("cancelled acquisition should not enter the critical section")
+
+        async def run():
+            with (
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(git_module, "_acquire_repo_file_lock", side_effect=block_then_acquire),
+                patch.object(git_module, "_release_repo_file_lock") as mock_release,
+            ):
+                task = asyncio.create_task(wait_for_lock())
+                await asyncio.to_thread(acquire_started.wait)
+                task.cancel()
+                allow_acquire_to_finish.set()
+
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
             mock_release.assert_called_once_with(123)
 
         asyncio.run(run())

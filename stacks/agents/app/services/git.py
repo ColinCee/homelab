@@ -78,11 +78,19 @@ def _release_repo_file_lock(fd: int) -> None:
 async def _hold_repo_lock() -> AsyncIterator[None]:
     """Serialize shared bare-clone mutations across tasks and containers."""
     async with _repo_lock:
-        fd = await asyncio.to_thread(_acquire_repo_file_lock)
+        acquire_task = asyncio.create_task(asyncio.to_thread(_acquire_repo_file_lock))
+        try:
+            fd = await asyncio.shield(acquire_task)
+        except asyncio.CancelledError:
+            with contextlib.suppress(Exception):
+                fd = await acquire_task
+                await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+            raise
+
         try:
             yield
         finally:
-            await asyncio.to_thread(_release_repo_file_lock, fd)
+            await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
 
 
 async def init_bare_clone(repo_url: str) -> Path:
