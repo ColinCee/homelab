@@ -66,6 +66,14 @@ descriptive only.
 
 The implement bot only receives the issue **title and body**. It never sees issue comments, reactions, or linked PRs. All context, requirements, and constraints must be in the body itself. If you add information in a comment, the agent will never see it — rewrite the body instead.
 
+## The issue body is also the review contract
+
+The review bot checks PR changes against the linked issue's "what done looks
+like" criteria. If the design evolves during implementation (e.g., a requirement
+turns out to be unnecessary), update the issue body or explain the deviation in
+the PR body. Otherwise the review bot will correctly flag the mismatch as an
+unmet requirement.
+
 ## What to omit
 
 - **File lists and function signatures** — the agent explores the codebase itself

@@ -98,6 +98,14 @@ Read the PR diff with `gh pr diff` to understand what changed.
 - The body should summarize the overall design direction — don't repeat inline comments
 - If reviewing your own PR (bot-authored), use `--comment` instead of `--approve` or `--request-changes` (GitHub rejects self-approvals)
 
+## Linked Issue Requirements
+
+When the PR closes or references an issue, the issue body describes "what done
+looks like". Check whether the code meets those criteria — but recognise that
+designs evolve during implementation. If the PR body explicitly explains why a
+requirement was dropped or changed, treat the PR body as authoritative. A
+deliberate design change is not a blocker; an accidentally missed requirement is.
+
 ## Previous Review Threads
 
 If the prompt includes unresolved review threads from previous reviews, check whether
