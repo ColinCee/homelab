@@ -8,7 +8,7 @@ from runtime_env import ApiSettings, WorkerSettings
 
 def test_api_settings_rejects_missing_vars():
     with pytest.raises(ValidationError):
-        ApiSettings()  # type: ignore[call-arg]
+        ApiSettings()  # ty: ignore[missing-argument]
 
 
 def test_api_settings_accepts_valid_env():
@@ -28,7 +28,7 @@ def test_worker_settings_accepts_legacy_env_aliases(monkeypatch: pytest.MonkeyPa
     monkeypatch.setenv("WORKER_PR_NUMBER", "42")
     monkeypatch.setenv("GH_TOKEN", "ghs_test")
 
-    settings = WorkerSettings()  # type: ignore[call-arg]
+    settings = WorkerSettings()  # ty: ignore[missing-argument]
     assert settings.task_type == "review"
     assert settings.repo == "user/repo"
     assert settings.number == 42
@@ -41,10 +41,19 @@ def test_worker_settings_prefers_canonical_names(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("GH_TOKEN", "ghs_test")
     monkeypatch.setenv("WORKER_TASK", "review")  # should be ignored
 
-    settings = WorkerSettings()  # type: ignore[call-arg]
+    settings = WorkerSettings()  # ty: ignore[missing-argument]
     assert settings.task_type == "implement"
 
 
-def test_worker_settings_rejects_missing_vars():
+def test_worker_settings_rejects_missing_vars(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TASK_TYPE", raising=False)
+    monkeypatch.delenv("WORKER_TASK", raising=False)
+    monkeypatch.delenv("REPO", raising=False)
+    monkeypatch.delenv("WORKER_REPO", raising=False)
+    monkeypatch.delenv("NUMBER", raising=False)
+    monkeypatch.delenv("WORKER_ISSUE_NUMBER", raising=False)
+    monkeypatch.delenv("WORKER_PR_NUMBER", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
     with pytest.raises(ValidationError):
-        WorkerSettings(_env_file=None)  # type: ignore[call-arg]
+        WorkerSettings()  # ty: ignore[missing-argument]

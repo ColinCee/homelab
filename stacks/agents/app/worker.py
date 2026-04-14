@@ -168,7 +168,7 @@ async def _run_review(
 async def main() -> int:
     """Worker entrypoint — dispatch to the appropriate task handler."""
     try:
-        settings = WorkerSettings()  # type: ignore[call-arg]
+        settings = WorkerSettings()  # ty: ignore[missing-argument]
     except Exception as exc:
         logger.error("Worker startup validation failed: %s", exc)
         return 1
