@@ -11,9 +11,9 @@ import pytest
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "implement",
-        "WORKER_REPO": "user/repo",
-        "WORKER_ISSUE_NUMBER": "10",
+        "TASK_TYPE": "implement",
+        "REPO": "user/repo",
+        "NUMBER": "10",
         "GH_TOKEN": "ghs_test",
         "MODEL": "gpt-5.4",
         "REASONING_EFFORT": "high",
@@ -57,9 +57,9 @@ def test_implement_success_returns_zero(
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "implement",
-        "WORKER_REPO": "user/repo",
-        "WORKER_ISSUE_NUMBER": "10",
+        "TASK_TYPE": "implement",
+        "REPO": "user/repo",
+        "NUMBER": "10",
         "GH_TOKEN": "ghs_test",
     },
 )
@@ -89,9 +89,9 @@ def test_implement_failure_returns_one(
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "implement",
-        "WORKER_REPO": "user/repo",
-        "WORKER_ISSUE_NUMBER": "10",
+        "TASK_TYPE": "implement",
+        "REPO": "user/repo",
+        "NUMBER": "10",
         "GH_TOKEN": "ghs_test",
     },
 )
@@ -125,9 +125,9 @@ def test_implement_exception_posts_error_comment(
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "review",
-        "WORKER_REPO": "user/repo",
-        "WORKER_PR_NUMBER": "42",
+        "TASK_TYPE": "review",
+        "REPO": "user/repo",
+        "NUMBER": "42",
         "GH_TOKEN": "ghs_test",
         "MODEL": "gpt-5.4",
         "REASONING_EFFORT": "high",
@@ -157,9 +157,9 @@ def test_review_success_returns_zero(mock_update, mock_find, mock_comment, mock_
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "review",
-        "WORKER_REPO": "user/repo",
-        "WORKER_PR_NUMBER": "42",
+        "TASK_TYPE": "review",
+        "REPO": "user/repo",
+        "NUMBER": "42",
         "GH_TOKEN": "ghs_test",
     },
 )
@@ -182,9 +182,9 @@ def test_review_posts_progress_comment(mock_update, mock_find, mock_comment, moc
 @patch.dict(
     os.environ,
     {
-        "WORKER_TASK": "implement",
-        "WORKER_REPO": "user/repo",
-        "WORKER_ISSUE_NUMBER": "10",
+        "TASK_TYPE": "implement",
+        "REPO": "user/repo",
+        "NUMBER": "10",
         "GH_TOKEN": "ghs_test",
     },
 )
@@ -213,8 +213,9 @@ def test_unknown_task_type_returns_one():
     with patch.dict(
         os.environ,
         {
-            "WORKER_TASK": "unknown",
-            "WORKER_REPO": "user/repo",
+            "TASK_TYPE": "unknown",
+            "REPO": "user/repo",
+            "NUMBER": "1",
             "GH_TOKEN": "ghs_test",
         },
     ):
@@ -228,5 +229,41 @@ def test_missing_env_var_raises():
     with patch.dict(os.environ, {}, clear=True):
         from worker import _require_env
 
-        with pytest.raises(RuntimeError, match="WORKER_TASK"):
-            _require_env("WORKER_TASK")
+        with pytest.raises(RuntimeError, match="TASK_TYPE"):
+            _require_env("TASK_TYPE", "WORKER_TASK")
+
+
+def test_worker_startup_validation_names_all_missing_variables():
+    with patch.dict(os.environ, {}, clear=True):
+        from worker import _validate_worker_startup_env
+
+        with pytest.raises(RuntimeError, match="TASK_TYPE, REPO, NUMBER, GH_TOKEN"):
+            _validate_worker_startup_env()
+
+
+def test_worker_supports_legacy_worker_env_aliases(capsys):
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "WORKER_TASK": "review",
+                "WORKER_REPO": "user/repo",
+                "WORKER_PR_NUMBER": "42",
+                "GH_TOKEN": "ghs_test",
+            },
+            clear=True,
+        ),
+        patch("worker.review_pr", new_callable=AsyncMock, return_value={"status": "complete"}),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None
+        ),
+        patch("worker.update_comment", new_callable=AsyncMock),
+    ):
+        from worker import main
+
+        exit_code = asyncio.run(main())
+
+    assert exit_code == 0
+    result = json.loads(capsys.readouterr().out.strip())
+    assert result["status"] == "complete"
