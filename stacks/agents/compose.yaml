@@ -24,6 +24,7 @@ services:
     volumes:
       - repo-cache:/repo.git
       - reviews:/reviews
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8585/health"]
       interval: 30s
