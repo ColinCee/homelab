@@ -93,7 +93,13 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    privileged: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_READ_SEARCH
+      - FOWNER
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
     environment:
       ALLOY_DEPLOY_MODE: docker
