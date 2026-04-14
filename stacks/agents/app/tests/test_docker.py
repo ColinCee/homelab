@@ -100,7 +100,7 @@ def test_spawn_worker_calls_docker_run(mock_docker):
         spawn_worker(
             task_type="review",
             image="agent:latest",
-            env={"WORKER_TASK": "review", "GH_TOKEN": "tok"},
+            env={"TASK_TYPE": "review", "GH_TOKEN": "tok"},
             number=42,
             volumes=["repo-cache:/repo.git"],
         )
@@ -140,7 +140,7 @@ def test_spawn_worker_stops_existing_first(mock_docker):
         spawn_worker(
             task_type="implement",
             image="agent:latest",
-            env={"WORKER_TASK": "implement"},
+            env={"TASK_TYPE": "implement"},
             number=10,
         )
     )

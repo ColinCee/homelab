@@ -8,14 +8,17 @@ import pytest
 from fastapi.testclient import TestClient
 
 from main import (
+    API_REQUIRED_ENV_VARS,
     ReviewRequest,
     _monitor_tasks,
     _monitor_worker,
     _task_status_label,
+    _validate_api_startup_env,
     app,
     handle_review,
 )
 from metrics import METRICS_REGISTRY, reset_metrics
+from runtime_env import RequiredEnvironmentError
 
 _ACTOR = "ColinCee"
 _TOKEN = "ghs_test_token"
@@ -35,15 +38,42 @@ def _metric_value(name: str, labels: dict[str, str]) -> float:
 def reset_state():
     reset_metrics()
     _monitor_tasks.clear()
+    app.state.startup_validation_error = None
     yield
     reset_metrics()
     _monitor_tasks.clear()
+    app.state.startup_validation_error = None
 
 
 def test_health():
     resp = _client().get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_health_reports_startup_validation_failure():
+    client = _client()
+    try:
+        app.state.startup_validation_error = "Startup validation failed: broken env"
+        resp = client.get("/health")
+    finally:
+        client.close()
+
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "status": "error",
+        "error": "Startup validation failed: broken env",
+    }
+
+
+def test_validate_api_startup_env_requires_configured_runtime_secrets():
+    with (
+        patch.dict(os.environ, {"COPILOT_GITHUB_TOKEN": "copilot-token"}, clear=True),
+        pytest.raises(RequiredEnvironmentError) as exc_info,
+    ):
+        _validate_api_startup_env()
+
+    assert exc_info.value.names == API_REQUIRED_ENV_VARS[:3]
 
 
 # --- Status label tests ---
@@ -155,9 +185,9 @@ def test_review_returns_202_accepted(mock_image, mock_spawn, mock_monitor):
     call_kwargs = mock_spawn.call_args.kwargs
     assert call_kwargs["task_type"] == "review"
     assert call_kwargs["number"] == 42
-    assert call_kwargs["env"]["WORKER_TASK"] == "review"
-    assert call_kwargs["env"]["WORKER_REPO"] == "user/repo"
-    assert call_kwargs["env"]["WORKER_PR_NUMBER"] == "42"
+    assert call_kwargs["env"]["TASK_TYPE"] == "review"
+    assert call_kwargs["env"]["REPO"] == "user/repo"
+    assert call_kwargs["env"]["NUMBER"] == "42"
 
 
 def test_review_missing_fields():
@@ -257,8 +287,8 @@ def test_implement_returns_202_accepted(mock_running, mock_image, mock_spawn, mo
     assert data["issue_number"] == 10
     mock_spawn.assert_awaited_once()
     call_kwargs = mock_spawn.call_args.kwargs
-    assert call_kwargs["env"]["WORKER_TASK"] == "implement"
-    assert call_kwargs["env"]["WORKER_ISSUE_NUMBER"] == "10"
+    assert call_kwargs["env"]["TASK_TYPE"] == "implement"
+    assert call_kwargs["env"]["NUMBER"] == "10"
 
 
 def test_implement_missing_fields():
