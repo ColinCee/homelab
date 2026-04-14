@@ -32,6 +32,10 @@ def test_implement_success_returns_zero(
         "pr_number": 99,
         "pr_url": "https://github.com/user/repo/pull/99",
         "premium_requests": 5,
+        "api_time_seconds": 60,
+        "models": {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
+        "tokens_line": "↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
+        "session_id": "sess-123",
     }
 
     from worker import main
@@ -43,6 +47,10 @@ def test_implement_success_returns_zero(
     result = json.loads(captured.out.strip())
     assert result["status"] == "complete"
     assert result["premium_requests"] == 5
+    assert result["api_time_seconds"] == 60
+    assert result["models"] == {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"}
+    assert result["tokens_line"] == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
+    assert result["session_id"] == "sess-123"
     mock_impl.assert_awaited_once()
 
 

@@ -5,7 +5,7 @@ import logging
 import time
 from datetime import UTC, datetime
 
-from services.copilot import TaskError, run_copilot
+from services.copilot import CLIResult, TaskError, run_copilot
 from services.git import cleanup_branch_worktree, create_branch_worktree
 from services.github import (
     close_issue,
@@ -93,6 +93,7 @@ async def implement_issue(
         )
 
     total_premium_requests = 0
+    cli_result: CLIResult | None = None
     result_dict: dict | None = None
 
     try:
@@ -105,14 +106,14 @@ async def implement_issue(
             body=issue_data.get("body") or "(no description)",
         )
 
-        result = await run_copilot(
+        cli_result = await run_copilot(
             worktree_path,
             prompt,
             model=model,
             effort=reasoning_effort,
             github_token=token,
         )
-        total_premium_requests += result.total_premium_requests
+        total_premium_requests += cli_result.total_premium_requests
 
         # Check what the CLI accomplished
         pr_data = await find_pr_by_branch(repo, branch_name)
@@ -128,6 +129,14 @@ async def implement_issue(
             pr_data = None
 
         elapsed = _monotonic() - start
+        common_result = {
+            "elapsed_seconds": elapsed,
+            "premium_requests": total_premium_requests,
+            "api_time_seconds": cli_result.api_time_seconds,
+            "models": cli_result.models,
+            "tokens_line": cli_result.tokens_line,
+            "session_id": cli_result.session_id,
+        }
 
         if pr_data:
             pr_number = pr_data["number"]
@@ -144,9 +153,7 @@ async def implement_issue(
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "merged": True,
-                    "elapsed_seconds": elapsed,
-                    "premium_requests": total_premium_requests,
-                    "session_id": result.session_id,
+                    **common_result,
                 }
             elif auto_merge:
                 # Auto-merge enabled — CLI did its job, GitHub will merge
@@ -157,9 +164,7 @@ async def implement_issue(
                     "pr_url": pr_url,
                     "merged": False,
                     "auto_merge": True,
-                    "elapsed_seconds": elapsed,
-                    "premium_requests": total_premium_requests,
-                    "session_id": result.session_id,
+                    **common_result,
                 }
             else:
                 result_dict = {
@@ -167,10 +172,8 @@ async def implement_issue(
                     "pr_number": pr_number,
                     "pr_url": pr_url,
                     "merged": False,
-                    "elapsed_seconds": elapsed,
-                    "premium_requests": total_premium_requests,
-                    "session_id": result.session_id,
                     "error": "CLI created PR but did not merge — needs manual attention",
+                    **common_result,
                 }
         else:
             result_dict = {
@@ -178,10 +181,8 @@ async def implement_issue(
                 "pr_number": None,
                 "pr_url": None,
                 "merged": False,
-                "elapsed_seconds": elapsed,
-                "premium_requests": total_premium_requests,
-                "session_id": result.session_id,
                 "error": "CLI did not create a PR",
+                **common_result,
             }
 
         return result_dict
@@ -197,7 +198,10 @@ async def implement_issue(
                 stats = format_stage_stats(
                     premium_requests=total_premium_requests,
                     elapsed_seconds=_monotonic() - start,
+                    api_time_seconds=cli_result.api_time_seconds if cli_result else 0,
                     effort=reasoning_effort,
+                    models=cli_result.models if cli_result else None,
+                    tokens_line=cli_result.tokens_line if cli_result else "",
                 )
                 status = result_dict.get("status", "unknown")
                 emoji = STATUS_EMOJI.get(status, "❓")
