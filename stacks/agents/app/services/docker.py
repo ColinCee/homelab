@@ -154,7 +154,15 @@ async def wait_container(container_id: str) -> int:
 
 async def get_logs(container_id: str) -> str:
     """Retrieve stdout/stderr logs from a container."""
-    return await _run_docker("logs", container_id)
+    proc = await asyncio.create_subprocess_exec(
+        "docker",
+        "logs",
+        container_id,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
 
 
 async def remove_container(container_id: str) -> None:
