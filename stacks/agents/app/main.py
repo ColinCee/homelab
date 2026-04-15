@@ -19,6 +19,7 @@ from metrics import (
     TASK_IN_PROGRESS,
     TASK_TOTAL,
 )
+from models import TaskResult
 from services.docker import (
     cleanup_orphaned_workers,
     discover_running_workers,
@@ -47,7 +48,7 @@ async def lifespan(_app: FastAPI):
     for w in await cleanup_orphaned_workers():
         result = parse_worker_result(str(w.get("logs", "")))
         fallback = "failed"
-        status = _task_status_label(result.get("status", fallback))
+        status = _task_status_label(result.status if result else fallback)
         premium = _premium_requests(result)
         _record_task_metrics(
             task_type=str(w["task_type"]),
@@ -94,11 +95,8 @@ def _task_status_label(status: object) -> str:
     return "failed"
 
 
-def _premium_requests(result: dict[str, object] | None) -> int:
-    if not result:
-        return 0
-    premium_requests = result.get("premium_requests", 0)
-    return premium_requests if isinstance(premium_requests, int) else 0
+def _premium_requests(result: TaskResult | None) -> int:
+    return result.premium_requests if result else 0
 
 
 def _worker_log_format() -> str:
@@ -115,26 +113,28 @@ def _record_task_metrics(
 
 
 async def _trigger_independent_review(
-    *, task_type: str, status: str, number: int, result: dict[str, object]
+    *, task_type: str, status: str, number: int, result: TaskResult | None
 ) -> None:
     """Post `/review` on successful implement PRs to trigger the fresh review worker."""
-    if task_type != "implement" or status != "complete":
+    if task_type != "implement" or status != "complete" or result is None:
         return
 
-    pr_number = result.get("pr_number")
-    if not isinstance(pr_number, int):
+    if result.pr_number is None:
         return
 
-    repo = result.get("repo")
-    if not isinstance(repo, str) or not repo:
+    if not result.repo:
         logger.warning(
             "Implement worker #%d completed without repo in result; skipping /review trigger",
             number,
         )
         return
 
-    await comment_on_issue(repo, pr_number, "/review")
-    logger.info("Posted /review comment on %s#%d after implement completion", repo, pr_number)
+    await comment_on_issue(result.repo, result.pr_number, "/review")
+    logger.info(
+        "Posted /review comment on %s#%d after implement completion",
+        result.repo,
+        result.pr_number,
+    )
 
 
 class ReviewRequest(BaseModel):
@@ -170,7 +170,7 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         exit_code = await wait_container(container_id)
         duration = time.monotonic() - start
 
-        result: dict[str, object] = {}
+        result: TaskResult | None = None
         logs = ""
         try:
             logs = await get_logs(container_id)
@@ -187,7 +187,7 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             )
 
         fallback_status = "failed" if exit_code != 0 else "complete"
-        status = _task_status_label(result.get("status", fallback_status))
+        status = _task_status_label(result.status if result else fallback_status)
         premium = _premium_requests(result)
 
         _record_task_metrics(
@@ -196,7 +196,7 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             duration_seconds=duration,
             premium_requests=premium,
         )
-        error = result.get("error", "")
+        error = result.error if result and result.error else ""
         logger.info(
             "Worker %s #%d finished (exit=%d, status=%s, duration=%.0fs, premium=%d%s)",
             task_type,

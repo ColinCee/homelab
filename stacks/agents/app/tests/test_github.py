@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 
 import services.github as github
+from models import GitHubIssue, GitHubPullRequest
 
 
 class TestTokenManagement:
@@ -74,7 +75,7 @@ class TestFindPrByBranch:
 
         result = asyncio.run(run())
         assert result is not None
-        assert result["number"] == 42
+        assert result.number == 42
 
     def test_returns_none_when_no_pr(self):
         pr_resp = httpx.Response(
@@ -96,6 +97,54 @@ class TestFindPrByBranch:
 
         result = asyncio.run(run())
         assert result is None
+
+
+class TestIssueAndPrParsing:
+    def test_get_issue_returns_typed_model(self):
+        issue_resp = httpx.Response(
+            200,
+            json={"title": "Bug", "body": "Fix it", "user": {"login": "ColinCee"}},
+            request=httpx.Request("GET", "https://api.github.com/issues/1"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=issue_resp),
+            ):
+                return await github.get_issue("user/repo", 1)
+
+        result = asyncio.run(run())
+        assert isinstance(result, GitHubIssue)
+        assert result.title == "Bug"
+        assert result.user is not None
+        assert result.user.login == "ColinCee"
+
+    def test_get_pr_returns_typed_model(self):
+        pr_resp = httpx.Response(
+            200,
+            json={
+                "number": 42,
+                "title": "Fix bug",
+                "body": "Fixes #1",
+                "base": {"ref": "main"},
+                "head": {"ref": "agent/issue-1", "repo": {"full_name": "user/repo"}},
+            },
+            request=httpx.Request("GET", "https://api.github.com/pulls/42"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=pr_resp),
+            ):
+                return await github.get_pr("user/repo", 42)
+
+        result = asyncio.run(run())
+        assert isinstance(result, GitHubPullRequest)
+        assert result.number == 42
+        assert result.base is not None
+        assert result.base.ref == "main"
 
 
 class TestIssueComments:

@@ -4,6 +4,9 @@ import logging
 from contextvars import ContextVar
 
 import httpx
+from pydantic import TypeAdapter
+
+from models import GitHubIssue, GitHubIssueComment, GitHubPullRequest
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +54,7 @@ def bot_email() -> str:
 # ── Issue / PR read ────────────────────────────────────────
 
 
-async def get_issue(repo: str, issue_number: int) -> dict:
+async def get_issue(repo: str, issue_number: int) -> GitHubIssue:
     """Fetch issue details (title, body, labels)."""
     token = await get_token()
     headers = {
@@ -65,7 +68,7 @@ async def get_issue(repo: str, issue_number: int) -> dict:
             headers=headers,
         )
         resp.raise_for_status()
-        return resp.json()
+        return GitHubIssue.model_validate(resp.json())
 
 
 async def close_issue(repo: str, issue_number: int) -> None:
@@ -88,7 +91,7 @@ async def close_issue(repo: str, issue_number: int) -> None:
             )
 
 
-async def get_pr(repo: str, pr_number: int) -> dict:
+async def get_pr(repo: str, pr_number: int) -> GitHubPullRequest:
     """Fetch PR details (head branch, base, state)."""
     token = await get_token()
     headers = {
@@ -102,10 +105,10 @@ async def get_pr(repo: str, pr_number: int) -> dict:
             headers=headers,
         )
         resp.raise_for_status()
-        return resp.json()
+        return GitHubPullRequest.model_validate(resp.json())
 
 
-async def find_pr_by_branch(repo: str, branch: str) -> dict | None:
+async def find_pr_by_branch(repo: str, branch: str) -> GitHubPullRequest | None:
     """Find the most recently updated PR for a branch (any state)."""
     token = await get_token()
     owner = repo.split("/")[0]
@@ -127,7 +130,7 @@ async def find_pr_by_branch(repo: str, branch: str) -> dict | None:
             },
         )
         resp.raise_for_status()
-        pulls = resp.json()
+        pulls = TypeAdapter(list[GitHubPullRequest]).validate_python(resp.json())
         return pulls[0] if pulls else None
 
 
@@ -152,11 +155,8 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> int:
             raise RuntimeError(
                 f"Failed to comment on {repo}#{issue_number}: HTTP {resp.status_code}"
             )
-        data = resp.json()
-        comment_id = data.get("id")
-        if not isinstance(comment_id, int):
-            raise RuntimeError(f"Failed to comment on {repo}#{issue_number}: missing comment ID")
-        return comment_id
+        comment = GitHubIssueComment.model_validate(resp.json())
+        return comment.id
 
 
 async def update_comment(repo: str, comment_id: int, body: str) -> None:
@@ -189,7 +189,7 @@ async def find_issue_comment_by_body_prefix(
         "Accept": "application/vnd.github+json",
     }
     login = bot_login()
-    comments: list[dict] = []
+    comments: list[GitHubIssueComment] = []
     page = 1
 
     async with httpx.AsyncClient(timeout=30) as client:
@@ -200,7 +200,7 @@ async def find_issue_comment_by_body_prefix(
                 params={"per_page": 100, "page": page},
             )
             resp.raise_for_status()
-            batch = resp.json()
+            batch = TypeAdapter(list[GitHubIssueComment]).validate_python(resp.json())
             if not batch:
                 break
             comments.extend(batch)
@@ -209,12 +209,11 @@ async def find_issue_comment_by_body_prefix(
             page += 1
 
     for comment in reversed(comments):
-        comment_id = comment.get("id")
-        body = comment.get("body")
-        author = comment.get("user", {}).get("login")
-        if author != login or not isinstance(body, str) or not isinstance(comment_id, int):
+        body = comment.body
+        author = comment.user.login if comment.user else ""
+        if author != login or not isinstance(body, str):
             continue
         if body.startswith(body_prefix):
-            return comment_id
+            return comment.id
 
     return None

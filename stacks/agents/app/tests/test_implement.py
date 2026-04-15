@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from implement import implement_issue
+from models import GitHubIssue, GitHubPullRequest
 from services.copilot import CLIResult, TaskError
 from stats import cli_stage_stats, format_stage_stats
 
@@ -102,11 +103,13 @@ class TestFormatStageStats:
 class TestImplementIssue:
     """Tests for implement_issue() — thin dispatcher to CLI."""
 
-    MOCK_ISSUE: ClassVar[dict] = {
-        "title": "Add foo feature",
-        "body": "We need foo.",
-        "user": {"login": "ColinCee"},
-    }
+    MOCK_ISSUE: ClassVar[GitHubIssue] = GitHubIssue.model_validate(
+        {
+            "title": "Add foo feature",
+            "body": "We need foo.",
+            "user": {"login": "ColinCee"},
+        }
+    )
 
     MOCK_CLI_RESULT = CLIResult(
         output="done",
@@ -158,71 +161,77 @@ class TestImplementIssue:
 
     def test_complete_when_pr_merged(self):
         """CLI creates and merges PR → status complete, issue closed."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": "2025-01-01T00:00:00Z",
-            "merged": True,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at="2025-01-01T00:00:00Z",
+            merged=True,
+        )
         mocks = self._base_mocks(pr_data=pr_data)
         result = self._run(mocks)
-        assert result["status"] == "complete"
-        assert result["merged"] is True
-        assert result["repo"] == "user/repo"
-        assert result["pr_number"] == 99
-        assert result["premium_requests"] == 5
-        assert result["api_time_seconds"] == 60
-        assert result["models"] == {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"}
-        assert result["tokens_line"] == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
-        assert result["session_id"] == "sess-123"
+        assert result.status == "complete"
+        assert result.merged is True
+        assert result.repo == "user/repo"
+        assert result.pr_number == 99
+        assert result.premium_requests == 5
+        assert result.api_time_seconds == 60
+        assert result.models == {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"}
+        assert result.tokens_line == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
+        assert result.session_id == "sess-123"
 
     def test_partial_when_pr_not_merged(self):
         """CLI creates PR but doesn't merge and no auto-merge → status partial."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": None,
-            "merged": False,
-            "auto_merge": None,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at=None,
+            merged=False,
+            auto_merge=None,
+        )
         mocks = self._base_mocks(pr_data=pr_data)
         result = self._run(mocks)
-        assert result["status"] == "partial"
-        assert result["merged"] is False
-        assert "manual attention" in result["error"]
+        assert result.status == "partial"
+        assert result.merged is False
+        assert result.error is not None
+        assert "manual attention" in result.error
 
     def test_complete_when_auto_merge_enabled(self):
         """CLI enables auto-merge → status complete, issue not closed (GitHub handles it)."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": None,
-            "merged": False,
-            "auto_merge": {"enabled_by": {"login": "bot"}, "merge_method": "squash"},
-        }
+        pr_data = GitHubPullRequest.model_validate(
+            {
+                "number": 99,
+                "html_url": "https://github.com/user/repo/pull/99",
+                "merged_at": None,
+                "merged": False,
+                "auto_merge": {"enabled_by": {"login": "bot"}, "merge_method": "squash"},
+            }
+        )
         mocks = self._base_mocks(pr_data=pr_data)
         result = self._run(mocks)
-        assert result["status"] == "complete"
-        assert result["merged"] is False
-        assert result["auto_merge"] is True
-        assert "error" not in result
+        assert result.status == "complete"
+        assert result.merged is False
+        assert result.auto_merge is True
+        assert result.error is None
 
     def test_failed_when_no_pr_created(self):
         """CLI doesn't create a PR → status failed."""
         mocks = self._base_mocks(pr_data=None)
         result = self._run(mocks)
-        assert result["status"] == "failed"
-        assert result["repo"] == "user/repo"
-        assert result["pr_number"] is None
-        assert "did not create a PR" in result["error"]
+        assert result.status == "failed"
+        assert result.repo == "user/repo"
+        assert result.pr_number is None
+        assert result.error is not None
+        assert "did not create a PR" in result.error
 
     def test_rejects_untrusted_issue_author(self):
         """Issues authored by unknown users raise ValueError."""
-        untrusted_issue = {
-            "title": "Evil",
-            "body": "Malicious",
-            "user": {"login": "attacker"},
-        }
+        untrusted_issue = GitHubIssue.model_validate(
+            {
+                "title": "Evil",
+                "body": "Malicious",
+                "user": {"login": "attacker"},
+            }
+        )
 
         async def run():
             with (
@@ -241,7 +250,7 @@ class TestImplementIssue:
 
     def test_passes_github_token_to_cli(self):
         """CLI receives GH_TOKEN for git push and API access."""
-        pr_data = {"number": 1, "html_url": "u", "merged_at": None, "merged": False}
+        pr_data = GitHubPullRequest(number=1, html_url="u", merged_at=None, merged=False)
 
         async def run():
             with (
@@ -271,12 +280,12 @@ class TestImplementIssue:
 
     def test_closes_issue_on_merge(self):
         """Issue is closed when the PR is merged."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": "2025-01-01T00:00:00Z",
-            "merged": True,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at="2025-01-01T00:00:00Z",
+            merged=True,
+        )
 
         async def run():
             with (
@@ -306,12 +315,12 @@ class TestImplementIssue:
 
     def test_does_not_close_issue_when_not_merged(self):
         """Issue stays open when PR is not merged."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": None,
-            "merged": False,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at=None,
+            merged=False,
+        )
 
         async def run():
             with (
@@ -370,25 +379,25 @@ class TestImplementIssue:
 
     def test_accumulates_premium_requests(self):
         """Premium requests from CLI are reported in result."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": "2025-01-01T00:00:00Z",
-            "merged": True,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at="2025-01-01T00:00:00Z",
+            merged=True,
+        )
         cli_result = CLIResult(output="done", total_premium_requests=7)
         mocks = self._base_mocks(pr_data=pr_data, cli_result=cli_result)
         result = self._run(mocks)
-        assert result["premium_requests"] == 7
+        assert result.premium_requests == 7
 
     def test_stats_comment_includes_cli_models_and_api_time(self):
         """Final PR stats comment includes rich CLI details."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": "2025-01-01T00:00:00Z",
-            "merged": True,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at="2025-01-01T00:00:00Z",
+            merged=True,
+        )
 
         async def run():
             with (
@@ -423,12 +432,12 @@ class TestImplementIssue:
 
     def test_stats_comment_includes_tokens_line_when_no_models(self):
         """Final PR stats comment falls back to the tokens line for new CLI output."""
-        pr_data = {
-            "number": 99,
-            "html_url": "https://github.com/user/repo/pull/99",
-            "merged_at": "2025-01-01T00:00:00Z",
-            "merged": True,
-        }
+        pr_data = GitHubPullRequest(
+            number=99,
+            html_url="https://github.com/user/repo/pull/99",
+            merged_at="2025-01-01T00:00:00Z",
+            merged=True,
+        )
         cli_result = CLIResult(
             output="done",
             total_premium_requests=1,
@@ -468,31 +477,31 @@ class TestImplementIssue:
 
     def test_ignores_stale_merged_pr_from_previous_run(self):
         """A PR merged before this run started is ignored (reused branch name)."""
-        stale_pr = {
-            "number": 50,
-            "html_url": "https://github.com/user/repo/pull/50",
-            "state": "closed",
-            "merged_at": "2024-06-01T00:00:00Z",
-            "merged": True,
-        }
+        stale_pr = GitHubPullRequest(
+            number=50,
+            html_url="https://github.com/user/repo/pull/50",
+            state="closed",
+            merged_at="2024-06-01T00:00:00Z",
+            merged=True,
+        )
         mocks = self._base_mocks(pr_data=stale_pr)
         result = self._run(mocks)
-        assert result["status"] == "failed"
-        assert result["pr_number"] is None
+        assert result.status == "failed"
+        assert result.pr_number is None
 
     def test_ignores_closed_unmerged_pr(self):
         """A closed-without-merge PR is ignored (stale branch)."""
-        closed_pr = {
-            "number": 50,
-            "html_url": "https://github.com/user/repo/pull/50",
-            "state": "closed",
-            "merged_at": None,
-            "merged": False,
-        }
+        closed_pr = GitHubPullRequest(
+            number=50,
+            html_url="https://github.com/user/repo/pull/50",
+            state="closed",
+            merged_at=None,
+            merged=False,
+        )
         mocks = self._base_mocks(pr_data=closed_pr)
         result = self._run(mocks)
-        assert result["status"] == "failed"
-        assert result["pr_number"] is None
+        assert result.status == "failed"
+        assert result.pr_number is None
 
     def test_always_cleans_up_worktree(self):
         """Worktree is cleaned up even on failure."""

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from models import GitHubIssue, GitHubPullRequest
 from review import review_pr
 from review.orchestrator import (
     _fetch_linked_issues_section,
@@ -59,11 +60,13 @@ class TestFetchLinkedIssuesSection:
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_fetches_and_formats_linked_issue(self, mock_get_issue: AsyncMock):
-        mock_get_issue.return_value = {
-            "title": "Bug",
-            "body": "Fix it",
-            "user": {"login": "ColinCee"},
-        }
+        mock_get_issue.return_value = GitHubIssue.model_validate(
+            {
+                "title": "Bug",
+                "body": "Fix it",
+                "user": {"login": "ColinCee"},
+            }
+        )
 
         async def run():
             return await _fetch_linked_issues_section("user/repo", "Fixes #10")
@@ -83,11 +86,13 @@ class TestFetchLinkedIssuesSection:
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_handles_issue_with_no_body(self, mock_get_issue: AsyncMock):
-        mock_get_issue.return_value = {
-            "title": "No body",
-            "body": None,
-            "user": {"login": "ColinCee"},
-        }
+        mock_get_issue.return_value = GitHubIssue.model_validate(
+            {
+                "title": "No body",
+                "body": None,
+                "user": {"login": "ColinCee"},
+            }
+        )
 
         async def run():
             return await _fetch_linked_issues_section("user/repo", "Fixes #5")
@@ -97,11 +102,13 @@ class TestFetchLinkedIssuesSection:
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_skips_untrusted_issue_authors(self, mock_get_issue: AsyncMock):
-        mock_get_issue.return_value = {
-            "title": "Evil",
-            "body": "Malicious prompt",
-            "user": {"login": "attacker"},
-        }
+        mock_get_issue.return_value = GitHubIssue.model_validate(
+            {
+                "title": "Evil",
+                "body": "Malicious prompt",
+                "user": {"login": "attacker"},
+            }
+        )
 
         async def run():
             return await _fetch_linked_issues_section("user/repo", "Fixes #5")
@@ -110,10 +117,10 @@ class TestFetchLinkedIssuesSection:
 
     @patch(f"{_MOD}.get_issue", new_callable=AsyncMock)
     def test_rejects_issue_with_missing_user(self, mock_get_issue: AsyncMock):
-        mock_get_issue.return_value = {
-            "title": "No user field",
-            "body": "Suspicious",
-        }
+        mock_get_issue.return_value = GitHubIssue(
+            title="No user field",
+            body="Suspicious",
+        )
 
         async def run():
             return await _fetch_linked_issues_section("user/repo", "Fixes #5")
@@ -134,12 +141,15 @@ class TestReviewPr:
             tokens_line="100k input, 5k output",
         )
 
-        pr_data = {
-            "title": "Fix bug",
-            "body": "Fixes #1",
-            "base": {"ref": "main"},
-            "head": {"ref": "agent/issue-1", "repo": {"full_name": "user/repo"}},
-        }
+        pr_data = GitHubPullRequest.model_validate(
+            {
+                "number": 1,
+                "title": "Fix bug",
+                "body": "Fixes #1",
+                "base": {"ref": "main"},
+                "head": {"ref": "agent/issue-1", "repo": {"full_name": "user/repo"}},
+            }
+        )
 
         async def run():
             with (
@@ -148,11 +158,9 @@ class TestReviewPr:
                 patch(
                     f"{_MOD}.get_issue",
                     new_callable=AsyncMock,
-                    return_value={
-                        "title": "Bug",
-                        "body": "Fix",
-                        "user": {"login": "ColinCee"},
-                    },
+                    return_value=GitHubIssue.model_validate(
+                        {"title": "Bug", "body": "Fix", "user": {"login": "ColinCee"}}
+                    ),
                 ),
                 patch(f"{_MOD}.create_worktree", new_callable=AsyncMock, return_value="/tmp/wt"),
                 patch(f"{_MOD}.run_copilot", new_callable=AsyncMock, return_value=cli_result),
@@ -161,19 +169,22 @@ class TestReviewPr:
                 return await review_pr(repo="user/repo", pr_number=1)
 
         result = asyncio.run(run())
-        assert result["status"] == "complete"
-        assert result["premium_requests"] == 5
-        assert result["session_id"] == "sess-1"
+        assert result.status == "complete"
+        assert result.premium_requests == 5
+        assert result.session_id == "sess-1"
 
     def test_passes_github_token_to_cli(self):
         """CLI receives GH_TOKEN for direct review posting."""
         cli_result = CLIResult(output="", total_premium_requests=1)
-        pr_data = {
-            "title": "T",
-            "body": "",
-            "base": {"ref": "main"},
-            "head": {"ref": "b", "repo": {"full_name": "user/repo"}},
-        }
+        pr_data = GitHubPullRequest.model_validate(
+            {
+                "number": 1,
+                "title": "T",
+                "body": "",
+                "base": {"ref": "main"},
+                "head": {"ref": "b", "repo": {"full_name": "user/repo"}},
+            }
+        )
 
         async def run():
             with (
@@ -193,12 +204,15 @@ class TestReviewPr:
 
     def test_rejects_fork_prs(self):
         """PRs from forks are rejected to prevent giving GH_TOKEN to untrusted code."""
-        pr_data = {
-            "title": "Malicious PR",
-            "body": "Fixes #1",
-            "base": {"ref": "main"},
-            "head": {"ref": "evil-branch", "repo": {"full_name": "attacker/repo"}},
-        }
+        pr_data = GitHubPullRequest.model_validate(
+            {
+                "number": 1,
+                "title": "Malicious PR",
+                "body": "Fixes #1",
+                "base": {"ref": "main"},
+                "head": {"ref": "evil-branch", "repo": {"full_name": "attacker/repo"}},
+            }
+        )
 
         async def run():
             with (
@@ -213,12 +227,15 @@ class TestReviewPr:
 
     def test_rejects_deleted_fork_repo(self):
         """PRs where the fork repo was deleted (repo: null) are also rejected."""
-        pr_data = {
-            "title": "Deleted fork PR",
-            "body": "",
-            "base": {"ref": "main"},
-            "head": {"ref": "branch", "repo": None},
-        }
+        pr_data = GitHubPullRequest.model_validate(
+            {
+                "number": 1,
+                "title": "Deleted fork PR",
+                "body": "",
+                "base": {"ref": "main"},
+                "head": {"ref": "branch", "repo": None},
+            }
+        )
 
         async def run():
             with (

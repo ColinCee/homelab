@@ -4,6 +4,7 @@ import logging
 import time
 from datetime import UTC, datetime
 
+from models import GitHubIssue, GitHubPullRequest, TaskResult
 from services.copilot import CLIResult, TaskError, run_copilot
 from services.git import cleanup_branch_worktree, create_branch_worktree
 from services.github import (
@@ -38,14 +39,14 @@ Use the bot-implement skill for guidelines on how to make changes.
 """
 
 
-def _is_stale_pr(pr_data: dict, run_start: datetime) -> bool:
+def _is_stale_pr(pr_data: GitHubPullRequest, run_start: datetime) -> bool:
     """Check if a PR predates the current run (reused branch name).
 
     A PR is stale if it was closed without merging, or merged before
     this run started (leftover from a previous implementation attempt).
     """
-    state = pr_data.get("state")
-    merged_at_str = pr_data.get("merged_at")
+    state = pr_data.state
+    merged_at_str = pr_data.merged_at
 
     # Closed without merging — definitely stale
     if state == "closed" and not merged_at_str:
@@ -66,8 +67,8 @@ async def implement_issue(
     issue_number: int,
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
-    issue: dict | None = None,
-) -> dict:
+    issue: GitHubIssue | None = None,
+) -> TaskResult:
     """Implement a GitHub issue: set up worktree → CLI handles everything → check result.
 
     The CLI owns the full lifecycle: commit, push, create PR, wait for CI,
@@ -93,7 +94,7 @@ async def implement_issue(
 
     total_premium_requests = 0
     cli_result: CLIResult | None = None
-    result_dict: dict | None = None
+    result: TaskResult | None = None
 
     try:
         worktree_path = await create_branch_worktree(branch_name, repo_url)
@@ -101,8 +102,8 @@ async def implement_issue(
         prompt = IMPLEMENT_PROMPT_TEMPLATE.format(
             repo=repo,
             issue_number=issue_number,
-            title=issue_data["title"],
-            body=issue_data.get("body") or "(no description)",
+            title=issue_data.title,
+            body=issue_data.body or "(no description)",
         )
 
         cli_result = await run_copilot(
@@ -120,29 +121,19 @@ async def implement_issue(
         if pr_data and _is_stale_pr(pr_data, start_wall):
             logger.warning(
                 "Ignoring stale PR #%d for %s (state=%s, merged_at=%s)",
-                pr_data["number"],
+                pr_data.number,
                 branch_name,
-                pr_data.get("state"),
-                pr_data.get("merged_at"),
+                pr_data.state,
+                pr_data.merged_at,
             )
             pr_data = None
 
         elapsed = _monotonic() - start
-        common_result = {
-            "repo": repo,
-            "elapsed_seconds": elapsed,
-            "premium_requests": total_premium_requests,
-            "api_time_seconds": cli_result.api_time_seconds,
-            "models": cli_result.models,
-            "tokens_line": cli_result.tokens_line,
-            "session_id": cli_result.session_id,
-        }
-
         if pr_data:
-            pr_number = pr_data["number"]
-            pr_url = pr_data["html_url"]
-            merged = pr_data.get("merged_at") is not None or pr_data.get("merged", False)
-            auto_merge = pr_data.get("auto_merge") is not None
+            pr_number = pr_data.number
+            pr_url = pr_data.html_url
+            merged = pr_data.merged_at is not None or pr_data.merged
+            auto_merge = pr_data.auto_merge is not None
 
             if merged:
                 try:
@@ -156,44 +147,68 @@ async def implement_issue(
                         exc_info=True,
                     )
 
-                result_dict = {
-                    "status": "complete",
-                    "pr_number": pr_number,
-                    "pr_url": pr_url,
-                    "merged": True,
-                    **common_result,
-                }
+                result = TaskResult(
+                    status="complete",
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    merged=True,
+                    repo=repo,
+                    elapsed_seconds=elapsed,
+                    premium_requests=total_premium_requests,
+                    api_time_seconds=cli_result.api_time_seconds,
+                    models=cli_result.models,
+                    tokens_line=cli_result.tokens_line,
+                    session_id=cli_result.session_id,
+                )
             elif auto_merge:
                 # Auto-merge enabled — CLI did its job, GitHub will merge
                 # when CI passes and auto-close the issue via "Closes #N"
-                result_dict = {
-                    "status": "complete",
-                    "pr_number": pr_number,
-                    "pr_url": pr_url,
-                    "merged": False,
-                    "auto_merge": True,
-                    **common_result,
-                }
+                result = TaskResult(
+                    status="complete",
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    merged=False,
+                    auto_merge=True,
+                    repo=repo,
+                    elapsed_seconds=elapsed,
+                    premium_requests=total_premium_requests,
+                    api_time_seconds=cli_result.api_time_seconds,
+                    models=cli_result.models,
+                    tokens_line=cli_result.tokens_line,
+                    session_id=cli_result.session_id,
+                )
             else:
-                result_dict = {
-                    "status": "partial",
-                    "pr_number": pr_number,
-                    "pr_url": pr_url,
-                    "merged": False,
-                    "error": "CLI created PR but did not merge — needs manual attention",
-                    **common_result,
-                }
+                result = TaskResult(
+                    status="partial",
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    merged=False,
+                    error="CLI created PR but did not merge — needs manual attention",
+                    repo=repo,
+                    elapsed_seconds=elapsed,
+                    premium_requests=total_premium_requests,
+                    api_time_seconds=cli_result.api_time_seconds,
+                    models=cli_result.models,
+                    tokens_line=cli_result.tokens_line,
+                    session_id=cli_result.session_id,
+                )
         else:
-            result_dict = {
-                "status": "failed",
-                "pr_number": None,
-                "pr_url": None,
-                "merged": False,
-                "error": "CLI did not create a PR",
-                **common_result,
-            }
+            result = TaskResult(
+                status="failed",
+                pr_number=None,
+                pr_url=None,
+                merged=False,
+                error="CLI did not create a PR",
+                repo=repo,
+                elapsed_seconds=elapsed,
+                premium_requests=total_premium_requests,
+                api_time_seconds=cli_result.api_time_seconds,
+                models=cli_result.models,
+                tokens_line=cli_result.tokens_line,
+                session_id=cli_result.session_id,
+            )
 
-        return result_dict
+        return result
 
     except TaskError:
         raise
@@ -201,7 +216,7 @@ async def implement_issue(
         raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
     finally:
-        if result_dict and result_dict.get("pr_number"):
+        if result and result.pr_number is not None:
             try:
                 stats = format_stage_stats(
                     premium_requests=total_premium_requests,
@@ -211,19 +226,19 @@ async def implement_issue(
                     models=cli_result.models if cli_result else None,
                     tokens_line=cli_result.tokens_line if cli_result else "",
                 )
-                status = result_dict.get("status", "unknown")
+                status = result.status
                 emoji = STATUS_EMOJI.get(status, "❓")
                 await comment_on_issue(
                     repo,
-                    result_dict["pr_number"],
+                    result.pr_number,
                     f"{emoji} **Implementation {status}**\n{stats}",
                 )
             except Exception:
                 logger.warning(
                     "Failed to post implementation %s stats comment on %s#%s",
-                    result_dict.get("status", "unknown"),
+                    result.status,
                     repo,
-                    result_dict["pr_number"],
+                    result.pr_number,
                     exc_info=True,
                 )
         await cleanup_branch_worktree(branch_name)
