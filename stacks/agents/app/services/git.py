@@ -171,7 +171,13 @@ async def _acquire_file_lock_cancellation_safe() -> int:
                 exc_info=True,
             )
             raise
-        await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+        try:
+            await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+        except Exception:
+            logger.warning(
+                "Failed to release repo lock during cancellation cleanup",
+                exc_info=True,
+            )
         raise
 
 
