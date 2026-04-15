@@ -19,6 +19,7 @@ def test_api_settings_accepts_valid_env():
         copilot_github_token="tok",
     )
     assert settings.github_app_id == "123"
+    assert settings.log_format == "json"
     assert settings.model == "gpt-5.4"
 
 
@@ -32,6 +33,7 @@ def test_worker_settings_accepts_legacy_env_aliases(monkeypatch: pytest.MonkeyPa
     assert settings.task_type == "review"
     assert settings.repo == "user/repo"
     assert settings.number == 42
+    assert settings.log_format == "json"
 
 
 def test_worker_settings_prefers_canonical_names(monkeypatch: pytest.MonkeyPatch):
@@ -43,6 +45,17 @@ def test_worker_settings_prefers_canonical_names(monkeypatch: pytest.MonkeyPatch
 
     settings = WorkerSettings()  # ty: ignore[missing-argument]
     assert settings.task_type == "implement"
+
+
+def test_worker_settings_reads_log_format(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TASK_TYPE", "review")
+    monkeypatch.setenv("REPO", "user/repo")
+    monkeypatch.setenv("NUMBER", "42")
+    monkeypatch.setenv("GH_TOKEN", "ghs_test")
+    monkeypatch.setenv("LOG_FORMAT", "text")
+
+    settings = WorkerSettings()  # ty: ignore[missing-argument]
+    assert settings.log_format == "text"
 
 
 def test_worker_settings_rejects_missing_vars(monkeypatch: pytest.MonkeyPatch):

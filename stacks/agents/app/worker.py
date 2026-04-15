@@ -12,6 +12,7 @@ import logging
 import sys
 
 from implement import implement_issue
+from logging_config import configure_logging
 from review import review_pr
 from runtime_env import WorkerSettings
 from services.copilot import TaskError
@@ -23,7 +24,7 @@ from services.github import (
     update_comment,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+configure_logging()
 logger = logging.getLogger(__name__)
 
 REVIEW_PROGRESS_PREFIX = "🔄 Review in progress for PR #"
