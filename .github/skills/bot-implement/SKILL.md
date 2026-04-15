@@ -13,11 +13,12 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 
 1. Read and understand the issue requirements
 2. Explore the codebase to understand the relevant code and conventions
-3. Make the necessary changes — follow existing patterns
-4. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
-5. Sanity-check the implementation against the checklist below
-6. Commit, push, and create a draft PR
-7. Wait for CI, mark ready, and merge
+3. **Plan before coding.** Write out what you intend to change and why — which files, what each change does, what error cases you'll handle. Grep for code that does similar things and decide whether to reuse, wrap, or diverge. This catches design mistakes before you write code.
+4. Make the necessary changes
+5. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
+6. Sanity-check the implementation against the checklist below
+7. Commit, push, and create a draft PR
+8. Wait for CI, mark ready, and merge
 
 ## Git Workflow
 
