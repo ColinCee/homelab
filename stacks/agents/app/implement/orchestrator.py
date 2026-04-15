@@ -1,6 +1,5 @@
 """Issue implementation orchestrator — dispatches to Copilot CLI with full repo access."""
 
-import contextlib
 import logging
 import time
 from datetime import UTC, datetime
@@ -146,8 +145,16 @@ async def implement_issue(
             auto_merge = pr_data.get("auto_merge") is not None
 
             if merged:
-                with contextlib.suppress(Exception):
+                try:
                     await close_issue(repo, issue_number)
+                except Exception:
+                    logger.warning(
+                        "Failed to close issue %s#%d after merged PR #%d",
+                        repo,
+                        issue_number,
+                        pr_number,
+                        exc_info=True,
+                    )
 
                 result_dict = {
                     "status": "complete",
@@ -195,7 +202,7 @@ async def implement_issue(
 
     finally:
         if result_dict and result_dict.get("pr_number"):
-            with contextlib.suppress(Exception):
+            try:
                 stats = format_stage_stats(
                     premium_requests=total_premium_requests,
                     elapsed_seconds=_monotonic() - start,
@@ -210,5 +217,13 @@ async def implement_issue(
                     repo,
                     result_dict["pr_number"],
                     f"{emoji} **Implementation {status}**\n{stats}",
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to post implementation %s stats comment on %s#%s",
+                    result_dict.get("status", "unknown"),
+                    repo,
+                    result_dict["pr_number"],
+                    exc_info=True,
                 )
         await cleanup_branch_worktree(branch_name)

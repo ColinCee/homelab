@@ -7,7 +7,6 @@ for the API's monitor coroutine to parse.
 """
 
 import asyncio
-import contextlib
 import json
 import logging
 import sys
@@ -35,20 +34,35 @@ async def _start_progress_comment(
     repo: str, issue_number: int, *, body: str, body_prefix: str
 ) -> int | None:
     """Post or update a progress comment on an issue/PR."""
-    with contextlib.suppress(Exception):
+    try:
         comment_id = await find_issue_comment_by_body_prefix(repo, issue_number, body_prefix)
         if comment_id is not None:
             await update_comment(repo, comment_id, body)
             return comment_id
         return await comment_on_issue(repo, issue_number, body)
+    except Exception:
+        logger.warning(
+            "Failed to start progress comment on %s#%d (%s)",
+            repo,
+            issue_number,
+            body_prefix,
+            exc_info=True,
+        )
     return None
 
 
 async def _update_progress_comment(repo: str, comment_id: int | None, body: str) -> None:
     if comment_id is None:
         return
-    with contextlib.suppress(Exception):
+    try:
         await update_comment(repo, comment_id, body)
+    except Exception:
+        logger.warning(
+            "Failed to update progress comment %d on %s",
+            comment_id,
+            repo,
+            exc_info=True,
+        )
 
 
 async def _run_implement(repo: str, issue_number: int, model: str, effort: str) -> dict:
@@ -57,8 +71,15 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
 
     try:
         issue = None
-        with contextlib.suppress(Exception):
+        try:
             issue = await get_issue(repo, issue_number)
+        except Exception:
+            logger.warning(
+                "Failed to fetch issue %s#%d before implementation",
+                repo,
+                issue_number,
+                exc_info=True,
+            )
 
         if issue is not None:
             progress_comment_id = await _start_progress_comment(
@@ -98,8 +119,15 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             repo, progress_comment_id, f"⚠️ Implementation failed — {exc}"
         )
         if not exc.commented:
-            with contextlib.suppress(Exception):
+            try:
                 await comment_on_issue(repo, issue_number, f"⚠️ **Implementation failed** — {exc}")
+            except Exception:
+                logger.warning(
+                    "Failed to post implementation failure comment on %s#%d",
+                    repo,
+                    issue_number,
+                    exc_info=True,
+                )
         return {"status": "failed", "premium_requests": exc.premium_requests}
 
     except Exception as exc:
@@ -109,9 +137,16 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             progress_comment_id,
             "⚠️ Implementation failed — see agent logs for details.",
         )
-        with contextlib.suppress(Exception):
+        try:
             await comment_on_issue(
                 repo, issue_number, "⚠️ **Implementation failed** — see agent logs for details."
+            )
+        except Exception:
+            logger.warning(
+                "Failed to post implementation failure comment on %s#%d",
+                repo,
+                issue_number,
+                exc_info=True,
             )
         return {"status": "failed", "premium_requests": 0, "error": str(exc)}
 
@@ -147,8 +182,15 @@ async def _run_review(
         logger.exception("Review failed for %s#%d", repo, pr_number)
         await _update_progress_comment(repo, progress_comment_id, f"⚠️ Review failed — {exc}")
         if not exc.commented:
-            with contextlib.suppress(Exception):
+            try:
                 await comment_on_issue(repo, pr_number, f"⚠️ **Review failed** — {exc}")
+            except Exception:
+                logger.warning(
+                    "Failed to post review failure comment on %s#%d",
+                    repo,
+                    pr_number,
+                    exc_info=True,
+                )
         return {"status": "failed", "premium_requests": exc.premium_requests}
 
     except Exception as exc:
@@ -158,9 +200,16 @@ async def _run_review(
             progress_comment_id,
             "⚠️ Review failed — see agent logs for details.",
         )
-        with contextlib.suppress(Exception):
+        try:
             await comment_on_issue(
                 repo, pr_number, "⚠️ **Review failed** — see agent logs for details."
+            )
+        except Exception:
+            logger.warning(
+                "Failed to post review failure comment on %s#%d",
+                repo,
+                pr_number,
+                exc_info=True,
             )
         return {"status": "failed", "premium_requests": 0, "error": str(exc)}
 
