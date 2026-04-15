@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
+from logging_config import configure_logging, resolve_log_format
 from metrics import (
     METRICS_REGISTRY,
     PREMIUM_REQUESTS_TOTAL,
@@ -33,7 +34,8 @@ from services.git import reap_old_worktrees
 from services.github import comment_on_issue, set_token
 from trust import ALLOWED_ACTORS
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+LOG_FORMAT = resolve_log_format(os.environ.get("LOG_FORMAT"))
+configure_logging(LOG_FORMAT)
 logger = logging.getLogger(__name__)
 
 
@@ -97,6 +99,10 @@ def _premium_requests(result: dict[str, object] | None) -> int:
         return 0
     premium_requests = result.get("premium_requests", 0)
     return premium_requests if isinstance(premium_requests, int) else 0
+
+
+def _worker_log_format() -> str:
+    return resolve_log_format(os.environ.get("LOG_FORMAT"))
 
 
 def _record_task_metrics(
@@ -258,6 +264,7 @@ async def handle_review(req: ReviewRequest):
         "NUMBER": str(req.pr_number),
         "GH_TOKEN": req.github_token,
         "COPILOT_GITHUB_TOKEN": os.environ.get("COPILOT_GITHUB_TOKEN", ""),
+        "LOG_FORMAT": _worker_log_format(),
         "MODEL": model,
         "REASONING_EFFORT": effort,
     }
@@ -315,6 +322,7 @@ async def handle_implement(req: ImplementRequest):
         "NUMBER": str(req.issue_number),
         "GH_TOKEN": req.github_token,
         "COPILOT_GITHUB_TOKEN": os.environ.get("COPILOT_GITHUB_TOKEN", ""),
+        "LOG_FORMAT": _worker_log_format(),
         "MODEL": model,
         "REASONING_EFFORT": effort,
     }

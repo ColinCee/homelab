@@ -159,6 +159,7 @@ def test_review_returns_202_accepted(mock_image, mock_spawn, mock_monitor):
     assert call_kwargs["env"]["TASK_TYPE"] == "review"
     assert call_kwargs["env"]["REPO"] == "user/repo"
     assert call_kwargs["env"]["NUMBER"] == "42"
+    assert call_kwargs["env"]["LOG_FORMAT"] == "json"
 
 
 def test_review_missing_fields():
@@ -235,6 +236,24 @@ def test_review_passes_copilot_token_to_worker(mock_image, mock_spawn, mock_moni
     assert env["GH_TOKEN"] == _TOKEN
 
 
+@patch("main._spawn_monitor")
+@patch("main.spawn_worker", new_callable=AsyncMock, return_value="abc123")
+@patch("main.get_own_image", new_callable=AsyncMock, return_value="agent:latest")
+def test_review_passes_log_format_to_worker(mock_image, mock_spawn, mock_monitor):
+    with patch.dict(os.environ, {"LOG_FORMAT": "text"}):
+        resp = _client().post(
+            "/review",
+            json={
+                "repo": "user/repo",
+                "pr_number": 42,
+                "triggered_by": _ACTOR,
+                "github_token": _TOKEN,
+            },
+        )
+    assert resp.status_code == 202
+    assert mock_spawn.call_args.kwargs["env"]["LOG_FORMAT"] == "text"
+
+
 # --- Implement endpoint tests ---
 
 
@@ -260,6 +279,7 @@ def test_implement_returns_202_accepted(mock_running, mock_image, mock_spawn, mo
     call_kwargs = mock_spawn.call_args.kwargs
     assert call_kwargs["env"]["TASK_TYPE"] == "implement"
     assert call_kwargs["env"]["NUMBER"] == "10"
+    assert call_kwargs["env"]["LOG_FORMAT"] == "json"
 
 
 def test_implement_missing_fields():

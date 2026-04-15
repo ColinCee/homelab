@@ -1,5 +1,7 @@
 """Runtime environment configuration via Pydantic Settings."""
 
+from typing import Literal
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings
 
@@ -12,6 +14,7 @@ class ApiSettings(BaseSettings):
     github_app_key_file: str
     copilot_github_token: str
     model: str = "gpt-5.4"
+    log_format: Literal["json", "text"] = "json"
     reasoning_effort: str = "high"
 
 
@@ -26,6 +29,7 @@ class WorkerSettings(BaseSettings):
     gh_token: str
     copilot_github_token: str = ""
     model: str = "gpt-5.4"
+    log_format: Literal["json", "text"] = "json"
     reasoning_effort: str = "high"
     session_id: str | None = Field(
         default=None, validation_alias=AliasChoices("SESSION_ID", "WORKER_SESSION_ID")
