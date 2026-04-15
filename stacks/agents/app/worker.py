@@ -7,12 +7,12 @@ for the API's monitor coroutine to parse.
 """
 
 import asyncio
-import json
 import logging
 import sys
 
 from implement import implement_issue
 from logging_config import configure_logging
+from models import TaskResult
 from review import review_pr
 from runtime_env import WorkerSettings
 from services.copilot import TaskError
@@ -66,8 +66,8 @@ async def _update_progress_comment(repo: str, comment_id: int | None, body: str)
         )
 
 
-async def _run_implement(repo: str, issue_number: int, model: str, effort: str) -> dict:
-    """Run the implement lifecycle and return a result dict."""
+async def _run_implement(repo: str, issue_number: int, model: str, effort: str) -> TaskResult:
+    """Run the implement lifecycle and return a typed result."""
     progress_comment_id: int | None = None
 
     try:
@@ -98,21 +98,18 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             issue=issue,
         )
 
-        pr_number = result.get("pr_number")
-        pr_url = result.get("pr_url")
-        auto_merge = result.get("auto_merge", False)
-        if isinstance(pr_number, int) and isinstance(pr_url, str):
-            if auto_merge:
-                msg = f"✅ PR #{pr_number} created (auto-merge enabled) — {pr_url}"
+        if result.pr_number is not None and result.pr_url:
+            if result.auto_merge:
+                msg = f"✅ PR #{result.pr_number} created (auto-merge enabled) — {result.pr_url}"
             else:
-                msg = f"✅ PR #{pr_number} created — {pr_url}"
+                msg = f"✅ PR #{result.pr_number} created — {result.pr_url}"
             await _update_progress_comment(repo, progress_comment_id, msg)
 
         return result
 
     except ValueError as exc:
         logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
-        return {"status": "rejected", "premium_requests": 0}
+        return TaskResult(status="rejected", premium_requests=0)
 
     except TaskError as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
@@ -129,7 +126,7 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
                     issue_number,
                     exc_info=True,
                 )
-        return {"status": "failed", "premium_requests": exc.premium_requests}
+        return TaskResult(status="failed", premium_requests=exc.premium_requests)
 
     except Exception as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
@@ -149,13 +146,13 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
                 issue_number,
                 exc_info=True,
             )
-        return {"status": "failed", "premium_requests": 0, "error": str(exc)}
+        return TaskResult(status="failed", premium_requests=0, error=str(exc))
 
 
 async def _run_review(
     repo: str, pr_number: int, model: str, effort: str, session_id: str | None
-) -> dict:
-    """Run the review lifecycle and return a result dict."""
+) -> TaskResult:
+    """Run the review lifecycle and return a typed result."""
     progress_comment_id: int | None = None
 
     try:
@@ -192,7 +189,7 @@ async def _run_review(
                     pr_number,
                     exc_info=True,
                 )
-        return {"status": "failed", "premium_requests": exc.premium_requests}
+        return TaskResult(status="failed", premium_requests=exc.premium_requests)
 
     except Exception as exc:
         logger.exception("Review failed for %s#%d", repo, pr_number)
@@ -212,7 +209,7 @@ async def _run_review(
                 pr_number,
                 exc_info=True,
             )
-        return {"status": "failed", "premium_requests": 0, "error": str(exc)}
+        return TaskResult(status="failed", premium_requests=0, error=str(exc))
 
 
 async def main() -> int:
@@ -246,9 +243,9 @@ async def main() -> int:
         return 1
 
     # Write result as JSON to stdout for the API monitor to parse
-    print(json.dumps(result), flush=True)
+    print(result.model_dump_json(exclude_unset=True), flush=True)
 
-    status = result.get("status", "unknown")
+    status = result.status
     logger.info(
         "Worker finished: %s %s#%s → %s",
         settings.task_type,

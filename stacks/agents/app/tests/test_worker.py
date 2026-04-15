@@ -1,9 +1,10 @@
 """Tests for the ephemeral worker entrypoint."""
 
 import asyncio
-import json
 import os
 from unittest.mock import AsyncMock, patch
+
+from models import GitHubIssue, TaskResult
 
 
 @patch.dict(
@@ -18,23 +19,23 @@ from unittest.mock import AsyncMock, patch
     },
 )
 @patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value={"title": "test"})
+@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
 @patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
 def test_implement_success_returns_zero(
     mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
 ):
-    mock_impl.return_value = {
-        "status": "complete",
-        "pr_number": 99,
-        "pr_url": "https://github.com/user/repo/pull/99",
-        "premium_requests": 5,
-        "api_time_seconds": 60,
-        "models": {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
-        "tokens_line": "↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
-        "session_id": "sess-123",
-    }
+    mock_impl.return_value = TaskResult(
+        status="complete",
+        pr_number=99,
+        pr_url="https://github.com/user/repo/pull/99",
+        premium_requests=5,
+        api_time_seconds=60,
+        models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
+        tokens_line="↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
+        session_id="sess-123",
+    )
 
     from worker import main
 
@@ -42,13 +43,13 @@ def test_implement_success_returns_zero(
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    result = json.loads(captured.out.strip())
-    assert result["status"] == "complete"
-    assert result["premium_requests"] == 5
-    assert result["api_time_seconds"] == 60
-    assert result["models"] == {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"}
-    assert result["tokens_line"] == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
-    assert result["session_id"] == "sess-123"
+    result = TaskResult.model_validate_json(captured.out.strip())
+    assert result.status == "complete"
+    assert result.premium_requests == 5
+    assert result.api_time_seconds == 60
+    assert result.models == {"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"}
+    assert result.tokens_line == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
+    assert result.session_id == "sess-123"
     mock_impl.assert_awaited_once()
 
 
@@ -62,17 +63,14 @@ def test_implement_success_returns_zero(
     },
 )
 @patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value={"title": "test"})
+@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
 @patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
 def test_implement_failure_returns_one(
     mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
 ):
-    mock_impl.return_value = {
-        "status": "failed",
-        "premium_requests": 2,
-    }
+    mock_impl.return_value = TaskResult(status="failed", premium_requests=2)
 
     from worker import main
 
@@ -80,8 +78,8 @@ def test_implement_failure_returns_one(
 
     assert exit_code == 1
     captured = capsys.readouterr()
-    result = json.loads(captured.out.strip())
-    assert result["status"] == "failed"
+    result = TaskResult.model_validate_json(captured.out.strip())
+    assert result.status == "failed"
 
 
 @patch.dict(
@@ -94,7 +92,7 @@ def test_implement_failure_returns_one(
     },
 )
 @patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value={"title": "test"})
+@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
 @patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
@@ -111,9 +109,9 @@ def test_implement_exception_posts_error_comment(
 
     assert exit_code == 1
     captured = capsys.readouterr()
-    result = json.loads(captured.out.strip())
-    assert result["status"] == "failed"
-    assert result["premium_requests"] == 3
+    result = TaskResult.model_validate_json(captured.out.strip())
+    assert result.status == "failed"
+    assert result.premium_requests == 3
 
     # Should have posted error comment
     error_calls = [c for c in mock_comment.call_args_list if "failed" in str(c).lower()]
@@ -136,10 +134,7 @@ def test_implement_exception_posts_error_comment(
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
 def test_review_success_returns_zero(mock_update, mock_find, mock_comment, mock_review, capsys):
-    mock_review.return_value = {
-        "status": "complete",
-        "premium_requests": 2,
-    }
+    mock_review.return_value = TaskResult(status="complete", premium_requests=2)
 
     from worker import main
 
@@ -147,8 +142,8 @@ def test_review_success_returns_zero(mock_update, mock_find, mock_comment, mock_
 
     assert exit_code == 0
     captured = capsys.readouterr()
-    result = json.loads(captured.out.strip())
-    assert result["status"] == "complete"
+    result = TaskResult.model_validate_json(captured.out.strip())
+    assert result.status == "complete"
     mock_review.assert_awaited_once()
 
 
@@ -166,7 +161,7 @@ def test_review_success_returns_zero(mock_update, mock_find, mock_comment, mock_
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
 def test_review_posts_progress_comment(mock_update, mock_find, mock_comment, mock_review):
-    mock_review.return_value = {"status": "complete", "premium_requests": 1}
+    mock_review.return_value = TaskResult(status="complete", premium_requests=1)
 
     from worker import main
 
@@ -187,7 +182,7 @@ def test_review_posts_progress_comment(mock_update, mock_find, mock_comment, moc
     },
 )
 @patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value={"title": "test"})
+@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
 @patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
 @patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
 @patch("worker.update_comment", new_callable=AsyncMock)
@@ -203,8 +198,8 @@ def test_implement_content_rejection_returns_one(
 
     assert exit_code == 1
     captured = capsys.readouterr()
-    result = json.loads(captured.out.strip())
-    assert result["status"] == "rejected"
+    result = TaskResult.model_validate_json(captured.out.strip())
+    assert result.status == "rejected"
 
 
 def test_unknown_task_type_returns_one():
@@ -243,7 +238,9 @@ def test_worker_supports_legacy_worker_env_aliases(capsys):
             },
             clear=True,
         ),
-        patch("worker.review_pr", new_callable=AsyncMock, return_value={"status": "complete"}),
+        patch(
+            "worker.review_pr", new_callable=AsyncMock, return_value=TaskResult(status="complete")
+        ),
         patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
         patch(
             "worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None
@@ -255,5 +252,5 @@ def test_worker_supports_legacy_worker_env_aliases(capsys):
         exit_code = asyncio.run(main())
 
     assert exit_code == 0
-    result = json.loads(capsys.readouterr().out.strip())
-    assert result["status"] == "complete"
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
+    assert result.status == "complete"

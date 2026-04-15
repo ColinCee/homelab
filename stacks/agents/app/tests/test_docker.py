@@ -52,25 +52,29 @@ def test_parse_docker_timestamp_no_nanos():
 def test_parse_worker_result_extracts_json():
     logs = '2025-01-01 INFO Starting worker\n{"status": "complete", "premium_requests": 5}\n'
     result = parse_worker_result(logs)
-    assert result == {"status": "complete", "premium_requests": 5}
+    assert result is not None
+    assert result.status == "complete"
+    assert result.premium_requests == 5
 
 
 def test_parse_worker_result_uses_last_json_line():
     logs = '{"status": "failed"}\nsome log line\n{"status": "complete", "premium_requests": 3}\n'
     result = parse_worker_result(logs)
-    assert result == {"status": "complete", "premium_requests": 3}
+    assert result is not None
+    assert result.status == "complete"
+    assert result.premium_requests == 3
 
 
 def test_parse_worker_result_returns_empty_on_no_json():
     logs = "just some logs\nno json here\n"
     result = parse_worker_result(logs)
-    assert result == {}
+    assert result is None
 
 
 def test_parse_worker_result_skips_non_dict_json():
     logs = '"just a string"\n[1, 2, 3]\n'
     result = parse_worker_result(logs)
-    assert result == {}
+    assert result is None
 
 
 @patch("services.docker._run_docker", new_callable=AsyncMock)

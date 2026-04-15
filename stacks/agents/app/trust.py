@@ -9,6 +9,8 @@ Trust layers (outer to inner):
   3. Content trust — validates authorship of content injected into prompts
 """
 
+from models import GitHubIssue, GitHubPullRequest
+
 # Only these GitHub users can trigger agent tasks or author content that
 # gets injected into CLI prompts. Single source of truth for all trust decisions.
 ALLOWED_ACTORS = frozenset({"ColinCee", "colins-homelab-bot[bot]"})
@@ -19,12 +21,12 @@ def is_trusted_actor(actor: str) -> bool:
     return actor in ALLOWED_ACTORS
 
 
-def is_trusted_content_author(issue_or_pr: dict) -> bool:
+def is_trusted_content_author(issue_or_pr: GitHubIssue | GitHubPullRequest) -> bool:
     """Check if the author of this issue/PR is trusted for prompt injection.
 
     Looks up the author's login from the GitHub API response and checks
     against ALLOWED_ACTORS. Prevents prompt injection via attacker-controlled
     content (e.g. malicious issue bodies).
     """
-    login = (issue_or_pr.get("user") or {}).get("login", "")
+    login = issue_or_pr.user.login if issue_or_pr.user else ""
     return login in ALLOWED_ACTORS

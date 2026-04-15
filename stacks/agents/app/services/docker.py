@@ -6,12 +6,15 @@ restarts (ADR-011). Workers use the same image with a different entrypoint.
 
 import asyncio
 import contextlib
-import json
 import logging
 import re
 import socket
 from datetime import datetime
 from typing import Any
+
+from pydantic import ValidationError
+
+from models import TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +201,7 @@ async def is_worker_running(task_type: str, number: int) -> bool:
         return False
 
 
-def parse_worker_result(logs: str) -> dict:
+def parse_worker_result(logs: str) -> TaskResult | None:
     """Parse the JSON result line from worker container logs.
 
     The worker writes a single JSON line to stdout as its last action.
@@ -209,12 +212,10 @@ def parse_worker_result(logs: str) -> dict:
         if not line:
             continue
         try:
-            result = json.loads(line)
-            if isinstance(result, dict):
-                return result
-        except json.JSONDecodeError:
+            return TaskResult.model_validate_json(line)
+        except ValidationError:
             continue
-    return {}
+    return None
 
 
 async def cleanup_orphaned_workers() -> list[dict[str, Any]]:

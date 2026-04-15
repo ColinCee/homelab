@@ -4,6 +4,7 @@ import logging
 import re
 import time
 
+from models import TaskResult
 from services.copilot import run_copilot
 from services.git import cleanup_worktree, create_worktree
 from services.github import (
@@ -70,8 +71,8 @@ async def _fetch_linked_issues_section(repo: str, description: str) -> str:
                     num,
                 )
                 continue
-            title = issue.get("title", "")
-            body = issue.get("body") or "_No body._"
+            title = issue.title
+            body = issue.body or "_No body._"
             parts.append(f"### #{num}: {title}\n\n{body}")
         except Exception:
             logger.warning("Could not fetch linked issue #%d", num)
@@ -90,7 +91,7 @@ async def review_pr(
     model: str = "gpt-5.4",
     reasoning_effort: str = "high",
     session_id: str | None = None,
-) -> dict:
+) -> TaskResult:
     """Review pipeline: worktree → Copilot CLI (posts review directly) → stats.
 
     The CLI has full GitHub access and posts the review itself via `gh`.
@@ -103,11 +104,11 @@ async def review_pr(
 
     try:
         pr_data = await get_pr(repo, pr_number)
-        title = pr_data.get("title", "")
-        description = pr_data.get("body") or "_No description provided._"
-        base_branch = pr_data.get("base", {}).get("ref", "main")
-        head_ref = pr_data.get("head", {}).get("ref")
-        head_repo = (pr_data.get("head", {}).get("repo") or {}).get("full_name")
+        title = pr_data.title
+        description = pr_data.body or "_No description provided._"
+        base_branch = pr_data.base.ref if pr_data.base and pr_data.base.ref else "main"
+        head_ref = pr_data.head.ref if pr_data.head else None
+        head_repo = pr_data.head.repo.full_name if pr_data.head and pr_data.head.repo else None
         if head_repo != repo:
             raise ValueError(
                 f"PR #{pr_number} is from fork '{head_repo}' — refusing to review with GH_TOKEN"
@@ -137,17 +138,17 @@ async def review_pr(
         elapsed = time.monotonic() - start
         logger.info("Review complete for %s#%d in %.1fs", repo, pr_number, elapsed)
 
-        return {
-            "status": "complete",
-            "model": model,
-            "elapsed_seconds": elapsed,
-            "api_time_seconds": result.api_time_seconds,
-            "reasoning_effort": reasoning_effort,
-            "premium_requests": result.total_premium_requests,
-            "models": result.models,
-            "tokens_line": result.tokens_line,
-            "session_id": result.session_id,
-        }
+        return TaskResult(
+            status="complete",
+            model=model,
+            elapsed_seconds=elapsed,
+            api_time_seconds=result.api_time_seconds,
+            reasoning_effort=reasoning_effort,
+            premium_requests=result.total_premium_requests,
+            models=result.models,
+            tokens_line=result.tokens_line,
+            session_id=result.session_id,
+        )
 
     finally:
         await cleanup_worktree(pr_number)
