@@ -111,6 +111,9 @@ Documentation ownership rules and refresh triggers live in
 | `.github/` | Agent-facing authoring guide, instructions, and skills |
 
 - **[Roadmap](docs/roadmap.md)** — active work, planned items, and known limitations
+- **[Architecture Overview](docs/architecture.md)** — top-level map of the Beelink, stacks, networking, and deploy path
+- **[Agent Lifecycle](docs/agent-lifecycle.md)** — end-to-end `/implement` and `/review` flow, trust model, and worker ownership
+- **[Observability](docs/observability.md)** — where logs, metrics, dashboards, and alerts live when things break
 - **[Security](docs/private/security.md)** — audit findings, hardening status, periodic checklist *(encrypted)*
 - **[Network](docs/private/network.md)** — topology, interfaces, traffic monitoring plan *(encrypted)*
 - **[Copilot Authoring Guide](.github/AUTHORING.md)** — how agent-facing `.github` docs are organized
@@ -122,4 +125,3 @@ Browse [`docs/decisions/`](docs/decisions/) for the full list. ADRs are numbered
 ### [Runbooks](docs/runbooks/)
 
 Browse [`docs/runbooks/`](docs/runbooks/) for operational procedures — deploying services, operating the agent stack, and migration references.
-
