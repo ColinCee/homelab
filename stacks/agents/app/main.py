@@ -145,6 +145,7 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         result: dict = {}
         try:
             logs = await get_logs(container_id)
+            logger.info("Worker %s #%d raw output:\n%s", task_type, number, logs[-3000:])
             result = parse_worker_result(logs)
         except Exception:
             logger.warning("Failed to parse worker result for %s #%d", task_type, number)
