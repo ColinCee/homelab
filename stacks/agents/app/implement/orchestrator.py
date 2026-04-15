@@ -9,12 +9,12 @@ from services.copilot import CLIResult, TaskError, run_copilot
 from services.git import cleanup_branch_worktree, create_branch_worktree
 from services.github import (
     close_issue,
-    comment_on_issue,
     find_pr_by_branch,
     get_issue,
     get_token,
+    safe_comment,
 )
-from stats import STATUS_EMOJI, format_stage_stats
+from stats import STATUS_EMOJI, cli_stage_stats
 from trust import is_trusted_content_author
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,76 @@ def _is_stale_pr(pr_data: GitHubPullRequest, run_start: datetime) -> bool:
             return True
 
     return False
+
+
+def _build_result(
+    pr_data: GitHubPullRequest | None,
+    elapsed: float,
+    premium_requests: int,
+    cli_result: CLIResult,
+    repo: str,
+) -> TaskResult:
+    """Build a TaskResult from PR state after CLI completes."""
+    if not pr_data:
+        return TaskResult(
+            status="failed",
+            error="CLI did not create a PR",
+            repo=repo,
+            elapsed_seconds=elapsed,
+            premium_requests=premium_requests,
+            api_time_seconds=cli_result.api_time_seconds,
+            models=cli_result.models,
+            tokens_line=cli_result.tokens_line,
+            session_id=cli_result.session_id,
+        )
+
+    merged = pr_data.merged_at is not None or pr_data.merged
+
+    if merged:
+        return TaskResult(
+            status="complete",
+            merged=True,
+            pr_number=pr_data.number,
+            pr_url=pr_data.html_url,
+            repo=repo,
+            elapsed_seconds=elapsed,
+            premium_requests=premium_requests,
+            api_time_seconds=cli_result.api_time_seconds,
+            models=cli_result.models,
+            tokens_line=cli_result.tokens_line,
+            session_id=cli_result.session_id,
+        )
+
+    if pr_data.auto_merge is not None:
+        return TaskResult(
+            status="complete",
+            merged=False,
+            auto_merge=True,
+            pr_number=pr_data.number,
+            pr_url=pr_data.html_url,
+            repo=repo,
+            elapsed_seconds=elapsed,
+            premium_requests=premium_requests,
+            api_time_seconds=cli_result.api_time_seconds,
+            models=cli_result.models,
+            tokens_line=cli_result.tokens_line,
+            session_id=cli_result.session_id,
+        )
+
+    return TaskResult(
+        status="partial",
+        merged=False,
+        error="CLI created PR but did not merge — needs manual attention",
+        pr_number=pr_data.number,
+        pr_url=pr_data.html_url,
+        repo=repo,
+        elapsed_seconds=elapsed,
+        premium_requests=premium_requests,
+        api_time_seconds=cli_result.api_time_seconds,
+        models=cli_result.models,
+        tokens_line=cli_result.tokens_line,
+        session_id=cli_result.session_id,
+    )
 
 
 async def implement_issue(
@@ -115,7 +185,6 @@ async def implement_issue(
         )
         total_premium_requests += cli_result.total_premium_requests
 
-        # Check what the CLI accomplished
         pr_data = await find_pr_by_branch(repo, branch_name)
 
         if pr_data and _is_stale_pr(pr_data, start_wall):
@@ -129,84 +198,18 @@ async def implement_issue(
             pr_data = None
 
         elapsed = _monotonic() - start
-        if pr_data:
-            pr_number = pr_data.number
-            pr_url = pr_data.html_url
-            merged = pr_data.merged_at is not None or pr_data.merged
-            auto_merge = pr_data.auto_merge is not None
+        result = _build_result(pr_data, elapsed, total_premium_requests, cli_result, repo)
 
-            if merged:
-                try:
-                    await close_issue(repo, issue_number)
-                except Exception:
-                    logger.warning(
-                        "Failed to close issue %s#%d after merged PR #%d",
-                        repo,
-                        issue_number,
-                        pr_number,
-                        exc_info=True,
-                    )
-
-                result = TaskResult(
-                    status="complete",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    merged=True,
-                    repo=repo,
-                    elapsed_seconds=elapsed,
-                    premium_requests=total_premium_requests,
-                    api_time_seconds=cli_result.api_time_seconds,
-                    models=cli_result.models,
-                    tokens_line=cli_result.tokens_line,
-                    session_id=cli_result.session_id,
+        if result.merged:
+            try:
+                await close_issue(repo, issue_number)
+            except Exception:
+                logger.warning(
+                    "Failed to close issue %s#%d after merged PR",
+                    repo,
+                    issue_number,
+                    exc_info=True,
                 )
-            elif auto_merge:
-                # Auto-merge enabled — CLI did its job, GitHub will merge
-                # when CI passes and auto-close the issue via "Closes #N"
-                result = TaskResult(
-                    status="complete",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    merged=False,
-                    auto_merge=True,
-                    repo=repo,
-                    elapsed_seconds=elapsed,
-                    premium_requests=total_premium_requests,
-                    api_time_seconds=cli_result.api_time_seconds,
-                    models=cli_result.models,
-                    tokens_line=cli_result.tokens_line,
-                    session_id=cli_result.session_id,
-                )
-            else:
-                result = TaskResult(
-                    status="partial",
-                    pr_number=pr_number,
-                    pr_url=pr_url,
-                    merged=False,
-                    error="CLI created PR but did not merge — needs manual attention",
-                    repo=repo,
-                    elapsed_seconds=elapsed,
-                    premium_requests=total_premium_requests,
-                    api_time_seconds=cli_result.api_time_seconds,
-                    models=cli_result.models,
-                    tokens_line=cli_result.tokens_line,
-                    session_id=cli_result.session_id,
-                )
-        else:
-            result = TaskResult(
-                status="failed",
-                pr_number=None,
-                pr_url=None,
-                merged=False,
-                error="CLI did not create a PR",
-                repo=repo,
-                elapsed_seconds=elapsed,
-                premium_requests=total_premium_requests,
-                api_time_seconds=cli_result.api_time_seconds,
-                models=cli_result.models,
-                tokens_line=cli_result.tokens_line,
-                session_id=cli_result.session_id,
-            )
 
         return result
 
@@ -217,28 +220,11 @@ async def implement_issue(
 
     finally:
         if result and result.pr_number is not None:
-            try:
-                stats = format_stage_stats(
-                    premium_requests=total_premium_requests,
-                    elapsed_seconds=_monotonic() - start,
-                    api_time_seconds=cli_result.api_time_seconds if cli_result else 0,
-                    effort=reasoning_effort,
-                    models=cli_result.models if cli_result else None,
-                    tokens_line=cli_result.tokens_line if cli_result else "",
-                )
-                status = result.status
-                emoji = STATUS_EMOJI.get(status, "❓")
-                await comment_on_issue(
-                    repo,
-                    result.pr_number,
-                    f"{emoji} **Implementation {status}**\n{stats}",
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to post implementation %s stats comment on %s#%s",
-                    result.status,
-                    repo,
-                    result.pr_number,
-                    exc_info=True,
-                )
+            stats = cli_stage_stats(cli_result, effort=reasoning_effort) if cli_result else ""
+            emoji = STATUS_EMOJI.get(result.status, "❓")
+            await safe_comment(
+                repo,
+                result.pr_number,
+                f"{emoji} **Implementation {result.status}**\n{stats}",
+            )
         await cleanup_branch_worktree(branch_name)

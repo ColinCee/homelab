@@ -242,6 +242,43 @@ def _spawn_monitor(container_id: str, *, task_type: str, number: int, start: flo
     _monitor_tasks[monitor_key] = task
 
 
+async def _dispatch_worker(
+    *,
+    task_type: str,
+    repo: str,
+    number: int,
+    github_token: str,
+    model: str,
+    effort: str,
+) -> str:
+    """Spawn a worker container and start its monitor. Returns the container ID."""
+    image = await get_own_image()
+    env = {
+        "TASK_TYPE": task_type,
+        "REPO": repo,
+        "NUMBER": str(number),
+        "GH_TOKEN": github_token,
+        "COPILOT_GITHUB_TOKEN": os.environ.get("COPILOT_GITHUB_TOKEN", ""),
+        "LOG_FORMAT": _worker_log_format(),
+        "MODEL": model,
+        "REASONING_EFFORT": effort,
+    }
+
+    start = time.monotonic()
+    TASK_IN_PROGRESS.labels(task_type=task_type).inc()
+
+    container_id = await spawn_worker(
+        task_type=task_type,
+        image=image,
+        env=env,
+        number=number,
+        volumes=["repo-cache:/repo.git", "reviews:/reviews"],
+    )
+
+    _spawn_monitor(container_id, task_type=task_type, number=number, start=start)
+    return container_id
+
+
 # --- Review endpoints ---
 
 
@@ -254,33 +291,15 @@ async def handle_review(req: ReviewRequest):
             content={"error": f"Actor '{req.triggered_by}' is not allowed"},
         )
     set_token(req.github_token)
-    model = req.model or MODEL
-    effort = req.reasoning_effort or REASONING_EFFORT
 
-    image = await get_own_image()
-    env = {
-        "TASK_TYPE": "review",
-        "REPO": req.repo,
-        "NUMBER": str(req.pr_number),
-        "GH_TOKEN": req.github_token,
-        "COPILOT_GITHUB_TOKEN": os.environ.get("COPILOT_GITHUB_TOKEN", ""),
-        "LOG_FORMAT": _worker_log_format(),
-        "MODEL": model,
-        "REASONING_EFFORT": effort,
-    }
-
-    start = time.monotonic()
-    TASK_IN_PROGRESS.labels(task_type="review").inc()
-
-    container_id = await spawn_worker(
+    await _dispatch_worker(
         task_type="review",
-        image=image,
-        env=env,
+        repo=req.repo,
         number=req.pr_number,
-        volumes=["repo-cache:/repo.git", "reviews:/reviews"],
+        github_token=req.github_token,
+        model=req.model or MODEL,
+        effort=req.reasoning_effort or REASONING_EFFORT,
     )
-
-    _spawn_monitor(container_id, task_type="review", number=req.pr_number, start=start)
     return {"status": "accepted", "pr_number": req.pr_number}
 
 
@@ -305,40 +324,21 @@ async def handle_implement(req: ImplementRequest):
             content={"error": f"Actor '{req.triggered_by}' is not allowed"},
         )
     set_token(req.github_token)
-    model = req.model or MODEL
-    effort = req.reasoning_effort or REASONING_EFFORT
 
-    # Check for duplicate via running container
     if await is_worker_running("implement", req.issue_number):
         return JSONResponse(
             status_code=409,
             content={"status": "already_in_progress", "issue_number": req.issue_number},
         )
 
-    image = await get_own_image()
-    env = {
-        "TASK_TYPE": "implement",
-        "REPO": req.repo,
-        "NUMBER": str(req.issue_number),
-        "GH_TOKEN": req.github_token,
-        "COPILOT_GITHUB_TOKEN": os.environ.get("COPILOT_GITHUB_TOKEN", ""),
-        "LOG_FORMAT": _worker_log_format(),
-        "MODEL": model,
-        "REASONING_EFFORT": effort,
-    }
-
-    start = time.monotonic()
-    TASK_IN_PROGRESS.labels(task_type="implement").inc()
-
-    container_id = await spawn_worker(
+    await _dispatch_worker(
         task_type="implement",
-        image=image,
-        env=env,
+        repo=req.repo,
         number=req.issue_number,
-        volumes=["repo-cache:/repo.git", "reviews:/reviews"],
+        github_token=req.github_token,
+        model=req.model or MODEL,
+        effort=req.reasoning_effort or REASONING_EFFORT,
     )
-
-    _spawn_monitor(container_id, task_type="implement", number=req.issue_number, start=start)
     return {"status": "accepted", "issue_number": req.issue_number}
 
 

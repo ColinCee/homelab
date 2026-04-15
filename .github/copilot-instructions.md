@@ -11,6 +11,8 @@ Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running conta
 - **Source code is the single source of truth** — don't duplicate information that lives in code (schemas, constants, examples). Reference the source file instead. If it can go stale, it shouldn't be written twice.
 - When fixing a bug or adding a pattern, audit for the same class of issue across the codebase. Don't fix one instance — grep for the pattern and fix all of them in one pass.
 - **One way to do things.** Before adding code, find how the codebase already handles the same operation. Either use the existing approach or improve it — don't add a competing one.
+- **Flat control flow** — use early returns and guard clauses instead of deep nesting. If a function has more than one level of try/catch, extract the inner error handling into a helper.
+- **DRY error handling** — when the same try/catch-and-log pattern appears in multiple places, extract a shared helper. Don't copy-paste error recovery blocks.
 
 ## Repo Layout
 

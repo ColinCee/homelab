@@ -147,36 +147,46 @@ async def _acquire_in_process_repo_lock() -> None:
         raise
 
 
+async def _acquire_file_lock_cancellation_safe() -> int:
+    """Acquire the cross-container file lock, handling cancellation safely.
+
+    Uses asyncio.shield so a cancellation during acquisition still finishes
+    the lock handshake, then releases if we were cancelled.
+    """
+    file_lock_task = asyncio.create_task(
+        asyncio.to_thread(_acquire_repo_file_lock, REPO_LOCK_TIMEOUT_SECONDS)
+    )
+    try:
+        return await asyncio.shield(file_lock_task)
+    except TimeoutError as err:
+        raise RuntimeError(_repo_lock_timeout_message()) from err
+    except asyncio.CancelledError:
+        # The file lock acquisition may still be in progress — wait for it
+        # to finish so we can release it cleanly.
+        try:
+            fd = await file_lock_task
+        except Exception:
+            logger.warning(
+                "Failed to finish repo lock acquisition during cancellation cleanup",
+                exc_info=True,
+            )
+            raise
+        try:
+            await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+        except Exception:
+            logger.warning(
+                "Failed to release repo lock during cancellation cleanup",
+                exc_info=True,
+            )
+        raise
+
+
 @contextlib.asynccontextmanager
 async def _hold_repo_lock() -> AsyncIterator[None]:
     """Serialize shared bare-clone mutations across tasks and containers."""
     await _acquire_in_process_repo_lock()
     try:
-        file_lock_task = asyncio.create_task(
-            asyncio.to_thread(_acquire_repo_file_lock, REPO_LOCK_TIMEOUT_SECONDS)
-        )
-        try:
-            fd = await asyncio.shield(file_lock_task)
-        except TimeoutError as err:
-            raise RuntimeError(_repo_lock_timeout_message()) from err
-        except asyncio.CancelledError:
-            try:
-                fd = await file_lock_task
-            except Exception:
-                logger.warning(
-                    "Failed to finish repo lock acquisition during cancellation cleanup",
-                    exc_info=True,
-                )
-            else:
-                try:
-                    await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
-                except Exception:
-                    logger.warning(
-                        "Failed to release repo lock during cancellation cleanup",
-                        exc_info=True,
-                    )
-            raise
-
+        fd = await _acquire_file_lock_cancellation_safe()
         try:
             yield
         finally:

@@ -1,7 +1,10 @@
 """GitHub API — token management and REST helpers."""
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
+from typing import Any
 
 import httpx
 from pydantic import TypeAdapter
@@ -51,38 +54,40 @@ def bot_email() -> str:
     return f"{_BOT_USER_ID}+{bot_login()}@users.noreply.github.com"
 
 
-# ── Issue / PR read ────────────────────────────────────────
+# ── Authenticated client ───────────────────────────────────
 
 
-async def get_issue(repo: str, issue_number: int) -> GitHubIssue:
-    """Fetch issue details (title, body, labels)."""
+@asynccontextmanager
+async def _client() -> AsyncIterator[httpx.AsyncClient]:
+    """Yield an httpx client with GitHub auth headers."""
     token = await get_token()
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
     }
+    async with httpx.AsyncClient(timeout=30, headers=headers) as client:
+        yield client
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"https://api.github.com/repos/{repo}/issues/{issue_number}",
-            headers=headers,
-        )
+
+_API = "https://api.github.com"
+
+
+# ── Issue / PR read ────────────────────────────────────────
+
+
+async def get_issue(repo: str, issue_number: int) -> GitHubIssue:
+    """Fetch issue details (title, body, labels)."""
+    async with _client() as client:
+        resp = await client.get(f"{_API}/repos/{repo}/issues/{issue_number}")
         resp.raise_for_status()
         return GitHubIssue.model_validate(resp.json())
 
 
 async def close_issue(repo: str, issue_number: int) -> None:
     """Close an issue as completed."""
-    token = await get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with _client() as client:
         resp = await client.patch(
-            f"https://api.github.com/repos/{repo}/issues/{issue_number}",
-            headers=headers,
+            f"{_API}/repos/{repo}/issues/{issue_number}",
             json={"state": "closed", "state_reason": "completed"},
         )
         if resp.status_code != 200:
@@ -93,34 +98,18 @@ async def close_issue(repo: str, issue_number: int) -> None:
 
 async def get_pr(repo: str, pr_number: int) -> GitHubPullRequest:
     """Fetch PR details (head branch, base, state)."""
-    token = await get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(
-            f"https://api.github.com/repos/{repo}/pulls/{pr_number}",
-            headers=headers,
-        )
+    async with _client() as client:
+        resp = await client.get(f"{_API}/repos/{repo}/pulls/{pr_number}")
         resp.raise_for_status()
         return GitHubPullRequest.model_validate(resp.json())
 
 
 async def find_pr_by_branch(repo: str, branch: str) -> GitHubPullRequest | None:
     """Find the most recently updated PR for a branch (any state)."""
-    token = await get_token()
     owner = repo.split("/")[0]
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with _client() as client:
         resp = await client.get(
-            f"https://api.github.com/repos/{repo}/pulls",
-            headers=headers,
+            f"{_API}/repos/{repo}/pulls",
             params={
                 "head": f"{owner}:{branch}",
                 "state": "all",
@@ -139,16 +128,9 @@ async def find_pr_by_branch(repo: str, branch: str) -> GitHubPullRequest | None:
 
 async def comment_on_issue(repo: str, issue_number: int, body: str) -> int:
     """Post a comment on an issue or PR and return the comment ID."""
-    token = await get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with _client() as client:
         resp = await client.post(
-            f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments",
-            headers=headers,
+            f"{_API}/repos/{repo}/issues/{issue_number}/comments",
             json={"body": body},
         )
         if resp.status_code not in (200, 201):
@@ -159,18 +141,25 @@ async def comment_on_issue(repo: str, issue_number: int, body: str) -> int:
         return comment.id
 
 
+async def safe_comment(repo: str, issue_number: int, body: str, **log_ctx: Any) -> None:
+    """Post a comment, logging a warning on failure instead of raising."""
+    try:
+        await comment_on_issue(repo, issue_number, body)
+    except Exception:
+        logger.warning(
+            "Failed to post comment on %s#%d",
+            repo,
+            issue_number,
+            exc_info=True,
+            extra=log_ctx,
+        )
+
+
 async def update_comment(repo: str, comment_id: int, body: str) -> None:
     """Edit an existing issue or PR comment."""
-    token = await get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
-
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with _client() as client:
         resp = await client.patch(
-            f"https://api.github.com/repos/{repo}/issues/comments/{comment_id}",
-            headers=headers,
+            f"{_API}/repos/{repo}/issues/comments/{comment_id}",
             json={"body": body},
         )
         if resp.status_code != 200:
@@ -183,20 +172,14 @@ async def find_issue_comment_by_body_prefix(
     repo: str, issue_number: int, body_prefix: str
 ) -> int | None:
     """Find the latest bot-authored issue/PR comment whose body starts with a prefix."""
-    token = await get_token()
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-    }
     login = bot_login()
     comments: list[GitHubIssueComment] = []
     page = 1
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with _client() as client:
         while True:
             resp = await client.get(
-                f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments",
-                headers=headers,
+                f"{_API}/repos/{repo}/issues/{issue_number}/comments",
                 params={"per_page": 100, "page": page},
             )
             resp.raise_for_status()
