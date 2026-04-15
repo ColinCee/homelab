@@ -71,7 +71,7 @@ async def implement_issue(
 ) -> dict:
     """Implement a GitHub issue: set up worktree → CLI handles everything → check result.
 
-    The CLI owns the full lifecycle: commit, push, create PR, self-review, fix,
+    The CLI owns the full lifecycle: commit, push, create PR, wait for CI,
     mark ready, and merge. The orchestrator only validates trust, sets up the
     environment, and collects stats.
     """
@@ -130,6 +130,7 @@ async def implement_issue(
 
         elapsed = _monotonic() - start
         common_result = {
+            "repo": repo,
             "elapsed_seconds": elapsed,
             "premium_requests": total_premium_requests,
             "api_time_seconds": cli_result.api_time_seconds,

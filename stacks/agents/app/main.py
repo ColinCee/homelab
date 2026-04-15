@@ -31,7 +31,7 @@ from services.docker import (
     wait_container,
 )
 from services.git import reap_old_worktrees
-from services.github import set_token
+from services.github import comment_on_issue, set_token
 from trust import ALLOWED_ACTORS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -109,6 +109,29 @@ def _record_task_metrics(
         PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type).inc(premium_requests)
 
 
+async def _trigger_independent_review(
+    *, task_type: str, status: str, number: int, result: dict[str, object]
+) -> None:
+    """Post `/review` on successful implement PRs to trigger the fresh review worker."""
+    if task_type != "implement" or status != "complete":
+        return
+
+    pr_number = result.get("pr_number")
+    if not isinstance(pr_number, int):
+        return
+
+    repo = result.get("repo")
+    if not isinstance(repo, str) or not repo:
+        logger.warning(
+            "Implement worker #%d completed without repo in result; skipping /review trigger",
+            number,
+        )
+        return
+
+    await comment_on_issue(repo, pr_number, "/review")
+    logger.info("Posted /review comment on %s#%d after implement completion", repo, pr_number)
+
+
 class ReviewRequest(BaseModel):
     repo: str
     pr_number: int
@@ -142,7 +165,7 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         exit_code = await wait_container(container_id)
         duration = time.monotonic() - start
 
-        result: dict = {}
+        result: dict[str, object] = {}
         try:
             logs = await get_logs(container_id)
             logger.info("Worker %s #%d raw output:\n%s", task_type, number, logs[-3000:])
@@ -171,6 +194,15 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             premium,
             f", error={error}" if error else "",
         )
+        try:
+            await _trigger_independent_review(
+                task_type=task_type,
+                status=status,
+                number=number,
+                result=result,
+            )
+        except Exception:
+            logger.exception("Failed to post /review comment for implement #%d", number)
     except Exception:
         logger.exception("Monitor failed for worker %s #%d", task_type, number)
     finally:

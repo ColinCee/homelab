@@ -15,9 +15,9 @@ You are implementing a GitHub issue. The issue details are provided in the promp
 2. Explore the codebase to understand the relevant code and conventions
 3. Make the necessary changes — follow existing patterns
 4. Run `mise run ci` to validate everything (lint, typecheck, test, compose). Fix any failures before finishing.
-5. Self-review against the checklist below
+5. Sanity-check the implementation against the checklist below
 6. Commit, push, and create a draft PR
-7. Self-review the PR, fix issues (up to 2 rounds), then mark ready and merge
+7. Wait for CI, mark ready, and merge
 
 ## Git Workflow
 
@@ -27,9 +27,9 @@ You start in a worktree on the `agent/issue-{N}` branch, set up by the orchestra
 2. **Push** — `git push origin agent/issue-{N}`. Force-push is fine on agent branches.
 3. **Create draft PR** — `gh pr create --draft --title "..." --body "Closes #N\n\n..."`. Always link the issue with `Closes #N` in the body.
 4. **Wait for CI** — `gh pr checks --watch` until all checks pass. Fix failures before proceeding.
-5. **Self-review** — review your own diff critically. Look for the issues in the checklist below. Fix anything you find and push again.
-6. **Mark ready** — `gh pr ready` when CI passes and you're satisfied with the code.
-7. **Merge** — `gh pr merge --squash --auto` to squash-merge after all checks pass.
+5. **Mark ready** — `gh pr ready` when CI passes and you're satisfied with the code.
+6. **Merge** — `gh pr merge --squash --auto` to squash-merge after all checks pass.
+7. **Independent review** — after a successful implement run, the API monitor comments `/review` on the PR to trigger the fresh advisory review worker. Do not spend premium requests reviewing your own PR from the same CLI session.
 
 ## Rules
 
@@ -48,9 +48,9 @@ You start in a worktree on the `agent/issue-{N}` branch, set up by the orchestra
 - **Never access or modify `docs/private/`** — these are encrypted files you cannot read
 - **If an issue includes out-of-scope work** (e.g., workflow edits), implement everything you can and list the remaining items under a "Human follow-up" heading in the PR description. Do not attempt to modify restricted files.
 
-## Self-Review Checklist
+## Implementation Checklist
 
-Before creating the PR, self-review against these questions:
+Before creating the PR, sanity-check these questions:
 
 - **Error handling:** If a multi-step operation produces state that matters (metrics, audit logs, side effects), ensure that state is captured regardless of which step fails.
 - **New types or patterns:** If you introduce a new exception class, status value, or convention, grep for all call sites using the old version and migrate them.
@@ -62,7 +62,7 @@ Before creating the PR, self-review against these questions:
 
 - **`mise run ci` includes type-checking (`ty`).** `ty` does not support `# type: ignore` comments. Use typed dataclasses or exceptions instead of monkey-patching.
 - **Docker service names don't resolve across separate compose stacks.** Use Tailscale IPs (`100.x.x.x`) or `host.docker.internal`.
-- **GitHub API rejects APPROVE and REQUEST_CHANGES on your own PRs.** Self-reviews must use `COMMENT` event or `gh pr review --comment`.
+- **Independent review is post-implement.** The API monitor triggers it by commenting `/review` on the PR after a successful implement result, and it may arrive after merge.
 
 ## Responding to Review Feedback
 
