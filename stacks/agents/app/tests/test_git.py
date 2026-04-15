@@ -4,7 +4,7 @@ import asyncio
 import json
 import threading
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
@@ -25,11 +25,41 @@ class TestRunCommand:
 
         asyncio.run(run())
 
+    def test_raises_clear_error_on_timeout(self):
+        async def run():
+            first_call = True
+
+            async def communicate() -> tuple[bytes, bytes]:
+                nonlocal first_call
+                if first_call:
+                    first_call = False
+                    await asyncio.sleep(3600)
+                return (b"", b"")
+
+            with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+                proc = AsyncMock()
+                proc.communicate.side_effect = communicate
+                proc.kill = Mock()
+                mock_proc.return_value = proc
+
+                with (
+                    patch.object(git_module, "GIT_COMMAND_TIMEOUT_SECONDS", 0.01),
+                    pytest.raises(
+                        RuntimeError,
+                        match=r"Git command timed out after 0\.01s: git status",
+                    ),
+                ):
+                    await git_module._run(["git", "status"])
+
+            proc.kill.assert_called_once_with()
+
+        asyncio.run(run())
+
 
 class TestRepoLock:
     def test_acquire_repo_file_lock_creates_lock_file(self, tmp_path: Path):
         with patch.object(git_module, "REVIEWS_PATH", tmp_path):
-            fd = git_module._acquire_repo_file_lock()
+            fd = git_module._acquire_repo_file_lock(1)
 
         try:
             assert (tmp_path / git_module.REPO_LOCK_FILE).exists()
@@ -48,8 +78,66 @@ class TestRepoLock:
                 async with git_module._hold_repo_lock():
                     pass
 
-            mock_acquire.assert_called_once_with()
+            mock_acquire.assert_called_once_with(git_module.REPO_LOCK_TIMEOUT_SECONDS)
             mock_release.assert_called_once_with(123)
+
+        asyncio.run(run())
+
+    def test_hold_repo_lock_raises_clear_error_when_async_lock_times_out(self, tmp_path: Path):
+        async def run():
+            lock = asyncio.Lock()
+            await lock.acquire()
+
+            with (
+                patch.object(git_module, "_repo_lock", lock),
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(git_module, "REPO_LOCK_TIMEOUT_SECONDS", 0.01),
+                pytest.raises(
+                    RuntimeError,
+                    match=r"Git repo lock timed out after 0\.01s",
+                ),
+            ):
+                async with git_module._hold_repo_lock():
+                    pytest.fail("timed out acquisition should not enter the critical section")
+
+            lock.release()
+
+        asyncio.run(run())
+
+    def test_hold_repo_lock_releases_async_lock_when_timeout_fires_after_acquire(self):
+        async def timeout_after_acquire(awaitable, timeout):
+            await awaitable
+            raise TimeoutError
+
+        async def run():
+            lock = asyncio.Lock()
+
+            with (
+                patch.object(git_module, "_repo_lock", lock),
+                patch("services.git.asyncio.wait_for", side_effect=timeout_after_acquire),
+                pytest.raises(RuntimeError, match="Git repo lock timed out"),
+            ):
+                async with git_module._hold_repo_lock():
+                    pytest.fail("timed out acquisition should not enter the critical section")
+
+            assert not lock.locked()
+
+        asyncio.run(run())
+
+    def test_hold_repo_lock_raises_clear_error_when_file_lock_times_out(self, tmp_path: Path):
+        async def run():
+            lock = asyncio.Lock()
+
+            with (
+                patch.object(git_module, "_repo_lock", lock),
+                patch.object(git_module, "REVIEWS_PATH", tmp_path),
+                patch.object(git_module, "_acquire_repo_file_lock", side_effect=TimeoutError),
+                pytest.raises(RuntimeError, match="Git repo lock timed out"),
+            ):
+                async with git_module._hold_repo_lock():
+                    pytest.fail("timed out acquisition should not enter the critical section")
+
+            assert not lock.locked()
 
         asyncio.run(run())
 
@@ -57,7 +145,7 @@ class TestRepoLock:
         acquire_started = threading.Event()
         allow_acquire_to_finish = threading.Event()
 
-        def block_then_acquire() -> int:
+        def block_then_acquire(timeout_seconds: int) -> int:
             acquire_started.set()
             allow_acquire_to_finish.wait()
             return 123
@@ -424,7 +512,7 @@ class TestReapOldWorktrees:
                 await git_module.reap_old_worktrees()
 
             mock_reap.assert_awaited_once()
-            mock_acquire.assert_called_once_with()
+            mock_acquire.assert_called_once_with(git_module.REPO_LOCK_TIMEOUT_SECONDS)
             mock_release.assert_called_once_with(123)
 
         asyncio.run(run())
