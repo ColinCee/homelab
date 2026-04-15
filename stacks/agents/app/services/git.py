@@ -21,10 +21,23 @@ DEFAULT_WORKTREE_RETENTION_SECONDS = 14 * 86400
 WORKTREE_RETENTION_SECONDS = int(
     os.environ.get("WORKTREE_RETENTION_SECONDS", str(DEFAULT_WORKTREE_RETENTION_SECONDS))
 )
+DEFAULT_REPO_LOCK_TIMEOUT_SECONDS = 120
+REPO_LOCK_TIMEOUT_SECONDS = int(
+    os.environ.get("REPO_LOCK_TIMEOUT_SECONDS", str(DEFAULT_REPO_LOCK_TIMEOUT_SECONDS))
+)
+DEFAULT_GIT_COMMAND_TIMEOUT_SECONDS = 300
+GIT_COMMAND_TIMEOUT_SECONDS = int(
+    os.environ.get("GIT_COMMAND_TIMEOUT_SECONDS", str(DEFAULT_GIT_COMMAND_TIMEOUT_SECONDS))
+)
+_REPO_FILE_LOCK_POLL_SECONDS = 0.1
 REPO_LOCK_FILE = ".repo-setup.lock"
 
 if WORKTREE_RETENTION_SECONDS < 0:
     raise ValueError("WORKTREE_RETENTION_SECONDS must be non-negative")
+if REPO_LOCK_TIMEOUT_SECONDS <= 0:
+    raise ValueError("REPO_LOCK_TIMEOUT_SECONDS must be positive")
+if GIT_COMMAND_TIMEOUT_SECONDS <= 0:
+    raise ValueError("GIT_COMMAND_TIMEOUT_SECONDS must be positive")
 
 # Serializes git operations within a single worker process.
 _repo_lock = asyncio.Lock()
@@ -50,7 +63,24 @@ async def _run(cmd: list[str], cwd: Path | None = None) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=GIT_COMMAND_TIMEOUT_SECONDS
+        )
+    except asyncio.CancelledError:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.communicate()
+        raise
+    except TimeoutError as err:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        _, stderr = await proc.communicate()
+        message = f"Git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s: {' '.join(cmd)}"
+        if details := stderr.decode().strip():
+            message = f"{message}\n{details}"
+        raise RuntimeError(message) from err
+
     if proc.returncode != 0:
         raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{stderr.decode()}")
     return stdout.decode().strip()
@@ -62,15 +92,31 @@ def _repo_lock_path() -> Path:
     return REVIEWS_PATH / REPO_LOCK_FILE
 
 
-def _acquire_repo_file_lock() -> int:
+def _repo_lock_timeout_message() -> str:
+    return (
+        f"Git repo lock timed out after {REPO_LOCK_TIMEOUT_SECONDS}s; "
+        "another git operation may be stuck"
+    )
+
+
+def _acquire_repo_file_lock(timeout_seconds: int) -> int:
     os.makedirs(REVIEWS_PATH, exist_ok=True)
     fd = os.open(_repo_lock_path(), os.O_RDWR | os.O_CREAT, 0o666)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as err:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError(_repo_lock_timeout_message()) from err
+                time.sleep(min(_REPO_FILE_LOCK_POLL_SECONDS, remaining))
+                continue
+            return fd
     except Exception:
         os.close(fd)
         raise
-    return fd
 
 
 def _release_repo_file_lock(fd: int) -> None:
@@ -80,16 +126,42 @@ def _release_repo_file_lock(fd: int) -> None:
         os.close(fd)
 
 
+def _release_async_repo_lock_if_acquired(acquire_task: asyncio.Task[bool]) -> None:
+    if not acquire_task.done() or acquire_task.cancelled():
+        return
+
+    with contextlib.suppress(Exception):
+        if acquire_task.result():
+            _repo_lock.release()
+
+
+async def _acquire_in_process_repo_lock() -> None:
+    acquire_task = asyncio.create_task(_repo_lock.acquire())
+    try:
+        await asyncio.wait_for(acquire_task, timeout=REPO_LOCK_TIMEOUT_SECONDS)
+    except TimeoutError as err:
+        _release_async_repo_lock_if_acquired(acquire_task)
+        raise RuntimeError(_repo_lock_timeout_message()) from err
+    except asyncio.CancelledError:
+        _release_async_repo_lock_if_acquired(acquire_task)
+        raise
+
+
 @contextlib.asynccontextmanager
 async def _hold_repo_lock() -> AsyncIterator[None]:
     """Serialize shared bare-clone mutations across tasks and containers."""
-    async with _repo_lock:
-        acquire_task = asyncio.create_task(asyncio.to_thread(_acquire_repo_file_lock))
+    await _acquire_in_process_repo_lock()
+    try:
+        file_lock_task = asyncio.create_task(
+            asyncio.to_thread(_acquire_repo_file_lock, REPO_LOCK_TIMEOUT_SECONDS)
+        )
         try:
-            fd = await asyncio.shield(acquire_task)
+            fd = await asyncio.shield(file_lock_task)
+        except TimeoutError as err:
+            raise RuntimeError(_repo_lock_timeout_message()) from err
         except asyncio.CancelledError:
             try:
-                fd = await acquire_task
+                fd = await file_lock_task
             except Exception:
                 logger.warning(
                     "Failed to finish repo lock acquisition during cancellation cleanup",
@@ -109,6 +181,8 @@ async def _hold_repo_lock() -> AsyncIterator[None]:
             yield
         finally:
             await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+    finally:
+        _repo_lock.release()
 
 
 async def init_bare_clone(repo_url: str) -> Path:
