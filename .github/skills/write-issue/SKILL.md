@@ -22,7 +22,7 @@ Not: "The fix loop needs improvement."
 
 Observable, testable success criteria. If the agent can't verify it with `mise run ci` or by checking behavior, it's not concrete enough.
 
-> A single `/implement` call owns the full lifecycle: implement → self-review → fix (up to 2 rounds) → mark ready → merge. The CLI session handles all git operations, PR creation, and review.
+> A single `/implement` call owns the full lifecycle: implement → create/merge PR. After the worker completes with a PR number, the API monitor comments `/review` on the PR to trigger an independent advisory review.
 
 Not: "Make the implement flow better."
 

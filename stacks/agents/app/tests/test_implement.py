@@ -168,6 +168,7 @@ class TestImplementIssue:
         result = self._run(mocks)
         assert result["status"] == "complete"
         assert result["merged"] is True
+        assert result["repo"] == "user/repo"
         assert result["pr_number"] == 99
         assert result["premium_requests"] == 5
         assert result["api_time_seconds"] == 60
@@ -211,6 +212,7 @@ class TestImplementIssue:
         mocks = self._base_mocks(pr_data=None)
         result = self._run(mocks)
         assert result["status"] == "failed"
+        assert result["repo"] == "user/repo"
         assert result["pr_number"] is None
         assert "did not create a PR" in result["error"]
 

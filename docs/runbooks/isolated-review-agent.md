@@ -95,7 +95,10 @@ mise run deploy:agents
 
 1. Add the `agent` label to the issue or comment `/implement`.
 2. The agent creates `agent/issue-<N>`, and the CLI handles the full lifecycle:
-   implement → self-review → fix (up to 2 rounds) → mark ready → merge.
+   implement → create PR → wait for CI → mark ready → merge.
+3. After a successful implement result includes a PR number, the API monitor
+   comments `/review` on the PR to trigger the independent advisory review
+   worker.
 
 ## 6. Verify
 
@@ -166,11 +169,12 @@ docker exec $AGENT cat /reviews/agent-issue-<N>/.copilot-session.md
 
 ## 8. Operational Gotchas
 
-- **`/review` is manual-only.** The workflow does not auto-review on PR open,
-  synchronize, or ready-for-review.
-- **Self-review is informational.** When the bot reviews its own PR, GitHub
-  forces the review to be a `COMMENT`, so thread-resolution behavior differs
-  from a normal human review.
+- **`/review` remains a manual escape hatch.** Humans can still comment it on
+  any PR, and successful implement runs now comment `/review` automatically on
+  their own PRs.
+- **Independent review is advisory.** It runs in a fresh worker session and may
+  land after merge; findings inform the next iteration rather than blocking the
+  current one.
 - **Agent branches are disposable state.** Reruns can reuse the same
   `agent/issue-*` branch name; pushes are force-updated intentionally.
 - **Worktree cleanup is deferred.** Crash-orphaned worktrees can linger until
