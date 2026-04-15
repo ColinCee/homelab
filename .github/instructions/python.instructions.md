@@ -27,14 +27,6 @@ The agent service (`stacks/agents/app/`) is a FastAPI app that:
 - `stats.py` — shared stats formatting for lifecycle stage comments
 - `tests/` — unit tests, one per module (mock external calls at boundaries)
 
-## Defensive Coding
-
-This codebase is written by many AI sessions — patterns are inconsistent. Apply these principles rather than copying whatever exists nearby:
-
-- **Cleanup and teardown must be resilient.** If a cleanup step can fail (removing a file, a worktree, a container), wrap it in try/except with a fallback (e.g., `shutil.rmtree` if `git worktree remove` fails). Never let cleanup failures cascade.
-- **Loops over items should isolate failures.** When iterating over items to clean up, process, or validate — catch exceptions per item, not around the whole loop. One bad item shouldn't abort the rest.
-- **Grep before you write.** Before writing a function, grep for code that does the same operation. If three functions remove worktrees differently, understand why and pick the most defensive approach — or consolidate.
-
 ## Testing
 
 - Mock external calls at boundaries: `@patch("main.review_pr", new_callable=AsyncMock)`
