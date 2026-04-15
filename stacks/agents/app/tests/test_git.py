@@ -266,6 +266,45 @@ class TestCreateWorktree:
         asyncio.run(run())
 
 
+class TestInitBareClone:
+    def test_removes_main_worktrees_before_fetching(self, tmp_path: Path):
+        bare_clone = tmp_path / "repo.git"
+        bare_clone.mkdir()
+        (bare_clone / "HEAD").write_text("ref: refs/heads/main\n")
+        calls = []
+
+        async def mock_run(cmd, cwd=None):
+            calls.append((cmd, cwd))
+            if cmd == ["git", "worktree", "list", "--porcelain"]:
+                return (
+                    "worktree /reviews/agent-issue-96\n"
+                    "HEAD abcdef1234567890\n"
+                    "branch refs/heads/main\n\n"
+                    "worktree /reviews/pr-42\n"
+                    "HEAD fedcba0987654321\n"
+                    "branch refs/heads/pr-42\n"
+                )
+            return ""
+
+        async def run():
+            with (
+                patch.object(git_module, "_run", side_effect=mock_run),
+                patch.object(git_module, "BARE_CLONE_PATH", bare_clone),
+            ):
+                path = await git_module.init_bare_clone("https://github.com/user/repo.git")
+
+            assert path == bare_clone
+
+        asyncio.run(run())
+
+        assert calls == [
+            (["git", "worktree", "prune"], bare_clone),
+            (["git", "worktree", "list", "--porcelain"], bare_clone),
+            (["git", "worktree", "remove", "--force", "/reviews/agent-issue-96"], bare_clone),
+            (["git", "fetch", "origin", "+refs/heads/main:refs/heads/main"], bare_clone),
+        ]
+
+
 class TestDeferredCleanup:
     def test_cleanup_worktree_writes_marker(self, tmp_path: Path):
         worktree = tmp_path / "pr-42"
