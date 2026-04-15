@@ -20,6 +20,7 @@ from services.github import (
     comment_on_issue,
     find_issue_comment_by_body_prefix,
     get_issue,
+    safe_comment,
     set_token,
     update_comment,
 )
@@ -117,15 +118,7 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             repo, progress_comment_id, f"⚠️ Implementation failed — {exc}"
         )
         if not exc.commented:
-            try:
-                await comment_on_issue(repo, issue_number, f"⚠️ **Implementation failed** — {exc}")
-            except Exception:
-                logger.warning(
-                    "Failed to post implementation failure comment on %s#%d",
-                    repo,
-                    issue_number,
-                    exc_info=True,
-                )
+            await safe_comment(repo, issue_number, f"⚠️ **Implementation failed** — {exc}")
         return TaskResult(status="failed", premium_requests=exc.premium_requests)
 
     except Exception as exc:
@@ -135,17 +128,9 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             progress_comment_id,
             "⚠️ Implementation failed — see agent logs for details.",
         )
-        try:
-            await comment_on_issue(
-                repo, issue_number, "⚠️ **Implementation failed** — see agent logs for details."
-            )
-        except Exception:
-            logger.warning(
-                "Failed to post implementation failure comment on %s#%d",
-                repo,
-                issue_number,
-                exc_info=True,
-            )
+        await safe_comment(
+            repo, issue_number, "⚠️ **Implementation failed** — see agent logs for details."
+        )
         return TaskResult(status="failed", premium_requests=0, error=str(exc))
 
 
@@ -180,15 +165,7 @@ async def _run_review(
         logger.exception("Review failed for %s#%d", repo, pr_number)
         await _update_progress_comment(repo, progress_comment_id, f"⚠️ Review failed — {exc}")
         if not exc.commented:
-            try:
-                await comment_on_issue(repo, pr_number, f"⚠️ **Review failed** — {exc}")
-            except Exception:
-                logger.warning(
-                    "Failed to post review failure comment on %s#%d",
-                    repo,
-                    pr_number,
-                    exc_info=True,
-                )
+            await safe_comment(repo, pr_number, f"⚠️ **Review failed** — {exc}")
         return TaskResult(status="failed", premium_requests=exc.premium_requests)
 
     except Exception as exc:
@@ -198,17 +175,7 @@ async def _run_review(
             progress_comment_id,
             "⚠️ Review failed — see agent logs for details.",
         )
-        try:
-            await comment_on_issue(
-                repo, pr_number, "⚠️ **Review failed** — see agent logs for details."
-            )
-        except Exception:
-            logger.warning(
-                "Failed to post review failure comment on %s#%d",
-                repo,
-                pr_number,
-                exc_info=True,
-            )
+        await safe_comment(repo, pr_number, "⚠️ **Review failed** — see agent logs for details.")
         return TaskResult(status="failed", premium_requests=0, error=str(exc))
 
 

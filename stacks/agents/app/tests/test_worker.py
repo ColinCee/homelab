@@ -2,48 +2,74 @@
 
 import asyncio
 import os
+from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
+
+from conftest import IMPLEMENT_ENV, REVIEW_ENV
 
 from models import GitHubIssue, TaskResult
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "implement",
-        "REPO": "user/repo",
-        "NUMBER": "10",
-        "GH_TOKEN": "ghs_test",
-        "MODEL": "gpt-5.4",
-        "REASONING_EFFORT": "high",
-    },
-)
-@patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_implement_success_returns_zero(
-    mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
-):
-    mock_impl.return_value = TaskResult(
-        status="complete",
-        pr_number=99,
-        pr_url="https://github.com/user/repo/pull/99",
-        premium_requests=5,
-        api_time_seconds=60,
-        models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
-        tokens_line="↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
-        session_id="sess-123",
+def _implement_patches(mock_impl: AsyncMock):
+    """Return context managers for implement worker tests."""
+    return [
+        patch("worker.implement_issue", mock_impl),
+        patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test")),
+        patch("worker.safe_comment", new_callable=AsyncMock),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", new_callable=AsyncMock),
+    ]
+
+
+def _review_patches(mock_review: AsyncMock):
+    """Return context managers for review worker tests."""
+    return [
+        patch("worker.review_pr", mock_review),
+        patch("worker.safe_comment", new_callable=AsyncMock),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", new_callable=AsyncMock),
+    ]
+
+
+def _enter_patches(stack: ExitStack, patches, env: dict[str, str]):
+    """Enter env dict patch + all mock patches on an ExitStack."""
+    stack.enter_context(patch.dict(os.environ, env))
+    for p in patches:
+        stack.enter_context(p)
+
+
+def test_implement_success_returns_zero(capsys):
+    mock_impl = AsyncMock(
+        return_value=TaskResult(
+            status="complete",
+            pr_number=99,
+            pr_url="https://github.com/user/repo/pull/99",
+            premium_requests=5,
+            api_time_seconds=60,
+            models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
+            tokens_line="↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
+            session_id="sess-123",
+        )
     )
+    env = {**IMPLEMENT_ENV, "MODEL": "gpt-5.4", "REASONING_EFFORT": "high"}
+    with ExitStack() as stack:
+        _enter_patches(stack, _implement_patches(mock_impl), env)
+        from worker import main
 
-    from worker import main
-
-    exit_code = asyncio.run(main())
+        exit_code = asyncio.run(main())
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    result = TaskResult.model_validate_json(captured.out.strip())
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "complete"
     assert result.premium_requests == 5
     assert result.api_time_seconds == 60
@@ -53,165 +79,107 @@ def test_implement_success_returns_zero(
     mock_impl.assert_awaited_once()
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "implement",
-        "REPO": "user/repo",
-        "NUMBER": "10",
-        "GH_TOKEN": "ghs_test",
-    },
-)
-@patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_implement_failure_returns_one(
-    mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
-):
-    mock_impl.return_value = TaskResult(status="failed", premium_requests=2)
+def test_implement_failure_returns_one(capsys):
+    mock_impl = AsyncMock(return_value=TaskResult(status="failed", premium_requests=2))
+    with ExitStack() as stack:
+        _enter_patches(stack, _implement_patches(mock_impl), IMPLEMENT_ENV)
+        from worker import main
 
-    from worker import main
-
-    exit_code = asyncio.run(main())
+        exit_code = asyncio.run(main())
 
     assert exit_code == 1
-    captured = capsys.readouterr()
-    result = TaskResult.model_validate_json(captured.out.strip())
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "failed"
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "implement",
-        "REPO": "user/repo",
-        "NUMBER": "10",
-        "GH_TOKEN": "ghs_test",
-    },
-)
-@patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_implement_exception_posts_error_comment(
-    mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
-):
+def test_implement_exception_posts_error_comment(capsys):
     from services.copilot import TaskError
 
-    mock_impl.side_effect = TaskError("CLI crashed", premium_requests=3)
+    mock_impl = AsyncMock(side_effect=TaskError("CLI crashed", premium_requests=3))
+    safe = AsyncMock()
+    patches = [
+        patch("worker.implement_issue", mock_impl),
+        patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test")),
+        patch("worker.safe_comment", safe),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", new_callable=AsyncMock),
+    ]
+    with ExitStack() as stack:
+        _enter_patches(stack, patches, IMPLEMENT_ENV)
+        from worker import main
 
-    from worker import main
-
-    exit_code = asyncio.run(main())
+        exit_code = asyncio.run(main())
 
     assert exit_code == 1
-    captured = capsys.readouterr()
-    result = TaskResult.model_validate_json(captured.out.strip())
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "failed"
     assert result.premium_requests == 3
 
-    # Should have posted error comment
-    error_calls = [c for c in mock_comment.call_args_list if "failed" in str(c).lower()]
+    error_calls = [c for c in safe.call_args_list if "failed" in str(c).lower()]
     assert len(error_calls) > 0
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "review",
-        "REPO": "user/repo",
-        "NUMBER": "42",
-        "GH_TOKEN": "ghs_test",
-        "MODEL": "gpt-5.4",
-        "REASONING_EFFORT": "high",
-    },
-)
-@patch("worker.review_pr", new_callable=AsyncMock)
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_review_success_returns_zero(mock_update, mock_find, mock_comment, mock_review, capsys):
-    mock_review.return_value = TaskResult(status="complete", premium_requests=2)
+def test_review_success_returns_zero(capsys):
+    mock_review = AsyncMock(return_value=TaskResult(status="complete", premium_requests=2))
+    env = {**REVIEW_ENV, "MODEL": "gpt-5.4", "REASONING_EFFORT": "high"}
+    with ExitStack() as stack:
+        _enter_patches(stack, _review_patches(mock_review), env)
+        from worker import main
 
-    from worker import main
-
-    exit_code = asyncio.run(main())
+        exit_code = asyncio.run(main())
 
     assert exit_code == 0
-    captured = capsys.readouterr()
-    result = TaskResult.model_validate_json(captured.out.strip())
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "complete"
     mock_review.assert_awaited_once()
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "review",
-        "REPO": "user/repo",
-        "NUMBER": "42",
-        "GH_TOKEN": "ghs_test",
-    },
-)
-@patch("worker.review_pr", new_callable=AsyncMock)
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_review_posts_progress_comment(mock_update, mock_find, mock_comment, mock_review):
-    mock_review.return_value = TaskResult(status="complete", premium_requests=1)
+def test_review_posts_progress_comment():
+    mock_review = AsyncMock(return_value=TaskResult(status="complete", premium_requests=1))
+    comment = AsyncMock(return_value=100)
+    patches = [
+        patch("worker.review_pr", mock_review),
+        patch("worker.safe_comment", new_callable=AsyncMock),
+        patch("worker.comment_on_issue", comment),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", new_callable=AsyncMock),
+    ]
+    with ExitStack() as stack:
+        _enter_patches(stack, patches, REVIEW_ENV)
+        from worker import main
 
-    from worker import main
+        asyncio.run(main())
 
-    asyncio.run(main())
-
-    # Should have posted a progress comment with the review prefix
-    progress_calls = [c for c in mock_comment.call_args_list if "Review in progress" in str(c)]
+    progress_calls = [c for c in comment.call_args_list if "Review in progress" in str(c)]
     assert len(progress_calls) > 0
 
 
-@patch.dict(
-    os.environ,
-    {
-        "TASK_TYPE": "implement",
-        "REPO": "user/repo",
-        "NUMBER": "10",
-        "GH_TOKEN": "ghs_test",
-    },
-)
-@patch("worker.implement_issue", new_callable=AsyncMock)
-@patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test"))
-@patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100)
-@patch("worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None)
-@patch("worker.update_comment", new_callable=AsyncMock)
-def test_implement_content_rejection_returns_one(
-    mock_update, mock_find, mock_comment, mock_issue, mock_impl, capsys
-):
+def test_implement_content_rejection_returns_one(capsys):
     """Content trust rejection should not post error comments."""
-    mock_impl.side_effect = ValueError("not trusted")
+    mock_impl = AsyncMock(side_effect=ValueError("not trusted"))
+    with ExitStack() as stack:
+        _enter_patches(stack, _implement_patches(mock_impl), IMPLEMENT_ENV)
+        from worker import main
 
-    from worker import main
-
-    exit_code = asyncio.run(main())
+        exit_code = asyncio.run(main())
 
     assert exit_code == 1
-    captured = capsys.readouterr()
-    result = TaskResult.model_validate_json(captured.out.strip())
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "rejected"
 
 
 def test_unknown_task_type_returns_one():
-    with patch.dict(
-        os.environ,
-        {
-            "TASK_TYPE": "unknown",
-            "REPO": "user/repo",
-            "NUMBER": "1",
-            "GH_TOKEN": "ghs_test",
-        },
-    ):
+    env = {"TASK_TYPE": "unknown", "REPO": "user/repo", "NUMBER": "1", "GH_TOKEN": "ghs_test"}
+    with patch.dict(os.environ, env):
         from worker import main
 
         exit_code = asyncio.run(main())
@@ -227,26 +195,17 @@ def test_missing_env_var_returns_one():
 
 
 def test_worker_supports_legacy_worker_env_aliases(capsys):
-    with (
-        patch.dict(
-            os.environ,
-            {
-                "WORKER_TASK": "review",
-                "WORKER_REPO": "user/repo",
-                "WORKER_PR_NUMBER": "42",
-                "GH_TOKEN": "ghs_test",
-            },
-            clear=True,
-        ),
-        patch(
-            "worker.review_pr", new_callable=AsyncMock, return_value=TaskResult(status="complete")
-        ),
-        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
-        patch(
-            "worker.find_issue_comment_by_body_prefix", new_callable=AsyncMock, return_value=None
-        ),
-        patch("worker.update_comment", new_callable=AsyncMock),
-    ):
+    mock_review = AsyncMock(return_value=TaskResult(status="complete"))
+    legacy_env = {
+        "WORKER_TASK": "review",
+        "WORKER_REPO": "user/repo",
+        "WORKER_PR_NUMBER": "42",
+        "GH_TOKEN": "ghs_test",
+    }
+    with ExitStack() as stack:
+        stack.enter_context(patch.dict(os.environ, legacy_env, clear=True))
+        for p in _review_patches(mock_review):
+            stack.enter_context(p)
         from worker import main
 
         exit_code = asyncio.run(main())

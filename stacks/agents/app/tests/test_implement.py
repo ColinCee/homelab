@@ -3,10 +3,10 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from conftest import MOCK_CLI_RESULT, MOCK_ISSUE
 
 from implement import implement_issue
 from models import GitHubIssue, GitHubPullRequest
@@ -103,30 +103,12 @@ class TestFormatStageStats:
 class TestImplementIssue:
     """Tests for implement_issue() — thin dispatcher to CLI."""
 
-    MOCK_ISSUE: ClassVar[GitHubIssue] = GitHubIssue.model_validate(
-        {
-            "title": "Add foo feature",
-            "body": "We need foo.",
-            "user": {"login": "ColinCee"},
-        }
-    )
-
-    MOCK_CLI_RESULT = CLIResult(
-        output="done",
-        total_premium_requests=5,
-        session_id="sess-123",
-        session_time_seconds=120,
-        api_time_seconds=60,
-        models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
-        tokens_line="↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
-    )
-
     def _base_mocks(self, *, pr_data=None, cli_result=None):
         """Return standard patches for implement_issue tests."""
         return [
             patch(f"{_MOD}._utcnow", return_value=_TEST_START),
             patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-            patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+            patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
             patch(
                 "implement.orchestrator.create_branch_worktree",
                 new_callable=AsyncMock,
@@ -135,7 +117,7 @@ class TestImplementIssue:
             patch(
                 "implement.orchestrator.run_copilot",
                 new_callable=AsyncMock,
-                return_value=cli_result or self.MOCK_CLI_RESULT,
+                return_value=cli_result or MOCK_CLI_RESULT,
             ),
             patch(
                 "implement.orchestrator.find_pr_by_branch",
@@ -143,7 +125,7 @@ class TestImplementIssue:
                 return_value=pr_data,
             ),
             patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
-            patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+            patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
             patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
         ]
 
@@ -256,7 +238,7 @@ class TestImplementIssue:
             with (
                 patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
@@ -265,11 +247,11 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_CLI_RESULT,
+                    return_value=MOCK_CLI_RESULT,
                 ) as mock_cli,
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
-                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
@@ -291,7 +273,7 @@ class TestImplementIssue:
             with (
                 patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
@@ -300,11 +282,11 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_CLI_RESULT,
+                    return_value=MOCK_CLI_RESULT,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
-                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
@@ -326,7 +308,7 @@ class TestImplementIssue:
             with (
                 patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
@@ -335,11 +317,11 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_CLI_RESULT,
+                    return_value=MOCK_CLI_RESULT,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
-                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
@@ -358,7 +340,7 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.get_issue",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_ISSUE,
+                    return_value=MOCK_ISSUE,
                 ),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
@@ -403,7 +385,7 @@ class TestImplementIssue:
             with (
                 patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
@@ -412,11 +394,11 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.run_copilot",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_CLI_RESULT,
+                    return_value=MOCK_CLI_RESULT,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
-                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock) as mock_comment,
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock) as mock_comment,
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
@@ -451,7 +433,7 @@ class TestImplementIssue:
             with (
                 patch(f"{_MOD}._utcnow", return_value=_TEST_START),
                 patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=self.MOCK_ISSUE),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
                 patch(
                     "implement.orchestrator.create_branch_worktree",
                     new_callable=AsyncMock,
@@ -464,7 +446,7 @@ class TestImplementIssue:
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
-                patch(f"{_MOD}.comment_on_issue", new_callable=AsyncMock) as mock_comment,
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock) as mock_comment,
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
                 await implement_issue(repo="user/repo", issue_number=42)
@@ -513,7 +495,7 @@ class TestImplementIssue:
                 patch(
                     "implement.orchestrator.get_issue",
                     new_callable=AsyncMock,
-                    return_value=self.MOCK_ISSUE,
+                    return_value=MOCK_ISSUE,
                 ),
                 patch(
                     "implement.orchestrator.create_branch_worktree",

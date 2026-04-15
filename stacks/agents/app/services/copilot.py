@@ -208,25 +208,17 @@ async def run_copilot(
         session_id or "none",
     )
 
+    kwargs: dict[str, object] = {
+        "cwd": worktree_path,
+        "stdin": asyncio.subprocess.DEVNULL,
+        "stdout": asyncio.subprocess.PIPE,
+        "stderr": asyncio.subprocess.PIPE,
+        "env": env,
+    }
     if os.name == "posix":
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=worktree_path,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            start_new_session=True,
-        )
-    else:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            cwd=worktree_path,
-            stdin=asyncio.subprocess.DEVNULL,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-        )
+        kwargs["start_new_session"] = True
+
+    proc = await asyncio.create_subprocess_exec(*cmd, **kwargs)  # ty: ignore[invalid-argument-type]
 
     stdout_lines: list[str] = []
     stderr_lines: list[str] = []
