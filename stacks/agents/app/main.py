@@ -166,12 +166,20 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         duration = time.monotonic() - start
 
         result: dict[str, object] = {}
+        logs = ""
         try:
             logs = await get_logs(container_id)
-            logger.info("Worker %s #%d raw output:\n%s", task_type, number, logs[-3000:])
             result = parse_worker_result(logs)
         except Exception:
             logger.warning("Failed to parse worker result for %s #%d", task_type, number)
+
+        if exit_code != 0:
+            logger.warning(
+                "Worker %s #%d output (last 3000 chars):\n%s",
+                task_type,
+                number,
+                logs[-3000:],
+            )
 
         fallback_status = "failed" if exit_code != 0 else "complete"
         status = _task_status_label(result.get("status", fallback_status))

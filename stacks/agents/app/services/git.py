@@ -36,6 +36,12 @@ class CleanupMarker:
     branch: str
 
 
+@dataclass(frozen=True)
+class WorktreeDetails:
+    path: Path
+    branch: str | None
+
+
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
     """Run a command asynchronously, raising on failure."""
     proc = await asyncio.create_subprocess_exec(
@@ -100,6 +106,7 @@ async def init_bare_clone(repo_url: str) -> Path:
         # Prune stale worktree refs (e.g. after container restart with persistent volume)
         with contextlib.suppress(RuntimeError):
             await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
+        await _remove_main_worktrees()
         # Bare clones have no default refspec, so fetch main explicitly to keep
         # the base ref current. Only fetch main — fetching all of refs/heads/*
         # would prune local-only worktree branches (agent/issue-*, pr-*).
@@ -111,6 +118,47 @@ async def init_bare_clone(repo_url: str) -> Path:
         BARE_CLONE_PATH.parent.mkdir(parents=True, exist_ok=True)
         await _run(["git", "clone", "--bare", repo_url, str(BARE_CLONE_PATH)])
     return BARE_CLONE_PATH
+
+
+def _parse_worktree_list(raw_worktrees: str) -> list[WorktreeDetails]:
+    worktrees: list[WorktreeDetails] = []
+    current_path: Path | None = None
+    current_branch: str | None = None
+
+    for line in raw_worktrees.splitlines():
+        if not line:
+            if current_path is not None:
+                worktrees.append(WorktreeDetails(path=current_path, branch=current_branch))
+            current_path = None
+            current_branch = None
+            continue
+
+        key, _, value = line.partition(" ")
+        if key == "worktree" and value:
+            if current_path is not None:
+                worktrees.append(WorktreeDetails(path=current_path, branch=current_branch))
+            current_path = Path(value)
+            current_branch = None
+        elif key == "branch" and value:
+            current_branch = value
+
+    if current_path is not None:
+        worktrees.append(WorktreeDetails(path=current_path, branch=current_branch))
+
+    return worktrees
+
+
+async def _remove_main_worktrees() -> None:
+    """Remove stale worktrees that still have refs/heads/main checked out."""
+    raw_worktrees = await _run(["git", "worktree", "list", "--porcelain"], cwd=BARE_CLONE_PATH)
+    for worktree in _parse_worktree_list(raw_worktrees):
+        if worktree.branch != "refs/heads/main":
+            continue
+        logger.info("Removing stale main worktree at %s", worktree.path)
+        await _run(
+            ["git", "worktree", "remove", "--force", str(worktree.path)],
+            cwd=BARE_CLONE_PATH,
+        )
 
 
 _FETCH_BACKOFF_SECONDS = [2, 4, 8]

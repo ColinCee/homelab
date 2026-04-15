@@ -1,6 +1,7 @@
 """Tests for the agent service (container-dispatch architecture)."""
 
 import asyncio
+import logging
 import os
 from unittest.mock import AsyncMock, patch
 
@@ -378,6 +379,35 @@ def test_monitor_records_metrics_on_failure(mock_wait, mock_logs, mock_rm):
     assert _metric_value("agent_task_total", {"task_type": "implement", "status": "failed"}) == 1.0
     assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 3.0
     mock_rm.assert_awaited_once_with("abc123")
+
+
+@patch("main.remove_container", new_callable=AsyncMock)
+@patch("main.get_logs", new_callable=AsyncMock)
+@patch("main.wait_container", new_callable=AsyncMock)
+def test_monitor_logs_worker_output_on_failure(mock_wait, mock_logs, mock_rm, caplog):
+    mock_wait.return_value = 1
+    logs = ("discarded-prefix\n" * 400) + "Traceback: boom\n"
+    mock_logs.return_value = logs
+    caplog.set_level(logging.WARNING)
+
+    asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
+
+    assert "Worker implement #10 output (last 3000 chars):" in caplog.text
+    assert logs[-3000:] in caplog.text
+
+
+@patch("main.remove_container", new_callable=AsyncMock)
+@patch("main.get_logs", new_callable=AsyncMock)
+@patch("main.wait_container", new_callable=AsyncMock)
+def test_monitor_does_not_log_worker_output_on_success(mock_wait, mock_logs, mock_rm, caplog):
+    mock_wait.return_value = 0
+    mock_logs.return_value = 'worker chatter\n{"status": "complete"}\n'
+    caplog.set_level(logging.INFO)
+
+    asyncio.run(_monitor_worker("abc123", task_type="review", number=42, start=0.0))
+
+    assert "Worker review #42 output (last 3000 chars):" not in caplog.text
+    assert "raw output" not in caplog.text
 
 
 @patch("main.remove_container", new_callable=AsyncMock)
