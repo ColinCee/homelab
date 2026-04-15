@@ -1,7 +1,6 @@
 """Agent service — FastAPI app for Beelink-hosted AI agents."""
 
 import asyncio
-import contextlib
 import logging
 import os
 import time
@@ -215,8 +214,16 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         logger.exception("Monitor failed for worker %s #%d", task_type, number)
     finally:
         TASK_IN_PROGRESS.labels(task_type=task_type).dec()
-        with contextlib.suppress(Exception):
+        try:
             await remove_container(container_id)
+        except Exception:
+            logger.warning(
+                "Failed to remove worker container %s for %s #%d",
+                container_id,
+                task_type,
+                number,
+                exc_info=True,
+            )
         _monitor_tasks.pop(monitor_key, None)
 
 

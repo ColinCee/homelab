@@ -88,9 +88,21 @@ async def _hold_repo_lock() -> AsyncIterator[None]:
         try:
             fd = await asyncio.shield(acquire_task)
         except asyncio.CancelledError:
-            with contextlib.suppress(Exception):
+            try:
                 fd = await acquire_task
-                await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+            except Exception:
+                logger.warning(
+                    "Failed to finish repo lock acquisition during cancellation cleanup",
+                    exc_info=True,
+                )
+            else:
+                try:
+                    await asyncio.shield(asyncio.to_thread(_release_repo_file_lock, fd))
+                except Exception:
+                    logger.warning(
+                        "Failed to release repo lock during cancellation cleanup",
+                        exc_info=True,
+                    )
             raise
 
         try:
@@ -104,8 +116,12 @@ async def init_bare_clone(repo_url: str) -> Path:
     head_file = BARE_CLONE_PATH / "HEAD"
     if head_file.exists():
         # Prune stale worktree refs (e.g. after container restart with persistent volume)
-        with contextlib.suppress(RuntimeError):
+        try:
             await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
+        except RuntimeError:
+            logger.warning(
+                "Failed to prune stale git worktrees in %s", BARE_CLONE_PATH, exc_info=True
+            )
         await _remove_main_worktrees()
         # Bare clones have no default refspec, so fetch main explicitly to keep
         # the base ref current. Only fetch main — fetching all of refs/heads/*
@@ -185,8 +201,14 @@ async def create_worktree(pr_number: int, repo_url: str, *, head_ref: str | None
         await init_bare_clone(repo_url)
 
         # Force-update the branch ref (handles stale refs from previous container)
-        with contextlib.suppress(RuntimeError):
+        try:
             await _run(["git", "branch", "-D", f"pr-{pr_number}"], cwd=BARE_CLONE_PATH)
+        except RuntimeError:
+            logger.debug(
+                "Skipping delete of missing review branch pr-%d",
+                pr_number,
+                exc_info=True,
+            )
 
         # Prefer the actual branch ref — it's available immediately after push.
         # Fall back to pull/N/head (synthetic ref with propagation delay) when
@@ -249,8 +271,14 @@ async def create_branch_worktree(branch_name: str, repo_url: str) -> Path:
 
         await init_bare_clone(repo_url)
 
-        with contextlib.suppress(RuntimeError):
+        try:
             await _run(["git", "branch", "-D", branch_name], cwd=BARE_CLONE_PATH)
+        except RuntimeError:
+            logger.debug(
+                "Skipping delete of missing branch worktree ref %s",
+                branch_name,
+                exc_info=True,
+            )
 
         # In a bare clone, fetch writes directly to refs/heads/ (no remote-tracking
         # branches), so the ref is "main" not "origin/main".
@@ -308,11 +336,15 @@ async def _remove_named_worktree(worktree_path: Path, branch_name: str) -> None:
     if not bare_clone_exists:
         return
 
-    with contextlib.suppress(RuntimeError):
+    try:
         await _run(["git", "worktree", "prune"], cwd=BARE_CLONE_PATH)
+    except RuntimeError:
+        logger.warning("Failed to prune git worktrees during cleanup", exc_info=True)
 
-    with contextlib.suppress(RuntimeError):
+    try:
         await _run(["git", "branch", "-D", branch_name], cwd=BARE_CLONE_PATH)
+    except RuntimeError:
+        logger.debug("Skipping delete of missing branch ref %s", branch_name, exc_info=True)
 
 
 async def _remove_worktree(worktree_path: Path, pr_number: int) -> None:
