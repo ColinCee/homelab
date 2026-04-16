@@ -1,7 +1,6 @@
 """Copilot CLI headless runner — invokes the copilot binary for agent tasks."""
 
 import asyncio
-import contextlib
 import logging
 import os
 import re
@@ -160,6 +159,15 @@ def _parse_session_id(text: str) -> str | None:
     return None
 
 
+def _log_expected_process_cleanup(action: str, pid: int | None) -> None:
+    logger.debug(
+        "Copilot subprocess already exited before %s (pid=%s)",
+        action,
+        pid if pid is not None else "unknown",
+        exc_info=True,
+    )
+
+
 async def run_copilot(
     worktree_path: Path,
     prompt: str,
@@ -236,23 +244,35 @@ async def run_copilot(
 
     async def _stop_process() -> None:
         if os.name == "posix" and proc.pid is not None:
-            with contextlib.suppress(ProcessLookupError):
+            try:
                 os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                _log_expected_process_cleanup("killpg", proc.pid)
         else:
-            with contextlib.suppress(ProcessLookupError):
+            try:
                 proc.kill()
+            except ProcessLookupError:
+                _log_expected_process_cleanup("kill", proc.pid)
         for task in (out_task, err_task):
             if task is not None:
                 task.cancel()
         if stream_tasks is not None:
             stream_tasks.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
+        try:
             if stream_tasks is not None:
                 await stream_tasks
             else:
                 await asyncio.gather(*(task for task in (out_task, err_task) if task is not None))
-        with contextlib.suppress(ProcessLookupError):
+        except asyncio.CancelledError:
+            logger.debug(
+                "Copilot stream tasks already cancelled during shutdown (pid=%s)",
+                proc.pid if proc.pid is not None else "unknown",
+                exc_info=True,
+            )
+        try:
             await proc.wait()
+        except ProcessLookupError:
+            _log_expected_process_cleanup("wait", proc.pid)
 
     try:
         assert proc.stdout and proc.stderr
