@@ -55,15 +55,30 @@ def test_implement_success_returns_zero(capsys):
             pr_number=99,
             pr_url="https://github.com/user/repo/pull/99",
             premium_requests=5,
+            elapsed_seconds=125,
             api_time_seconds=60,
             models={"gpt-5.4": "883.6k in, 17.7k out, 788.5k cached"},
             tokens_line="↑ 883.6k • ↓ 17.7k • 788.5k (cached)",
             session_id="sess-123",
         )
     )
+    safe = AsyncMock()
+    update = AsyncMock()
     env = {**IMPLEMENT_ENV, "MODEL": "gpt-5.4", "REASONING_EFFORT": "high"}
+    patches = [
+        patch("worker.implement_issue", mock_impl),
+        patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test")),
+        patch("worker.safe_comment", safe),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", update),
+    ]
     with ExitStack() as stack:
-        _enter_patches(stack, _implement_patches(mock_impl), env)
+        _enter_patches(stack, patches, env)
         from worker import main
 
         exit_code = asyncio.run(main())
@@ -77,26 +92,27 @@ def test_implement_success_returns_zero(capsys):
     assert result.tokens_line == "↑ 883.6k • ↓ 17.7k • 788.5k (cached)"
     assert result.session_id == "sess-123"
     mock_impl.assert_awaited_once()
+    safe.assert_not_awaited()
+    assert update.await_count == 1
+    final_comment = update.await_args_list[0].args[2]
+    assert "✅ PR #99 created — https://github.com/user/repo/pull/99" in final_comment
+    assert "💰 5 premium" in final_comment
+    assert "⏱️ 2m 5s (API: 1m 0s)" in final_comment
+    assert "🧠 high" in final_comment
+    assert "🤖 gpt-5.4: 883.6k in, 17.7k out, 788.5k cached" in final_comment
 
 
 def test_implement_failure_returns_one(capsys):
-    mock_impl = AsyncMock(return_value=TaskResult(status="failed", premium_requests=2))
-    with ExitStack() as stack:
-        _enter_patches(stack, _implement_patches(mock_impl), IMPLEMENT_ENV)
-        from worker import main
-
-        exit_code = asyncio.run(main())
-
-    assert exit_code == 1
-    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
-    assert result.status == "failed"
-
-
-def test_implement_exception_posts_error_comment(capsys):
-    from services.copilot import TaskError
-
-    mock_impl = AsyncMock(side_effect=TaskError("CLI crashed", premium_requests=3))
+    mock_impl = AsyncMock(
+        return_value=TaskResult(
+            status="failed",
+            premium_requests=2,
+            elapsed_seconds=30,
+            error="CLI did not create a PR",
+        )
+    )
     safe = AsyncMock()
+    update = AsyncMock()
     patches = [
         patch("worker.implement_issue", mock_impl),
         patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test")),
@@ -107,7 +123,42 @@ def test_implement_exception_posts_error_comment(capsys):
             new_callable=AsyncMock,
             return_value=None,
         ),
-        patch("worker.update_comment", new_callable=AsyncMock),
+        patch("worker.update_comment", update),
+    ]
+    with ExitStack() as stack:
+        _enter_patches(stack, patches, IMPLEMENT_ENV)
+        from worker import main
+
+        exit_code = asyncio.run(main())
+
+    assert exit_code == 1
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
+    assert result.status == "failed"
+    safe.assert_not_awaited()
+    assert update.await_count == 1
+    final_comment = update.await_args_list[0].args[2]
+    assert "❌ Implementation failed — CLI did not create a PR" in final_comment
+    assert "💰 2 premium" in final_comment
+    assert "⏱️ 0m 30s" in final_comment
+
+
+def test_implement_task_error_updates_progress_comment_without_extra_comment(capsys):
+    from services.copilot import TaskError
+
+    mock_impl = AsyncMock(side_effect=TaskError("CLI crashed", premium_requests=3))
+    safe = AsyncMock()
+    update = AsyncMock()
+    patches = [
+        patch("worker.implement_issue", mock_impl),
+        patch("worker.get_issue", new_callable=AsyncMock, return_value=GitHubIssue(title="test")),
+        patch("worker.safe_comment", safe),
+        patch("worker.comment_on_issue", new_callable=AsyncMock, return_value=100),
+        patch(
+            "worker.find_issue_comment_by_body_prefix",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch("worker.update_comment", update),
     ]
     with ExitStack() as stack:
         _enter_patches(stack, patches, IMPLEMENT_ENV)
@@ -120,8 +171,55 @@ def test_implement_exception_posts_error_comment(capsys):
     assert result.status == "failed"
     assert result.premium_requests == 3
 
-    error_calls = [c for c in safe.call_args_list if "failed" in str(c).lower()]
-    assert len(error_calls) > 0
+    safe.assert_not_awaited()
+    assert update.await_count == 1
+    final_comment = update.await_args_list[0].args[2]
+    assert "❌ Implementation failed — CLI crashed" in final_comment
+    assert "💰 3 premium" in final_comment
+
+
+def test_implement_task_error_posts_fallback_comment_when_progress_comment_missing(capsys):
+    from services.copilot import TaskError
+
+    mock_impl = AsyncMock(side_effect=TaskError("CLI crashed", premium_requests=3))
+    safe = AsyncMock()
+    with ExitStack() as stack:
+        _enter_patches(
+            stack,
+            [
+                patch("worker.implement_issue", mock_impl),
+                patch(
+                    "worker.get_issue",
+                    new_callable=AsyncMock,
+                    return_value=GitHubIssue(title="test"),
+                ),
+                patch("worker.safe_comment", safe),
+                patch(
+                    "worker.comment_on_issue",
+                    new_callable=AsyncMock,
+                    side_effect=RuntimeError("boom"),
+                ),
+                patch(
+                    "worker.find_issue_comment_by_body_prefix",
+                    new_callable=AsyncMock,
+                    return_value=None,
+                ),
+                patch("worker.update_comment", new_callable=AsyncMock),
+            ],
+            IMPLEMENT_ENV,
+        )
+        from worker import main
+
+        exit_code = asyncio.run(main())
+
+    assert exit_code == 1
+    result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
+    assert result.status == "failed"
+    assert result.premium_requests == 3
+    assert safe.await_count == 1
+    fallback_comment = safe.await_args_list[0].args[2]
+    assert "❌ Implementation failed — CLI crashed" in fallback_comment
+    assert "💰 3 premium" in fallback_comment
 
 
 def test_review_success_returns_zero(capsys):

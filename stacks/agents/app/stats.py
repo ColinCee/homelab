@@ -2,6 +2,7 @@
 
 import re
 
+from models import TaskResult
 from services.copilot import CLIResult
 
 STATUS_EMOJI = {
@@ -51,4 +52,16 @@ def cli_stage_stats(result: CLIResult, effort: str = "") -> str:
         effort=effort,
         models=result.models,
         tokens_line=result.tokens_line,
+    )
+
+
+def task_stage_stats(result: TaskResult, effort: str = "") -> str:
+    """Format stats from a TaskResult."""
+    return format_stage_stats(
+        premium_requests=result.premium_requests,
+        elapsed_seconds=result.elapsed_seconds or 0,
+        api_time_seconds=int(result.api_time_seconds or 0),
+        effort=result.reasoning_effort or effort,
+        models=result.models,
+        tokens_line=result.tokens_line or "",
     )
