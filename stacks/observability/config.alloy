@@ -94,6 +94,34 @@ loki.source.docker "containers" {
 loki.process "docker" {
   forward_to = [loki.write.default.receiver]
 
+  // Parse JSON log lines (silently passes through non-JSON lines)
+  stage.json {
+    expressions = {
+      level        = "level",
+      logger       = "logger",
+      task_type    = "task_type",
+      issue_number = "issue_number",
+      pr_number    = "pr_number",
+    }
+  }
+
+  // Low-cardinality fields as Loki labels (fast stream filtering)
+  stage.labels {
+    values = {
+      level     = "level",
+      task_type = "task_type",
+    }
+  }
+
+  // High-cardinality fields as structured metadata (searchable, no stream explosion)
+  stage.structured_metadata {
+    values = {
+      logger       = "logger",
+      issue_number = "issue_number",
+      pr_number    = "pr_number",
+    }
+  }
+
   // Drop noisy observability stack logs to avoid feedback loops
   stage.drop {
     source     = "container_name"
