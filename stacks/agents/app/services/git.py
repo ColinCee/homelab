@@ -55,6 +55,15 @@ class WorktreeDetails:
     branch: str | None
 
 
+def _kill_git_process(proc: asyncio.subprocess.Process, cmd: list[str]) -> None:
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        logger.debug(
+            "Git subprocess already exited before kill: %s", " ".join(cmd), exc_info=True
+        )
+
+
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
     """Run a command asynchronously, raising on failure."""
     proc = await asyncio.create_subprocess_exec(
@@ -68,13 +77,11 @@ async def _run(cmd: list[str], cwd: Path | None = None) -> str:
             proc.communicate(), timeout=GIT_COMMAND_TIMEOUT_SECONDS
         )
     except asyncio.CancelledError:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+        _kill_git_process(proc, cmd)
         await proc.communicate()
         raise
     except TimeoutError as err:
-        with contextlib.suppress(ProcessLookupError):
-            proc.kill()
+        _kill_git_process(proc, cmd)
         _, stderr = await proc.communicate()
         message = f"Git command timed out after {GIT_COMMAND_TIMEOUT_SECONDS}s: {' '.join(cmd)}"
         if details := stderr.decode().strip():
@@ -130,9 +137,11 @@ def _release_async_repo_lock_if_acquired(acquire_task: asyncio.Task[bool]) -> No
     if not acquire_task.done() or acquire_task.cancelled():
         return
 
-    with contextlib.suppress(Exception):
+    try:
         if acquire_task.result():
             _repo_lock.release()
+    except Exception:
+        logger.debug("Failed to release in-process repo lock during cleanup", exc_info=True)
 
 
 async def _acquire_in_process_repo_lock() -> None:
