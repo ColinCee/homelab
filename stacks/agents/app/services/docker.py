@@ -21,20 +21,46 @@ logger = logging.getLogger(__name__)
 # Resource limits matching the API container (compose.yaml)
 _WORKER_MEMORY = "2g"
 _WORKER_CPUS = "2.0"
+_DOCKER_COMMAND_TIMEOUT = 60
+_DOCKER_LOGS_TIMEOUT = 30
+
+
+async def _communicate_with_timeout(
+    proc: asyncio.subprocess.Process,
+    *,
+    timeout_seconds: float,
+    command: str,
+) -> tuple[bytes, bytes | None]:
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        raise
+    except TimeoutError as err:
+        with contextlib.suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        raise RuntimeError(f"Docker command timed out after {timeout_seconds}s: {command}") from err
 
 
 async def _run_docker(*args: str) -> str:
     """Run a docker CLI command and return stdout."""
+    command = " ".join(("docker", *args))
     proc = await asyncio.create_subprocess_exec(
         "docker",
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(
+        proc, timeout_seconds=_DOCKER_COMMAND_TIMEOUT, command=command
+    )
     if proc.returncode != 0:
+        details = stderr.decode().strip() if stderr is not None else ""
         raise RuntimeError(
-            f"docker {args[0]} failed (exit {proc.returncode}): {stderr.decode().strip()}"
+            f"docker {args[0]} failed (exit {proc.returncode}): {details}"
         )
     return stdout.decode().strip()
 
@@ -157,6 +183,7 @@ async def wait_container(container_id: str) -> int:
 
 async def get_logs(container_id: str) -> str:
     """Retrieve stdout/stderr logs from a container."""
+    command = f"docker logs {container_id}"
     proc = await asyncio.create_subprocess_exec(
         "docker",
         "logs",
@@ -164,7 +191,9 @@ async def get_logs(container_id: str) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
-    stdout, _ = await proc.communicate()
+    stdout, _ = await _communicate_with_timeout(
+        proc, timeout_seconds=_DOCKER_LOGS_TIMEOUT, command=command
+    )
     return stdout.decode().strip()
 
 
