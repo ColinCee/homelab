@@ -84,9 +84,9 @@ MERGE_PROMPT_TEMPLATE = """\
 PR #{pr_number} in {repo} has been approved but could not be merged automatically \
 (likely due to merge conflicts or the branch being out of date).
 
-1. Rebase onto main: `git fetch origin main && git rebase origin/main`
+1. Update branch: `git fetch origin main && git merge origin/main`
 2. Resolve any conflicts
-3. Push: `git push --force origin {branch}`
+3. Push: `git push origin {branch}`
 4. Wait for CI: `gh pr checks {pr_number} --watch`
 5. Merge: `gh pr merge {pr_number} --squash`
 """
