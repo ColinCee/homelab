@@ -5,10 +5,10 @@ restarts (ADR-011). Workers use the same image with a different entrypoint.
 """
 
 import asyncio
-import contextlib
 import logging
 import re
 import socket
+from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
@@ -37,12 +37,12 @@ async def _communicate_with_timeout(
     try:
         return await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
     except asyncio.CancelledError:
-        with contextlib.suppress(ProcessLookupError):
+        with suppress(ProcessLookupError):
             proc.kill()
         await proc.wait()
         raise
     except TimeoutError as err:
-        with contextlib.suppress(ProcessLookupError):
+        with suppress(ProcessLookupError):
             proc.kill()
         await proc.wait()
         raise RuntimeError(f"Docker command timed out after {timeout_seconds}s: {command}") from err
@@ -280,7 +280,7 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
 
         parsed = _parse_worker_name(name)
         if parsed is None:
-            with contextlib.suppress(RuntimeError):
+            with suppress(RuntimeError):
                 await _run_docker("rm", name)
             continue
 
@@ -289,7 +289,7 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
         # Harvest logs and timestamps before removing
         logs = ""
         duration = 0.0
-        with contextlib.suppress(RuntimeError):
+        with suppress(RuntimeError):
             logs = await _run_docker("logs", name)
 
         try:
