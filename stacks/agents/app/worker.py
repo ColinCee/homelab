@@ -11,7 +11,7 @@ import logging
 import sys
 
 from implement import implement_issue
-from logging_config import configure_logging
+from logging_config import configure_logging, set_task_context
 from models import TaskResult
 from review import review_pr
 from runtime_env import WorkerSettings
@@ -261,6 +261,8 @@ async def main() -> int:
     except Exception as exc:
         logger.error("Worker startup validation failed: %s", exc)
         return 1
+
+    set_task_context(settings.task_type, settings.number)
 
     set_token(settings.gh_token)
 

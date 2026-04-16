@@ -12,6 +12,71 @@ LogFormat = Literal["json", "text"]
 _TEXT_FORMAT = "%(asctime)s %(levelname)s %(message)s"
 _JSON_FORMAT = "%(asctime)s %(levelname)s %(name)s %(message)s"
 _HANDLER_MARKER = "_homelab_structured_logging"
+_TASK_CONTEXT_FILTER_MARKER = "_homelab_task_context_filter"
+
+
+class TaskContextFilter(logging.Filter):
+    """Attach worker task context to log records."""
+
+    def __init__(
+        self,
+        task_type: str,
+        *,
+        issue_number: int | None = None,
+        pr_number: int | None = None,
+    ) -> None:
+        super().__init__()
+        self.task_type = task_type
+        self.issue_number = issue_number
+        self.pr_number = pr_number
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.task_type = self.task_type
+        if self.issue_number is not None:
+            record.issue_number = self.issue_number
+        if self.pr_number is not None:
+            record.pr_number = self.pr_number
+        return True
+
+
+def _clear_task_context_filter(root_logger: logging.Logger) -> None:
+    existing_filter = next(
+        (
+            existing
+            for existing in root_logger.filters
+            if getattr(existing, _TASK_CONTEXT_FILTER_MARKER, False)
+        ),
+        None,
+    )
+    if existing_filter is not None:
+        root_logger.removeFilter(existing_filter)
+    for handler in root_logger.handlers:
+        existing_filter = next(
+            (
+                existing
+                for existing in handler.filters
+                if getattr(existing, _TASK_CONTEXT_FILTER_MARKER, False)
+            ),
+            None,
+        )
+        if existing_filter is not None:
+            handler.removeFilter(existing_filter)
+
+
+def set_task_context(task_type: str, number: int) -> None:
+    """Attach task context to all subsequent root logger records."""
+    root_logger = logging.getLogger()
+    _clear_task_context_filter(root_logger)
+
+    task_filter = TaskContextFilter(
+        task_type,
+        issue_number=number if task_type == "implement" else None,
+        pr_number=number if task_type == "review" else None,
+    )
+    setattr(task_filter, _TASK_CONTEXT_FILTER_MARKER, True)
+    root_logger.addFilter(task_filter)
+    for handler in root_logger.handlers:
+        handler.addFilter(task_filter)
 
 
 def resolve_log_format(value: str | None = None) -> LogFormat:
@@ -38,6 +103,7 @@ def configure_logging(log_format: str | None = None) -> None:
     resolved = resolve_log_format(log_format or os.environ.get(LOG_FORMAT_ENV_VAR))
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
+    _clear_task_context_filter(root_logger)
 
     existing_handler = next(
         (
