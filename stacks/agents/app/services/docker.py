@@ -5,7 +5,6 @@ restarts (ADR-011). Workers use the same image with a different entrypoint.
 """
 
 import asyncio
-import contextlib
 import logging
 import re
 import socket
@@ -82,6 +81,11 @@ def _parse_docker_timestamp(ts: str) -> float:
     # Truncate nanosecond precision to microsecond for datetime.fromisoformat
     ts = re.sub(r"(\.\d{6})\d+", r"\1", ts.strip())
     return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+def _is_missing_container_error(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    return "no such container" in message or "no such object" in message
 
 
 async def spawn_worker(
@@ -173,7 +177,7 @@ async def remove_container(container_id: str) -> None:
     try:
         await _run_docker("rm", container_id)
     except RuntimeError:
-        logger.warning("Failed to remove container %s", container_id)
+        logger.warning("Failed to remove container %s", container_id, exc_info=True)
 
 
 async def stop_worker(task_type: str, number: int) -> None:
@@ -182,13 +186,28 @@ async def stop_worker(task_type: str, number: int) -> None:
     try:
         # Check if container exists and is running
         state = await _run_docker("inspect", "--format", "{{.State.Running}}", name)
-        if state.strip() == "true":
+    except RuntimeError as exc:
+        if _is_missing_container_error(exc):
+            logger.debug("Skipping stop for missing worker %s", name, exc_info=True)
+        else:
+            logger.warning("Failed to inspect worker %s before stop", name, exc_info=True)
+        return
+
+    if state.strip() == "true":
+        try:
             await _run_docker("stop", name)
             logger.info("Stopped existing worker %s", name)
-        # Remove stopped container so name can be reused
+        except RuntimeError:
+            logger.warning("Failed to stop existing worker %s", name, exc_info=True)
+            return
+
+    try:
         await _run_docker("rm", name)
-    except RuntimeError:
-        pass  # Container doesn't exist — nothing to stop
+    except RuntimeError as exc:
+        if _is_missing_container_error(exc):
+            logger.debug("Worker %s disappeared before removal", name, exc_info=True)
+        else:
+            logger.warning("Failed to remove worker %s after stop", name, exc_info=True)
 
 
 async def is_worker_running(task_type: str, number: int) -> bool:
@@ -247,8 +266,10 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
 
         parsed = _parse_worker_name(name)
         if parsed is None:
-            with contextlib.suppress(RuntimeError):
+            try:
                 await _run_docker("rm", name)
+            except RuntimeError:
+                logger.warning("Failed to remove invalid worker container %s", name, exc_info=True)
             continue
 
         task_type, number = parsed
@@ -256,8 +277,10 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
         # Harvest logs and timestamps before removing
         logs = ""
         duration = 0.0
-        with contextlib.suppress(RuntimeError):
+        try:
             logs = await _run_docker("logs", name)
+        except RuntimeError:
+            logger.warning("Failed to retrieve logs for orphaned worker %s", name, exc_info=True)
 
         try:
             ts_output = await _run_docker(
@@ -269,7 +292,7 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
                 finished = _parse_docker_timestamp(ts_parts[1])
                 duration = max(0.0, finished - started)
         except Exception:
-            pass
+            logger.warning("Failed to parse duration for orphaned worker %s", name, exc_info=True)
 
         harvested.append(
             {
@@ -284,7 +307,7 @@ async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
             await _run_docker("rm", name)
             logger.info("Cleaned up orphaned worker container %s", name)
         except RuntimeError:
-            logger.warning("Failed to clean up container %s", name)
+            logger.warning("Failed to clean up container %s", name, exc_info=True)
 
     return harvested
 
@@ -327,7 +350,11 @@ async def discover_running_workers() -> list[dict[str, Any]]:
             ts = await _run_docker("inspect", "--format", "{{.State.StartedAt}}", container_id)
             started_at = _parse_docker_timestamp(ts)
         except Exception:
-            pass
+            logger.warning(
+                "Failed to determine start time for worker container %s",
+                container_id,
+                exc_info=True,
+            )
 
         workers.append(
             {
