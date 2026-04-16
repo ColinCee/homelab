@@ -59,9 +59,7 @@ async def _run_docker(*args: str) -> str:
     )
     if proc.returncode != 0:
         details = stderr.decode().strip() if stderr is not None else ""
-        raise RuntimeError(
-            f"docker {args[0]} failed (exit {proc.returncode}): {details}"
-        )
+        raise RuntimeError(f"docker {args[0]} failed (exit {proc.returncode}): {details}")
     return stdout.decode().strip()
 
 
