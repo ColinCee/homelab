@@ -2,19 +2,25 @@
 
 import asyncio
 import os
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
+
+import services.docker as docker_module
 from services.docker import (
     _parse_docker_timestamp,
     _parse_worker_name,
+    _run_docker,
     _worker_name,
     cleanup_orphaned_workers,
     discover_running_workers,
+    get_logs,
     get_own_image,
     is_worker_running,
     parse_worker_result,
     spawn_worker,
     stop_worker,
+    wait_container,
 )
 
 
@@ -240,6 +246,87 @@ def test_cleanup_handles_log_failure_gracefully(mock_docker):
     assert len(harvested) == 1
     assert harvested[0]["logs"] == ""
     assert harvested[0]["duration_seconds"] == 300.0
+
+
+def test_run_docker_kills_process_on_timeout():
+    async def communicate() -> tuple[bytes, bytes]:
+        await asyncio.sleep(3600)
+        return (b"", b"")
+
+    async def run():
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            proc = AsyncMock()
+            proc.communicate.side_effect = communicate
+            proc.kill = Mock()
+            proc.wait = AsyncMock(return_value=0)
+            mock_proc.return_value = proc
+
+            with (
+                patch.object(docker_module, "_DOCKER_COMMAND_TIMEOUT", 0.01),
+                pytest.raises(
+                    RuntimeError,
+                    match=r"Docker command timed out after 0\.01s: docker inspect worker-review-42",
+                ),
+            ):
+                await _run_docker("inspect", "worker-review-42")
+
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_get_logs_uses_shorter_timeout():
+    async def communicate() -> tuple[bytes, bytes | None]:
+        await asyncio.sleep(3600)
+        return (b"", None)
+
+    async def run():
+        with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc:
+            proc = AsyncMock()
+            proc.communicate.side_effect = communicate
+            proc.kill = Mock()
+            proc.wait = AsyncMock(return_value=0)
+            mock_proc.return_value = proc
+
+            with (
+                patch.object(docker_module, "_DOCKER_LOGS_TIMEOUT", 0.01),
+                pytest.raises(
+                    RuntimeError,
+                    match=r"Docker command timed out after 0\.01s: docker logs container123",
+                ),
+            ):
+                await get_logs("container123")
+
+        proc.kill.assert_called_once_with()
+        proc.wait.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_wait_container_uses_longer_timeout():
+    async def run():
+        with (
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc,
+            patch(
+                "services.docker._communicate_with_timeout", new_callable=AsyncMock
+            ) as mock_communicate,
+        ):
+            proc = AsyncMock()
+            proc.returncode = 0
+            mock_proc.return_value = proc
+            mock_communicate.return_value = (b"0", b"")
+
+            exit_code = await wait_container("container123")
+
+        assert exit_code == 0
+        mock_communicate.assert_awaited_once_with(
+            proc,
+            timeout_seconds=docker_module._DOCKER_WAIT_TIMEOUT,
+            command="docker wait container123",
+        )
+
+    asyncio.run(run())
 
 
 @patch("services.docker._run_docker", new_callable=AsyncMock)

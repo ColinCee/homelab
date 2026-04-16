@@ -8,6 +8,7 @@ import asyncio
 import logging
 import re
 import socket
+from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
@@ -20,21 +21,51 @@ logger = logging.getLogger(__name__)
 # Resource limits matching the API container (compose.yaml)
 _WORKER_MEMORY = "2g"
 _WORKER_CPUS = "2.0"
+_DOCKER_COMMAND_TIMEOUT = 60
+_DOCKER_LOGS_TIMEOUT = 30
+# Worker tasks can legitimately run for much longer than a single Docker RPC.
+# Keep monitor waits bounded, but well above the Copilot CLI safety timeout.
+_DOCKER_WAIT_TIMEOUT = 3600
+
+
+async def _communicate_with_timeout(
+    proc: asyncio.subprocess.Process,
+    *,
+    timeout_seconds: float,
+    command: str,
+) -> tuple[bytes, bytes | None]:
+    try:
+        return await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+    except asyncio.CancelledError:
+        with suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        raise
+    except TimeoutError as err:
+        with suppress(ProcessLookupError):
+            proc.kill()
+        await proc.wait()
+        raise RuntimeError(f"Docker command timed out after {timeout_seconds}s: {command}") from err
 
 
 async def _run_docker(*args: str) -> str:
     """Run a docker CLI command and return stdout."""
+    timeout_seconds = _DOCKER_COMMAND_TIMEOUT
+    if args and args[0] == "wait":
+        timeout_seconds = _DOCKER_WAIT_TIMEOUT
+    command = " ".join(("docker", *args))
     proc = await asyncio.create_subprocess_exec(
         "docker",
         *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await proc.communicate()
+    stdout, stderr = await _communicate_with_timeout(
+        proc, timeout_seconds=timeout_seconds, command=command
+    )
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"docker {args[0]} failed (exit {proc.returncode}): {stderr.decode().strip()}"
-        )
+        details = stderr.decode().strip() if stderr is not None else ""
+        raise RuntimeError(f"docker {args[0]} failed (exit {proc.returncode}): {details}")
     return stdout.decode().strip()
 
 
@@ -161,6 +192,7 @@ async def wait_container(container_id: str) -> int:
 
 async def get_logs(container_id: str) -> str:
     """Retrieve stdout/stderr logs from a container."""
+    command = f"docker logs {container_id}"
     proc = await asyncio.create_subprocess_exec(
         "docker",
         "logs",
@@ -168,7 +200,9 @@ async def get_logs(container_id: str) -> str:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
     )
-    stdout, _ = await proc.communicate()
+    stdout, _ = await _communicate_with_timeout(
+        proc, timeout_seconds=_DOCKER_LOGS_TIMEOUT, command=command
+    )
     return stdout.decode().strip()
 
 
