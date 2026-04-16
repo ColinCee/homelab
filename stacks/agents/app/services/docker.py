@@ -23,6 +23,9 @@ _WORKER_MEMORY = "2g"
 _WORKER_CPUS = "2.0"
 _DOCKER_COMMAND_TIMEOUT = 60
 _DOCKER_LOGS_TIMEOUT = 30
+# Worker tasks can legitimately run for much longer than a single Docker RPC.
+# Keep monitor waits bounded, but well above the Copilot CLI safety timeout.
+_DOCKER_WAIT_TIMEOUT = 3600
 
 
 async def _communicate_with_timeout(
@@ -47,6 +50,9 @@ async def _communicate_with_timeout(
 
 async def _run_docker(*args: str) -> str:
     """Run a docker CLI command and return stdout."""
+    timeout_seconds = _DOCKER_COMMAND_TIMEOUT
+    if args and args[0] == "wait":
+        timeout_seconds = _DOCKER_WAIT_TIMEOUT
     command = " ".join(("docker", *args))
     proc = await asyncio.create_subprocess_exec(
         "docker",
@@ -55,7 +61,7 @@ async def _run_docker(*args: str) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     stdout, stderr = await _communicate_with_timeout(
-        proc, timeout_seconds=_DOCKER_COMMAND_TIMEOUT, command=command
+        proc, timeout_seconds=timeout_seconds, command=command
     )
     if proc.returncode != 0:
         details = stderr.decode().strip() if stderr is not None else ""

@@ -20,6 +20,7 @@ from services.docker import (
     parse_worker_result,
     spawn_worker,
     stop_worker,
+    wait_container,
 )
 
 
@@ -299,6 +300,31 @@ def test_get_logs_uses_shorter_timeout():
 
         proc.kill.assert_called_once_with()
         proc.wait.assert_awaited_once()
+
+    asyncio.run(run())
+
+
+def test_wait_container_uses_longer_timeout():
+    async def run():
+        with (
+            patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_proc,
+            patch(
+                "services.docker._communicate_with_timeout", new_callable=AsyncMock
+            ) as mock_communicate,
+        ):
+            proc = AsyncMock()
+            proc.returncode = 0
+            mock_proc.return_value = proc
+            mock_communicate.return_value = (b"0", b"")
+
+            exit_code = await wait_container("container123")
+
+        assert exit_code == 0
+        mock_communicate.assert_awaited_once_with(
+            proc,
+            timeout_seconds=docker_module._DOCKER_WAIT_TIMEOUT,
+            command="docker wait container123",
+        )
 
     asyncio.run(run())
 
