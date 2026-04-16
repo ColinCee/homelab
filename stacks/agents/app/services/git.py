@@ -59,9 +59,7 @@ def _kill_git_process(proc: asyncio.subprocess.Process, cmd: list[str]) -> None:
     try:
         proc.kill()
     except ProcessLookupError:
-        logger.debug(
-            "Git subprocess already exited before kill: %s", " ".join(cmd), exc_info=True
-        )
+        logger.debug("Git subprocess already exited before kill: %s", " ".join(cmd), exc_info=True)
 
 
 async def _run(cmd: list[str], cwd: Path | None = None) -> str:
