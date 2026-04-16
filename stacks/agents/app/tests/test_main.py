@@ -349,14 +349,11 @@ def test_monitor_records_metrics_on_success(mock_wait, mock_logs, mock_rm):
     mock_rm.assert_awaited_once_with("abc123")
 
 
-@patch("main.comment_on_issue", new_callable=AsyncMock)
 @patch("main.remove_container", new_callable=AsyncMock)
 @patch("main.get_logs", new_callable=AsyncMock)
 @patch("main.wait_container", new_callable=AsyncMock)
-def test_monitor_posts_review_comment_after_successful_implement(
-    mock_wait, mock_logs, mock_rm, mock_comment
-):
-    """Successful implement runs should trigger a fresh review via PR comment."""
+def test_monitor_does_not_trigger_review_after_implement(mock_wait, mock_logs, mock_rm):
+    """Review is now handled inside the implement worker, not triggered by the monitor."""
     mock_wait.return_value = 0
     mock_logs.return_value = (
         '{"status": "complete", "repo": "user/repo", "pr_number": 99, "premium_requests": 2}\n'
@@ -364,26 +361,9 @@ def test_monitor_posts_review_comment_after_successful_implement(
 
     asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
 
-    mock_comment.assert_awaited_once_with("user/repo", 99, "/review")
     assert (
         _metric_value("agent_task_total", {"task_type": "implement", "status": "complete"}) == 1.0
     )
-
-
-@patch("main.comment_on_issue", new_callable=AsyncMock)
-@patch("main.remove_container", new_callable=AsyncMock)
-@patch("main.get_logs", new_callable=AsyncMock)
-@patch("main.wait_container", new_callable=AsyncMock)
-def test_monitor_skips_review_comment_when_implement_result_has_no_repo(
-    mock_wait, mock_logs, mock_rm, mock_comment
-):
-    """The monitor should not crash or comment if the implement result lacks a repo."""
-    mock_wait.return_value = 0
-    mock_logs.return_value = '{"status": "complete", "pr_number": 99}\n'
-
-    asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
-
-    mock_comment.assert_not_awaited()
 
 
 @patch("main.remove_container", new_callable=AsyncMock)

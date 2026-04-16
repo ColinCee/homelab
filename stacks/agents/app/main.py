@@ -32,7 +32,7 @@ from services.docker import (
     wait_container,
 )
 from services.git import reap_old_worktrees
-from services.github import comment_on_issue, set_token
+from services.github import set_token
 from trust import ALLOWED_ACTORS
 
 LOG_FORMAT = resolve_log_format(os.environ.get("LOG_FORMAT"))
@@ -112,31 +112,6 @@ def _record_task_metrics(
         PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type).inc(premium_requests)
 
 
-async def _trigger_independent_review(
-    *, task_type: str, status: str, number: int, result: TaskResult | None
-) -> None:
-    """Post `/review` on successful implement PRs to trigger the fresh review worker."""
-    if task_type != "implement" or status != "complete" or result is None:
-        return
-
-    if result.pr_number is None:
-        return
-
-    if not result.repo:
-        logger.warning(
-            "Implement worker #%d completed without repo in result; skipping /review trigger",
-            number,
-        )
-        return
-
-    await comment_on_issue(result.repo, result.pr_number, "/review")
-    logger.info(
-        "Posted /review comment on %s#%d after implement completion",
-        result.repo,
-        result.pr_number,
-    )
-
-
 class ReviewRequest(BaseModel):
     repo: str
     pr_number: int
@@ -207,15 +182,6 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             premium,
             f", error={error}" if error else "",
         )
-        try:
-            await _trigger_independent_review(
-                task_type=task_type,
-                status=status,
-                number=number,
-                result=result,
-            )
-        except Exception:
-            logger.exception("Failed to post /review comment for implement #%d", number)
     except Exception:
         logger.exception("Monitor failed for worker %s #%d", task_type, number)
     finally:

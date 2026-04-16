@@ -58,6 +58,15 @@ class GitHubIssueComment(BaseModel):
     user: GitHubUser | None = None
 
 
+class ReviewThread(BaseModel):
+    """A review thread on a PR, from the GraphQL API."""
+
+    id: str
+    is_resolved: bool
+    is_outdated: bool
+    body: str = ""
+
+
 class TaskResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

@@ -235,3 +235,224 @@ class TestIssueComments:
 
         result = asyncio.run(run())
         assert result == 3
+
+
+class TestGetUnresolvedReviewThreads:
+    def test_returns_unresolved_non_outdated_threads(self):
+        graphql_resp = httpx.Response(
+            200,
+            json={
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "nodes": [
+                                    {
+                                        "id": "thread-1",
+                                        "isResolved": False,
+                                        "isOutdated": False,
+                                        "comments": {"nodes": [{"body": "Fix this bug"}]},
+                                    },
+                                    {
+                                        "id": "thread-2",
+                                        "isResolved": True,
+                                        "isOutdated": False,
+                                        "comments": {"nodes": [{"body": "Already fixed"}]},
+                                    },
+                                    {
+                                        "id": "thread-3",
+                                        "isResolved": False,
+                                        "isOutdated": True,
+                                        "comments": {"nodes": [{"body": "Old code"}]},
+                                    },
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            request=httpx.Request("POST", "https://api.github.com/graphql"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.post",
+                    new_callable=AsyncMock,
+                    return_value=graphql_resp,
+                ),
+            ):
+                return await github.get_unresolved_review_threads("user/repo", 42)
+
+        threads = asyncio.run(run())
+        assert len(threads) == 1
+        assert threads[0].id == "thread-1"
+        assert threads[0].body == "Fix this bug"
+        assert threads[0].is_resolved is False
+
+    def test_returns_empty_when_no_threads(self):
+        graphql_resp = httpx.Response(
+            200,
+            json={"data": {"repository": {"pullRequest": {"reviewThreads": {"nodes": []}}}}},
+            request=httpx.Request("POST", "https://api.github.com/graphql"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.post",
+                    new_callable=AsyncMock,
+                    return_value=graphql_resp,
+                ),
+            ):
+                return await github.get_unresolved_review_threads("user/repo", 42)
+
+        assert asyncio.run(run()) == []
+
+    def test_returns_empty_when_all_resolved(self):
+        graphql_resp = httpx.Response(
+            200,
+            json={
+                "data": {
+                    "repository": {
+                        "pullRequest": {
+                            "reviewThreads": {
+                                "nodes": [
+                                    {
+                                        "id": "t1",
+                                        "isResolved": True,
+                                        "isOutdated": False,
+                                        "comments": {"nodes": [{"body": "Fixed"}]},
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            },
+            request=httpx.Request("POST", "https://api.github.com/graphql"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.post",
+                    new_callable=AsyncMock,
+                    return_value=graphql_resp,
+                ),
+            ):
+                return await github.get_unresolved_review_threads("user/repo", 42)
+
+        assert asyncio.run(run()) == []
+
+
+class TestMergePr:
+    def test_returns_true_on_success(self):
+        merge_resp = httpx.Response(
+            200,
+            json={"merged": True},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=merge_resp,
+                ),
+            ):
+                return await github.merge_pr("user/repo", 42)
+
+        assert asyncio.run(run()) is True
+
+    def test_returns_false_on_conflict(self):
+        merge_resp = httpx.Response(
+            409,
+            json={"message": "Merge conflict"},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=merge_resp,
+                ),
+            ):
+                return await github.merge_pr("user/repo", 42)
+
+        assert asyncio.run(run()) is False
+
+    def test_returns_false_on_method_not_allowed(self):
+        merge_resp = httpx.Response(
+            405,
+            json={"message": "Not allowed"},
+            request=httpx.Request("PUT", "https://api.github.com/merge"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=merge_resp,
+                ),
+            ):
+                return await github.merge_pr("user/repo", 42)
+
+        assert asyncio.run(run()) is False
+
+
+class TestMarkPrReady:
+    def test_marks_draft_pr_ready(self):
+        ready_resp = httpx.Response(
+            200,
+            json={"number": 42, "draft": False},
+            request=httpx.Request("PATCH", "https://api.github.com/pulls/42"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.patch",
+                    new_callable=AsyncMock,
+                    return_value=ready_resp,
+                ) as mock_patch,
+            ):
+                await github.mark_pr_ready("user/repo", 42)
+                return mock_patch
+
+        mock_patch = asyncio.run(run())
+        assert mock_patch.await_args.kwargs["json"] == {"draft": False}
+
+    def test_raises_on_failure(self):
+        import pytest
+
+        fail_resp = httpx.Response(
+            422,
+            json={"message": "Validation failed"},
+            request=httpx.Request("PATCH", "https://api.github.com/pulls/42"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.patch",
+                    new_callable=AsyncMock,
+                    return_value=fail_resp,
+                ),
+            ):
+                await github.mark_pr_ready("user/repo", 42)
+
+        with pytest.raises(RuntimeError, match="Failed to mark PR"):
+            asyncio.run(run())

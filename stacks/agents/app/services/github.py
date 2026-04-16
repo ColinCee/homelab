@@ -1,4 +1,4 @@
-"""GitHub API — token management and REST helpers."""
+"""GitHub API — token management, REST helpers, and GraphQL queries."""
 
 import logging
 from collections.abc import AsyncIterator
@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 from pydantic import TypeAdapter
 
-from models import GitHubIssue, GitHubIssueComment, GitHubPullRequest
+from models import GitHubIssue, GitHubIssueComment, GitHubPullRequest, ReviewThread
 
 logger = logging.getLogger(__name__)
 
@@ -200,3 +200,107 @@ async def find_issue_comment_by_body_prefix(
             return comment.id
 
     return None
+
+
+# ── Review threads (GraphQL) ──────────────────────────────
+
+
+_REVIEW_THREADS_QUERY = """
+query($owner: String!, $repo: String!, $pr: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $pr) {
+      reviewThreads(first: 100) {
+        nodes {
+          id
+          isResolved
+          isOutdated
+          comments(first: 1) {
+            nodes { body }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+_GRAPHQL = "https://api.github.com/graphql"
+
+
+async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[ReviewThread]:
+    """Fetch unresolved, non-outdated review threads on a PR via GraphQL."""
+    owner, name = repo.split("/", 1)
+    async with _client() as client:
+        resp = await client.post(
+            _GRAPHQL,
+            json={
+                "query": _REVIEW_THREADS_QUERY,
+                "variables": {"owner": owner, "repo": name, "pr": pr_number},
+            },
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+    errors = data.get("errors")
+    if errors:
+        raise RuntimeError(f"GraphQL errors: {errors}")
+
+    pr_data = data.get("data", {}).get("repository", {}).get("pullRequest")
+    if not pr_data:
+        return []
+
+    threads: list[ReviewThread] = []
+    for node in pr_data.get("reviewThreads", {}).get("nodes", []):
+        if node.get("isResolved") or node.get("isOutdated"):
+            continue
+        first_comment = ""
+        comments = node.get("comments", {}).get("nodes", [])
+        if comments:
+            first_comment = comments[0].get("body", "")
+        threads.append(
+            ReviewThread(
+                id=node["id"],
+                is_resolved=False,
+                is_outdated=False,
+                body=first_comment,
+            )
+        )
+    return threads
+
+
+# ── PR merge / ready ──────────────────────────────────────
+
+
+async def merge_pr(repo: str, pr_number: int) -> bool:
+    """Squash-merge a PR. Returns True on success, False if merge is blocked."""
+    async with _client() as client:
+        resp = await client.put(
+            f"{_API}/repos/{repo}/pulls/{pr_number}/merge",
+            json={"merge_method": "squash"},
+        )
+    if resp.status_code == 200:
+        return True
+    if resp.status_code in (405, 409):
+        logger.warning(
+            "Merge blocked for %s#%d: HTTP %d — %s",
+            repo,
+            pr_number,
+            resp.status_code,
+            resp.text,
+        )
+        return False
+    resp.raise_for_status()
+    return False
+
+
+async def mark_pr_ready(repo: str, pr_number: int) -> None:
+    """Mark a draft PR as ready for review."""
+    async with _client() as client:
+        resp = await client.patch(
+            f"{_API}/repos/{repo}/pulls/{pr_number}",
+            json={"draft": False},
+        )
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"Failed to mark PR #{pr_number} ready on {repo}: HTTP {resp.status_code}"
+            )
