@@ -625,7 +625,7 @@ class TestReviewFixLoop:
     def _run_with_loop(
         self,
         *,
-        unresolved_threads_sequence: list[list] | None = None,
+        unresolved_threads_sequence: list[list | None] | None = None,
         review_side_effects: list | None = None,
         fix_side_effects: list | None = None,
         merge_result: bool = True,
