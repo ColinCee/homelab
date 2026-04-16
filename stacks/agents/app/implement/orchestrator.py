@@ -20,7 +20,6 @@ from services.github import (
     merge_pr,
     safe_comment,
 )
-from stats import STATUS_EMOJI, cli_stage_stats
 from trust import is_trusted_content_author
 
 logger = logging.getLogger(__name__)
@@ -420,12 +419,4 @@ async def implement_issue(
         raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
 
     finally:
-        if result and result.pr_number is not None:
-            stats = cli_stage_stats(cli_result, effort=reasoning_effort) if cli_result else ""
-            emoji = STATUS_EMOJI.get(result.status, "❓")
-            await safe_comment(
-                repo,
-                result.pr_number,
-                f"{emoji} **Implementation {result.status}**\n{stats}",
-            )
         await cleanup_branch_worktree(branch_name)

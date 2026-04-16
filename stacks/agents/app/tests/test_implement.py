@@ -456,8 +456,8 @@ class TestImplementIssue:
         result = self._run(mocks)
         assert result.premium_requests == 7
 
-    def test_stats_comment_includes_cli_models_and_api_time(self):
-        """Final PR stats comment includes rich CLI details."""
+    def test_orchestrator_does_not_post_terminal_stats_comment(self):
+        """Worker owns the final progress/stats comment for implement runs."""
         pr_data = GitHubPullRequest(
             number=99,
             html_url="https://github.com/user/repo/pull/99",
@@ -490,58 +490,7 @@ class TestImplementIssue:
                 return mock_comment
 
         mock_comment = asyncio.run(run())
-        comment_body = mock_comment.await_args.args[2]
-        assert "💰 5 premium" in comment_body
-        assert "⏱️" in comment_body
-        assert "(API: 1m 0s)" in comment_body
-        assert "🧠 high" in comment_body
-        assert "🤖 gpt-5.4: 883.6k in, 17.7k out, 788.5k cached" in comment_body
-
-    def test_stats_comment_includes_tokens_line_when_no_models(self):
-        """Final PR stats comment falls back to the tokens line for new CLI output."""
-        pr_data = GitHubPullRequest(
-            number=99,
-            html_url="https://github.com/user/repo/pull/99",
-            merged_at="2025-01-01T00:00:00Z",
-            merged=True,
-        )
-        cli_result = CLIResult(
-            output="done",
-            total_premium_requests=1,
-            session_id="sess-123",
-            session_time_seconds=120,
-            api_time_seconds=60,
-            tokens_line="↑ 1.1m • ↓ 18.9k • 1.0m (cached)",
-        )
-
-        async def run():
-            with (
-                patch(f"{_MOD}._utcnow", return_value=_TEST_START),
-                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
-                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
-                patch(
-                    "implement.orchestrator.create_branch_worktree",
-                    new_callable=AsyncMock,
-                    return_value=Path("/tmp/wt"),
-                ),
-                patch(
-                    "implement.orchestrator.run_copilot",
-                    new_callable=AsyncMock,
-                    return_value=cli_result,
-                ),
-                patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
-                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
-                patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
-                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock) as mock_comment,
-                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
-            ):
-                await implement_issue(repo="user/repo", issue_number=42)
-                return mock_comment
-
-        mock_comment = asyncio.run(run())
-        comment_body = mock_comment.await_args.args[2]
-        assert "📊 ↑ 1.1m • ↓ 18.9k • 1.0m (cached)" in comment_body
-        assert "🤖" not in comment_body
+        mock_comment.assert_not_awaited()
 
     def test_ignores_stale_merged_pr_from_previous_run(self):
         """A PR merged before this run started is ignored (reused branch name)."""

@@ -24,6 +24,7 @@ from services.github import (
     set_token,
     update_comment,
 )
+from stats import STATUS_EMOJI, task_stage_stats
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -67,12 +68,65 @@ async def _update_progress_comment(repo: str, comment_id: int | None, body: str)
         )
 
 
+def _format_implement_result_comment(result: TaskResult, *, effort: str) -> str:
+    summary = _implement_result_summary(result)
+    stats = task_stage_stats(result, effort=effort)
+    return "\n".join(part for part in (summary, stats) if part)
+
+
+def _implement_result_summary(result: TaskResult) -> str:
+    if result.status == "complete":
+        if result.pr_number is not None and result.pr_url:
+            if result.merged:
+                return f"✅ PR #{result.pr_number} merged — {result.pr_url}"
+            if result.auto_merge:
+                return f"✅ PR #{result.pr_number} created (auto-merge enabled) — {result.pr_url}"
+            return f"✅ PR #{result.pr_number} created — {result.pr_url}"
+        return "✅ Implementation complete"
+
+    if result.status == "partial":
+        summary = "⚠️ Implementation needs human attention"
+        if result.pr_number is not None and result.pr_url:
+            summary = f"⚠️ PR #{result.pr_number} created — {result.pr_url}"
+        if result.error:
+            return f"{summary}\nNeeds human attention: {result.error}"
+        return summary
+
+    if result.status == "failed":
+        detail = result.error or "see agent logs for details."
+        return f"❌ Implementation failed — {detail}"
+
+    if result.status == "rejected":
+        detail = result.error or "issue author is not trusted."
+        return f"⚠️ Implementation rejected — {detail}"
+
+    emoji = STATUS_EMOJI.get(result.status, "❓")
+    return f"{emoji} Implementation {result.status}"
+
+
+async def _publish_implement_result(
+    repo: str,
+    issue_number: int,
+    progress_comment_id: int | None,
+    result: TaskResult,
+    *,
+    effort: str,
+    allow_fallback_comment: bool = True,
+) -> None:
+    body = _format_implement_result_comment(result, effort=effort)
+    if progress_comment_id is not None:
+        await _update_progress_comment(repo, progress_comment_id, body)
+        return
+    if allow_fallback_comment and result.status != "rejected":
+        await safe_comment(repo, issue_number, body)
+
+
 async def _run_implement(repo: str, issue_number: int, model: str, effort: str) -> TaskResult:
     """Run the implement lifecycle and return a typed result."""
     progress_comment_id: int | None = None
+    issue = None
 
     try:
-        issue = None
         try:
             issue = await get_issue(repo, issue_number)
         except Exception:
@@ -99,39 +153,60 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
             issue=issue,
         )
 
-        if result.pr_number is not None and result.pr_url:
-            if result.auto_merge:
-                msg = f"✅ PR #{result.pr_number} created (auto-merge enabled) — {result.pr_url}"
-            else:
-                msg = f"✅ PR #{result.pr_number} created — {result.pr_url}"
-            await _update_progress_comment(repo, progress_comment_id, msg)
-
+        await _publish_implement_result(
+            repo,
+            issue_number,
+            progress_comment_id,
+            result,
+            effort=effort,
+        )
         return result
 
     except ValueError as exc:
         logger.warning("Implementation rejected for %s#%d: %s", repo, issue_number, exc)
-        return TaskResult(status="rejected", premium_requests=0)
+        result = TaskResult(status="rejected", premium_requests=0, error=str(exc))
+        await _publish_implement_result(
+            repo,
+            issue_number,
+            progress_comment_id,
+            result,
+            effort=effort,
+            allow_fallback_comment=False,
+        )
+        return result
 
     except TaskError as exc:
         logger.exception("Implementation failed for %s#%d", repo, issue_number)
-        await _update_progress_comment(
-            repo, progress_comment_id, f"⚠️ Implementation failed — {exc}"
+        result = TaskResult(
+            status="failed",
+            premium_requests=exc.premium_requests,
+            error=str(exc),
         )
-        if not exc.commented:
-            await safe_comment(repo, issue_number, f"⚠️ **Implementation failed** — {exc}")
-        return TaskResult(status="failed", premium_requests=exc.premium_requests)
-
-    except Exception as exc:
-        logger.exception("Implementation failed for %s#%d", repo, issue_number)
-        await _update_progress_comment(
+        await _publish_implement_result(
             repo,
+            issue_number,
             progress_comment_id,
-            "⚠️ Implementation failed — see agent logs for details.",
+            result,
+            effort=effort,
+            allow_fallback_comment=not exc.commented,
         )
-        await safe_comment(
-            repo, issue_number, "⚠️ **Implementation failed** — see agent logs for details."
+        return result
+
+    except Exception:
+        logger.exception("Implementation failed for %s#%d", repo, issue_number)
+        result = TaskResult(
+            status="failed",
+            premium_requests=0,
+            error="see agent logs for details.",
         )
-        return TaskResult(status="failed", premium_requests=0, error=str(exc))
+        await _publish_implement_result(
+            repo,
+            issue_number,
+            progress_comment_id,
+            result,
+            effort=effort,
+        )
+        return result
 
 
 async def _run_review(
