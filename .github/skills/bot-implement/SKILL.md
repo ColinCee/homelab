@@ -56,6 +56,7 @@ Before creating the PR, sanity-check these questions:
 - **Security:** Are credentials kept out of logs, error messages, and command args? Are untrusted inputs validated?
 - **Consistency:** If you added a new status value, enum, or pattern, is it handled everywhere it's consumed?
 - **Cascading effects:** If you changed a function signature or return value, did you update every caller?
+- **Code quality:** If a function grows past ~80 lines or accumulates `try`/`except` blocks, stop and extract. See `.github/instructions/python.instructions.md` for conventions.
 
 ## Gotchas
 

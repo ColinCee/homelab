@@ -2,6 +2,7 @@
 
 import logging
 import time
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -33,6 +34,9 @@ def _monotonic() -> float:
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+# ── Prompts ──────────────────────────────────────────────
 
 
 IMPLEMENT_PROMPT_TEMPLATE = """\
@@ -92,6 +96,24 @@ PR #{pr_number} in {repo} has been approved but could not be merged automaticall
 """
 
 
+# ── Context ──────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class _LoopContext:
+    """Shared state for the review-fix loop and merge steps."""
+
+    worktree_path: Path
+    repo: str
+    model: str
+    reasoning_effort: str
+    token: str
+    implement_session_id: str | None
+
+
+# ── Helpers ──────────────────────────────────────────────
+
+
 def _is_stale_pr(pr_data: GitHubPullRequest, run_start: datetime) -> bool:
     """Check if a PR predates the current run (reused branch name).
 
@@ -101,17 +123,19 @@ def _is_stale_pr(pr_data: GitHubPullRequest, run_start: datetime) -> bool:
     state = pr_data.state
     merged_at_str = pr_data.merged_at
 
-    # Closed without merging — definitely stale
     if state == "closed" and not merged_at_str:
         return True
 
-    # Merged before this run started — leftover from a previous run
     if merged_at_str:
         merged_at = datetime.fromisoformat(merged_at_str.replace("Z", "+00:00"))
         if merged_at < run_start:
             return True
 
     return False
+
+
+def _is_merged(pr_data: GitHubPullRequest) -> bool:
+    return pr_data.merged_at is not None or pr_data.merged
 
 
 def _build_result(
@@ -122,6 +146,7 @@ def _build_result(
     repo: str,
 ) -> TaskResult:
     """Build a TaskResult from PR state after CLI completes."""
+    # Determine status-specific fields
     if not pr_data:
         return TaskResult(
             status="failed",
@@ -135,43 +160,14 @@ def _build_result(
             session_id=cli_result.session_id,
         )
 
-    merged = pr_data.merged_at is not None or pr_data.merged
-
-    if merged:
-        return TaskResult(
-            status="complete",
-            merged=True,
-            pr_number=pr_data.number,
-            pr_url=pr_data.html_url,
-            repo=repo,
-            elapsed_seconds=elapsed,
-            premium_requests=premium_requests,
-            api_time_seconds=cli_result.api_time_seconds,
-            models=cli_result.models,
-            tokens_line=cli_result.tokens_line,
-            session_id=cli_result.session_id,
-        )
-
-    if pr_data.auto_merge is not None:
-        return TaskResult(
-            status="complete",
-            merged=False,
-            auto_merge=True,
-            pr_number=pr_data.number,
-            pr_url=pr_data.html_url,
-            repo=repo,
-            elapsed_seconds=elapsed,
-            premium_requests=premium_requests,
-            api_time_seconds=cli_result.api_time_seconds,
-            models=cli_result.models,
-            tokens_line=cli_result.tokens_line,
-            session_id=cli_result.session_id,
-        )
-
+    status = "complete" if (_is_merged(pr_data) or pr_data.auto_merge is not None) else "partial"
     return TaskResult(
-        status="partial",
-        merged=False,
-        error="CLI created PR but did not merge — needs manual attention",
+        status=status,
+        merged=_is_merged(pr_data),
+        auto_merge=pr_data.auto_merge is not None if not _is_merged(pr_data) else None,
+        error=None
+        if status == "complete"
+        else "CLI created PR but did not merge — needs manual attention",
         pr_number=pr_data.number,
         pr_url=pr_data.html_url,
         repo=repo,
@@ -184,62 +180,50 @@ def _build_result(
     )
 
 
+# ── Review-fix loop ─────────────────────────────────────
+
+
 async def _run_review_fix_loop(
-    *,
-    worktree_path: Path,
-    repo: str,
+    ctx: _LoopContext,
     pr_number: int,
     issue_data: GitHubIssue,
     issue_number: int,
-    implement_session_id: str | None,
-    model: str,
-    reasoning_effort: str,
-    token: str,
 ) -> tuple[bool, int]:
     """Run the review → fix loop. Returns (approved, premium_requests_used)."""
     total_premium = 0
     review_session_id: str | None = None
-    approved = False
 
     for round_num in range(1, MAX_REVIEW_FIX_ROUNDS + 1):
         # ── Review step ──
-        logger.info("Review round %d for %s#%d", round_num, repo, pr_number)
+        logger.info("Review round %d for %s#%d", round_num, ctx.repo, pr_number)
         review_prompt = REVIEW_PROMPT_TEMPLATE.format(
             pr_number=pr_number,
-            repo=repo,
+            repo=ctx.repo,
             issue_number=issue_number,
             issue_title=issue_data.title,
             issue_body=issue_data.body or "(no description)",
         )
         try:
             review_result = await run_copilot(
-                worktree_path,
+                ctx.worktree_path,
                 review_prompt,
-                model=model,
-                effort=reasoning_effort,
+                model=ctx.model,
+                effort=ctx.reasoning_effort,
                 session_id=review_session_id,
-                github_token=token,
+                github_token=ctx.token,
             )
             total_premium += review_result.total_premium_requests
             review_session_id = review_result.session_id
         except TaskError as exc:
             total_premium += exc.premium_requests
             logger.warning("Review round %d failed: %s", round_num, exc)
-            await safe_comment(repo, pr_number, f"⚠️ Review round {round_num} failed — {exc}")
+            await safe_comment(ctx.repo, pr_number, f"⚠️ Review round {round_num} failed — {exc}")
             break
 
-        # Check threads after review
-        try:
-            unresolved = await get_unresolved_review_threads(repo, pr_number)
-        except Exception:
-            logger.warning(
-                "Failed to fetch review threads after review round %d", round_num, exc_info=True
-            )
-            break
+        unresolved = await get_unresolved_review_threads(ctx.repo, pr_number)
         if not unresolved:
             logger.info("Review round %d: approved (no unresolved threads)", round_num)
-            approved = True
-            break
+            return True, total_premium
 
         logger.info(
             "Review round %d: %d unresolved thread(s), starting fix",
@@ -250,36 +234,28 @@ async def _run_review_fix_loop(
         # ── Fix step ──
         threads_summary = "\n".join(f"- Thread {t.id}: {t.body[:200]}" for t in unresolved)
         fix_prompt = FIX_PROMPT_TEMPLATE.format(
-            pr_number=pr_number, repo=repo, threads_summary=threads_summary
+            pr_number=pr_number, repo=ctx.repo, threads_summary=threads_summary
         )
         try:
             fix_result = await run_copilot(
-                worktree_path,
+                ctx.worktree_path,
                 fix_prompt,
-                model=model,
-                effort=reasoning_effort,
-                session_id=implement_session_id,
-                github_token=token,
+                model=ctx.model,
+                effort=ctx.reasoning_effort,
+                session_id=ctx.implement_session_id,
+                github_token=ctx.token,
             )
             total_premium += fix_result.total_premium_requests
         except TaskError as exc:
             total_premium += exc.premium_requests
             logger.warning("Fix round %d failed: %s", round_num, exc)
-            await safe_comment(repo, pr_number, f"⚠️ Fix round {round_num} failed — {exc}")
+            await safe_comment(ctx.repo, pr_number, f"⚠️ Fix round {round_num} failed — {exc}")
             break
 
-        # Check threads after fix
-        try:
-            unresolved = await get_unresolved_review_threads(repo, pr_number)
-        except Exception:
-            logger.warning(
-                "Failed to fetch review threads after fix round %d", round_num, exc_info=True
-            )
-            break
+        unresolved = await get_unresolved_review_threads(ctx.repo, pr_number)
         if not unresolved:
             logger.info("Fix round %d resolved all threads", round_num)
-            approved = True
-            break
+            return True, total_premium
 
         logger.info(
             "Fix round %d: %d thread(s) still unresolved",
@@ -287,58 +263,37 @@ async def _run_review_fix_loop(
             len(unresolved),
         )
 
-    return approved, total_premium
+    return False, total_premium
 
 
-async def _try_merge(
-    *,
-    worktree_path: Path,
-    repo: str,
-    pr_number: int,
-    branch_name: str,
-    implement_session_id: str | None,
-    model: str,
-    reasoning_effort: str,
-    token: str,
-) -> tuple[bool, int]:
+# ── Merge ────────────────────────────────────────────────
+
+
+async def _try_merge(ctx: _LoopContext, pr_number: int, branch_name: str) -> tuple[bool, int]:
     """Attempt to merge a PR. Returns (merged, premium_requests_used)."""
-    # Mark PR ready (it's a draft)
-    try:
-        await mark_pr_ready(repo, pr_number)
-    except Exception:
-        logger.warning("Failed to mark PR #%d ready", pr_number, exc_info=True)
+    await mark_pr_ready(ctx.repo, pr_number)
 
-    # Fast path: REST API merge
-    try:
-        merged = await merge_pr(repo, pr_number)
-    except Exception:
-        logger.warning("REST merge API call failed for #%d", pr_number, exc_info=True)
-        merged = False
-    if merged:
+    if await merge_pr(ctx.repo, pr_number):
         logger.info("PR #%d merged via REST API", pr_number)
         return True, 0
 
-    # Fallback: CLI rebase + merge
+    # Fallback: CLI merge
     logger.info("REST merge failed for #%d, trying CLI fallback", pr_number)
     merge_prompt = MERGE_PROMPT_TEMPLATE.format(
-        pr_number=pr_number,
-        repo=repo,
-        branch=branch_name,
+        pr_number=pr_number, repo=ctx.repo, branch=branch_name
     )
     try:
         merge_result = await run_copilot(
-            worktree_path,
+            ctx.worktree_path,
             merge_prompt,
-            model=model,
-            effort=reasoning_effort,
-            session_id=implement_session_id,
-            github_token=token,
+            model=ctx.model,
+            effort=ctx.reasoning_effort,
+            session_id=ctx.implement_session_id,
+            github_token=ctx.token,
         )
         premium = merge_result.total_premium_requests
-
-        # Re-check PR state
-        pr_data = await find_pr_by_branch(repo, branch_name)
-        if pr_data and (pr_data.merged_at is not None or pr_data.merged):
+        pr_data = await find_pr_by_branch(ctx.repo, branch_name)
+        if pr_data and _is_merged(pr_data):
             logger.info("PR #%d merged via CLI fallback", pr_number)
             return True, premium
         logger.warning("CLI fallback did not merge PR #%d", pr_number)
@@ -346,6 +301,9 @@ async def _try_merge(
     except TaskError as exc:
         logger.warning("CLI merge fallback failed: %s", exc)
         return False, exc.premium_requests
+
+
+# ── Main entry point ─────────────────────────────────────
 
 
 async def implement_issue(
@@ -368,9 +326,7 @@ async def implement_issue(
     branch_name = f"agent/issue-{issue_number}"
 
     token = await get_token()
-    issue_data = issue
-    if issue_data is None:
-        issue_data = await get_issue(repo, issue_number)
+    issue_data = issue if issue is not None else await get_issue(repo, issue_number)
 
     if not is_trusted_content_author(issue_data):
         raise ValueError(
@@ -392,19 +348,12 @@ async def implement_issue(
             title=issue_data.title,
             body=issue_data.body or "(no description)",
         )
-
         cli_result = await run_copilot(
-            worktree_path,
-            prompt,
-            model=model,
-            effort=reasoning_effort,
-            github_token=token,
+            worktree_path, prompt, model=model, effort=reasoning_effort, github_token=token
         )
         total_premium_requests += cli_result.total_premium_requests
-        implement_session_id = cli_result.session_id
 
         pr_data = await find_pr_by_branch(repo, branch_name)
-
         if pr_data and _is_stale_pr(pr_data, start_wall):
             logger.warning(
                 "Ignoring stale PR #%d for %s (state=%s, merged_at=%s)",
@@ -415,86 +364,45 @@ async def implement_issue(
             )
             pr_data = None
 
-        # No PR created → fail early
         if not pr_data:
             elapsed = _monotonic() - start
             result = _build_result(None, elapsed, total_premium_requests, cli_result, repo)
             return result
 
-        # Lock the PR to prevent external comment injection
-        try:
-            await lock_pr(repo, pr_data.number)
-        except Exception:
-            logger.warning("Failed to lock PR #%d", pr_data.number, exc_info=True)
+        await lock_pr(repo, pr_data.number)
 
-        # CLI already merged the PR → skip review loop
-        if pr_data.merged_at is not None or pr_data.merged:
-            logger.info("CLI already merged PR #%d, skipping review loop", pr_data.number)
-            elapsed = _monotonic() - start
-            result = _build_result(pr_data, elapsed, total_premium_requests, cli_result, repo)
-            if result.merged:
-                try:
-                    await close_issue(repo, issue_number)
-                except Exception:
-                    logger.warning(
-                        "Failed to close issue %s#%d after merged PR",
-                        repo,
-                        issue_number,
-                        exc_info=True,
-                    )
-            return result
-
-        # ── Step 2: Review-fix loop ──
-        approved, loop_premium = await _run_review_fix_loop(
-            worktree_path=worktree_path,
-            repo=repo,
-            pr_number=pr_data.number,
-            issue_data=issue_data,
-            issue_number=issue_number,
-            implement_session_id=implement_session_id,
-            model=model,
-            reasoning_effort=reasoning_effort,
-            token=token,
-        )
-        total_premium_requests += loop_premium
-
-        # ── Step 3: Merge or leave open ──
-        if approved:
-            _merged, merge_premium = await _try_merge(
+        # ── Step 2: Review-fix loop (skip if already merged) ──
+        if not _is_merged(pr_data):
+            ctx = _LoopContext(
                 worktree_path=worktree_path,
                 repo=repo,
-                pr_number=pr_data.number,
-                branch_name=branch_name,
-                implement_session_id=implement_session_id,
                 model=model,
                 reasoning_effort=reasoning_effort,
                 token=token,
+                implement_session_id=cli_result.session_id,
             )
-            total_premium_requests += merge_premium
+            approved, loop_premium = await _run_review_fix_loop(
+                ctx, pr_data.number, issue_data, issue_number
+            )
+            total_premium_requests += loop_premium
 
-            # Re-fetch PR state for final result
-            pr_data = await find_pr_by_branch(repo, branch_name)
-        else:
-            await safe_comment(
-                repo,
-                pr_data.number,
-                f"⚠️ Review-fix loop exhausted ({MAX_REVIEW_FIX_ROUNDS} rounds) "
-                "with unresolved threads — needs human review.",
-            )
+            if approved:
+                _merged, merge_premium = await _try_merge(ctx, pr_data.number, branch_name)
+                total_premium_requests += merge_premium
+                pr_data = await find_pr_by_branch(repo, branch_name)
+            else:
+                await safe_comment(
+                    repo,
+                    pr_data.number,
+                    f"⚠️ Review-fix loop exhausted ({MAX_REVIEW_FIX_ROUNDS} rounds) "
+                    "with unresolved threads — needs human review.",
+                )
 
         elapsed = _monotonic() - start
         result = _build_result(pr_data, elapsed, total_premium_requests, cli_result, repo)
 
         if result.merged:
-            try:
-                await close_issue(repo, issue_number)
-            except Exception:
-                logger.warning(
-                    "Failed to close issue %s#%d after merged PR",
-                    repo,
-                    issue_number,
-                    exc_info=True,
-                )
+            await close_issue(repo, issue_number)
 
         return result
 
