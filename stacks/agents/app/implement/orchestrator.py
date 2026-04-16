@@ -65,9 +65,12 @@ Use the bot-review skill for guidelines on how to review and post your findings.
 
 FIX_PROMPT_TEMPLATE = """\
 Review comments have been posted on PR #{pr_number} in {repo}.
-Read the review threads with `gh pr view {pr_number} --comments`.
 
-For each unresolved thread:
+Here are the unresolved review threads:
+
+{threads_summary}
+
+For each thread:
 - If the comment identifies a real issue: fix the code
 - If the comment is a false positive: reply briefly explaining why, then resolve \
 the thread using `gh api graphql` with the resolveReviewThread mutation
@@ -225,7 +228,13 @@ async def _run_review_fix_loop(
             break
 
         # Check threads after review
-        unresolved = await get_unresolved_review_threads(repo, pr_number)
+        try:
+            unresolved = await get_unresolved_review_threads(repo, pr_number)
+        except Exception:
+            logger.warning(
+                "Failed to fetch review threads after review round %d", round_num, exc_info=True
+            )
+            break
         if not unresolved:
             logger.info("Review round %d: approved (no unresolved threads)", round_num)
             approved = True
@@ -238,7 +247,10 @@ async def _run_review_fix_loop(
         )
 
         # ── Fix step ──
-        fix_prompt = FIX_PROMPT_TEMPLATE.format(pr_number=pr_number, repo=repo)
+        threads_summary = "\n".join(f"- Thread {t.id}: {t.body[:200]}" for t in unresolved)
+        fix_prompt = FIX_PROMPT_TEMPLATE.format(
+            pr_number=pr_number, repo=repo, threads_summary=threads_summary
+        )
         try:
             fix_result = await run_copilot(
                 worktree_path,
@@ -256,7 +268,13 @@ async def _run_review_fix_loop(
             break
 
         # Check threads after fix
-        unresolved = await get_unresolved_review_threads(repo, pr_number)
+        try:
+            unresolved = await get_unresolved_review_threads(repo, pr_number)
+        except Exception:
+            logger.warning(
+                "Failed to fetch review threads after fix round %d", round_num, exc_info=True
+            )
+            break
         if not unresolved:
             logger.info("Fix round %d resolved all threads", round_num)
             approved = True
@@ -290,7 +308,11 @@ async def _try_merge(
         logger.warning("Failed to mark PR #%d ready", pr_number, exc_info=True)
 
     # Fast path: REST API merge
-    merged = await merge_pr(repo, pr_number)
+    try:
+        merged = await merge_pr(repo, pr_number)
+    except Exception:
+        logger.warning("REST merge API call failed for #%d", pr_number, exc_info=True)
+        merged = False
     if merged:
         logger.info("PR #%d merged via REST API", pr_number)
         return True, 0

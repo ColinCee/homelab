@@ -9,11 +9,15 @@ import pytest
 from conftest import MOCK_CLI_RESULT, MOCK_ISSUE
 
 from implement import implement_issue
-from models import GitHubIssue, GitHubPullRequest
+from models import GitHubIssue, GitHubPullRequest, ReviewThread
 from services.copilot import CLIResult, TaskError
 from stats import cli_stage_stats, format_stage_stats
 
 _MOD = "implement.orchestrator"
+
+# Sentinel for _base_mocks default parameter detection
+_THREAD_T1 = ReviewThread(id="t1", is_resolved=False, is_outdated=False, body="Fix this bug")
+_THREAD_LIST = [_THREAD_T1]
 
 # Sentinel for _base_mocks default parameter detection
 _UNSET = object()
@@ -710,7 +714,7 @@ class TestReviewFixLoop:
         """Review finds issues → fix resolves them → merge."""
         result = self._run_with_loop(
             unresolved_threads_sequence=[
-                [{"id": "t1"}],  # after review: 1 thread
+                _THREAD_LIST,  # after review: 1 thread
                 [],  # after fix: resolved
             ],
         )
@@ -721,10 +725,10 @@ class TestReviewFixLoop:
         """Two rounds of review-fix, still unresolved → PR left open."""
         result = self._run_with_loop(
             unresolved_threads_sequence=[
-                [{"id": "t1"}],  # round 1 review
-                [{"id": "t1"}],  # round 1 fix — still there
-                [{"id": "t1"}],  # round 2 review
-                [{"id": "t1"}],  # round 2 fix — still there
+                _THREAD_LIST,  # round 1 review
+                _THREAD_LIST,  # round 1 fix — still there
+                _THREAD_LIST,  # round 2 review
+                _THREAD_LIST,  # round 2 fix — still there
             ],
             merge_result=False,
             pr_after_merge=self._OPEN_PR,
@@ -765,11 +769,47 @@ class TestReviewFixLoop:
         assert result.pr_number is None
 
     def test_already_merged_skips_loop(self):
-        """CLI merged during implement → skip review loop."""
-        result = self._run_with_loop(
-            unresolved_threads_sequence=[],  # should never be called
-            pr_after_merge=self._MERGED_PR,
-        )
+        """CLI merged during implement → skip review loop, no review/fix calls."""
+        merged_pr = self._MERGED_PR
+
+        async def run():
+            with (
+                patch(f"{_MOD}._utcnow", return_value=_TEST_START),
+                patch(f"{_MOD}.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(f"{_MOD}.get_issue", new_callable=AsyncMock, return_value=MOCK_ISSUE),
+                patch(
+                    "implement.orchestrator.create_branch_worktree",
+                    new_callable=AsyncMock,
+                    return_value=Path("/tmp/wt"),
+                ),
+                patch(
+                    "implement.orchestrator.run_copilot",
+                    new_callable=AsyncMock,
+                    return_value=CLIResult(
+                        output="done", total_premium_requests=5, session_id="s1"
+                    ),
+                ) as mock_copilot,
+                # First find_pr_by_branch returns merged PR → skip loop
+                patch(
+                    f"{_MOD}.find_pr_by_branch",
+                    new_callable=AsyncMock,
+                    return_value=merged_pr,
+                ),
+                patch(
+                    f"{_MOD}.get_unresolved_review_threads",
+                    new_callable=AsyncMock,
+                ) as mock_threads,
+                patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
+                patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
+                patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
+            ):
+                result = await implement_issue(repo="user/repo", issue_number=42)
+                # Only the implement call, no review/fix/merge
+                assert mock_copilot.await_count == 1
+                mock_threads.assert_not_awaited()
+                return result
+
+        result = asyncio.run(run())
         assert result.status == "complete"
         assert result.merged is True
 
@@ -788,7 +828,7 @@ class TestReviewFixLoop:
         """Fix CLI throws TaskError → break loop, leave PR open."""
         review_cli = CLIResult(output="review", total_premium_requests=1, session_id="r1")
         result = self._run_with_loop(
-            unresolved_threads_sequence=[[{"id": "t1"}]],  # review finds issues
+            unresolved_threads_sequence=[_THREAD_LIST],  # review finds issues
             review_side_effects=[review_cli, TaskError("fix crashed", premium_requests=3)],
             merge_result=False,
             pr_after_merge=self._OPEN_PR,
@@ -814,7 +854,7 @@ class TestReviewFixLoop:
         """Premium requests from all CLI calls are summed."""
         result = self._run_with_loop(
             unresolved_threads_sequence=[
-                [{"id": "t1"}],  # after review
+                _THREAD_LIST,  # after review
                 [],  # after fix
             ],
         )
