@@ -434,9 +434,8 @@ class TestMarkPrReady:
         mock_patch = asyncio.run(run())
         assert mock_patch.await_args.kwargs["json"] == {"draft": False}
 
-    def test_raises_on_failure(self):
-        import pytest
-
+    def test_warns_on_failure(self):
+        """Failure logs warning but does not raise."""
         fail_resp = httpx.Response(
             422,
             json={"message": "Validation failed"},
@@ -454,8 +453,7 @@ class TestMarkPrReady:
             ):
                 await github.mark_pr_ready("user/repo", 42)
 
-        with pytest.raises(RuntimeError, match="Failed to mark PR"):
-            asyncio.run(run())
+        asyncio.run(run())  # No exception = pass
 
 
 class TestLockPr:

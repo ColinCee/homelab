@@ -319,6 +319,7 @@ class TestImplementIssue:
                 ),
                 patch(f"{_MOD}.merge_pr", new_callable=AsyncMock, return_value=True),
                 patch(f"{_MOD}.mark_pr_ready", new_callable=AsyncMock),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -354,6 +355,7 @@ class TestImplementIssue:
                     return_value=MOCK_CLI_RESULT,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -401,6 +403,7 @@ class TestImplementIssue:
                 ),
                 patch(f"{_MOD}.merge_pr", new_callable=AsyncMock, return_value=False),
                 patch(f"{_MOD}.mark_pr_ready", new_callable=AsyncMock),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock) as mock_close,
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -478,6 +481,7 @@ class TestImplementIssue:
                     return_value=MOCK_CLI_RESULT,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock) as mock_comment,
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -526,6 +530,7 @@ class TestImplementIssue:
                     return_value=cli_result,
                 ),
                 patch(f"{_MOD}.find_pr_by_branch", new_callable=AsyncMock, return_value=pr_data),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock) as mock_comment,
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -620,7 +625,7 @@ class TestReviewFixLoop:
     def _run_with_loop(
         self,
         *,
-        unresolved_threads_sequence: list[list] | None = None,
+        unresolved_threads_sequence: list[list | None] | None = None,
         review_side_effects: list | None = None,
         fix_side_effects: list | None = None,
         merge_result: bool = True,
@@ -695,6 +700,7 @@ class TestReviewFixLoop:
                 patch(f"{_MOD}.get_unresolved_review_threads", side_effect=mock_threads),
                 patch(f"{_MOD}.merge_pr", new_callable=AsyncMock, return_value=merge_result),
                 patch(f"{_MOD}.mark_pr_ready", new_callable=AsyncMock),
+                patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
@@ -861,3 +867,26 @@ class TestReviewFixLoop:
         )
         # MOCK_CLI_RESULT (implement) = 5, review = 1, fix = 1
         assert result.premium_requests >= 7
+
+    def test_thread_fetch_failure_breaks_loop(self):
+        """Thread fetch returning None (failure) breaks loop, does NOT approve."""
+        result = self._run_with_loop(
+            unresolved_threads_sequence=[None],  # fetch fails after review
+            merge_result=False,
+            pr_after_merge=self._OPEN_PR,
+        )
+        assert result.status == "partial"
+        assert result.merged is False
+
+    def test_thread_fetch_failure_after_fix_breaks_loop(self):
+        """Thread fetch fails after fix step → breaks loop, does NOT approve."""
+        result = self._run_with_loop(
+            unresolved_threads_sequence=[
+                _THREAD_LIST,  # after review: threads found
+                None,  # after fix: fetch fails
+            ],
+            merge_result=False,
+            pr_after_merge=self._OPEN_PR,
+        )
+        assert result.status == "partial"
+        assert result.merged is False

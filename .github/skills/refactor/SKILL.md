@@ -23,6 +23,7 @@ You are performing a deliberate cleanup pass. Unlike feature work (bot-implement
 - **Flat control flow.** Prefer early returns and guard clauses over nested if/else. Extract deeply nested blocks into named functions.
 - **DRY error handling.** If the same try/except/log pattern appears 3+ times, extract a helper.
 - **One pass, not one file.** When you find a pattern to fix, grep for all instances across the codebase. Fix them all in one commit.
+- **Apply code quality conventions** from `.github/instructions/python.instructions.md` — they define complexity signals and when to extract.
 - **Measure the improvement.** Before and after: count lines, nesting depth, number of duplicate blocks. Include the delta in the PR description.
 
 ## Process

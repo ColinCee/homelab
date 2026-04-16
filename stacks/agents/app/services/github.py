@@ -84,16 +84,22 @@ async def get_issue(repo: str, issue_number: int) -> GitHubIssue:
 
 
 async def close_issue(repo: str, issue_number: int) -> None:
-    """Close an issue as completed."""
-    async with _client() as client:
-        resp = await client.patch(
-            f"{_API}/repos/{repo}/issues/{issue_number}",
-            json={"state": "closed", "state_reason": "completed"},
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(
-                f"Failed to close issue #{issue_number} on {repo}: HTTP {resp.status_code}"
+    """Close an issue as completed. Best-effort — logs on failure, never raises."""
+    try:
+        async with _client() as client:
+            resp = await client.patch(
+                f"{_API}/repos/{repo}/issues/{issue_number}",
+                json={"state": "closed", "state_reason": "completed"},
             )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Failed to close issue #%d on %s: HTTP %d",
+                    issue_number,
+                    repo,
+                    resp.status_code,
+                )
+    except Exception:
+        logger.warning("Failed to close issue #%d on %s", issue_number, repo, exc_info=True)
 
 
 async def get_pr(repo: str, pr_number: int) -> GitHubPullRequest:
@@ -227,95 +233,122 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 _GRAPHQL = "https://api.github.com/graphql"
 
 
-async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[ReviewThread]:
-    """Fetch unresolved, non-outdated review threads on a PR via GraphQL."""
-    owner, name = repo.split("/", 1)
-    async with _client() as client:
-        resp = await client.post(
-            _GRAPHQL,
-            json={
-                "query": _REVIEW_THREADS_QUERY,
-                "variables": {"owner": owner, "repo": name, "pr": pr_number},
-            },
-        )
-        resp.raise_for_status()
-        data = resp.json()
+async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[ReviewThread] | None:
+    """Fetch unresolved, non-outdated review threads on a PR via GraphQL.
 
-    errors = data.get("errors")
-    if errors:
-        raise RuntimeError(f"GraphQL errors: {errors}")
-
-    pr_data = data.get("data", {}).get("repository", {}).get("pullRequest")
-    if not pr_data:
-        return []
-
-    threads: list[ReviewThread] = []
-    for node in pr_data.get("reviewThreads", {}).get("nodes", []):
-        if node.get("isResolved") or node.get("isOutdated"):
-            continue
-        first_comment = ""
-        comments = node.get("comments", {}).get("nodes", [])
-        if comments:
-            first_comment = comments[0].get("body", "")
-        threads.append(
-            ReviewThread(
-                id=node["id"],
-                is_resolved=False,
-                is_outdated=False,
-                body=first_comment,
+    Returns None on failure (distinct from empty list = no unresolved threads).
+    Callers must check for None to distinguish fetch errors from clean reviews.
+    """
+    try:
+        owner, name = repo.split("/", 1)
+        async with _client() as client:
+            resp = await client.post(
+                _GRAPHQL,
+                json={
+                    "query": _REVIEW_THREADS_QUERY,
+                    "variables": {"owner": owner, "repo": name, "pr": pr_number},
+                },
             )
-        )
-    return threads
+            resp.raise_for_status()
+            data = resp.json()
+
+        errors = data.get("errors")
+        if errors:
+            logger.warning(
+                "GraphQL errors fetching review threads for %s#%d: %s",
+                repo,
+                pr_number,
+                errors,
+            )
+            return None
+
+        pr_data = data.get("data", {}).get("repository", {}).get("pullRequest")
+        if not pr_data:
+            return []
+
+        threads: list[ReviewThread] = []
+        for node in pr_data.get("reviewThreads", {}).get("nodes", []):
+            if node.get("isResolved") or node.get("isOutdated"):
+                continue
+            first_comment = ""
+            comments = node.get("comments", {}).get("nodes", [])
+            if comments:
+                first_comment = comments[0].get("body", "")
+            threads.append(
+                ReviewThread(
+                    id=node["id"],
+                    is_resolved=False,
+                    is_outdated=False,
+                    body=first_comment,
+                )
+            )
+        return threads
+    except Exception:
+        logger.warning("Failed to fetch review threads for %s#%d", repo, pr_number, exc_info=True)
+        return None
 
 
 # ── PR merge / ready ──────────────────────────────────────
 
 
 async def merge_pr(repo: str, pr_number: int) -> bool:
-    """Squash-merge a PR. Returns True on success, False if merge is blocked."""
-    async with _client() as client:
-        resp = await client.put(
-            f"{_API}/repos/{repo}/pulls/{pr_number}/merge",
-            json={"merge_method": "squash"},
-        )
-    if resp.status_code == 200:
-        return True
-    if resp.status_code in (405, 409):
+    """Squash-merge a PR. Returns True on success, False on any failure. Never raises."""
+    try:
+        async with _client() as client:
+            resp = await client.put(
+                f"{_API}/repos/{repo}/pulls/{pr_number}/merge",
+                json={"merge_method": "squash"},
+            )
+        if resp.status_code == 200:
+            return True
         logger.warning(
-            "Merge blocked for %s#%d: HTTP %d — %s",
+            "Merge failed for %s#%d: HTTP %d — %s",
             repo,
             pr_number,
             resp.status_code,
             resp.text,
         )
         return False
-    resp.raise_for_status()
-    return False
+    except Exception:
+        logger.warning("Merge API call failed for %s#%d", repo, pr_number, exc_info=True)
+        return False
 
 
 async def lock_pr(repo: str, pr_number: int) -> None:
     """Lock a PR conversation to prevent non-collaborator comments.
 
+    Best-effort — logs on failure, never raises.
     Mitigates prompt injection via external comments on agent PRs.
     The bot retains full comment access via the App installation token.
     """
-    async with _client() as client:
-        resp = await client.put(
-            f"{_API}/repos/{repo}/issues/{pr_number}/lock",
-            json={"lock_reason": "resolved"},
-        )
-    if resp.status_code not in (204, 200):
-        logger.warning("Failed to lock PR #%d on %s: HTTP %d", pr_number, repo, resp.status_code)
+    try:
+        async with _client() as client:
+            resp = await client.put(
+                f"{_API}/repos/{repo}/issues/{pr_number}/lock",
+                json={"lock_reason": "resolved"},
+            )
+        if resp.status_code not in (204, 200):
+            logger.warning(
+                "Failed to lock PR #%d on %s: HTTP %d", pr_number, repo, resp.status_code
+            )
+    except Exception:
+        logger.warning("Failed to lock PR #%d on %s", pr_number, repo, exc_info=True)
 
 
 async def mark_pr_ready(repo: str, pr_number: int) -> None:
-    """Mark a draft PR as ready for review."""
-    async with _client() as client:
-        resp = await client.patch(
-            f"{_API}/repos/{repo}/pulls/{pr_number}",
-            json={"draft": False},
-        )
-        if resp.status_code != 200:
-            raise RuntimeError(
-                f"Failed to mark PR #{pr_number} ready on {repo}: HTTP {resp.status_code}"
+    """Mark a draft PR as ready for review. Best-effort — logs on failure, never raises."""
+    try:
+        async with _client() as client:
+            resp = await client.patch(
+                f"{_API}/repos/{repo}/pulls/{pr_number}",
+                json={"draft": False},
             )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Failed to mark PR #%d ready on %s: HTTP %d",
+                    pr_number,
+                    repo,
+                    resp.status_code,
+                )
+    except Exception:
+        logger.warning("Failed to mark PR #%d ready on %s", pr_number, repo, exc_info=True)
