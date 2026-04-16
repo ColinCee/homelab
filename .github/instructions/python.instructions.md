@@ -35,7 +35,7 @@ The design philosophy says: deep modules, narrow interfaces; readability first. 
 
 If a service function is best-effort (its failure doesn't change the caller's control flow), it must handle errors internally and return a safe default. The caller should not need `try`/`except` around it.
 
-Pattern already in use: `safe_comment()` wraps `comment_on_issue()` — logs a warning on failure, never raises. Follow this for all fire-and-forget service calls (lock, close, mark ready). For data-fetching calls that can degrade gracefully, return the empty value (e.g., `[]`).
+Pattern already in use: `safe_comment()` wraps `comment_on_issue()` — logs a warning on failure, never raises. Follow this for all fire-and-forget service calls (lock, close, mark ready). For data-fetching calls whose result drives control flow (e.g., deciding whether to approve), return `None` on failure so the caller can distinguish errors from empty results.
 
 Anti-pattern: wrapping every service call in `try`/`except` at the orchestrator level. That's error handling at the wrong abstraction level.
 

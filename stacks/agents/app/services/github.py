@@ -233,10 +233,11 @@ query($owner: String!, $repo: String!, $pr: Int!) {
 _GRAPHQL = "https://api.github.com/graphql"
 
 
-async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[ReviewThread]:
+async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[ReviewThread] | None:
     """Fetch unresolved, non-outdated review threads on a PR via GraphQL.
 
-    Best-effort — returns an empty list on any failure so callers don't need try/except.
+    Returns None on failure (distinct from empty list = no unresolved threads).
+    Callers must check for None to distinguish fetch errors from clean reviews.
     """
     try:
         owner, name = repo.split("/", 1)
@@ -259,7 +260,7 @@ async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[Revie
                 pr_number,
                 errors,
             )
-            return []
+            return None
 
         pr_data = data.get("data", {}).get("repository", {}).get("pullRequest")
         if not pr_data:
@@ -284,7 +285,7 @@ async def get_unresolved_review_threads(repo: str, pr_number: int) -> list[Revie
         return threads
     except Exception:
         logger.warning("Failed to fetch review threads for %s#%d", repo, pr_number, exc_info=True)
-        return []
+        return None
 
 
 # ── PR merge / ready ──────────────────────────────────────

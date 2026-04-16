@@ -221,6 +221,11 @@ async def _run_review_fix_loop(
             break
 
         unresolved = await get_unresolved_review_threads(ctx.repo, pr_number)
+        if unresolved is None:
+            logger.warning(
+                "Failed to fetch threads after review round %d, stopping loop", round_num
+            )
+            break
         if not unresolved:
             logger.info("Review round %d: approved (no unresolved threads)", round_num)
             return True, total_premium
@@ -253,6 +258,9 @@ async def _run_review_fix_loop(
             break
 
         unresolved = await get_unresolved_review_threads(ctx.repo, pr_number)
+        if unresolved is None:
+            logger.warning("Failed to fetch threads after fix round %d, stopping loop", round_num)
+            break
         if not unresolved:
             logger.info("Fix round %d resolved all threads", round_num)
             return True, total_premium
