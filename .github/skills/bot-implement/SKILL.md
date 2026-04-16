@@ -28,9 +28,7 @@ You start in a worktree on the `agent/issue-{N}` branch, set up by the orchestra
 2. **Push** — `git push origin agent/issue-{N}`. Force-push is fine on agent branches.
 3. **Create draft PR** — `gh pr create --draft --title "..." --body "Closes #N\n\n..."`. Always link the issue with `Closes #N` in the body.
 4. **Wait for CI** — `gh pr checks --watch` until all checks pass. Fix failures before proceeding.
-5. **Mark ready** — `gh pr ready` when CI passes and you're satisfied with the code.
-6. **Merge** — `gh pr merge --squash --auto` to squash-merge after all checks pass.
-7. **Independent review** — after a successful implement run, the API monitor comments `/review` on the PR to trigger the fresh advisory review worker. Do not spend premium requests reviewing your own PR from the same CLI session.
+5. **Stop** — do NOT mark the PR ready or merge it. The orchestrator handles review, merge, and marking the PR ready after automated review passes.
 
 ## Rules
 
@@ -63,7 +61,7 @@ Before creating the PR, sanity-check these questions:
 
 - **`mise run ci` includes type-checking (`ty`).** `ty` does not support `# type: ignore` comments. Use typed dataclasses or exceptions instead of monkey-patching.
 - **Docker service names don't resolve across separate compose stacks.** Use Tailscale IPs (`100.x.x.x`) or `host.docker.internal`.
-- **Independent review is post-implement.** The API monitor triggers it by commenting `/review` on the PR after a successful implement result, and it may arrive after merge.
+- **Do not merge the PR.** The orchestrator runs an automated review-fix loop after your implementation, then handles merge itself. Merging from the CLI session bypasses the review loop.
 
 ## Responding to Review Feedback
 
