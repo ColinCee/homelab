@@ -867,3 +867,26 @@ class TestReviewFixLoop:
         )
         # MOCK_CLI_RESULT (implement) = 5, review = 1, fix = 1
         assert result.premium_requests >= 7
+
+    def test_thread_fetch_failure_breaks_loop(self):
+        """Thread fetch returning None (failure) breaks loop, does NOT approve."""
+        result = self._run_with_loop(
+            unresolved_threads_sequence=[None],  # fetch fails after review
+            merge_result=False,
+            pr_after_merge=self._OPEN_PR,
+        )
+        assert result.status == "partial"
+        assert result.merged is False
+
+    def test_thread_fetch_failure_after_fix_breaks_loop(self):
+        """Thread fetch fails after fix step → breaks loop, does NOT approve."""
+        result = self._run_with_loop(
+            unresolved_threads_sequence=[
+                _THREAD_LIST,  # after review: threads found
+                None,  # after fix: fetch fails
+            ],
+            merge_result=False,
+            pr_after_merge=self._OPEN_PR,
+        )
+        assert result.status == "partial"
+        assert result.merged is False
