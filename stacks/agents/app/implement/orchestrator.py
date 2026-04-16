@@ -14,6 +14,7 @@ from services.github import (
     get_issue,
     get_token,
     get_unresolved_review_threads,
+    lock_pr,
     mark_pr_ready,
     merge_pr,
     safe_comment,
@@ -83,9 +84,9 @@ MERGE_PROMPT_TEMPLATE = """\
 PR #{pr_number} in {repo} has been approved but could not be merged automatically \
 (likely due to merge conflicts or the branch being out of date).
 
-1. Rebase onto main: `git fetch origin main && git rebase origin/main`
+1. Update branch: `git fetch origin main && git merge origin/main`
 2. Resolve any conflicts
-3. Push: `git push --force origin {branch}`
+3. Push: `git push origin {branch}`
 4. Wait for CI: `gh pr checks {pr_number} --watch`
 5. Merge: `gh pr merge {pr_number} --squash`
 """
@@ -419,6 +420,12 @@ async def implement_issue(
             elapsed = _monotonic() - start
             result = _build_result(None, elapsed, total_premium_requests, cli_result, repo)
             return result
+
+        # Lock the PR to prevent external comment injection
+        try:
+            await lock_pr(repo, pr_data.number)
+        except Exception:
+            logger.warning("Failed to lock PR #%d", pr_data.number, exc_info=True)
 
         # CLI already merged the PR → skip review loop
         if pr_data.merged_at is not None or pr_data.merged:
