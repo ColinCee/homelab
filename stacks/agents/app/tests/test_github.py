@@ -456,3 +456,50 @@ class TestMarkPrReady:
 
         with pytest.raises(RuntimeError, match="Failed to mark PR"):
             asyncio.run(run())
+
+
+class TestLockPr:
+    def test_locks_pr_conversation(self):
+        lock_resp = httpx.Response(
+            204,
+            request=httpx.Request("PUT", "https://api.github.com/issues/42/lock"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=lock_resp,
+                ) as mock_put,
+            ):
+                await github.lock_pr("user/repo", 42)
+                return mock_put
+
+        mock_put = asyncio.run(run())
+        call_args = mock_put.await_args
+        assert "/issues/42/lock" in call_args.args[0]
+        assert call_args.kwargs["json"] == {"lock_reason": "resolved"}
+
+    def test_warns_on_failure(self):
+        """Lock failure logs warning but does not raise."""
+        fail_resp = httpx.Response(
+            403,
+            json={"message": "Forbidden"},
+            request=httpx.Request("PUT", "https://api.github.com/issues/42/lock"),
+        )
+
+        async def run():
+            with (
+                patch("services.github.get_token", new_callable=AsyncMock, return_value="token"),
+                patch(
+                    "httpx.AsyncClient.put",
+                    new_callable=AsyncMock,
+                    return_value=fail_resp,
+                ),
+            ):
+                # Should not raise — just warn
+                await github.lock_pr("user/repo", 42)
+
+        asyncio.run(run())  # No exception = pass

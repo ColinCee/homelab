@@ -293,6 +293,21 @@ async def merge_pr(repo: str, pr_number: int) -> bool:
     return False
 
 
+async def lock_pr(repo: str, pr_number: int) -> None:
+    """Lock a PR conversation to prevent non-collaborator comments.
+
+    Mitigates prompt injection via external comments on agent PRs.
+    The bot retains full comment access via the App installation token.
+    """
+    async with _client() as client:
+        resp = await client.put(
+            f"{_API}/repos/{repo}/issues/{pr_number}/lock",
+            json={"lock_reason": "resolved"},
+        )
+    if resp.status_code not in (204, 200):
+        logger.warning("Failed to lock PR #%d on %s: HTTP %d", pr_number, repo, resp.status_code)
+
+
 async def mark_pr_ready(repo: str, pr_number: int) -> None:
     """Mark a draft PR as ready for review."""
     async with _client() as client:

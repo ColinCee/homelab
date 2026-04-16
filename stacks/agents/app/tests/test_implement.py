@@ -158,6 +158,7 @@ class TestImplementIssue:
             patch(f"{_MOD}.get_unresolved_review_threads", new_callable=AsyncMock, return_value=[]),
             patch(f"{_MOD}.merge_pr", new_callable=AsyncMock, return_value=True),
             patch(f"{_MOD}.mark_pr_ready", new_callable=AsyncMock),
+            patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
             patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
             patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
             patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),

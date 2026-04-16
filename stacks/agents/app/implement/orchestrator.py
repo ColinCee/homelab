@@ -14,6 +14,7 @@ from services.github import (
     get_issue,
     get_token,
     get_unresolved_review_threads,
+    lock_pr,
     mark_pr_ready,
     merge_pr,
     safe_comment,
@@ -419,6 +420,12 @@ async def implement_issue(
             elapsed = _monotonic() - start
             result = _build_result(None, elapsed, total_premium_requests, cli_result, repo)
             return result
+
+        # Lock the PR to prevent external comment injection
+        try:
+            await lock_pr(repo, pr_data.number)
+        except Exception:
+            logger.warning("Failed to lock PR #%d", pr_data.number, exc_info=True)
 
         # CLI already merged the PR → skip review loop
         if pr_data.merged_at is not None or pr_data.merged:
