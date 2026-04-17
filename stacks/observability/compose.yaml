@@ -99,6 +99,7 @@ services:
       - ALL
     cap_add:
       - DAC_READ_SEARCH
+      - DAC_OVERRIDE
       - FOWNER
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
     environment:
