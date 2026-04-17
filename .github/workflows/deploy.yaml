@@ -3,15 +3,75 @@ name: Deploy
 on:
   push:
     branches: [main]
+    paths:
+      - "stacks/**"
+      - "pyproject.toml"
+      - "uv.lock"
   workflow_dispatch:
+    inputs:
+      stack:
+        description: "Stack to deploy (blank = all changed)"
+        type: choice
+        options:
+          - all
+          - agents
+          - observability
+          - home-assistant
+          - mqtt
+          - crowdsec
 
 concurrency:
   group: deploy
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
-  deploy:
+  detect:
     runs-on: ubuntu-24.04
+    outputs:
+      stacks: ${{ steps.changed.outputs.stacks }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed stacks
+        id: changed
+        run: |
+          if [[ "${{ inputs.stack }}" == "all" ]]; then
+            echo 'stacks=["agents","observability","home-assistant","mqtt","crowdsec"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          elif [[ -n "${{ inputs.stack }}" ]]; then
+            echo 'stacks=["${{ inputs.stack }}"]' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          stacks=()
+          changed=$(git diff --name-only HEAD~1 HEAD)
+
+          # Python deps or agent app code → deploy agents
+          if echo "$changed" | grep -qE '^(stacks/agents/|pyproject\.toml|uv\.lock)'; then
+            stacks+=("agents")
+          fi
+
+          for stack in observability home-assistant mqtt crowdsec; do
+            if echo "$changed" | grep -q "^stacks/$stack/"; then
+              stacks+=("$stack")
+            fi
+          done
+
+          # Format as JSON array
+          json=$(printf '%s\n' "${stacks[@]}" | jq -R . | jq -sc .)
+          echo "stacks=$json" >> "$GITHUB_OUTPUT"
+          echo "Deploying: $json"
+
+  deploy:
+    needs: detect
+    if: needs.detect.outputs.stacks != '[]'
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        stack: ${{ fromJson(needs.detect.outputs.stacks) }}
+      max-parallel: 1
     steps:
       - name: Connect to Tailscale
         uses: tailscale/github-action@v4
@@ -20,11 +80,40 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Deploy via Dokploy
+      - name: Write env and deploy ${{ matrix.stack }}
         run: |
-          curl -sf --max-time 120 \
-            -X POST 'http://beelink:3000/api/trpc/compose.deploy' \
-            -H 'x-api-key: ${{ secrets.DOKPLOY_API_KEY }}' \
-            -H 'Content-Type: application/json' \
-            -d '{"json":{"composeId":"JB-iTOVZwmPDMuywGcOAk"}}'
-          echo "✅ Deploy triggered"
+          # Write .env file for stacks that need secrets
+          case "${{ matrix.stack }}" in
+            agents)
+              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
+                cd /home/colin/code/homelab
+                git pull --ff-only
+                cat > stacks/agents/.env <<'ENV'
+          GITHUB_APP_ID=${{ secrets.BOT_APP_ID }}
+          GITHUB_APP_INSTALLATION_ID=${{ secrets.BOT_APP_INSTALLATION_ID }}
+          GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
+          COPILOT_GITHUB_TOKEN=${{ secrets.COPILOT_GITHUB_TOKEN }}
+          TAILSCALE_IP=100.100.146.119
+          ENV
+                docker compose -f stacks/agents/compose.yaml up -d --build --remove-orphans
+          DEPLOY
+              ;;
+            observability)
+              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
+                cd /home/colin/code/homelab
+                git pull --ff-only
+                cat > stacks/observability/.env <<'ENV'
+          DISCORD_PRIVATE_WEBHOOK_URL=${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          ENV
+                docker compose -f stacks/observability/compose.yaml up -d --remove-orphans
+          DEPLOY
+              ;;
+            *)
+              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
+                cd /home/colin/code/homelab
+                git pull --ff-only
+                docker compose -f stacks/${{ matrix.stack }}/compose.yaml up -d --remove-orphans
+          DEPLOY
+              ;;
+          esac
+          echo "✅ ${{ matrix.stack }} deployed"
