@@ -1,29 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-STACK=${1:?Usage: deploy.sh <stack-name>}
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-COMPOSE_FILE="${REPO_ROOT}/stacks/${STACK}/compose.yaml"
+# Deploy one or more stacks. Runs on the server.
+#
+# Usage: deploy.sh agents observability
+#    or: STACKS="agents observability" deploy.sh
 
-if [[ ! -f "$COMPOSE_FILE" ]]; then
-  echo "❌ No compose.yaml found for stack: ${STACK}" >&2
-  exit 1
+if (( $# )); then
+  stacks=("$@")
+else
+  read -ra stacks <<< "${STACKS:?Set STACKS env var or pass stack names as args}"
 fi
 
-cd "$REPO_ROOT"
+cd "$(dirname "$0")/.."
 git pull --ff-only
 
-case "$STACK" in
-  agents)
-    docker compose -f "$COMPOSE_FILE" up -d --build --remove-orphans
-    ;;
-  flight-tracker)
-    docker compose -f "$COMPOSE_FILE" pull
-    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
-    ;;
-  *)
-    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
-    ;;
-esac
+for stack in "${stacks[@]}"; do
+  file="stacks/${stack}/compose.yaml"
+  [[ -f "$file" ]] || { echo "❌ No compose.yaml: ${stack}" >&2; exit 1; }
 
-echo "✅ ${STACK} deployed"
+  case "$stack" in
+    agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
+    flight-tracker) docker compose -f "$file" pull
+                    docker compose -f "$file" up -d --remove-orphans ;;
+    *)              docker compose -f "$file" up -d --remove-orphans ;;
+  esac
+  echo "✅ ${stack}"
+done

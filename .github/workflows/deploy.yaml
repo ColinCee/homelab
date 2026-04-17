@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       stack:
-        description: "Stack to deploy (blank = all changed)"
+        description: "Stack to deploy"
         type: choice
         options:
           - all
@@ -26,102 +26,50 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  detect:
+  deploy:
     runs-on: ubuntu-24.04
-    outputs:
-      stacks: ${{ steps.changed.outputs.stacks }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
       - name: Detect changed stacks
-        id: changed
-        run: |
-          if [[ "${{ inputs.stack }}" == "all" ]]; then
-            all='["agents","observability","flight-tracker",'
-            all+='"home-assistant","mqtt","crowdsec"]'
-            echo "stacks=$all" >> "$GITHUB_OUTPUT"
-            exit 0
-          elif [[ -n "${{ inputs.stack }}" ]]; then
-            echo 'stacks=["${{ inputs.stack }}"]' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+        id: detect
+        env:
+          INPUT_STACK: ${{ inputs.stack }}
+        run: scripts/detect-stacks.sh
 
-          stacks=()
-          changed=$(git diff --name-only HEAD~1 HEAD)
+      - name: Generate .env files
+        if: steps.detect.outputs.stacks != ''
+        env:
+          STACKS: ${{ steps.detect.outputs.stacks }}
+          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+          BOT_APP_INSTALLATION_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+        run: scripts/generate-env.sh
 
-          # Python deps or agent app code → deploy agents
-          if echo "$changed" | grep -qE '^(stacks/agents/|pyproject\.toml|uv\.lock)'; then
-            stacks+=("agents")
-          fi
-
-          for stack in observability flight-tracker home-assistant mqtt crowdsec; do
-            if echo "$changed" | grep -q "^stacks/$stack/"; then
-              stacks+=("$stack")
-            fi
-          done
-
-          # Format as JSON array
-          json=$(printf '%s\n' "${stacks[@]}" | jq -R . | jq -sc .)
-          echo "stacks=$json" >> "$GITHUB_OUTPUT"
-          echo "Deploying: $json"
-
-  deploy:
-    needs: detect
-    if: needs.detect.outputs.stacks != '[]'
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        stack: ${{ fromJson(needs.detect.outputs.stacks) }}
-      max-parallel: 1
-    steps:
       - name: Connect to Tailscale
+        if: steps.detect.outputs.stacks != ''
         uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Deploy ${{ matrix.stack }}
+      - name: Deploy
+        if: steps.detect.outputs.stacks != ''
         env:
-          STACK: ${{ matrix.stack }}
-          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
-          BOT_INSTALL_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
-          COPILOT_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-          DISCORD_WEBHOOK: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
-          TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+          STACKS: ${{ steps.detect.outputs.stacks }}
         run: |
-          SSH="ssh -o StrictHostKeyChecking=accept-new"
-          HOST="colin@beelink"
-          ENV_DIR="stacks/${STACK}"
-
-          # Build .env from secrets (via env vars, not interpolation)
-          case "$STACK" in
-            agents)
-              cat > /tmp/stack.env <<EOF
-          GITHUB_APP_ID=${BOT_APP_ID}
-          GITHUB_APP_INSTALLATION_ID=${BOT_INSTALL_ID}
-          GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
-          COPILOT_GITHUB_TOKEN=${COPILOT_TOKEN}
-          TAILSCALE_IP=100.100.146.119
-          EOF
-              ;;
-            observability)
-              cat > /tmp/stack.env <<EOF
-          DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_WEBHOOK}
-          EOF
-              ;;
-            flight-tracker)
-              cat > /tmp/stack.env <<EOF
-          TUNNEL_TOKEN=${TUNNEL_TOKEN}
-          EOF
-              ;;
-            *) touch /tmp/stack.env ;;
-          esac
-
-          SCP="scp -o StrictHostKeyChecking=accept-new"
-          REPO="/home/colin/code/homelab"
-          $SCP /tmp/stack.env "${HOST}:${REPO}/${ENV_DIR}/.env"
-          rm -f /tmp/stack.env
-          $SSH "$HOST" "${REPO}/scripts/deploy.sh ${STACK}"
+          read -ra stacks <<< "$STACKS"
+          remote="/home/colin/code/homelab"
+          for stack in "${stacks[@]}"; do
+            if [[ -f "stacks/${stack}/.env" ]]; then
+              scp -o StrictHostKeyChecking=accept-new \
+                "stacks/${stack}/.env" "colin@beelink:${remote}/stacks/${stack}/.env"
+            fi
+          done
+          ssh -o StrictHostKeyChecking=accept-new colin@beelink \
+            "${remote}/scripts/deploy.sh ${stacks[*]}"
