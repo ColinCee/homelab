@@ -83,51 +83,45 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
-      - name: Write env and deploy ${{ matrix.stack }}
+      - name: Deploy ${{ matrix.stack }}
+        env:
+          STACK: ${{ matrix.stack }}
+          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+          BOT_INSTALL_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
+          COPILOT_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
         run: |
-          # Write .env file for stacks that need secrets
-          case "${{ matrix.stack }}" in
+          SSH="ssh -o StrictHostKeyChecking=accept-new"
+          HOST="colin@beelink"
+          ENV_DIR="stacks/${STACK}"
+
+          # Build .env from secrets (via env vars, not interpolation)
+          case "$STACK" in
             agents)
-              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
-                cd /home/colin/code/homelab
-                git pull --ff-only
-                cat > stacks/agents/.env <<'ENV'
-          GITHUB_APP_ID=${{ secrets.BOT_APP_ID }}
-          GITHUB_APP_INSTALLATION_ID=${{ secrets.BOT_APP_INSTALLATION_ID }}
+              cat > /tmp/stack.env <<EOF
+          GITHUB_APP_ID=${BOT_APP_ID}
+          GITHUB_APP_INSTALLATION_ID=${BOT_INSTALL_ID}
           GITHUB_APP_KEY_FILE=/home/colin/secrets/github-app.pem
-          COPILOT_GITHUB_TOKEN=${{ secrets.COPILOT_GITHUB_TOKEN }}
+          COPILOT_GITHUB_TOKEN=${COPILOT_TOKEN}
           TAILSCALE_IP=100.100.146.119
-          ENV
-                docker compose -f stacks/agents/compose.yaml up -d --build --remove-orphans
-          DEPLOY
+          EOF
               ;;
             observability)
-              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
-                cd /home/colin/code/homelab
-                git pull --ff-only
-                cat > stacks/observability/.env <<'ENV'
-          DISCORD_PRIVATE_WEBHOOK_URL=${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
-          ENV
-                docker compose -f stacks/observability/compose.yaml up -d --remove-orphans
-          DEPLOY
+              cat > /tmp/stack.env <<EOF
+          DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_WEBHOOK}
+          EOF
               ;;
             flight-tracker)
-              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
-                cd /home/colin/code/homelab
-                git pull --ff-only
-                cat > stacks/flight-tracker/.env <<'ENV'
-          TUNNEL_TOKEN=${{ secrets.CF_TUNNEL_TOKEN }}
-          ENV
-                docker compose -f stacks/flight-tracker/compose.yaml pull
-                docker compose -f stacks/flight-tracker/compose.yaml up -d --remove-orphans
-          DEPLOY
+              cat > /tmp/stack.env <<EOF
+          TUNNEL_TOKEN=${TUNNEL_TOKEN}
+          EOF
               ;;
-            *)
-              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
-                cd /home/colin/code/homelab
-                git pull --ff-only
-                docker compose -f stacks/${{ matrix.stack }}/compose.yaml up -d --remove-orphans
-          DEPLOY
-              ;;
+            *) touch /tmp/stack.env ;;
           esac
-          echo "✅ ${{ matrix.stack }} deployed"
+
+          SCP="scp -o StrictHostKeyChecking=accept-new"
+          REPO="/home/colin/code/homelab"
+          $SCP /tmp/stack.env "${HOST}:${REPO}/${ENV_DIR}/.env"
+          rm -f /tmp/stack.env
+          $SSH "$HOST" "${REPO}/scripts/deploy.sh ${STACK}"
