@@ -58,18 +58,24 @@ jobs:
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
 
+      - name: Set up deploy key
+        if: steps.detect.outputs.stacks != ''
+        env:
+          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printenv DEPLOY_KEY > ~/.ssh/deploy_key
+
       - name: Deploy
         if: steps.detect.outputs.stacks != ''
         env:
           STACKS: ${{ steps.detect.outputs.stacks }}
         run: |
           read -ra stacks <<< "$STACKS"
-          remote="/home/colin/code/homelab"
+          ssh_cmd="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
           for stack in "${stacks[@]}"; do
             if [[ -f "stacks/${stack}/.env" ]]; then
-              scp -o StrictHostKeyChecking=accept-new \
-                "stacks/${stack}/.env" "colin@beelink:${remote}/stacks/${stack}/.env"
+              $ssh_cmd colin@beelink "receive-env ${stack}" < "stacks/${stack}/.env"
             fi
           done
-          ssh -o StrictHostKeyChecking=accept-new colin@beelink \
-            "${remote}/scripts/deploy.sh ${stacks[*]}"
+          $ssh_cmd colin@beelink "deploy ${stacks[*]}"
