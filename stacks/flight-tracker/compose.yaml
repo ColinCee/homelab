@@ -1,0 +1,22 @@
+services:
+  backend:
+    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - heatmap-data:/app/data
+    environment:
+      - CORS_ORIGINS=${CORS_ORIGINS:-https://flight-tracker-at-home.pages.dev}
+      - CACHE_TTL=${CACHE_TTL:-10}
+      - HEATMAP_DB_PATH=/app/data/historical_heatmap.parquet
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run --token ${TUNNEL_TOKEN:?}
+    depends_on:
+      - backend
+
+volumes:
+  heatmap-data:

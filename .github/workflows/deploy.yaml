@@ -16,6 +16,7 @@ on:
           - all
           - agents
           - observability
+          - flight-tracker
           - home-assistant
           - mqtt
           - crowdsec
@@ -38,7 +39,9 @@ jobs:
         id: changed
         run: |
           if [[ "${{ inputs.stack }}" == "all" ]]; then
-            echo 'stacks=["agents","observability","home-assistant","mqtt","crowdsec"]' >> "$GITHUB_OUTPUT"
+            all='["agents","observability","flight-tracker",'
+            all+='"home-assistant","mqtt","crowdsec"]'
+            echo "stacks=$all" >> "$GITHUB_OUTPUT"
             exit 0
           elif [[ -n "${{ inputs.stack }}" ]]; then
             echo 'stacks=["${{ inputs.stack }}"]' >> "$GITHUB_OUTPUT"
@@ -53,7 +56,7 @@ jobs:
             stacks+=("agents")
           fi
 
-          for stack in observability home-assistant mqtt crowdsec; do
+          for stack in observability flight-tracker home-assistant mqtt crowdsec; do
             if echo "$changed" | grep -q "^stacks/$stack/"; then
               stacks+=("$stack")
             fi
@@ -106,6 +109,17 @@ jobs:
           DISCORD_PRIVATE_WEBHOOK_URL=${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           ENV
                 docker compose -f stacks/observability/compose.yaml up -d --remove-orphans
+          DEPLOY
+              ;;
+            flight-tracker)
+              ssh -o StrictHostKeyChecking=no colin@beelink bash -s <<'DEPLOY'
+                cd /home/colin/code/homelab
+                git pull --ff-only
+                cat > stacks/flight-tracker/.env <<'ENV'
+          TUNNEL_TOKEN=${{ secrets.CF_TUNNEL_TOKEN }}
+          ENV
+                docker compose -f stacks/flight-tracker/compose.yaml pull
+                docker compose -f stacks/flight-tracker/compose.yaml up -d --remove-orphans
           DEPLOY
               ;;
             *)
