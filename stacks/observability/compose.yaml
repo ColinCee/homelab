@@ -68,19 +68,7 @@ services:
     image: grafana/alloy:v1.15.1
     restart: unless-stopped
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          if command -v curl >/dev/null 2>&1; then
-            curl -f http://localhost:12345/ready;
-          elif command -v wget >/dev/null 2>&1; then
-            wget -q --spider http://localhost:12345/ready;
-          else
-            exit 1;
-          fi
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      test: ["NONE"]
     security_opt:
       - no-new-privileges:true
     cap_drop:
