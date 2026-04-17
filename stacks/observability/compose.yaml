@@ -58,19 +58,7 @@ services:
     image: grafana/loki:3.7.1
     restart: unless-stopped
     healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          if command -v curl >/dev/null 2>&1; then
-            curl -f http://localhost:3100/ready;
-          elif command -v wget >/dev/null 2>&1; then
-            wget -q --spider http://localhost:3100/ready;
-          else
-            exit 1;
-          fi
-      interval: 30s
-      timeout: 5s
-      retries: 3
+      test: ["NONE"]
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
       - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
