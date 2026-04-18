@@ -76,7 +76,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "count(container_memory_working_set_bytes{job=\"docker\",name!=\"\"})",
+          "expr": "count(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
           "instant": true,
           "refId": "A"
         }
@@ -138,7 +138,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])) * 100",
+          "expr": "sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) * 100",
           "instant": true,
           "refId": "A"
         }
@@ -209,7 +209,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(container_memory_working_set_bytes{job=\"docker\",name!=\"\"})",
+          "expr": "sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
           "instant": true,
           "refId": "A"
         }
@@ -388,7 +388,7 @@
         ]
       },
       "gridPos": {
-        "h": 10,
+        "h": 14,
         "w": 24,
         "x": 0,
         "y": 4
@@ -418,7 +418,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(container_cpu_usage_seconds_total{job=\"docker\",name=~\"$container\"}[5m]) * 100",
+          "expr": "max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",name=~\"$container\"}[5m]) * 100)",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -428,7 +428,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "container_memory_working_set_bytes{job=\"docker\",name=~\"$container\"}",
+          "expr": "max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",name=~\"$container\"})",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -438,7 +438,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(container_network_receive_bytes_total{job=\"docker\",name=~\"$container\"}[5m])",
+          "expr": "max by (name) (rate(container_network_receive_bytes_total{job=\"docker\",name!=\"\",name=~\"$container\"}[5m]))",
           "format": "table",
           "instant": true,
           "refId": "C"
@@ -448,7 +448,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(container_network_transmit_bytes_total{job=\"docker\",name=~\"$container\"}[5m])",
+          "expr": "max by (name) (rate(container_network_transmit_bytes_total{job=\"docker\",name!=\"\",name=~\"$container\"}[5m]))",
           "format": "table",
           "instant": true,
           "refId": "D"
@@ -458,7 +458,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - container_start_time_seconds{job=\"docker\",name=~\"$container\"}",
+          "expr": "max by (name) (time() - container_start_time_seconds{job=\"docker\",name!=\"\",name=~\"$container\"})",
           "format": "table",
           "instant": true,
           "refId": "E"
@@ -559,17 +559,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 10,
         "w": 12,
         "x": 0,
-        "y": 14
+        "y": 18
       },
       "id": 5,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": [],
           "displayMode": "list",
           "placement": "right",
           "showLegend": true,
@@ -586,7 +584,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(container_cpu_usage_seconds_total{job=\"docker\",name=~\"$container\"}[5m]) * 100",
+          "expr": "max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",name=~\"$container\"}[5m])) * 100",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{name}}",
@@ -662,17 +660,15 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 10,
         "w": 12,
         "x": 12,
-        "y": 14
+        "y": 18
       },
       "id": 6,
       "options": {
         "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": [],
           "displayMode": "list",
           "placement": "right",
           "showLegend": true,
@@ -689,7 +685,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "container_memory_working_set_bytes{job=\"docker\",name=~\"$container\"}",
+          "expr": "max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",name=~\"$container\"})",
           "format": "time_series",
           "intervalFactor": 1,
           "legendFormat": "{{name}}",
@@ -718,7 +714,7 @@
   "templating": {
     "list": [
       {
-        "allValue": ".*",
+        "allValue": ".+",
         "current": {
           "selected": true,
           "text": [
