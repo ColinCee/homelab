@@ -18,6 +18,7 @@ from metrics import (
     TASK_DURATION_SECONDS,
     TASK_IN_PROGRESS,
     TASK_TOTAL,
+    TOKENS_TOTAL,
 )
 from models import TaskResult
 from services.docker import (
@@ -104,12 +105,29 @@ def _worker_log_format() -> str:
 
 
 def _record_task_metrics(
-    *, task_type: str, status: str, duration_seconds: float, premium_requests: int
+    *,
+    task_type: str,
+    status: str,
+    duration_seconds: float,
+    premium_requests: int,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cached_tokens: int = 0,
+    reasoning_tokens: int = 0,
 ) -> None:
     TASK_DURATION_SECONDS.labels(task_type=task_type, status=status).observe(duration_seconds)
     TASK_TOTAL.labels(task_type=task_type, status=status).inc()
     if premium_requests:
         PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type).inc(premium_requests)
+    token_map = {
+        "input": input_tokens,
+        "output": output_tokens,
+        "cached": cached_tokens,
+        "reasoning": reasoning_tokens,
+    }
+    for direction, count in token_map.items():
+        if count:
+            TOKENS_TOTAL.labels(task_type=task_type, direction=direction).inc(count)
 
 
 class ReviewRequest(BaseModel):
@@ -170,6 +188,10 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
             status=status,
             duration_seconds=duration,
             premium_requests=premium,
+            input_tokens=result.input_tokens if result else 0,
+            output_tokens=result.output_tokens if result else 0,
+            cached_tokens=result.cached_tokens if result else 0,
+            reasoning_tokens=result.reasoning_tokens if result else 0,
         )
         error = result.error if result and result.error else ""
         logger.info(

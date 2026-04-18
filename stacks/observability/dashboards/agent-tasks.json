@@ -23,9 +23,77 @@
   "liveNow": false,
   "panels": [
     {
+      "type": "stat",
+      "title": "Active Workers",
       "datasource": {
         "type": "prometheus",
         "uid": ""
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "yellow",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
+      },
+      "targets": [
+        {
+          "expr": "sum(agent_task_in_progress)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Total Tasks",
+      "datasource": {
+        "type": "prometheus",
+        "uid": ""
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -38,7 +106,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "blue",
+                "color": "green",
                 "value": null
               }
             ]
@@ -47,18 +115,7 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 0
-      },
-      "id": 1,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -66,22 +123,37 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total{job=\"agent\"})",
-          "legendFormat": "",
-          "refId": "A"
+          "expr": "sum(agent_task_total)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Total Tasks",
-      "type": "stat"
+      ]
     },
     {
+      "type": "stat",
+      "title": "Success Rate",
       "datasource": {
         "type": "prometheus",
         "uid": ""
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -99,22 +171,11 @@
               }
             ]
           },
-          "unit": "short"
+          "unit": "percent"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "id": 2,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -122,22 +183,37 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total{job=\"agent\", status=\"complete\"})",
-          "legendFormat": "",
-          "refId": "A"
+          "expr": "sum(agent_task_total{status=\"complete\"}) / sum(agent_task_total) * 100",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Completed",
-      "type": "stat"
+      ]
     },
     {
+      "type": "stat",
+      "title": "Failed",
       "datasource": {
         "type": "prometheus",
         "uid": ""
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -150,7 +226,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "red",
+                "color": "green",
                 "value": null
               }
             ]
@@ -159,18 +235,7 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "id": 3,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -178,22 +243,37 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total{job=\"agent\", status=\"failed\"})",
-          "legendFormat": "",
-          "refId": "A"
+          "expr": "sum(agent_task_total{status=\"failed\"})",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Failed",
-      "type": "stat"
+      ]
     },
     {
+      "type": "stat",
+      "title": "Premium Requests",
       "datasource": {
         "type": "prometheus",
         "uid": ""
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -206,7 +286,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "purple",
+                "color": "green",
                 "value": null
               }
             ]
@@ -215,18 +295,7 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 4,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -234,59 +303,43 @@
           "fields": "",
           "values": false
         },
-        "textMode": "auto"
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
       },
       "targets": [
         {
-          "expr": "sum(agent_premium_requests_total{job=\"agent\"})",
-          "legendFormat": "",
-          "refId": "A"
+          "expr": "sum(agent_premium_requests_total)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Premium Requests",
-      "type": "stat"
+      ]
     },
     {
+      "type": "stat",
+      "title": "Total Tokens",
       "datasource": {
         "type": "prometheus",
         "uid": ""
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "bars",
-            "fillOpacity": 80,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "fixedColor": "orange",
+            "mode": "fixed"
           },
           "mappings": [],
           "thresholds": {
@@ -300,138 +353,156 @@
           },
           "unit": "short"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "complete"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "failed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "partial"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "rejected"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 4
-      },
-      "id": 5,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "table",
-          "placement": "bottom"
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "orientation": "auto"
       },
       "targets": [
         {
-          "expr": "increase(agent_task_total{job=\"agent\"}[$__interval])",
-          "legendFormat": "{{status}}",
-          "refId": "A"
+          "expr": "sum(agent_tokens_total)",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Tasks by Status",
-      "type": "timeseries"
+      ]
     },
     {
+      "type": "piechart",
+      "title": "Tasks by Status",
       "datasource": {
         "type": "prometheus",
         "uid": ""
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 4
       },
       "fieldConfig": {
         "defaults": {
           "color": {
             "mode": "palette-classic"
           },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (status)(agent_task_total)",
+          "legendFormat": "{{status}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Tokens by Direction",
+      "datasource": {
+        "type": "prometheus",
+        "uid": ""
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (direction)(agent_tokens_total)",
+          "legendFormat": "{{direction}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Avg Duration by Type",
+      "datasource": {
+        "type": "prometheus",
+        "uid": ""
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
           },
           "mappings": [],
           "thresholds": {
@@ -440,6 +511,14 @@
               {
                 "color": "green",
                 "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 300
+              },
+              {
+                "color": "red",
+                "value": 900
               }
             ]
           },
@@ -447,152 +526,402 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 4
-      },
-      "id": 6,
       "options": {
-        "legend": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
           "calcs": [
-            "mean",
-            "max"
+            "lastNotNull"
           ],
-          "displayMode": "table",
-          "placement": "bottom"
+          "fields": "",
+          "values": false
         },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
+        "showUnfilled": true,
+        "minVizWidth": 8,
+        "minVizHeight": 16
       },
       "targets": [
         {
-          "expr": "rate(agent_task_duration_seconds_sum{job=\"agent\"}[$__rate_interval]) / rate(agent_task_duration_seconds_count{job=\"agent\"}[$__rate_interval])",
-          "legendFormat": "{{task_type}} ({{status}})",
-          "refId": "A"
+          "expr": "sum by (task_type)(agent_task_duration_seconds_sum) / sum by (task_type)(agent_task_duration_seconds_count)",
+          "legendFormat": "{{task_type}}",
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          }
         }
-      ],
-      "title": "Average Task Duration",
-      "type": "timeseries"
+      ]
     },
     {
+      "type": "table",
+      "title": "Recent Tasks",
       "datasource": {
-        "type": "loki"
+        "type": "loki",
+        "uid": ""
       },
       "gridPos": {
-        "h": 10,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 12
       },
-      "id": 7,
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 80
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "task_type"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
       "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
       },
-      "targets": [
+      "transformations": [
         {
-          "expr": "{task_type=~\"$task_type\", container_name=~\"worker-.*|agents-agent.*\"} | json | message != `` | line_format `{{.message}}`",
-          "refId": "A"
-        }
-      ],
-      "title": "Agent Logs",
-      "type": "logs"
-    },
-    {
-      "datasource": {
-        "type": "loki"
-      },
-      "gridPos": {
-        "h": 10,
-        "w": 24,
-        "x": 0,
-        "y": 22
-      },
-      "id": 8,
-      "options": {
-        "dedupStrategy": "none",
-        "enableLogDetails": true,
-        "prettifyLogMessage": false,
-        "showCommonLabels": false,
-        "showLabels": true,
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
-      "targets": [
-        {
-          "expr": "{task_type=~\"$task_type\", level=\"WARNING\"} | json | message != `` | line_format `{{.message}}`",
-          "refId": "A"
+          "id": "extractFields",
+          "options": {
+            "source": "Line"
+          }
         },
         {
-          "expr": "{task_type=~\"$task_type\", level=\"ERROR\"} | json | message != `` | line_format `{{.message}}`",
-          "refId": "B"
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Line": true,
+              "Labels": true,
+              "tsNs": true,
+              "id": true,
+              "event": true,
+              "logger": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "task_type": 1,
+              "status": 2,
+              "repo": 3,
+              "pr_number": 4,
+              "premium_requests": 5,
+              "input_tokens": 6,
+              "output_tokens": 7,
+              "duration_seconds": 8,
+              "cli_calls": 9,
+              "review_fix_rounds": 10,
+              "model": 11,
+              "merged": 12,
+              "error": 13
+            }
+          }
         }
       ],
-      "title": "Warnings & Errors",
-      "type": "logs"
+      "targets": [
+        {
+          "expr": "{job=\"agent\"} | json | event = `task_completed`",
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": ""
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Trends",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Task Throughput (daily)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 21
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "bars",
+                "barAlignment": 0,
+                "fillOpacity": 80,
+                "lineWidth": 0,
+                "spanNulls": false,
+                "axisBorderShow": false,
+                "axisCenteredZero": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "expr": "increase(sum by (task_type)(agent_task_total)[1d])",
+              "legendFormat": "{{task_type}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": ""
+              }
+            }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Premium Requests (daily)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": ""
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 21
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "drawStyle": "bars",
+                "barAlignment": 0,
+                "fillOpacity": 80,
+                "lineWidth": 0,
+                "spanNulls": false,
+                "axisBorderShow": false,
+                "axisCenteredZero": false
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "expr": "increase(sum by (task_type)(agent_premium_requests_total)[1d])",
+              "legendFormat": "{{task_type}}",
+              "refId": "A",
+              "datasource": {
+                "type": "prometheus",
+                "uid": ""
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Logs",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "panels": [
+        {
+          "type": "logs",
+          "title": "Agent Logs",
+          "datasource": {
+            "type": "loki",
+            "uid": ""
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 22
+          },
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending"
+          },
+          "targets": [
+            {
+              "expr": "{job=\"agent\"}",
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": ""
+              }
+            }
+          ]
+        },
+        {
+          "type": "logs",
+          "title": "Warnings & Errors",
+          "datasource": {
+            "type": "loki",
+            "uid": ""
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 30
+          },
+          "options": {
+            "showTime": true,
+            "showLabels": true,
+            "showCommonLabels": false,
+            "wrapLogMessage": true,
+            "prettifyLogMessage": false,
+            "enableLogDetails": true,
+            "sortOrder": "Descending"
+          },
+          "targets": [
+            {
+              "expr": "{job=\"agent\"} | json | level =~ `WARNING|ERROR`",
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": ""
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
-  "refresh": "30s",
   "schemaVersion": 39,
-  "style": "dark",
   "tags": [
-    "homelab",
     "agent"
   ],
   "templating": {
-    "list": [
-      {
-        "current": {
-          "selected": false,
-          "text": "implement|review",
-          "value": "implement|review"
-        },
-        "hide": 0,
-        "includeAll": false,
-        "label": "Task Type",
-        "multi": false,
-        "name": "task_type",
-        "options": [
-          {
-            "selected": true,
-            "text": "All",
-            "value": "implement|review"
-          },
-          {
-            "selected": false,
-            "text": "implement",
-            "value": "implement"
-          },
-          {
-            "selected": false,
-            "text": "review",
-            "value": "review"
-          }
-        ],
-        "query": "",
-        "type": "custom"
-      }
-    ]
+    "list": []
   },
   "time": {
-    "from": "now-24h",
+    "from": "now-7d",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Agent Tasks",
   "uid": "agent-tasks",
-  "version": 0,
-  "weekStart": ""
+  "version": 1
 }

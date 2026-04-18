@@ -289,6 +289,29 @@ async def main() -> int:
     # Write result as JSON to stdout for the API monitor to parse
     print(result.model_dump_json(exclude_unset=True), flush=True)
 
+    # Structured event for Loki — carries all dimensions for dashboard queries
+    logger.info(
+        "task_completed",
+        extra={
+            "event": "task_completed",
+            "status": result.status,
+            "repo": result.repo or settings.repo,
+            "duration_seconds": result.elapsed_seconds,
+            "premium_requests": result.premium_requests,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "cached_tokens": result.cached_tokens,
+            "reasoning_tokens": result.reasoning_tokens,
+            "model": result.model,
+            "reasoning_effort": result.reasoning_effort,
+            "merged": result.merged,
+            "pr_number": result.pr_number,
+            "review_fix_rounds": result.review_fix_rounds,
+            "cli_calls": result.cli_calls,
+            "error": result.error or "",
+        },
+    )
+
     status = result.status
     logger.info(
         "Worker finished: %s %s#%s → %s",

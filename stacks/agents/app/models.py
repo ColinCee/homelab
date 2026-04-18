@@ -77,6 +77,12 @@ class TaskResult(BaseModel):
     api_time_seconds: float | None = None
     reasoning_effort: str | None = None
     premium_requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
+    cli_calls: int = 0
+    review_fix_rounds: int = 0
     models: dict[str, str] | None = None
     tokens_line: str | None = None
     session_id: str | None = None
