@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running containerised services behind Tailscale (admin) and Cloudflare Tunnel (public ingress), managed by Dokploy.
+Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running containerised services behind Tailscale (admin) and Cloudflare Tunnel (public ingress), deployed via GitHub Actions.
 
 ## Design Philosophy
 
@@ -48,11 +48,11 @@ mise run ci           # All of the above + validate compose files
 ```
 Internet
   ├─ Cloudflare Tunnel → Public services (flight-tracker)
-  └─ Tailscale → Admin access (SSH, Dokploy, HA, Grafana)
+  └─ Tailscale → Admin access (SSH, HA, Grafana)
 
 Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), CrowdSec
 Agent: FastAPI on beelink:8585 — AI review + issue implementation via Copilot CLI (GPT-5.4)
-Platform: Dokploy (manages container lifecycle, auto-deploys from main)
+Platform: Self-hosted GitHub Actions runner (deploys on push to main)
 ```
 
 ## Pull Request Workflow

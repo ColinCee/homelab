@@ -1,21 +1,28 @@
 # ADR-012: Deploy pipeline — CI-to-server transport
 
 **Date:** 2026-04-17
-**Status:** Proposed
+**Status:** Accepted
 
 ## Context
 
-We're replacing Dokploy with a GitHub Actions pipeline that detects changed
-stacks, generates `.env` files from GitHub secrets + `.env.example` templates,
-and runs `docker compose up` on beelink.
+Dokploy managed container lifecycle but added little value over `docker compose
+up`. Replacing it with a GitHub Actions pipeline gives us:
+
+1. **True IaC** — compose files, scripts, and workflow are all in the repo
+2. **GitHub as single source of truth for secrets** — `.env.example` templates
+   in the repo, real values in GitHub secrets, no manual syncing to the server
+3. **Zero-delay deploys on push** — auto-detect changed stacks, generate `.env`,
+   `docker compose up` — no Dokploy clicks
+4. **Agent compatibility** — the agent can edit workflows and compose files
+   directly; Dokploy's DB-stored config was opaque to it
 
 The pipeline is built (`deploy.yaml`, `detect-stacks.sh`, `generate-env.sh`,
-`deploy.sh`). The open question is how CI reaches beelink to execute the
+`deploy.sh`). The open question was how CI reaches beelink to execute the
 deploy.
 
-The original design joined a GitHub-hosted runner to the tailnet via Tailscale
+The first attempt joined a GitHub-hosted runner to the tailnet via Tailscale
 OAuth (`tag:ci`), then SSHed to beelink with a restricted deploy key and
-forced-command gate (`deploy-gate.sh`). This hit two blockers:
+forced-command gate. This hit two blockers:
 
 1. **Tailscale SSH intercepts port 22** before sshd sees the connection, so
    `authorized_keys` (and the forced-command gate) are never consulted.
@@ -150,7 +157,8 @@ What stays unchanged:
 
 ## References
 
-- `docs/runbooks/deploy-migration.md` — migration journal with SSH blocker details
-- `.github/workflows/deploy.yaml` — current (pre-migration) workflow
+- `.github/workflows/deploy.yaml` — deploy workflow
+- ADR-001: Dokploy (superseded)
+- ADR-006: Dokploy GitOps (superseded)
 - ADR-010: Agent security model
 - [GitHub docs: self-hosted runner security](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#self-hosted-runner-security)

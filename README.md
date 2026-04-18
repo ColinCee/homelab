@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml/badge.svg)](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml)
 
-Infrastructure-as-code and documentation for Colin's homelab — a single Beelink mini-PC running containerised services behind Tailscale and Cloudflare Tunnel, managed by Dokploy.
+Infrastructure-as-code and documentation for Colin's homelab — a single Beelink mini-PC running containerised services behind Tailscale and Cloudflare Tunnel, deployed via GitHub Actions.
 
 ## Quickstart
 
@@ -26,8 +26,8 @@ mise run check:vulnerabilities  # Scan images for CVEs
 
 | Service | Purpose | Managed By |
 |---------|---------|------------|
-| [Flight Tracker](https://github.com/colincee/flight-tracker-at-home) | Real-time aviation dashboard (FastAPI + React) | Dokploy (auto-deploy from GitHub) |
-| [Cloudflared](https://github.com/cloudflare/cloudflared) | Public ingress via Cloudflare Tunnel | Dokploy |
+| [Flight Tracker](https://github.com/colincee/flight-tracker-at-home) | Real-time aviation dashboard (FastAPI + React) | Docker Compose (`stacks/flight-tracker/`) |
+| [Cloudflared](https://github.com/cloudflare/cloudflared) | Public ingress via Cloudflare Tunnel | Docker Compose (`stacks/flight-tracker/`) |
 | Home Assistant | Home automation (Bluetooth, mDNS) | Docker Compose (`stacks/home-assistant/`) |
 | MQTT (Mosquitto) | Message broker for HA sensors | Docker Compose (`stacks/mqtt/`) |
 | Grafana | Dashboards — metrics, logs, alerts | Docker Compose (`stacks/observability/`) |
@@ -36,7 +36,6 @@ mise run check:vulnerabilities  # Scan images for CVEs
 | Grafana Alloy | Unified collector (host + container metrics/logs) | Docker Compose (`stacks/observability/`) |
 | CrowdSec | Collaborative IDS + firewall bouncer | Docker Compose (`stacks/crowdsec/`) |
 | Homelab Agent | AI review + issue implementation via Copilot CLI (GPT-5.4) | Docker Compose (`stacks/agents/`) |
-| Dokploy | PaaS dashboard, logs, metrics, alerts | Docker Swarm (self-managed) |
 
 ## Hardware
 
@@ -50,19 +49,18 @@ Internet
   │
   ├─ Cloudflare Tunnel ──→ Public services (flight-tracker API)
   │
-  └─ Tailscale ──→ Admin access (SSH, Dokploy, Home Assistant)
+  └─ Tailscale ──→ Admin access (SSH, Home Assistant, Grafana)
          │
-         └─ ACLs: desktop=full, mobile=HA only, CI=Dokploy only
+         └─ ACLs: desktop=full, mobile=HA only
 ```
 
 ## Deploy Flow
 
 ```
-Push to main (flight-tracker repo)
-  → GitHub Actions CI (lint, test, build)
-  → Tailscale GitHub Action joins tailnet as tag:ci
-  → curl → Dokploy API triggers rebuild + deploy
-  → Discord notification on success/failure
+Push to main
+  → Self-hosted runner on beelink detects changed stacks
+  → Generates .env from GitHub secrets + .env.example templates
+  → docker compose up
 ```
 
 ## Tooling

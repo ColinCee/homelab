@@ -1,7 +1,7 @@
 # ADR-001: Dokploy as Self-Hosted PaaS
 
 **Date:** 2026-04-06
-**Status:** Accepted
+**Status:** Superseded by [ADR-012](012-deploy-pipeline.md)
 
 ## Context
 

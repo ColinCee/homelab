@@ -6,7 +6,7 @@
 ## Context
 
 The agent API container runs CLI tasks (review, implement) as child processes.
-When Dokploy redeploys the container (triggered by any push to main — including
+When the container is redeployed (triggered by any push to main — including
 the agent's own merges), in-flight CLI work is killed. These sessions run 5–30
 minutes and consume premium Copilot tokens that cannot be recovered.
 

@@ -1,7 +1,7 @@
 # ADR-006: Dokploy GitOps — Auto-Deploy with UI Environment Variables
 
 **Date:** 2026-04-08
-**Status:** Accepted
+**Status:** Superseded by [ADR-012](012-deploy-pipeline.md)
 
 ## Context
 

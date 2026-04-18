@@ -127,7 +127,7 @@ on the host.
 
 | Control | Enforcement |
 |---------|-------------|
-| No secrets in repo | All credentials live in GitHub Actions secrets or Dokploy env, not in the git repo |
+| No secrets in repo | All credentials live in GitHub Actions secrets, not in the git repo |
 | git-crypt | `docs/private/` is encrypted at rest. The CLI has no decryption key — these files appear as binary blobs in the worktree. |
 | `access.md` gitignored | Local credentials file is never committed and doesn't exist in the container |
 | Volume isolation | Named volumes (`repo-cache`, `reviews`) contain only git data — no host secrets mounted |

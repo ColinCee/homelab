@@ -53,7 +53,7 @@ Create a fine-grained personal access token for Copilot CLI:
 This token is only for Copilot inference. It is separate from the `GH_TOKEN`
 (GitHub App installation token) that gives the CLI repo access.
 
-## 3. Configure Dokploy secrets
+## 3. Configure secrets
 
 Copy the private key to the Beelink:
 
@@ -62,22 +62,22 @@ scp ~/Downloads/colins-homelab-bot.*.private-key.pem \
   beelink:/home/colin/secrets/github-app.pem
 ```
 
-Set the variables required by `stacks/agents/compose.yaml` in the Dokploy UI for
-the agent stack. The current operator-facing set is:
+Set the following as GitHub repository secrets (these are written to `.env` at
+deploy time via `stacks/agents/.env.example`):
 
-| Variable | Value |
-|----------|-------|
-| `GITHUB_APP_ID` | GitHub App ID |
-| `GITHUB_APP_INSTALLATION_ID` | GitHub App installation ID |
-| `GITHUB_APP_KEY_FILE` | Host path to the PEM file (for example `/home/colin/secrets/github-app.pem`) |
+| GitHub Secret | Value |
+|---------------|-------|
+| `BOT_APP_ID` | GitHub App ID |
+| `BOT_APP_INSTALLATION_ID` | GitHub App installation ID |
 | `COPILOT_GITHUB_TOKEN` | Fine-grained PAT with `Copilot Requests: Read` |
 
-Dokploy writes these to `.env` next to the compose file, which is why CI can
-validate the compose using `stacks/agents/.env.example`.
+The PEM file path (`GITHUB_APP_KEY_FILE`) is set directly in `compose.yaml`
+since it's a host path, not a secret.
 
 ## 4. Deploy
 
-Dokploy auto-deploys from `main`. For a manual deploy:
+Push to `main` auto-deploys via the GitHub Actions runner on beelink. For a
+manual deploy:
 
 ```bash
 mise run deploy:agents
@@ -133,7 +133,7 @@ SSH into the Beelink from any machine on the tailnet:
 ssh beelink
 ```
 
-View live agent logs (the container name is managed by Dokploy and may change):
+View live agent logs:
 
 ```bash
 # Find the agent container
