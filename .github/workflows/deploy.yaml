@@ -15,6 +15,7 @@ on:
         options:
           - all
           - agents
+          - knowledge
           - observability
           - flight-tracker
           - home-assistant
