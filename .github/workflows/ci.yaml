@@ -40,12 +40,4 @@ jobs:
           find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint
 
       - name: Validate compose files
-        run: |
-          for f in stacks/*/compose.yaml; do
-            dir=$(dirname "$f")
-            if [ -f "$dir/.env.example" ]; then
-              cp "$dir/.env.example" "$dir/.env"
-            fi
-            echo "Validating $f..."
-            docker compose -f "$f" config --quiet || exit 1
-          done
+        run: mise run validate:compose
