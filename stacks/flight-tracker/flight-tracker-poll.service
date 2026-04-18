@@ -1,0 +1,9 @@
+[Unit]
+Description=Pull latest flight-tracker backend image and restart if changed
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/colin/code/homelab
+ExecStart=/bin/bash -c '\
+  docker compose -f stacks/flight-tracker/compose.yaml pull --quiet backend && \
+  docker compose -f stacks/flight-tracker/compose.yaml up -d --remove-orphans backend'

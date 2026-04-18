@@ -15,6 +15,18 @@ fi
 cd "$(dirname "$0")/.."
 git pull --ff-only
 
+install_timer() {
+  local unit_base="$1"
+  local name
+  name="$(basename "$unit_base")"
+  local dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+  mkdir -p "$dir"
+  cp "${unit_base}.service" "${unit_base}.timer" "$dir/"
+  systemctl --user daemon-reload
+  systemctl --user enable --now "${name}.timer"
+  echo "  ⏱ ${name}.timer installed"
+}
+
 for stack in "${stacks[@]}"; do
   file="stacks/${stack}/compose.yaml"
   [[ -f "$file" ]] || { echo "❌ No compose.yaml: ${stack}" >&2; exit 1; }
@@ -22,7 +34,8 @@ for stack in "${stacks[@]}"; do
   case "$stack" in
     agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
     flight-tracker) docker compose -f "$file" pull
-                    docker compose -f "$file" up -d --remove-orphans ;;
+                    docker compose -f "$file" up -d --remove-orphans
+                    install_timer "stacks/flight-tracker/flight-tracker-poll" ;;
     *)              docker compose -f "$file" up -d --remove-orphans ;;
   esac
   echo "✅ ${stack}"

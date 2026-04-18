@@ -1,0 +1,9 @@
+[Unit]
+Description=Poll GHCR for new flight-tracker backend image
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+
+[Install]
+WantedBy=timers.target
