@@ -1,7 +1,7 @@
 # ADR-005: CI Access Pattern — Tailscale Ephemeral + Scoped Curl
 
 **Date:** 2026-04-08
-**Status:** Accepted
+**Status:** Superseded by ADR-012
 
 ## Context
 

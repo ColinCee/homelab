@@ -123,8 +123,8 @@ reach the self-hosted runner.
 | Workflow | Trigger | Runner | Fork PR risk |
 |----------|---------|--------|-------------|
 | ci.yaml | pull_request | ubuntu-24.04 | None |
-| code-review.yaml | issue_comment | ubuntu-24.04 | None |
-| implement.yaml | issues | ubuntu-24.04 | None |
+| code-review.yaml | issue_comment | **beelink** | None (role-gated + fork-block) |
+| implement.yaml | issues, issue_comment | **beelink** | None (issues aren't forkable) |
 | deploy.yaml | push:main, workflow_dispatch | **beelink** | None (can't trigger) |
 
 **Verdict: Recommended.** Eliminates the tailnet exposure problem entirely.

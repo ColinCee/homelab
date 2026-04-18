@@ -17,7 +17,7 @@ jobs:
       github.event.comment.body == '/implement' &&
       contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'),
       github.event.comment.author_association))
-    runs-on: ubuntu-24.04
+    runs-on: beelink
     permissions:
       contents: read
       issues: write
@@ -53,13 +53,6 @@ jobs:
           # after dispatch. Token expires after 1h naturally (GitHub App limit).
           skip-token-revoke: true
 
-      - name: Connect to Tailscale
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-
       - name: Trigger implementation on Beelink agent
         env:
           APP_TOKEN: ${{ steps.app-token.outputs.token }}
@@ -73,7 +66,7 @@ jobs:
               triggered_by:$actor, github_token:$token}')
 
           HTTP_CODE=$(curl -sf --max-time 30 \
-            -X POST "http://beelink:8585/implement" \
+            -X POST "http://localhost:8585/implement" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             -o /dev/null -w "%{http_code}")
