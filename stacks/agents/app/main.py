@@ -56,6 +56,10 @@ async def lifespan(_app: FastAPI):
             status=status,
             duration_seconds=float(w.get("duration_seconds", 0)),
             premium_requests=premium,
+            input_tokens=result.input_tokens if result else 0,
+            output_tokens=result.output_tokens if result else 0,
+            cached_tokens=result.cached_tokens if result else 0,
+            reasoning_tokens=result.reasoning_tokens if result else 0,
         )
         logger.info(
             "Harvested metrics from orphaned worker %s #%s (status=%s, premium=%d)",

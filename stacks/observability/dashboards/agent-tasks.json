@@ -754,7 +754,7 @@
           },
           "targets": [
             {
-              "expr": "increase(sum by (task_type)(agent_task_total)[1d])",
+              "expr": "sum by (task_type)(increase(agent_task_total[1d]))",
               "legendFormat": "{{task_type}}",
               "refId": "A",
               "datasource": {
@@ -816,7 +816,7 @@
           },
           "targets": [
             {
-              "expr": "increase(sum by (task_type)(agent_premium_requests_total)[1d])",
+              "expr": "sum by (task_type)(increase(agent_premium_requests_total[1d]))",
               "legendFormat": "{{task_type}}",
               "refId": "A",
               "datasource": {

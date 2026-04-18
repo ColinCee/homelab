@@ -180,6 +180,10 @@ async def _run_implement(repo: str, issue_number: int, model: str, effort: str) 
         result = TaskResult(
             status="failed",
             premium_requests=exc.premium_requests,
+            input_tokens=exc.input_tokens,
+            output_tokens=exc.output_tokens,
+            cached_tokens=exc.cached_tokens,
+            reasoning_tokens=exc.reasoning_tokens,
             error=str(exc),
         )
         await _publish_implement_result(
@@ -241,7 +245,14 @@ async def _run_review(
         await _update_progress_comment(repo, progress_comment_id, f"⚠️ Review failed — {exc}")
         if not exc.commented:
             await safe_comment(repo, pr_number, f"⚠️ **Review failed** — {exc}")
-        return TaskResult(status="failed", premium_requests=exc.premium_requests)
+        return TaskResult(
+            status="failed",
+            premium_requests=exc.premium_requests,
+            input_tokens=exc.input_tokens,
+            output_tokens=exc.output_tokens,
+            cached_tokens=exc.cached_tokens,
+            reasoning_tokens=exc.reasoning_tokens,
+        )
 
     except Exception as exc:
         logger.exception("Review failed for %s#%d", repo, pr_number)
