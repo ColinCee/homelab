@@ -27,7 +27,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-24.04
+    runs-on: beelink
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           INPUT_STACK: ${{ inputs.stack }}
         run: scripts/detect-stacks.sh
 
-      - name: Generate .env files
+      - name: Deploy
         if: steps.detect.outputs.stacks != ''
         env:
           STACKS: ${{ steps.detect.outputs.stacks }}
@@ -48,35 +48,8 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
-        run: scripts/generate-env.sh
-
-      - name: Connect to Tailscale
-        if: steps.detect.outputs.stacks != ''
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-          tags: tag:ci
-
-      - name: Set up deploy key
-        if: steps.detect.outputs.stacks != ''
-        env:
-          DEPLOY_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
-          mkdir -p ~/.ssh
-          install -m 600 /dev/null ~/.ssh/deploy_key
-          printenv DEPLOY_KEY > ~/.ssh/deploy_key
-
-      - name: Deploy
-        if: steps.detect.outputs.stacks != ''
-        env:
-          STACKS: ${{ steps.detect.outputs.stacks }}
-        run: |
-          read -ra stacks <<< "$STACKS"
-          ssh_cmd="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new"
-          for stack in "${stacks[@]}"; do
-            if [[ -f "stacks/${stack}/.env" ]]; then
-              $ssh_cmd colin@beelink "receive-env ${stack}" < "stacks/${stack}/.env"
-            fi
-          done
-          $ssh_cmd colin@beelink "deploy ${stacks[*]}"
+          cd /home/colin/code/homelab
+          git pull --ff-only
+          scripts/generate-env.sh
+          scripts/deploy.sh
