@@ -69,3 +69,15 @@ Then add `MY_SECRET` to the deploy workflow's env block and as a GitHub secret.
 - **Volumes:** Named volumes for persistence. Data directories gitignored via `stacks/*/data/`
 - **Image versions:** Pin tags (e.g., `grafana/grafana:11.5`) for Renovate to track and auto-PR updates
 - **Cross-stack networking:** Use the Tailscale IP (`100.100.146.119`) or host-mapped ports — containers in different compose stacks can't resolve each other via Docker DNS
+
+## Hosting External Services
+
+For services whose source lives in a different repo (e.g., flight-tracker),
+the image is built in that repo's CI and pulled by beelink via a systemd timer.
+See [ADR-013](../decisions/013-external-service-hosting.md) for the full pattern.
+
+1. Create `stacks/<name>/compose.yaml` referencing the GHCR image
+2. Create `stacks/<name>/<name>-poll.service` and `<name>-poll.timer`
+   (copy from `stacks/flight-tracker/` as a template)
+3. Add a case in `scripts/deploy.sh` to pull + install the timer
+4. In the external repo, add a GHCR build+push job to CI

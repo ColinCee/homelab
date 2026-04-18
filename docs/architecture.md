@@ -3,8 +3,9 @@
 This is the human map of the homelab. For the reasoning behind the current shape,
 see [ADR-003](decisions/003-observability.md),
 [ADR-010](decisions/010-agent-security-model.md),
-[ADR-011](decisions/011-docker-socket-for-workers.md), and
-[ADR-012](decisions/012-deploy-pipeline.md).
+[ADR-011](decisions/011-docker-socket-for-workers.md),
+[ADR-012](decisions/012-deploy-pipeline.md), and
+[ADR-013](decisions/013-external-service-hosting.md).
 
 ## What runs on the Beelink
 
@@ -55,6 +56,17 @@ The workflow runs on a self-hosted runner on beelink — no SSH, no tailnet
 join from CI. Secrets live in GitHub and are written to `.env` files via
 `.env.example` templates at deploy time
 ([ADR-012](decisions/012-deploy-pipeline.md)).
+
+### External services (GHCR image polling)
+
+Services whose source lives in other repos (e.g., flight-tracker) follow a
+different path: the external repo CI builds and pushes images to GHCR, and a
+systemd timer on beelink polls for new digests every 30s
+([ADR-013](decisions/013-external-service-hosting.md)).
+
+```text
+push to external repo → CI builds + pushes to GHCR → beelink timer pulls + restarts (≤30s)
+```
 
 For stack-specific setup and adding new services, see
 [docs/runbooks/deploying-services.md](runbooks/deploying-services.md).
