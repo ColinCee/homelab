@@ -100,6 +100,8 @@ RUN chmod +x /entrypoint.sh
 
 ENV HOME=/home/agent
 ENV PATH="/mise/shims:/app/.venv/bin:$PATH"
+# Trust mise configs in worktrees (agent clones repos into /reviews/).
+ENV MISE_TRUSTED_CONFIG_PATHS="/reviews"
 
 # Copilot CLI authenticates via COPILOT_GITHUB_TOKEN env var (set in compose)
 
