@@ -14,7 +14,6 @@ What's left to build. Solved items live in their respective [ADRs](decisions/) �
 |------|----------|-------|
 | Staging environment — feature branch deployment to isolated namespace | Should | Avoids deploying over production to test |
 | Docker socket hardening | Should | |
-| Decommission Dokploy | Should | Runner-based pipeline replaces it (ADR-012); stop Dokploy containers, reclaim ~350 MB RAM |
 
 ## Known Limitations — Autonomous Agents
 

@@ -142,9 +142,12 @@ Setup:
 3. Change `deploy.yaml`: `runs-on: beelink` (deploy job only)
 4. Remove from workflow: Tailscale connect, deploy key setup, SSH steps
 5. Deploy step becomes: `generate-env.sh` → `deploy.sh` (both local)
-6. Remove secrets: DEPLOY_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+6. Remove secrets: DEPLOY_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET,
+   DOKPLOY_API_KEY
 7. Remove from repo: `deploy-gate.sh`
 8. Remove from beelink: deploy key from `authorized_keys`
+9. Decommission Dokploy: remove swarm services, volumes, leave swarm
+10. Revoke Tailscale OAuth client (`tag:ci`) — no CI nodes on tailnet at all
 
 What stays unchanged:
 
@@ -154,6 +157,14 @@ What stays unchanged:
 - `.env.example` templates — secret variable mapping
 - GitHub secrets for app credentials (BOT_APP_ID, etc.)
 - `workflow_dispatch` manual deploy UI
+
+### Tailscale security improvement
+
+With no CI runners joining the tailnet, the Tailscale OAuth client and its
+`tag:ci` ACL can be revoked entirely. The tailnet surface shrinks to only
+trusted physical devices (desktop + mobile). This eliminates the class of
+attack where a compromised CI runner pivots through tailnet to reach
+services on beelink.
 
 ## References
 
