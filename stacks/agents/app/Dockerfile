@@ -68,6 +68,17 @@ RUN UV_VERSION=$(uv --version | awk '{print $2}') && \
 # already registered above so mise skips them.
 RUN mise install --yes && mise reshim
 
+# Verify all mise-managed tools are installed. Fails the build if anything is
+# missing — catches version drift between mise.toml and the Dockerfile before
+# the image ships.
+RUN mise ls --json | python3 -c "\
+import json, sys; tools = json.load(sys.stdin); \
+missing = [t for t in tools if not tools[t][0].get('installed')]; \
+sys.exit(f'Missing tools: {missing}') if missing else print('All mise tools verified ✓')"
+# Verify non-mise tools and that shims resolve correctly.
+RUN python3 --version && uv --version && envsubst --version && \
+    /mise/shims/shellcheck --version | head -1 && /mise/shims/actionlint --version
+
 WORKDIR /app
 COPY stacks/agents/app/pyproject.toml stacks/agents/app/uv.lock ./
 RUN uv sync --frozen
