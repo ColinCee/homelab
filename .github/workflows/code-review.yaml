@@ -67,7 +67,7 @@ jobs:
               triggered_by:$actor, github_token:$token}')
 
           HTTP_CODE=$(curl -sf --max-time 30 \
-            -X POST "http://localhost:8585/review" \
+            -X POST "http://100.100.146.119:8585/review" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD" \
             -o /dev/null -w "%{http_code}")
