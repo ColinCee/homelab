@@ -53,3 +53,20 @@ jobs:
           git pull --ff-only
           scripts/generate-env.sh
           scripts/deploy.sh
+
+      - name: Get commit message
+        if: always() && steps.detect.outputs.stacks != ''
+        id: commit
+        run: |
+          MSG=$(git log -1 --pretty=%s 2>/dev/null || echo "unknown")
+          echo "msg=${MSG}" >> "$GITHUB_OUTPUT"
+
+      - uses: sarisia/actions-status-discord@v1
+        if: always() && steps.detect.outputs.stacks != ''
+        with:
+          webhook: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          title: Deploy
+          description: |
+            **Stacks:** ${{ steps.detect.outputs.stacks }}
+            **Commit:** ${{ steps.commit.outputs.msg }}
+            **Actor:** ${{ github.actor }}
