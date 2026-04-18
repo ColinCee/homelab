@@ -1,7 +1,7 @@
 services:
   mqtt:
     container_name: mqtt
-    image: eclipse-mosquitto:2.1.2
+    image: eclipse-mosquitto:2.1.2-alpine
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "mosquitto_sub -t '$$SYS/broker/uptime' -C 1 -W 5 >/dev/null"]
