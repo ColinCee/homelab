@@ -110,6 +110,35 @@ class _LoopContext:
     implement_session_id: str | None
 
 
+@dataclass
+class _TokenAccumulator:
+    """Accumulates stats across multiple CLI calls."""
+
+    premium_requests: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
+    cli_calls: int = 0
+    review_fix_rounds: int = 0
+
+    def add_result(self, result: CLIResult) -> None:
+        self.premium_requests += result.total_premium_requests
+        self.input_tokens += result.input_tokens
+        self.output_tokens += result.output_tokens
+        self.cached_tokens += result.cached_tokens
+        self.reasoning_tokens += result.reasoning_tokens
+        self.cli_calls += 1
+
+    def add_error(self, exc: TaskError) -> None:
+        self.premium_requests += exc.premium_requests
+        self.input_tokens += exc.input_tokens
+        self.output_tokens += exc.output_tokens
+        self.cached_tokens += exc.cached_tokens
+        self.reasoning_tokens += exc.reasoning_tokens
+        self.cli_calls += 1
+
+
 # ── Helpers ──────────────────────────────────────────────
 
 
@@ -140,23 +169,32 @@ def _is_merged(pr_data: GitHubPullRequest) -> bool:
 def _build_result(
     pr_data: GitHubPullRequest | None,
     elapsed: float,
-    premium_requests: int,
-    cli_result: CLIResult,
+    acc: _TokenAccumulator,
+    cli_result: CLIResult | None,
     repo: str,
+    model: str,
+    reasoning_effort: str,
 ) -> TaskResult:
     """Build a TaskResult from PR state after CLI completes."""
-    # Determine status-specific fields
     if not pr_data:
         return TaskResult(
             status="failed",
             error="CLI did not create a PR",
             repo=repo,
+            model=model,
+            reasoning_effort=reasoning_effort,
             elapsed_seconds=elapsed,
-            premium_requests=premium_requests,
-            api_time_seconds=cli_result.api_time_seconds,
-            models=cli_result.models,
-            tokens_line=cli_result.tokens_line,
-            session_id=cli_result.session_id,
+            premium_requests=acc.premium_requests,
+            input_tokens=acc.input_tokens,
+            output_tokens=acc.output_tokens,
+            cached_tokens=acc.cached_tokens,
+            reasoning_tokens=acc.reasoning_tokens,
+            cli_calls=acc.cli_calls,
+            review_fix_rounds=acc.review_fix_rounds,
+            api_time_seconds=cli_result.api_time_seconds if cli_result else None,
+            models=cli_result.models if cli_result else None,
+            tokens_line=cli_result.tokens_line if cli_result else None,
+            session_id=cli_result.session_id if cli_result else None,
         )
 
     status = "complete" if (_is_merged(pr_data) or pr_data.auto_merge is not None) else "partial"
@@ -170,12 +208,20 @@ def _build_result(
         pr_number=pr_data.number,
         pr_url=pr_data.html_url,
         repo=repo,
+        model=model,
+        reasoning_effort=reasoning_effort,
         elapsed_seconds=elapsed,
-        premium_requests=premium_requests,
-        api_time_seconds=cli_result.api_time_seconds,
-        models=cli_result.models,
-        tokens_line=cli_result.tokens_line,
-        session_id=cli_result.session_id,
+        premium_requests=acc.premium_requests,
+        input_tokens=acc.input_tokens,
+        output_tokens=acc.output_tokens,
+        cached_tokens=acc.cached_tokens,
+        reasoning_tokens=acc.reasoning_tokens,
+        cli_calls=acc.cli_calls,
+        review_fix_rounds=acc.review_fix_rounds,
+        api_time_seconds=cli_result.api_time_seconds if cli_result else None,
+        models=cli_result.models if cli_result else None,
+        tokens_line=cli_result.tokens_line if cli_result else None,
+        session_id=cli_result.session_id if cli_result else None,
     )
 
 
@@ -187,12 +233,13 @@ async def _run_review_fix_loop(
     pr_number: int,
     issue_data: GitHubIssue,
     issue_number: int,
-) -> tuple[bool, int]:
-    """Run the review → fix loop. Returns (approved, premium_requests_used)."""
-    total_premium = 0
+    acc: _TokenAccumulator,
+) -> bool:
+    """Run the review → fix loop. Returns whether the PR was approved."""
     review_session_id: str | None = None
 
     for round_num in range(1, MAX_REVIEW_FIX_ROUNDS + 1):
+        acc.review_fix_rounds = round_num
         # ── Review step ──
         logger.info("Review round %d for %s#%d", round_num, ctx.repo, pr_number)
         review_prompt = REVIEW_PROMPT_TEMPLATE.format(
@@ -206,15 +253,16 @@ async def _run_review_fix_loop(
             review_result = await run_copilot(
                 ctx.worktree_path,
                 review_prompt,
+                stage="review",
                 model=ctx.model,
                 effort=ctx.reasoning_effort,
                 session_id=review_session_id,
                 github_token=ctx.token,
             )
-            total_premium += review_result.total_premium_requests
+            acc.add_result(review_result)
             review_session_id = review_result.session_id
         except TaskError as exc:
-            total_premium += exc.premium_requests
+            acc.add_error(exc)
             logger.warning("Review round %d failed: %s", round_num, exc)
             await safe_comment(ctx.repo, pr_number, f"⚠️ Review round {round_num} failed — {exc}")
             break
@@ -227,7 +275,7 @@ async def _run_review_fix_loop(
             break
         if not unresolved:
             logger.info("Review round %d: approved (no unresolved threads)", round_num)
-            return True, total_premium
+            return True
 
         logger.info(
             "Review round %d: %d unresolved thread(s), starting fix",
@@ -244,14 +292,15 @@ async def _run_review_fix_loop(
             fix_result = await run_copilot(
                 ctx.worktree_path,
                 fix_prompt,
+                stage="fix",
                 model=ctx.model,
                 effort=ctx.reasoning_effort,
                 session_id=ctx.implement_session_id,
                 github_token=ctx.token,
             )
-            total_premium += fix_result.total_premium_requests
+            acc.add_result(fix_result)
         except TaskError as exc:
-            total_premium += exc.premium_requests
+            acc.add_error(exc)
             logger.warning("Fix round %d failed: %s", round_num, exc)
             await safe_comment(ctx.repo, pr_number, f"⚠️ Fix round {round_num} failed — {exc}")
             break
@@ -262,7 +311,7 @@ async def _run_review_fix_loop(
             break
         if not unresolved:
             logger.info("Fix round %d resolved all threads", round_num)
-            return True, total_premium
+            return True
 
         logger.info(
             "Fix round %d: %d thread(s) still unresolved",
@@ -270,19 +319,21 @@ async def _run_review_fix_loop(
             len(unresolved),
         )
 
-    return False, total_premium
+    return False
 
 
 # ── Merge ────────────────────────────────────────────────
 
 
-async def _try_merge(ctx: _LoopContext, pr_number: int, branch_name: str) -> tuple[bool, int]:
-    """Attempt to merge a PR. Returns (merged, premium_requests_used)."""
+async def _try_merge(
+    ctx: _LoopContext, pr_number: int, branch_name: str, acc: _TokenAccumulator
+) -> bool:
+    """Attempt to merge a PR. Returns whether the merge succeeded."""
     await mark_pr_ready(ctx.repo, pr_number)
 
     if await merge_pr(ctx.repo, pr_number):
         logger.info("PR #%d merged via REST API", pr_number)
-        return True, 0
+        return True
 
     # Fallback: CLI merge
     logger.info("REST merge failed for #%d, trying CLI fallback", pr_number)
@@ -293,21 +344,23 @@ async def _try_merge(ctx: _LoopContext, pr_number: int, branch_name: str) -> tup
         merge_result = await run_copilot(
             ctx.worktree_path,
             merge_prompt,
+            stage="merge",
             model=ctx.model,
             effort=ctx.reasoning_effort,
             session_id=ctx.implement_session_id,
             github_token=ctx.token,
         )
-        premium = merge_result.total_premium_requests
+        acc.add_result(merge_result)
         pr_data = await find_pr_by_branch(ctx.repo, branch_name)
         if pr_data and _is_merged(pr_data):
             logger.info("PR #%d merged via CLI fallback", pr_number)
-            return True, premium
+            return True
         logger.warning("CLI fallback did not merge PR #%d", pr_number)
-        return False, premium
+        return False
     except TaskError as exc:
+        acc.add_error(exc)
         logger.warning("CLI merge fallback failed: %s", exc)
-        return False, exc.premium_requests
+        return False
 
 
 # ── Main entry point ─────────────────────────────────────
@@ -341,7 +394,7 @@ async def implement_issue(
             "refusing to inject untrusted content into CLI prompt"
         )
 
-    total_premium_requests = 0
+    acc = _TokenAccumulator()
     cli_result: CLIResult | None = None
     result: TaskResult | None = None
 
@@ -356,9 +409,14 @@ async def implement_issue(
             body=issue_data.body or "(no description)",
         )
         cli_result = await run_copilot(
-            worktree_path, prompt, model=model, effort=reasoning_effort, github_token=token
+            worktree_path,
+            prompt,
+            stage="implement",
+            model=model,
+            effort=reasoning_effort,
+            github_token=token,
         )
-        total_premium_requests += cli_result.total_premium_requests
+        acc.add_result(cli_result)
 
         pr_data = await find_pr_by_branch(repo, branch_name)
         if pr_data and _is_stale_pr(pr_data, start_wall):
@@ -373,7 +431,7 @@ async def implement_issue(
 
         if not pr_data:
             elapsed = _monotonic() - start
-            result = _build_result(None, elapsed, total_premium_requests, cli_result, repo)
+            result = _build_result(None, elapsed, acc, cli_result, repo, model, reasoning_effort)
             return result
 
         await lock_pr(repo, pr_data.number)
@@ -388,14 +446,12 @@ async def implement_issue(
                 token=token,
                 implement_session_id=cli_result.session_id,
             )
-            approved, loop_premium = await _run_review_fix_loop(
-                ctx, pr_data.number, issue_data, issue_number
+            approved = await _run_review_fix_loop(
+                ctx, pr_data.number, issue_data, issue_number, acc
             )
-            total_premium_requests += loop_premium
 
             if approved:
-                _merged, merge_premium = await _try_merge(ctx, pr_data.number, branch_name)
-                total_premium_requests += merge_premium
+                await _try_merge(ctx, pr_data.number, branch_name, acc)
                 pr_data = await find_pr_by_branch(repo, branch_name)
             else:
                 await safe_comment(
@@ -406,7 +462,7 @@ async def implement_issue(
                 )
 
         elapsed = _monotonic() - start
-        result = _build_result(pr_data, elapsed, total_premium_requests, cli_result, repo)
+        result = _build_result(pr_data, elapsed, acc, cli_result, repo, model, reasoning_effort)
 
         if result.merged:
             await close_issue(repo, issue_number)
@@ -416,7 +472,14 @@ async def implement_issue(
     except TaskError:
         raise
     except Exception as exc:
-        raise TaskError(str(exc), premium_requests=total_premium_requests) from exc
+        raise TaskError(
+            str(exc),
+            premium_requests=acc.premium_requests,
+            input_tokens=acc.input_tokens,
+            output_tokens=acc.output_tokens,
+            cached_tokens=acc.cached_tokens,
+            reasoning_tokens=acc.reasoning_tokens,
+        ) from exc
 
     finally:
         await cleanup_branch_worktree(branch_name)

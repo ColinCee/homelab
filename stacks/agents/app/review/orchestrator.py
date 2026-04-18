@@ -129,6 +129,7 @@ async def review_pr(
         result = await run_copilot(
             worktree_path,
             prompt,
+            stage="review",
             model=model,
             effort=reasoning_effort,
             session_id=session_id,
@@ -140,11 +141,17 @@ async def review_pr(
 
         return TaskResult(
             status="complete",
+            repo=repo,
             model=model,
             elapsed_seconds=elapsed,
             api_time_seconds=result.api_time_seconds,
             reasoning_effort=reasoning_effort,
             premium_requests=result.total_premium_requests,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            cached_tokens=result.cached_tokens,
+            reasoning_tokens=result.reasoning_tokens,
+            cli_calls=1,
             models=result.models,
             tokens_line=result.tokens_line,
             session_id=result.session_id,

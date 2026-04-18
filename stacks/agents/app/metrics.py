@@ -25,6 +25,13 @@ PREMIUM_REQUESTS_TOTAL = Counter(
     labelnames=("task_type",),
     registry=METRICS_REGISTRY,
 )
+TOKENS_TOTAL = Counter(
+    "agent_tokens_total",
+    "Total tokens consumed by agent tasks.",
+    labelnames=("task_type", "direction"),
+    registry=METRICS_REGISTRY,
+)
+TOKEN_DIRECTIONS = ("input", "output", "cached", "reasoning")
 TASK_IN_PROGRESS = Gauge(
     "agent_task_in_progress",
     "Current number of in-flight agent tasks.",
@@ -37,6 +44,8 @@ def _initialize_metrics() -> None:
     for task_type in TASK_TYPES:
         TASK_IN_PROGRESS.labels(task_type=task_type).set(0)
         PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type)
+        for direction in TOKEN_DIRECTIONS:
+            TOKENS_TOTAL.labels(task_type=task_type, direction=direction)
         for status in TASK_STATUSES:
             TASK_DURATION_SECONDS.labels(task_type=task_type, status=status)
             TASK_TOTAL.labels(task_type=task_type, status=status)
@@ -48,6 +57,7 @@ def reset_metrics() -> None:
         TASK_DURATION_SECONDS,
         TASK_TOTAL,
         PREMIUM_REQUESTS_TOTAL,
+        TOKENS_TOTAL,
         TASK_IN_PROGRESS,
     ):
         with collector._lock:

@@ -13,6 +13,8 @@ from services.copilot import (
     _parse_session_id,
     _parse_stats,
     _parse_time,
+    _parse_token_value,
+    _parse_tokens,
     run_copilot,
 )
 
@@ -116,6 +118,51 @@ def test_parse_new_format_short_time():
     stats = _parse_stats("Requests  3 Premium (6m 16s)\n")
     assert stats["premium_requests"] == 3
     assert stats["session_time"] == 6 * 60 + 16
+
+
+class TestParseTokens:
+    def test_full_new_format(self):
+        tokens = _parse_tokens("↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)")
+        assert tokens == {
+            "input": 5_500_000,
+            "output": 34_000,
+            "cached": 5_300_000,
+            "reasoning": 19_900,
+        }
+
+    def test_input_output_only(self):
+        tokens = _parse_tokens("↑ 100k • ↓ 2.5k")
+        assert tokens["input"] == 100_000
+        assert tokens["output"] == 2_500
+        assert tokens["cached"] == 0
+        assert tokens["reasoning"] == 0
+
+    def test_empty_string(self):
+        tokens = _parse_tokens("")
+        assert tokens == {"input": 0, "output": 0, "cached": 0, "reasoning": 0}
+
+    def test_small_values_without_suffix(self):
+        tokens = _parse_tokens("↑ 500 • ↓ 100")
+        assert tokens["input"] == 500
+        assert tokens["output"] == 100
+
+    def test_millions(self):
+        assert _parse_token_value("2.2m") == 2_200_000
+
+    def test_thousands(self):
+        assert _parse_token_value("34.0k") == 34_000
+
+    def test_plain_number(self):
+        assert _parse_token_value("402") == 402
+
+    def test_new_format_stats_include_tokens(self):
+        """_parse_stats on new format captures tokens_line for downstream parsing."""
+        stats = _parse_stats(SAMPLE_OUTPUT_NEW_FORMAT)
+        tokens = _parse_tokens(stats.get("tokens_line", ""))
+        assert tokens["input"] == 5_500_000
+        assert tokens["output"] == 34_000
+        assert tokens["cached"] == 5_300_000
+        assert tokens["reasoning"] == 19_900
 
 
 def test_stats_line_strips_est_premium():

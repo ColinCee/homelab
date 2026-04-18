@@ -56,11 +56,25 @@ def _redact_secrets(text: str, extra_secrets: frozenset[str] = frozenset()) -> s
 
 
 class TaskError(Exception):
-    """Wraps a post-CLI failure, preserving the premium request count for metrics."""
+    """Wraps a post-CLI failure, preserving stats for metrics accumulation."""
 
-    def __init__(self, message: str, *, premium_requests: int = 0, commented: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        premium_requests: int = 0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cached_tokens: int = 0,
+        reasoning_tokens: int = 0,
+        commented: bool = False,
+    ) -> None:
         super().__init__(message)
         self.premium_requests = premium_requests
+        self.input_tokens = input_tokens
+        self.output_tokens = output_tokens
+        self.cached_tokens = cached_tokens
+        self.reasoning_tokens = reasoning_tokens
         # True when an error comment was already posted on the PR/issue,
         # so callers can avoid double-posting.
         self.commented = commented
@@ -76,6 +90,10 @@ class CLIResult:
     session_time_seconds: int = 0
     models: dict[str, str] = field(default_factory=dict)
     tokens_line: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cached_tokens: int = 0
+    reasoning_tokens: int = 0
     session_transcript: str | None = None
     session_id: str | None = None
 
@@ -104,6 +122,39 @@ def _parse_time(value: str) -> int:
     if m := re.search(r"(\d+)s", value):
         total += int(m.group(1))
     return total
+
+
+def _parse_token_value(value: str) -> int:
+    """Parse a token count like '5.5m', '34.0k', or '19900' into an integer."""
+    value = value.strip()
+    if value.endswith("m"):
+        return int(float(value[:-1]) * 1_000_000)
+    if value.endswith("k"):
+        return int(float(value[:-1]) * 1_000)
+    return int(float(value))
+
+
+def _parse_tokens(tokens_line: str) -> dict[str, int]:
+    """Parse token stats from CLI output.
+
+    Format: ↑ 5.5m • ↓ 34.0k • 5.3m (cached) • 19.9k (reasoning)
+    """
+    result = {"input": 0, "output": 0, "cached": 0, "reasoning": 0}
+    if not tokens_line:
+        return result
+
+    for part in tokens_line.split("•"):
+        part = part.strip()
+        if part.startswith("↑"):
+            result["input"] = _parse_token_value(part[1:])
+        elif part.startswith("↓"):
+            result["output"] = _parse_token_value(part[1:])
+        elif "(cached)" in part:
+            result["cached"] = _parse_token_value(part.replace("(cached)", ""))
+        elif "(reasoning)" in part:
+            result["reasoning"] = _parse_token_value(part.replace("(reasoning)", ""))
+
+    return result
 
 
 def _parse_stats(output: str) -> dict:
@@ -168,10 +219,44 @@ def _log_expected_process_cleanup(action: str, pid: int | None) -> None:
     )
 
 
+def _emit_cli_completed(
+    *,
+    stage: str,
+    model: str,
+    effort: str,
+    stats: dict,
+    tokens: dict[str, int],
+    session_id: str | None,
+    exit_code: int | None,
+    success: bool,
+) -> None:
+    """Emit a structured cli_completed event for Loki ingestion."""
+    logger.info(
+        "cli_completed",
+        extra={
+            "event": "cli_completed",
+            "stage": stage,
+            "model": model,
+            "effort": effort,
+            "premium_requests": stats.get("premium_requests", 0),
+            "input_tokens": tokens["input"],
+            "output_tokens": tokens["output"],
+            "cached_tokens": tokens["cached"],
+            "reasoning_tokens": tokens["reasoning"],
+            "session_time_seconds": stats.get("session_time", 0),
+            "api_time_seconds": stats.get("api_time", 0),
+            "session_id": session_id or "",
+            "exit_code": exit_code,
+            "success": success,
+        },
+    )
+
+
 async def run_copilot(
     worktree_path: Path,
     prompt: str,
     *,
+    stage: str = "default",
     model: str = "gpt-5.4",
     effort: str = "high",
     session_id: str | None = None,
@@ -290,18 +375,48 @@ async def run_copilot(
     except TimeoutError as err:
         await _stop_process()
         stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
+        tokens = _parse_tokens(stats.get("tokens_line", ""))
+        _emit_cli_completed(
+            stage=stage,
+            model=model,
+            effort=effort,
+            stats=stats,
+            tokens=tokens,
+            session_id=None,
+            exit_code=None,
+            success=False,
+        )
         raise TaskError(
             f"Copilot CLI timed out after {TIMEOUT_SECONDS}s",
             premium_requests=stats["premium_requests"],
+            input_tokens=tokens["input"],
+            output_tokens=tokens["output"],
+            cached_tokens=tokens["cached"],
+            reasoning_tokens=tokens["reasoning"],
         ) from err
 
     if proc.returncode != 0:
         error = _redact_secrets("\n".join(stderr_lines) or "\n".join(stdout_lines), secrets)
         logger.error("Copilot CLI failed (exit %d): %s", proc.returncode, error)
         stats = _parse_stats("\n".join(stdout_lines + stderr_lines))
+        tokens = _parse_tokens(stats.get("tokens_line", ""))
+        _emit_cli_completed(
+            stage=stage,
+            model=model,
+            effort=effort,
+            stats=stats,
+            tokens=tokens,
+            session_id=None,
+            exit_code=proc.returncode,
+            success=False,
+        )
         raise TaskError(
             f"Copilot CLI exited with code {proc.returncode}: {error}",
             premium_requests=stats["premium_requests"],
+            input_tokens=tokens["input"],
+            output_tokens=tokens["output"],
+            cached_tokens=tokens["cached"],
+            reasoning_tokens=tokens["reasoning"],
         )
 
     output = "\n".join(stdout_lines)
@@ -317,9 +432,21 @@ async def run_copilot(
         logger.warning("No session transcript found at %s", transcript_path)
 
     stats = _parse_stats(all_output)
+    tokens = _parse_tokens(stats.get("tokens_line", ""))
     parsed_session_id = _parse_session_id(all_output)
     if not parsed_session_id and transcript:
         parsed_session_id = _parse_session_id(transcript)
+
+    _emit_cli_completed(
+        stage=stage,
+        model=model,
+        effort=effort,
+        stats=stats,
+        tokens=tokens,
+        session_id=parsed_session_id,
+        exit_code=proc.returncode,
+        success=True,
+    )
 
     return CLIResult(
         output=output,
@@ -328,6 +455,10 @@ async def run_copilot(
         session_time_seconds=stats["session_time"],
         models=stats["models"],
         tokens_line=stats.get("tokens_line", ""),
+        input_tokens=tokens["input"],
+        output_tokens=tokens["output"],
+        cached_tokens=tokens["cached"],
+        reasoning_tokens=tokens["reasoning"],
         session_transcript=transcript,
         session_id=parsed_session_id,
     )
