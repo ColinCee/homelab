@@ -78,6 +78,14 @@ discovery.relabel "docker_logs" {
     target_label = "instance"
     replacement  = constants.hostname
   }
+  // Map agent API and worker containers to job="agent" so Loki queries
+  // match the same job label used by the Prometheus agent scrape target.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(agents-agent-.*|worker-.*)"
+    target_label  = "job"
+    replacement   = "agent"
+  }
 }
 
 // ================================

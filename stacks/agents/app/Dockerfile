@@ -99,7 +99,7 @@ COPY stacks/agents/app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV HOME=/home/agent
-ENV PATH="/mise/shims:/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:/mise/shims:$PATH"
 # Trust mise configs in worktrees (agent clones repos into /reviews/).
 ENV MISE_TRUSTED_CONFIG_PATHS="/reviews"
 
