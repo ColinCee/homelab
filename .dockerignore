@@ -7,3 +7,7 @@
 
 # Repo-level config needed by the build (mise install in Dockerfile)
 !mise.toml
+
+# Root project deps for uv cache pre-warming
+!pyproject.toml
+!uv.lock
