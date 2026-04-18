@@ -34,7 +34,7 @@ depends = ["lint", "typecheck", "test", "validate:compose"]
 # ── Deploy ─────────────────────────────────────────
 [tasks."deploy:all"]
 description = "Deploy all stacks"
-depends = ["deploy:ha", "deploy:mqtt", "deploy:observability", "deploy:crowdsec", "deploy:agents", "deploy:flight-tracker"]
+depends = ["deploy:ha", "deploy:mqtt", "deploy:observability", "deploy:crowdsec", "deploy:knowledge", "deploy:agents", "deploy:flight-tracker"]
 
 [tasks."deploy:ha"]
 description = "Deploy Home Assistant"
@@ -51,6 +51,10 @@ run = "docker compose -f stacks/observability/compose.yaml up -d"
 [tasks."deploy:crowdsec"]
 description = "Deploy CrowdSec IDS"
 run = "docker compose -f stacks/crowdsec/compose.yaml up -d"
+
+[tasks."deploy:knowledge"]
+description = "Deploy knowledge Postgres + pgvector"
+run = "docker compose -f stacks/knowledge/compose.yaml up -d"
 
 [tasks."deploy:agents"]
 description = "Deploy AI agent service"

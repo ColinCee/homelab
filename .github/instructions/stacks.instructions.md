@@ -23,6 +23,7 @@ Each stack is a self-contained directory under `stacks/<service>/` with a `compo
 | mqtt | Mosquitto | Broker for HA sensors, port 1883 |
 | observability | Grafana, Prometheus, Loki, Alloy | Metrics, logs, dashboards, alerting → Discord |
 | crowdsec | CrowdSec engine | IDS with UFW firewall bouncer on host |
+| knowledge | Postgres 17 + pgvector | Persistent vector store for the personal knowledge base |
 
 ## Validation
 
