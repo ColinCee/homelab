@@ -83,7 +83,7 @@ Grafana (:3001) ← Prometheus (metrics) ← Alloy (host + container scraping)
                                         ← CrowdSec (security metrics)
 ```
 
-- **Dashboards:** Host Overview, Container Overview, Security (pre-provisioned)
+- **Dashboards:** Container Overview, Security (pre-provisioned)
 - **Alerting:** CPU >80%, RAM >90%, Disk >80% → private Discord channel
 - **Security:** CrowdSec IDS with collaborative threat intel + UFW firewall bouncer
 - **External:** Healthchecks.io heartbeat (alerts on full server outage)
