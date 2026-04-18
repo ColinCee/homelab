@@ -7,6 +7,13 @@ set -euo pipefail
 #
 # Usage: generate-env.sh agents observability
 #    or: STACKS="agents observability" generate-env.sh
+#
+# If ALL_SECRETS is set (JSON from GitHub Actions toJson(secrets)),
+# each key is exported so envsubst can substitute them.
+
+if [[ -n "${ALL_SECRETS:-}" ]]; then
+  eval "$(echo "$ALL_SECRETS" | jq -r 'to_entries[] | select(.value != "") | "export \(.key)=\(.value | @sh)"')"
+fi
 
 if (( $# )); then
   stacks=("$@")
