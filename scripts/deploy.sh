@@ -22,6 +22,9 @@ install_timer() {
   local dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   mkdir -p "$dir"
   cp "${unit_base}.service" "${unit_base}.timer" "$dir/"
+  # Runner process may lack user bus access; set it explicitly
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+  export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
   systemctl --user daemon-reload
   systemctl --user enable --now "${name}.timer"
   echo "  ⏱ ${name}.timer installed"
