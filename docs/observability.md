@@ -18,7 +18,6 @@ authoritative sources.
 
 Dashboards are provisioned from:
 
-- [Host Overview](../stacks/observability/dashboards/host-overview.json)
 - [Container Overview](../stacks/observability/dashboards/container-overview.json)
 - [Security](../stacks/observability/dashboards/security.json)
 
