@@ -27,7 +27,7 @@
       "title": "Active Workers",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -77,7 +77,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -87,7 +87,7 @@
       "title": "Total Tasks",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -137,7 +137,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -147,7 +147,7 @@
       "title": "Success Rate",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -197,7 +197,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -207,7 +207,7 @@
       "title": "Failed",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -257,7 +257,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -267,7 +267,7 @@
       "title": "Premium Requests",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -317,7 +317,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -327,7 +327,7 @@
       "title": "Total Tokens",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -377,7 +377,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -387,7 +387,7 @@
       "title": "Tasks by Status",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -429,7 +429,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -439,7 +439,7 @@
       "title": "Tokens by Direction",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -481,7 +481,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -491,7 +491,7 @@
       "title": "Avg Duration by Type",
       "datasource": {
         "type": "prometheus",
-        "uid": ""
+        "uid": "prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -547,7 +547,7 @@
           "refId": "A",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           }
         }
       ]
@@ -557,7 +557,7 @@
       "title": "Recent Tasks",
       "datasource": {
         "type": "loki",
-        "uid": ""
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -686,7 +686,7 @@
           "refId": "A",
           "datasource": {
             "type": "loki",
-            "uid": ""
+            "uid": "loki"
           }
         }
       ]
@@ -707,7 +707,7 @@
           "title": "Task Throughput (daily)",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           },
           "gridPos": {
             "h": 8,
@@ -759,7 +759,7 @@
               "refId": "A",
               "datasource": {
                 "type": "prometheus",
-                "uid": ""
+                "uid": "prometheus"
               }
             }
           ]
@@ -769,7 +769,7 @@
           "title": "Premium Requests (daily)",
           "datasource": {
             "type": "prometheus",
-            "uid": ""
+            "uid": "prometheus"
           },
           "gridPos": {
             "h": 8,
@@ -821,7 +821,7 @@
               "refId": "A",
               "datasource": {
                 "type": "prometheus",
-                "uid": ""
+                "uid": "prometheus"
               }
             }
           ]
@@ -844,7 +844,7 @@
           "title": "Agent Logs",
           "datasource": {
             "type": "loki",
-            "uid": ""
+            "uid": "loki"
           },
           "gridPos": {
             "h": 8,
@@ -867,7 +867,7 @@
               "refId": "A",
               "datasource": {
                 "type": "loki",
-                "uid": ""
+                "uid": "loki"
               }
             }
           ]
@@ -877,7 +877,7 @@
           "title": "Warnings & Errors",
           "datasource": {
             "type": "loki",
-            "uid": ""
+            "uid": "loki"
           },
           "gridPos": {
             "h": 8,
@@ -900,7 +900,7 @@
               "refId": "A",
               "datasource": {
                 "type": "loki",
-                "uid": ""
+                "uid": "loki"
               }
             }
           ]
