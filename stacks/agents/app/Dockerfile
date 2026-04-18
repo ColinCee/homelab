@@ -15,10 +15,10 @@ ARG DOCKER_VERSION=28.2.2
 ARG DOCKER_COMPOSE_VERSION=5.1.3
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
-COPY --from=ghcr.io/astral-sh/uv:0.11 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl git ca-certificates && \
+    curl git ca-certificates gettext-base && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Copilot CLI standalone binary
@@ -40,8 +40,8 @@ RUN mkdir -p /usr/local/lib/docker/cli-plugins && \
     -o /usr/local/lib/docker/cli-plugins/docker-compose && \
     chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
-# Install mise and provision all dev tools (shellcheck, actionlint, trivy)
-# so the Copilot CLI has the same toolchain as local dev.
+# Install mise and provision all dev tools so the Copilot CLI has the same
+# toolchain as local dev. mise.toml is the single source of truth for versions.
 # Shared data dir with shims on PATH — tools callable by any user.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ENV MISE_DATA_DIR="/mise"
@@ -49,12 +49,33 @@ ENV MISE_CONFIG_DIR="/mise"
 ENV MISE_CACHE_DIR="/mise/cache"
 ENV MISE_INSTALL_PATH="/usr/local/bin/mise"
 RUN MISE_VERSION="${MISE_VERSION}" curl https://mise.run | sh
-COPY stacks/agents/app/mise.docker.toml /mise/config.toml
+COPY mise.toml /mise/config.toml
+
+# Register base-image Python with mise so it skips compilation.
+# mise detects installed tools by scanning /mise/installs/<tool>/<version>/.
+ARG PYTHON_VERSION=3.14.4
+RUN mkdir -p /mise/installs/python/${PYTHON_VERSION}/bin && \
+    ln -sf /usr/local/bin/python3 /mise/installs/python/${PYTHON_VERSION}/bin/python && \
+    ln -sf /usr/local/bin/python3 /mise/installs/python/${PYTHON_VERSION}/bin/python3 && \
+    ln -sf /usr/local/bin/pip3 /mise/installs/python/${PYTHON_VERSION}/bin/pip 2>/dev/null || true
+
+# Register COPY-installed uv with mise (version detected dynamically).
+RUN UV_VERSION=$(uv --version | awk '{print $2}') && \
+    mkdir -p "/mise/installs/uv/${UV_VERSION}/bin" && \
+    ln -sf /usr/local/bin/uv "/mise/installs/uv/${UV_VERSION}/bin/uv"
+
+# Install remaining tools (shellcheck, actionlint, trivy) — Python and uv are
+# already registered above so mise skips them.
 RUN mise install --yes && mise reshim
 
 WORKDIR /app
 COPY stacks/agents/app/pyproject.toml stacks/agents/app/uv.lock ./
 RUN uv sync --frozen
+
+# Pre-warm uv cache with root dev deps (yamllint, ruff, ty, pytest) so
+# runtime `uv sync` in worktrees hits cache instead of downloading.
+COPY pyproject.toml uv.lock /tmp/repo-root/
+RUN cd /tmp/repo-root && uv sync --frozen && rm -rf /tmp/repo-root
 
 COPY stacks/agents/app/ .
 

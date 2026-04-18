@@ -1,9 +1,9 @@
 [tools]
 python = "3.14.4"
-uv = "latest"
-shellcheck = "latest"
-actionlint = "latest"
-trivy = "latest"
+uv = "0.11.3"
+shellcheck = "0.11.0"
+actionlint = "1.7.12"
+trivy = "0.69.3"
 
 # ── Dev ────────────────────────────────────────────
 [tasks.lint]
