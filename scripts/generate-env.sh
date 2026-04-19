@@ -25,5 +25,6 @@ for stack in "${stacks[@]}"; do
   example="stacks/${stack}/.env.example"
   [[ -f "$example" ]] || continue
   vars=$(grep -oP '\$\{[A-Z_]+\}' "$example" | sort -u | tr '\n' ' ')
-  envsubst "$vars" < "$example" > "stacks/${stack}/.env"
+  # Single-quote values so docker compose doesn't interpolate $ in passwords
+  envsubst "$vars" < "$example" | sed "s/=\(.*\)/='\1'/" > "stacks/${stack}/.env"
 done

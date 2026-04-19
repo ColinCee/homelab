@@ -63,7 +63,7 @@
     {
       "description": "Group uv updates across mise.toml and Dockerfile",
       "groupName": "uv",
-      "matchDepNames": ["uv", "ghcr.io/astral-sh/uv"],
+      "matchDepPatterns": ["^uv$", "astral-sh/uv"],
       "automerge": false
     },
     {
