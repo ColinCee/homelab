@@ -47,7 +47,8 @@ jobs:
           ALL_SECRETS: ${{ toJson(secrets) }}
         run: |
           cd /home/colin/code/homelab
-          git pull --ff-only
+          git fetch origin main
+          git reset --hard origin/main
           scripts/generate-env.sh
           scripts/deploy.sh
 
