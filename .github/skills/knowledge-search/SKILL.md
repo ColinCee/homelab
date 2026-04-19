@@ -14,11 +14,12 @@ You have access to a personal knowledge base containing ~190 markdown documents 
 Run the search container on beelink via SSH:
 
 ```bash
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest search '<query>' --limit <N>"
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest search \"<query>\" --limit <N>"
 ```
 
 - `<query>` — natural language search text (semantic similarity, not keyword match)
 - `--limit` — number of results (default: 5, increase for broad topics)
+- The query is wrapped in escaped double quotes (`\"...\"`), which correctly handles apostrophes and special characters
 
 The command takes ~5 seconds (container startup + embedding + vector search).
 
