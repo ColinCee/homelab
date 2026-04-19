@@ -11,7 +11,6 @@ _EXCERPT_LENGTH = 200
 def search(
     query: str,
     *,
-    workspace: str | None = None,
     limit: int = DEFAULT_RESULT_LIMIT,
     conn: DatabaseConnection | None = None,
     token: str | None = None,
@@ -25,7 +24,7 @@ def search(
 
     try:
         query_embedding = _embed_query(normalized_query, token=token)
-        return search_chunks(db, query_embedding, workspace=workspace, limit=limit)
+        return search_chunks(db, query_embedding, limit=limit)
     finally:
         if own_conn:
             db.close()
@@ -50,7 +49,6 @@ def _embed_query(query: str, *, token: str | None = None) -> list[float]:
 def _format_result(index: int, result: SearchResult) -> str:
     header = (
         f"{index}. score={result.score:.3f} "
-        f"workspace={result.workspace} "
         f"source={result.document.source_path} "
         f"chunk={result.chunk.chunk_index}"
     )

@@ -12,10 +12,8 @@ def _search_result(*, content: str, score: float = 0.93, chunk_index: int = 2) -
     document_id = UUID("00000000-0000-0000-0000-000000000001")
     return SearchResult(
         score=score,
-        workspace="notes",
         document=Document(
             id=document_id,
-            workspace="notes",
             source_path="docs/adr.md",
             title="ADR 001",
             content_hash="hash-123",
@@ -41,8 +39,7 @@ def test_format_search_results_includes_ranked_result_details() -> None:
 
     # Assert
     assert formatted == (
-        "1. score=0.930 workspace=notes source=docs/adr.md chunk=2\n"
-        "   Line one. Line two with extra spaces."
+        "1. score=0.930 source=docs/adr.md chunk=2\n   Line one. Line two with extra spaces."
     )
 
 
@@ -86,7 +83,6 @@ def test_search_embeds_query_and_uses_default_limit(
     mock_search_chunks.assert_called_once_with(
         conn,
         [0.1] * EMBEDDING_DIMENSION,
-        workspace=None,
         limit=DEFAULT_RESULT_LIMIT,
     )
     conn.close.assert_called_once_with()

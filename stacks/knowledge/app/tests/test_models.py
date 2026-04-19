@@ -10,14 +10,7 @@ from knowledge.models import (
     Document,
     IngestResult,
     SearchResult,
-    Workspace,
 )
-
-
-def test_workspace_rejects_blank_name() -> None:
-    # Arrange / Act / Assert
-    with pytest.raises(ValidationError, match="must not be blank"):
-        Workspace(name="   ")
 
 
 def test_chunk_requires_expected_embedding_dimension() -> None:
@@ -43,7 +36,6 @@ def test_document_validates_string_inputs() -> None:
     document = Document.model_validate(
         {
             "id": str(document_id),
-            "workspace": " notes ",
             "source_path": " docs/adr.md ",
             "title": " ADR 001 ",
             "content_hash": " hash-123 ",
@@ -53,7 +45,6 @@ def test_document_validates_string_inputs() -> None:
 
     # Assert
     assert document.id == document_id
-    assert document.workspace == "notes"
     assert document.source_path == "docs/adr.md"
     assert document.title == "ADR 001"
     assert document.content_hash == "hash-123"
@@ -69,7 +60,6 @@ def test_search_result_serializes_nested_models() -> None:
     embedding = [0.1] * EMBEDDING_DIMENSION
     document = Document(
         id=document_id,
-        workspace="notes",
         source_path="docs/adr.md",
         title="ADR 001",
         content_hash="hash-123",
@@ -84,13 +74,12 @@ def test_search_result_serializes_nested_models() -> None:
         metadata={"section": "decision"},
         created_at=created_at,
     )
-    result = SearchResult(score=0.93, workspace="notes", document=document, chunk=chunk)
+    result = SearchResult(score=0.93, document=document, chunk=chunk)
 
     # Act
     dumped = result.model_dump(mode="json")
 
     # Assert
-    assert dumped["workspace"] == "notes"
     assert dumped["score"] == 0.93
     assert dumped["document"]["id"] == str(document_id)
     assert dumped["document"]["ingested_at"] == "2026-04-19T00:00:00Z"
@@ -103,7 +92,6 @@ def test_ingest_result_rejects_negative_counts() -> None:
     # Arrange / Act / Assert
     with pytest.raises(ValidationError, match="greater than or equal to 0"):
         IngestResult(
-            workspace="notes",
             documents_processed=1,
             chunks_created=2,
             documents_skipped=-1,

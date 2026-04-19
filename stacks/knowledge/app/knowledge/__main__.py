@@ -16,7 +16,6 @@ def main() -> None:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     ingest_parser = subparsers.add_parser("ingest", help="Ingest documents")
-    ingest_parser.add_argument("--workspace", required=True, help="Target workspace name")
     ingest_parser.add_argument("--path", type=Path, help="File to ingest (.md or .txt)")
     ingest_parser.add_argument("--text", help="Raw text to ingest")
     ingest_parser.add_argument("--title", help="Title for raw text (required with --text)")
@@ -26,7 +25,6 @@ def main() -> None:
 
     search_parser = subparsers.add_parser("search", help="Search ingested chunks")
     search_parser.add_argument("query", help="Natural language query text")
-    search_parser.add_argument("--workspace", help="Restrict search to one workspace")
     search_parser.add_argument(
         "--limit",
         type=_positive_int,
@@ -60,17 +58,15 @@ def _handle_ingest(args: argparse.Namespace) -> None:
         if not path.is_file():
             print(f"Error: file not found: {path}", file=sys.stderr)
             sys.exit(1)
-        result = ingest_file(path, workspace=args.workspace)
+        result = ingest_file(path)
     else:
-        result = ingest_text(
-            args.text, title=args.title, workspace=args.workspace, source_id=args.source_id
-        )
+        result = ingest_text(args.text, title=args.title, source_id=args.source_id)
 
     print(json.dumps(result.model_dump(mode="json"), indent=2))
 
 
 def _handle_search(args: argparse.Namespace) -> None:
-    results = search(args.query, workspace=args.workspace, limit=args.limit)
+    results = search(args.query, limit=args.limit)
     print(format_search_results(results))
 
 

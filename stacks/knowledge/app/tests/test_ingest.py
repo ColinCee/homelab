@@ -22,11 +22,9 @@ def _fake_connect() -> MagicMock:
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
 def test_ingest_file_new_document(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -38,7 +36,6 @@ def test_ingest_file_new_document(
     mock_connect.return_value = _fake_connect()
     saved_doc = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path="test.md",
         title="Test",
         content_hash="abc",
@@ -49,14 +46,12 @@ def test_ingest_file_new_document(
     test_file.write_text("# My Doc\n\nSome content here.")
 
     # Act
-    result = ingest_file(test_file, workspace="notes")
+    result = ingest_file(test_file)
 
     # Assert
     assert isinstance(result, IngestResult)
-    assert result.workspace == "notes"
     assert result.documents_processed == 1
     assert result.documents_skipped == 0
-    mock_create_ws.assert_called_once()
     mock_embed.assert_called_once()
     mock_delete.assert_not_called()
 
@@ -66,11 +61,9 @@ def test_ingest_file_new_document(
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source")
 def test_ingest_skips_unchanged_content(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -89,14 +82,13 @@ def test_ingest_skips_unchanged_content(
     mock_connect.return_value = _fake_connect()
     mock_get_source.return_value = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path=str(test_file),
         title="Same Doc",
         content_hash=content_hash,
     )
 
     # Act
-    result = ingest_file(test_file, workspace="notes")
+    result = ingest_file(test_file)
 
     # Assert
     assert result.documents_skipped == 1
@@ -110,11 +102,9 @@ def test_ingest_skips_unchanged_content(
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source")
 def test_ingest_reingests_changed_content(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -128,7 +118,6 @@ def test_ingest_reingests_changed_content(
 
     existing = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path=str(test_file),
         title="Old",
         content_hash="old-hash",
@@ -138,7 +127,7 @@ def test_ingest_reingests_changed_content(
     mock_upsert.return_value = existing
 
     # Act
-    result = ingest_file(test_file, workspace="notes")
+    result = ingest_file(test_file)
 
     # Assert
     assert result.documents_processed == 1
@@ -151,11 +140,9 @@ def test_ingest_reingests_changed_content(
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
 def test_ingest_text_uses_text_uri(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -166,7 +153,6 @@ def test_ingest_text_uses_text_uri(
     mock_connect.return_value = _fake_connect()
     saved = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path="text://Quick Note",
         title="Quick Note",
         content_hash="abc",
@@ -174,7 +160,7 @@ def test_ingest_text_uses_text_uri(
     mock_upsert.return_value = saved
 
     # Act
-    result = ingest_text("Some quick thought", title="Quick Note", workspace="notes")
+    result = ingest_text("Some quick thought", title="Quick Note")
 
     # Assert
     assert result.documents_processed == 1
@@ -187,11 +173,9 @@ def test_ingest_text_uses_text_uri(
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
 def test_ingest_text_different_content_same_title_no_collision(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -203,7 +187,6 @@ def test_ingest_text_different_content_same_title_no_collision(
     mock_connect.return_value = _fake_connect()
     saved = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path="text://Note/abc",
         title="Note",
         content_hash="abc",
@@ -211,10 +194,10 @@ def test_ingest_text_different_content_same_title_no_collision(
     mock_upsert.return_value = saved
 
     # Act
-    ingest_text("Content A", title="Note", workspace="notes")
+    ingest_text("Content A", title="Note")
     path_a = mock_upsert.call_args[0][1].source_path
 
-    ingest_text("Content B", title="Note", workspace="notes")
+    ingest_text("Content B", title="Note")
     path_b = mock_upsert.call_args[0][1].source_path
 
     # Assert — different content hashes produce different source paths
@@ -228,11 +211,9 @@ def test_ingest_text_different_content_same_title_no_collision(
 @patch("knowledge.ingest.insert_chunks", return_value=[])
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
-@patch("knowledge.ingest.create_workspace")
 @patch("knowledge.ingest.get_document_by_source")
 def test_zero_chunks_on_reingest_deletes_stale_data(
     mock_get_source: MagicMock,
-    mock_create_ws: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
     mock_insert: MagicMock,
@@ -247,7 +228,6 @@ def test_zero_chunks_on_reingest_deletes_stale_data(
 
     existing = Document(
         id=UUID("00000000-0000-0000-0000-000000000001"),
-        workspace="notes",
         source_path=str(test_file),
         title="Old",
         content_hash="old-hash",
@@ -257,7 +237,7 @@ def test_zero_chunks_on_reingest_deletes_stale_data(
     mock_upsert.return_value = existing
 
     # Act
-    result = ingest_file(test_file, workspace="notes")
+    result = ingest_file(test_file)
 
     # Assert — stale chunks cleaned up, no embeddings requested
     assert result.documents_processed == 1
