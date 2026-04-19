@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 GITHUB_MODELS_URL = "https://models.github.ai/inference/embeddings"
 MODEL_NAME = "openai/text-embedding-3-large"
-TOKEN_ENV = "GITHUB_TOKEN"
+TOKEN_ENV = "COPILOT_GITHUB_TOKEN"
 
 _MAX_RETRIES = 3
 _INITIAL_BACKOFF = 1.0
