@@ -35,6 +35,7 @@ mise run check:vulnerabilities  # Scan images for CVEs
 | Loki | Log aggregation (30d retention) | Docker Compose (`stacks/observability/`) |
 | Grafana Alloy | Unified collector (host + container metrics/logs) | Docker Compose (`stacks/observability/`) |
 | CrowdSec | Collaborative IDS + firewall bouncer | Docker Compose (`stacks/crowdsec/`) |
+| Knowledge Base | Postgres 17 + pgvector — semantic search over personal notes | Docker Compose (`stacks/knowledge/`) |
 | Homelab Agent | AI review + issue implementation via Copilot CLI (GPT-5.4) | Docker Compose (`stacks/agents/`) |
 
 ## Hardware

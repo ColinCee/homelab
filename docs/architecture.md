@@ -20,6 +20,7 @@ see [ADR-003](decisions/003-observability.md),
 | **`stacks/mqtt/`** | Mosquitto broker for Home Assistant sensors and automations. |
 | **`stacks/observability/`** | Grafana, Prometheus, Loki, and Alloy for dashboards, metrics, logs, and alerts. |
 | **`stacks/crowdsec/`** | CrowdSec IDS and firewall decisions. |
+| **`stacks/knowledge/`** | Postgres 17 + pgvector for personal knowledge base semantic search ([ADR-016](decisions/016-knowledge-base.md)). |
 | **`stacks/flight-tracker/`** | Flight Tracker API + Cloudflare Tunnel sidecar. |
 
 ## Network topology
