@@ -50,7 +50,7 @@ description = "Run tests for the knowledge CLI package"
 run = "cd stacks/knowledge/app && uv run pytest tests/ -v"
 
 [tasks."check:versions"]
-description = "Check version consistency across mise.toml, Dockerfile, and pyproject.toml"
+description = "Check version consistency between mise.toml and Dockerfile"
 run = "scripts/check-versions.sh"
 
 [tasks.ci]

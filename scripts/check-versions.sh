@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Check version consistency across mise.toml, Dockerfile, and pyproject.toml.
-# Fails CI if versions drift between these files.
+# Check version consistency between mise.toml and Dockerfile.
+# Fails CI if python or uv versions drift between these two sources of truth.
 set -euo pipefail
 
 DOCKERFILE="stacks/agents/app/Dockerfile"
