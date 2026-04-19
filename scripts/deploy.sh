@@ -41,6 +41,8 @@ for stack in "${stacks[@]}"; do
 
   case "$stack" in
     agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
+    knowledge)      docker compose -f "$file" build ingest
+                    docker compose -f "$file" up -d --remove-orphans ;;
     observability)  docker compose -f "$file" up -d --remove-orphans
                     scripts/sync-dashboards.sh ;;
     flight-tracker) docker compose -f "$file" pull

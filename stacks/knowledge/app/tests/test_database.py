@@ -21,13 +21,15 @@ def test_resolve_database_url_reads_environment(monkeypatch: pytest.MonkeyPatch)
     assert resolved == database_url
 
 
-def test_resolve_database_url_requires_dsn(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange
+def test_resolve_database_url_falls_back_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange — no KNOWLEDGE_DB_URL set
     monkeypatch.delenv(DATABASE_URL_ENV, raising=False)
 
-    # Act / Assert
-    with pytest.raises(RuntimeError, match=DATABASE_URL_ENV):
-        resolve_database_url()
+    # Act
+    result = resolve_database_url()
+
+    # Assert — None signals psycopg to use PG* env vars
+    assert result is None
 
 
 @patch("knowledge.database._cursor")
