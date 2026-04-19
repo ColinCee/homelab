@@ -1,5 +1,6 @@
 """Issue implementation orchestrator — dispatches to Copilot CLI with full repo access."""
 
+import asyncio
 import logging
 import time
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from trust import is_trusted_content_author
 logger = logging.getLogger(__name__)
 
 MAX_REVIEW_FIX_ROUNDS = 2
+THREAD_RESOLUTION_BACKOFF_SECONDS = (5, 10, 20)
 
 
 def _monotonic() -> float:
@@ -225,6 +227,19 @@ def _build_result(
     )
 
 
+async def _wait_for_threads_resolved(repo: str, pr_number: int) -> bool | None:
+    """Wait for GitHub to mark resolved review threads outdated after a fix push."""
+    for delay in THREAD_RESOLUTION_BACKOFF_SECONDS:
+        await asyncio.sleep(delay)
+        unresolved = await get_unresolved_review_threads(repo, pr_number)
+        if unresolved is None:
+            return None
+        if not unresolved:
+            return True
+
+    return False
+
+
 # ── Review-fix loop ─────────────────────────────────────
 
 
@@ -305,19 +320,15 @@ async def _run_review_fix_loop(
             await safe_comment(ctx.repo, pr_number, f"⚠️ Fix round {round_num} failed — {exc}")
             break
 
-        unresolved = await get_unresolved_review_threads(ctx.repo, pr_number)
-        if unresolved is None:
+        threads_resolved = await _wait_for_threads_resolved(ctx.repo, pr_number)
+        if threads_resolved is None:
             logger.warning("Failed to fetch threads after fix round %d, stopping loop", round_num)
             break
-        if not unresolved:
+        if threads_resolved:
             logger.info("Fix round %d resolved all threads", round_num)
             return True
 
-        logger.info(
-            "Fix round %d: %d thread(s) still unresolved",
-            round_num,
-            len(unresolved),
-        )
+        logger.info("Fix round %d: thread(s) still unresolved after waiting", round_num)
 
     return False
 
