@@ -20,7 +20,10 @@ load_env_file() {
 load_env_file "$KNOWLEDGE_ENV_FILE"
 load_env_file "$AGENTS_ENV_FILE"
 
-export KNOWLEDGE_DB_URL="${KNOWLEDGE_DB_URL:-postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@localhost:5432/${POSTGRES_DB:?}}"
+if [[ -z "${KNOWLEDGE_DB_URL:-}" ]]; then
+  encoded_password=$(printf '%s' "${POSTGRES_PASSWORD:?}" | python3 -c "import sys; from urllib.parse import quote; print(quote(sys.stdin.read(), safe=''))")
+  export KNOWLEDGE_DB_URL="postgresql://${POSTGRES_USER:?}:${encoded_password}@localhost:5432/${POSTGRES_DB:?}"
+fi
 : "${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN must be set}"
 
 cd "$NOTES_DIR"
