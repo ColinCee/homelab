@@ -10,6 +10,7 @@ import pytest
 from knowledge import __main__ as cli
 from knowledge.ingest import (
     _extract_pdf_text,
+    _file_content_hash,
     _read_file_content,
     _title_from_file,
     ingest_directory,
@@ -627,3 +628,22 @@ def test_title_from_pdf_uses_filename(tmp_path: Path) -> None:
     """PDF titles use filename since there's no markdown heading."""
     path = tmp_path / "uk261-regulation.pdf"
     assert _title_from_file(path, "some extracted text") == "Uk261 Regulation"
+
+
+def test_pdf_hash_uses_raw_bytes(tmp_path: Path) -> None:
+    """PDF change detection hashes raw bytes, not extracted text.
+
+    A PDF with different bytes but identical extracted text must produce
+    a different hash so re-ingestion is triggered.
+    """
+    pdf_a = tmp_path / "a.pdf"
+    pdf_b = tmp_path / "b.pdf"
+    _create_test_pdf(pdf_a, "Same text")
+    _create_test_pdf(pdf_b, "Same text")
+
+    # Append garbage bytes to pdf_b — extracted text is unchanged
+    with pdf_b.open("ab") as f:
+        f.write(b"\x00" * 64)
+
+    assert _extract_pdf_text(pdf_a) == _extract_pdf_text(pdf_b)
+    assert _file_content_hash(pdf_a) != _file_content_hash(pdf_b)

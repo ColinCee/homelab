@@ -35,12 +35,14 @@ def ingest_file(
 ) -> IngestResult:
     """Ingest a single file into the knowledge base."""
     content = _read_file_content(path)
+    content_hash = _file_content_hash(path)
     title = _title_from_file(path, content)
     source_path = str(path)
     return _ingest(
         content=content,
         title=title,
         source_path=source_path,
+        content_hash=content_hash,
         conn=conn,
         token=token,
     )
@@ -102,8 +104,10 @@ def _ingest(
     source_path: str,
     conn: DatabaseConnection | None,
     token: str | None,
+    content_hash: str | None = None,
 ) -> IngestResult:
-    content_hash = hashlib.sha256(content.encode()).hexdigest()
+    if content_hash is None:
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
     own_conn = conn is None
     db = conn or connect()
 
@@ -317,6 +321,11 @@ def _delete_orphaned_documents(
 
 def _source_prefix_for_directory(directory: Path) -> str:
     return f"{directory.as_posix().rstrip('/')}/"
+
+
+def _file_content_hash(path: Path) -> str:
+    """Hash raw file bytes for change detection (catches binary-only PDF changes)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _read_file_content(path: Path) -> str:
