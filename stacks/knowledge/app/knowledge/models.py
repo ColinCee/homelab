@@ -35,31 +35,14 @@ class KnowledgeModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Workspace(KnowledgeModel):
-    name: str = Field(min_length=1)
-    description: str = ""
-    created_at: datetime | None = None
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, value: str) -> str:
-        return _normalize_required_text(value)
-
-    @field_validator("description")
-    @classmethod
-    def normalize_description(cls, value: str) -> str:
-        return value.strip()
-
-
 class Document(KnowledgeModel):
     id: UUID | None = None
-    workspace: str = Field(min_length=1)
     source_path: str = Field(min_length=1)
     title: str = Field(min_length=1)
     content_hash: str = Field(min_length=1)
     ingested_at: datetime | None = None
 
-    @field_validator("workspace", "source_path", "title", "content_hash")
+    @field_validator("source_path", "title", "content_hash")
     @classmethod
     def validate_required_text_fields(cls, value: str) -> str:
         return _normalize_required_text(value)
@@ -96,23 +79,11 @@ class Chunk(KnowledgeModel):
 
 class SearchResult(KnowledgeModel):
     score: float = Field(ge=0.0, le=1.0)
-    workspace: str = Field(min_length=1)
     document: Document
     chunk: Chunk
 
-    @field_validator("workspace")
-    @classmethod
-    def validate_workspace(cls, value: str) -> str:
-        return _normalize_required_text(value)
-
 
 class IngestResult(KnowledgeModel):
-    workspace: str = Field(min_length=1)
     documents_processed: int = Field(ge=0)
     chunks_created: int = Field(ge=0)
     documents_skipped: int = Field(ge=0)
-
-    @field_validator("workspace")
-    @classmethod
-    def validate_workspace(cls, value: str) -> str:
-        return _normalize_required_text(value)

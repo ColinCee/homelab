@@ -10,14 +10,13 @@ from .chunker import chunk_text
 from .database import (
     DatabaseConnection,
     connect,
-    create_workspace,
     delete_document_chunks,
     get_document_by_source,
     insert_chunks,
     upsert_document,
 )
 from .embeddings import get_embeddings
-from .models import Chunk, Document, IngestResult, Workspace
+from .models import Chunk, Document, IngestResult
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,6 @@ logger = logging.getLogger(__name__)
 def ingest_file(
     path: Path,
     *,
-    workspace: str,
     conn: DatabaseConnection | None = None,
     token: str | None = None,
 ) -> IngestResult:
@@ -37,7 +35,6 @@ def ingest_file(
         content=content,
         title=title,
         source_path=source_path,
-        workspace=workspace,
         conn=conn,
         token=token,
     )
@@ -47,7 +44,6 @@ def ingest_text(
     text: str,
     *,
     title: str,
-    workspace: str,
     source_id: str | None = None,
     conn: DatabaseConnection | None = None,
     token: str | None = None,
@@ -64,7 +60,6 @@ def ingest_text(
         content=text,
         title=title,
         source_path=f"text://{title}/{key}",
-        workspace=workspace,
         conn=conn,
         token=token,
     )
@@ -75,7 +70,6 @@ def _ingest(
     content: str,
     title: str,
     source_path: str,
-    workspace: str,
     conn: DatabaseConnection | None,
     token: str | None,
 ) -> IngestResult:
@@ -89,7 +83,6 @@ def _ingest(
             content=content,
             title=title,
             source_path=source_path,
-            workspace=workspace,
             content_hash=content_hash,
             token=token,
         )
@@ -104,20 +97,15 @@ def _do_ingest(
     content: str,
     title: str,
     source_path: str,
-    workspace: str,
     content_hash: str,
     token: str | None,
 ) -> IngestResult:
-    # Ensure workspace exists
-    create_workspace(conn, Workspace(name=workspace))
-
     # Check for unchanged content
-    existing = _find_existing(conn, workspace, source_path)
+    existing = _find_existing(conn, source_path)
     if existing and existing.content_hash == content_hash:
         logger.info("Skipping unchanged document: %s", source_path)
         conn.commit()
         return IngestResult(
-            workspace=workspace,
             documents_processed=0,
             chunks_created=0,
             documents_skipped=1,
@@ -131,7 +119,6 @@ def _do_ingest(
         # doesn't return content from a previous version.
         if existing:
             doc = Document(
-                workspace=workspace,
                 source_path=source_path,
                 title=title,
                 content_hash=content_hash,
@@ -140,7 +127,6 @@ def _do_ingest(
             delete_document_chunks(conn, saved_doc)
         conn.commit()
         return IngestResult(
-            workspace=workspace,
             documents_processed=1 if existing else 0,
             chunks_created=0,
             documents_skipped=0,
@@ -151,7 +137,6 @@ def _do_ingest(
 
     # Store in a single transaction
     doc = Document(
-        workspace=workspace,
         source_path=source_path,
         title=title,
         content_hash=content_hash,
@@ -175,23 +160,17 @@ def _do_ingest(
     inserted = insert_chunks(conn, chunk_models)
     conn.commit()
 
-    logger.info(
-        "Ingested %s: %d chunks into workspace '%s'",
-        source_path,
-        len(inserted),
-        workspace,
-    )
+    logger.info("Ingested %s: %d chunks", source_path, len(inserted))
     return IngestResult(
-        workspace=workspace,
         documents_processed=1,
         chunks_created=len(inserted),
         documents_skipped=0,
     )
 
 
-def _find_existing(conn: DatabaseConnection, workspace: str, source_path: str) -> Document | None:
-    """Find an existing document by workspace + source_path."""
-    return get_document_by_source(conn, workspace, source_path)
+def _find_existing(conn: DatabaseConnection, source_path: str) -> Document | None:
+    """Find an existing document by source_path."""
+    return get_document_by_source(conn, source_path)
 
 
 def _title_from_file(path: Path, content: str) -> str:
