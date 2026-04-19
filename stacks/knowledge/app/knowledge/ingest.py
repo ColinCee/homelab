@@ -211,7 +211,7 @@ def _do_directory_ingest(
     token: str | None,
 ) -> DirectoryIngestResult:
     files = _iter_directory_files(directory, glob_pattern)
-    live_paths = {str(path) for path in files}
+    live_paths = {str(path) for path in _iter_supported_directory_files(directory)}
 
     documents_processed = 0
     chunks_created = 0
@@ -258,6 +258,21 @@ def _iter_directory_files(directory: Path, glob_pattern: str) -> list[Path]:
             if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
                 continue
             matched_paths.add(resolved_path)
+
+    return [Path(path) for path in sorted(matched_paths)]
+
+
+def _iter_supported_directory_files(directory: Path) -> list[Path]:
+    matched_paths: set[str] = set()
+
+    for path in directory.rglob("*"):
+        resolved_path = str(Path(path.resolve()))
+        resolved_file = Path(resolved_path)
+        if not resolved_file.is_file():
+            continue
+        if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
+            continue
+        matched_paths.add(resolved_path)
 
     return [Path(path) for path in sorted(matched_paths)]
 

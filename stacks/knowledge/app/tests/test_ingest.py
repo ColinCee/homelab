@@ -359,8 +359,8 @@ def test_ingest_directory_continues_after_file_error(
 
 
 @patch("knowledge.ingest.connect")
-@patch("knowledge.ingest.delete_document", return_value=0)
-@patch("knowledge.ingest.list_documents_by_source_prefix", return_value=[])
+@patch("knowledge.ingest.delete_document", return_value=1)
+@patch("knowledge.ingest.list_documents_by_source_prefix")
 @patch("knowledge.ingest.ingest_file")
 def test_ingest_directory_applies_custom_glob(
     mock_ingest_file: MagicMock,
@@ -376,9 +376,22 @@ def test_ingest_directory_applies_custom_glob(
     text_file = notes_dir / "beta.txt"
     markdown_file.write_text("# Alpha\n\nBody")
     text_file.write_text("Body")
+    existing_markdown = Document(
+        id=UUID("00000000-0000-0000-0000-000000000010"),
+        source_path=str(markdown_file.resolve()),
+        title="Alpha",
+        content_hash="hash-alpha",
+    )
+    missing_markdown = Document(
+        id=UUID("00000000-0000-0000-0000-000000000011"),
+        source_path=str((notes_dir / "missing.md").resolve()),
+        title="Missing",
+        content_hash="hash-missing",
+    )
 
     conn = _fake_connect()
     mock_connect.return_value = conn
+    mock_list_prefix.return_value = [existing_markdown, missing_markdown]
     mock_ingest_file.return_value = IngestResult(
         documents_processed=1,
         chunks_created=1,
@@ -390,8 +403,9 @@ def test_ingest_directory_applies_custom_glob(
 
     # Assert
     assert result.files_found == 1
+    assert result.documents_deleted == 1
     mock_ingest_file.assert_called_once_with(text_file.resolve(), conn=conn, token=None)
-    mock_delete_document.assert_not_called()
+    mock_delete_document.assert_called_once_with(conn, missing_markdown)
     mock_list_prefix.assert_called_once()
 
 

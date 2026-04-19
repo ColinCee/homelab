@@ -212,14 +212,19 @@ def list_documents_by_source_prefix(
             """
             SELECT id, source_path, title, content_hash, ingested_at
             FROM documents
-            WHERE source_path LIKE %s
+            WHERE source_path LIKE %s ESCAPE '\\'
             ORDER BY source_path
             """,
-            (f"{normalized_prefix}%",),
+            (_like_prefix_pattern(normalized_prefix),),
         )
         rows = cursor.fetchall()
 
     return [_document_from_row(row) for row in rows]
+
+
+def _like_prefix_pattern(prefix: str) -> str:
+    escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"{escaped_prefix}%"
 
 
 def _fetchone(cursor: DatabaseCursor, *, operation: str) -> DBRow:
