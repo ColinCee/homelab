@@ -72,7 +72,7 @@ run = "docker compose -f stacks/mqtt/compose.yaml up -d"
 
 [tasks."deploy:observability"]
 description = "Deploy observability stack (Grafana, Prometheus, Loki, Alloy)"
-run = "docker compose -f stacks/observability/compose.yaml up -d"
+run = "docker compose -f stacks/observability/compose.yaml up -d && scripts/sync-dashboards.sh"
 
 [tasks."deploy:crowdsec"]
 description = "Deploy CrowdSec IDS"
@@ -89,6 +89,11 @@ run = "docker compose -f stacks/agents/compose.yaml up -d --build"
 [tasks."deploy:flight-tracker"]
 description = "Deploy flight tracker (pull from GHCR)"
 run = "docker compose -f stacks/flight-tracker/compose.yaml pull && docker compose -f stacks/flight-tracker/compose.yaml up -d"
+
+# ── Sync ───────────────────────────────────────────
+[tasks."sync:dashboards"]
+description = "Push dashboard JSON files to Grafana via API"
+run = "scripts/sync-dashboards.sh"
 
 # ── Check ──────────────────────────────────────────
 [tasks."check:health"]

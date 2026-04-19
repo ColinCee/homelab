@@ -19,7 +19,7 @@ Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running conta
 - `stacks/` — Docker Compose services (agents, home-assistant, mqtt, observability, crowdsec)
 - `stacks/agents/app/` — Python agent service (FastAPI, Copilot CLI integration)
 - `docs/` — ADRs, runbooks, requirements (works as an Obsidian vault)
-- `access.md` — local-only server credentials and API keys (never committed, gitignored)
+- `access.md` — local-only server credentials and API keys (never committed, gitignored, lives at `docs/private/access.md`)
 
 ## Toolchain
 

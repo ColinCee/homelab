@@ -37,6 +37,8 @@ for stack in "${stacks[@]}"; do
 
   case "$stack" in
     agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
+    observability)  docker compose -f "$file" up -d --remove-orphans
+                    scripts/sync-dashboards.sh ;;
     flight-tracker) docker compose -f "$file" pull
                     docker compose -f "$file" up -d --remove-orphans
                     install_timer "stacks/flight-tracker/flight-tracker-poll" ;;
