@@ -90,6 +90,11 @@ run = "docker compose -f stacks/agents/compose.yaml up -d --build"
 description = "Deploy flight tracker (pull from GHCR)"
 run = "docker compose -f stacks/flight-tracker/compose.yaml pull && docker compose -f stacks/flight-tracker/compose.yaml up -d"
 
+# ── Sync ───────────────────────────────────────────
+[tasks."sync:dashboards"]
+description = "Push dashboard JSON files to Grafana via API"
+run = "scripts/sync-dashboards.sh"
+
 # ── Check ──────────────────────────────────────────
 [tasks."check:health"]
 description = "Run health checks against all services"

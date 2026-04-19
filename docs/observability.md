@@ -16,9 +16,13 @@ authoritative sources.
 | **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
 | **CrowdSec** | Security detections and firewall decisions, also exported as metrics |
 
-Dashboards are provisioned from JSON files — Grafana reloads them on
-restart but **will not accept API saves** for provisioned dashboards. To
-edit, modify the JSON and restart Grafana.
+Dashboards are managed via the Grafana HTTP API — JSON files in
+`stacks/observability/dashboards/` are the source of truth and pushed to
+Grafana by `scripts/sync-dashboards.sh` (runs automatically during deploy).
+
+```bash
+mise run sync:dashboards   # Push all dashboards to Grafana
+```
 
 - [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends
 - [Agent Tasks](../stacks/observability/dashboards/agent-tasks.json) — implement/review task metrics
