@@ -217,6 +217,8 @@ def _do_directory_ingest(
     chunks_created = 0
     documents_skipped = 0
     files_failed = 0
+    consecutive_failures = 0
+    max_consecutive_failures = 5
 
     for path in files:
         try:
@@ -225,8 +227,16 @@ def _do_directory_ingest(
             conn.rollback()
             logger.exception("Failed to ingest %s", path)
             files_failed += 1
+            consecutive_failures += 1
+            if consecutive_failures >= max_consecutive_failures:
+                logger.error(
+                    "Aborting: %d consecutive failures — likely a systemic issue",
+                    consecutive_failures,
+                )
+                break
             continue
 
+        consecutive_failures = 0
         documents_processed += result.documents_processed
         chunks_created += result.chunks_created
         documents_skipped += result.documents_skipped
