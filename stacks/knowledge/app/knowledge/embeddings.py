@@ -14,8 +14,9 @@ GITHUB_MODELS_URL = "https://models.github.ai/inference/embeddings"
 MODEL_NAME = "openai/text-embedding-3-large"
 TOKEN_ENV = "COPILOT_GITHUB_TOKEN"
 
-_MAX_RETRIES = 3
-_INITIAL_BACKOFF = 1.0
+_MAX_RETRIES = 6
+_INITIAL_BACKOFF = 2.0
+_MAX_BACKOFF = 60.0
 
 
 def get_embeddings(texts: list[str], *, token: str | None = None) -> list[list[float]]:
@@ -36,7 +37,7 @@ def get_embeddings(texts: list[str], *, token: str | None = None) -> list[list[f
 
 
 def _post_with_retry(payload: dict, headers: dict) -> dict:
-    """POST with exponential backoff on 429 / 5xx."""
+    """POST with exponential backoff on 429 / 5xx, respects Retry-After header."""
     backoff = _INITIAL_BACKOFF
     last_error: httpx.HTTPStatusError | None = None
 
@@ -48,21 +49,33 @@ def _post_with_retry(payload: dict, headers: dict) -> dict:
         except httpx.HTTPStatusError as exc:
             last_error = exc
             if exc.response.status_code == 429 or exc.response.status_code >= 500:
+                wait = _get_retry_delay(exc.response, backoff)
                 logger.warning(
                     "Embedding API returned %d (attempt %d/%d), retrying in %.1fs",
                     exc.response.status_code,
                     attempt + 1,
                     _MAX_RETRIES,
-                    backoff,
+                    wait,
                 )
-                time.sleep(backoff)
-                backoff *= 2
+                time.sleep(wait)
+                backoff = min(backoff * 2, _MAX_BACKOFF)
                 continue
             raise
 
     if last_error is not None:
         raise last_error
     raise RuntimeError("No retries attempted")
+
+
+def _get_retry_delay(response: httpx.Response, default_backoff: float) -> float:
+    """Extract delay from Retry-After header, falling back to exponential backoff."""
+    retry_after = response.headers.get("retry-after")
+    if retry_after:
+        try:
+            return min(float(retry_after), _MAX_BACKOFF)
+        except ValueError:
+            pass
+    return default_backoff
 
 
 def _parse_response(data: dict, *, expected: int) -> list[list[float]]:
