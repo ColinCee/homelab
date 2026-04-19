@@ -49,9 +49,13 @@ run = "cd stacks/knowledge/app && uv run ty check ."
 description = "Run tests for the knowledge CLI package"
 run = "cd stacks/knowledge/app && uv run pytest tests/ -v"
 
+[tasks."check:versions"]
+description = "Check version consistency between mise.toml and Dockerfile"
+run = "scripts/check-versions.sh"
+
 [tasks.ci]
 description = "Full CI check (lint + typecheck + test + validate)"
-depends = ["lint", "typecheck", "test", "validate:compose"]
+depends = ["lint", "typecheck", "test", "validate:compose", "check:versions"]
 
 # ── Deploy ─────────────────────────────────────────
 [tasks."deploy:all"]

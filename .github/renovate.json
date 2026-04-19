@@ -1,17 +1,77 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", "docker:enableMajor"],
-  "platformAutomerge": true,
-  "packageRules": [
-    {
-      "matchManagers": ["docker-compose"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "automerge": true
-    }
+  "extends": [
+    "config:recommended",
+    "docker:enableMajor",
+    "helpers:pinGitHubActionDigests"
   ],
+  "platformAutomerge": true,
+  "minimumReleaseAge": "3 days",
+  "docker": {
+    "pinDigests": true
+  },
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": "0 days",
+    "automerge": true
+  },
   "docker-compose": {
     "fileMatch": ["stacks/.+/compose\\.yaml$"]
   },
+  "packageRules": [
+    {
+      "description": "Security fixes bypass the 3-day delay and auto-merge immediately",
+      "matchUpdateTypes": ["security"],
+      "minimumReleaseAge": "0 days",
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge Docker image minor/patch updates after vetting period",
+      "matchManagers": ["docker-compose"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge mise dev tools (shellcheck, actionlint, trivy) minor/patch",
+      "matchManagers": ["mise"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true
+    },
+    {
+      "description": "Auto-merge GitHub Actions minor/patch (SHA-pinned via preset)",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
+    },
+    {
+      "description": "Dockerfile binary tools require manual review (curl'd, no checksums)",
+      "matchManagers": ["custom.regex"],
+      "matchDepNames": [
+        "jdx/mise",
+        "github/copilot-cli",
+        "cli/cli",
+        "moby/moby",
+        "docker/compose"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group Python version updates across mise.toml and Dockerfile",
+      "groupName": "python",
+      "matchDepNames": ["python"],
+      "automerge": false
+    },
+    {
+      "description": "Group uv updates across mise.toml and Dockerfile",
+      "groupName": "uv",
+      "matchDepNames": ["uv", "ghcr.io/astral-sh/uv"],
+      "automerge": false
+    },
+    {
+      "description": "Major updates always require manual review",
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
