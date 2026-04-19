@@ -1,5 +1,5 @@
 ---
-name: docs-audit
+name: audit-docs
 description: Audit documentation for staleness and gaps. Use when checking if docs are up to date, finding missing documentation, or doing a periodic docs refresh pass.
 allowed-tools: shell
 user-invocable: true
