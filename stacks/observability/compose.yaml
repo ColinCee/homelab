@@ -1,6 +1,6 @@
 services:
   grafana:
-    image: grafana/grafana:12.4.3
+    image: grafana/grafana:12.4.3@sha256:2e986801428cd689c2358605289c90ab37d2b39e24808874971f54c99bcdc412
     restart: unless-stopped
     ports:
       - "100.100.146.119:3001:3000"
@@ -16,7 +16,7 @@ services:
       - ./dashboards:/var/lib/grafana/dashboards:ro
 
   prometheus:
-    image: prom/prometheus:v3.11.2
+    image: prom/prometheus:v3.11.2@sha256:5550dc63da361dc30f6fe02ac0e4dfc736ededfef3c8d12a634db04a67824d78
     restart: unless-stopped
     command:
       - --web.enable-remote-write-receiver
@@ -27,7 +27,7 @@ services:
       - prometheus-data:/prometheus
 
   loki:
-    image: grafana/loki:3.7.1
+    image: grafana/loki:3.7.1@sha256:73e905b51a7f917f7a1075e4be68759df30226e03dcb3cd2213b989cc0dc8eb4
     restart: unless-stopped
     command: -config.file=/etc/loki/local-config.yaml
     volumes:
@@ -35,7 +35,7 @@ services:
       - loki-data:/loki
 
   alloy:
-    image: grafana/alloy:v1.15.1
+    image: grafana/alloy:v1.15.1@sha256:1f40cf52adda8fab3e058f9347a5d165624ecb9fbc1527769cb744748961940d
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

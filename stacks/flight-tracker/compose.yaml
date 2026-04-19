@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest
+    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:5a656e063b99fc00b9410db498506493e645ab700fe87e8c9d63339df67fb35e
     restart: unless-stopped
     expose:
       - "8000"
@@ -12,7 +12,7 @@ services:
       - HEATMAP_DB_PATH=/app/data/historical_heatmap.parquet
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.3.0
+    image: cloudflare/cloudflared:2026.3.0@sha256:6b599ca3e974349ead3286d178da61d291961182ec3fe9c505e1dd02c8ac31b0
     restart: unless-stopped
     command: tunnel run --token ${TUNNEL_TOKEN:?}
     depends_on:
