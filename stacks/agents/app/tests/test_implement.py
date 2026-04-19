@@ -3,7 +3,7 @@
 import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 from conftest import MOCK_CLI_RESULT, MOCK_ISSUE
@@ -579,6 +579,7 @@ class TestReviewFixLoop:
         fix_side_effects: list | None = None,
         merge_result: bool = True,
         pr_after_merge: GitHubPullRequest | None = None,
+        return_sleep_mock: bool = False,
     ):
         """Run implement_issue with mocked review-fix loop behavior.
 
@@ -652,9 +653,13 @@ class TestReviewFixLoop:
                 patch(f"{_MOD}.lock_pr", new_callable=AsyncMock),
                 patch(f"{_MOD}.close_issue", new_callable=AsyncMock),
                 patch(f"{_MOD}.safe_comment", new_callable=AsyncMock),
+                patch(f"{_MOD}.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
                 patch(f"{_MOD}.cleanup_branch_worktree", new_callable=AsyncMock),
             ):
-                return await implement_issue(repo="user/repo", issue_number=42)
+                result = await implement_issue(repo="user/repo", issue_number=42)
+                if return_sleep_mock:
+                    return result, mock_sleep
+                return result
 
         return asyncio.run(run())
 
@@ -677,20 +682,48 @@ class TestReviewFixLoop:
         assert result.status == "complete"
         assert result.merged is True
 
+    def test_fix_retries_stale_threads_then_merge(self):
+        """Stale thread data after a fix push is retried before merging."""
+        result, mock_sleep = self._run_with_loop(
+            unresolved_threads_sequence=[
+                _THREAD_LIST,  # after review: 1 thread
+                _THREAD_LIST,  # after 5s: still stale
+                _THREAD_LIST,  # after 10s: still stale
+                [],  # after 20s: GitHub marks thread outdated
+            ],
+            return_sleep_mock=True,
+        )
+        assert result.status == "complete"
+        assert result.merged is True
+        assert mock_sleep.await_args_list == [call(5), call(10), call(20)]
+
     def test_max_rounds_exceeded_leaves_pr_open(self):
-        """Two rounds of review-fix, still unresolved → PR left open."""
-        result = self._run_with_loop(
+        """Retries do not add rounds; two exhausted rounds still leave the PR open."""
+        result, mock_sleep = self._run_with_loop(
             unresolved_threads_sequence=[
                 _THREAD_LIST,  # round 1 review
-                _THREAD_LIST,  # round 1 fix — still there
+                _THREAD_LIST,  # round 1 fix check after 5s
+                _THREAD_LIST,  # round 1 fix check after 10s
+                _THREAD_LIST,  # round 1 fix check after 20s
                 _THREAD_LIST,  # round 2 review
-                _THREAD_LIST,  # round 2 fix — still there
+                _THREAD_LIST,  # round 2 fix check after 5s
+                _THREAD_LIST,  # round 2 fix check after 10s
+                _THREAD_LIST,  # round 2 fix check after 20s
             ],
             merge_result=False,
             pr_after_merge=self._OPEN_PR,
+            return_sleep_mock=True,
         )
         assert result.status == "partial"
         assert result.merged is False
+        assert mock_sleep.await_args_list == [
+            call(5),
+            call(10),
+            call(20),
+            call(5),
+            call(10),
+            call(20),
+        ]
 
     def test_no_pr_skips_loop(self):
         """Implement creates no PR → failed, no loop."""
@@ -828,14 +861,16 @@ class TestReviewFixLoop:
         assert result.merged is False
 
     def test_thread_fetch_failure_after_fix_breaks_loop(self):
-        """Thread fetch fails after fix step → breaks loop, does NOT approve."""
-        result = self._run_with_loop(
+        """Thread fetch fails after fix step → breaks loop without retrying."""
+        result, mock_sleep = self._run_with_loop(
             unresolved_threads_sequence=[
                 _THREAD_LIST,  # after review: threads found
                 None,  # after fix: fetch fails
             ],
             merge_result=False,
             pr_after_merge=self._OPEN_PR,
+            return_sleep_mock=True,
         )
         assert result.status == "partial"
         assert result.merged is False
+        assert mock_sleep.await_args_list == [call(5)]
