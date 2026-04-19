@@ -10,6 +10,7 @@ trivy = "0.69.3"
 description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
   "cd stacks/agents/app && uv run ruff check .",
+  "cd stacks/knowledge/app && uv run ruff check .",
   "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
   "uv run yamllint -c .yamllint.yaml stacks/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
@@ -17,15 +18,36 @@ run = [
 
 [tasks.format]
 description = "Format Python code"
-run = "uv run ruff format stacks/agents/app/"
+run = [
+  "cd stacks/agents/app && uv run ruff format .",
+  "cd stacks/knowledge/app && uv run ruff format .",
+]
 
 [tasks.typecheck]
 description = "Type-check Python code"
-run = "cd stacks/agents/app && uv run ty check ."
+run = [
+  "cd stacks/agents/app && uv run ty check .",
+  "cd stacks/knowledge/app && uv run ty check .",
+]
 
 [tasks.test]
 description = "Run Python tests"
-run = "cd stacks/agents/app && uv run pytest tests/ -v"
+run = [
+  "cd stacks/agents/app && uv run pytest tests/ -v",
+  "cd stacks/knowledge/app && uv run pytest tests/ -v",
+]
+
+[tasks."knowledge:lint"]
+description = "Lint the knowledge CLI package"
+run = "cd stacks/knowledge/app && uv run ruff check ."
+
+[tasks."knowledge:typecheck"]
+description = "Type-check the knowledge CLI package"
+run = "cd stacks/knowledge/app && uv run ty check ."
+
+[tasks."knowledge:test"]
+description = "Run tests for the knowledge CLI package"
+run = "cd stacks/knowledge/app && uv run pytest tests/ -v"
 
 [tasks.ci]
 description = "Full CI check (lint + typecheck + test + validate)"
