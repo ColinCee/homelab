@@ -1,6 +1,6 @@
 [tools]
 python = "3.14.4"
-uv = "0.11.3"
+uv = "0.11.7"
 shellcheck = "0.11.0"
 actionlint = "1.7.12"
 trivy = "0.69.3"
