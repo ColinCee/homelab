@@ -20,7 +20,7 @@ load_env_file() {
 load_env_file "$KNOWLEDGE_ENV_FILE"
 load_env_file "$AGENTS_ENV_FILE"
 
-export KNOWLEDGE_DB_URL="${KNOWLEDGE_DB_URL:-postgresql://knowledge:${KNOWLEDGE_DB_PASSWORD:?}@localhost:5432/knowledge}"
+export KNOWLEDGE_DB_URL="${KNOWLEDGE_DB_URL:-postgresql://${POSTGRES_USER:?}:${POSTGRES_PASSWORD:?}@localhost:5432/${POSTGRES_DB:?}}"
 : "${COPILOT_GITHUB_TOKEN:?COPILOT_GITHUB_TOKEN must be set}"
 
 cd "$NOTES_DIR"
