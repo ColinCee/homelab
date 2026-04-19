@@ -35,11 +35,13 @@ for stack in "${stacks[@]}"; do
   file="stacks/${stack}/compose.yaml"
   [[ -f "$file" ]] || { echo "❌ No compose.yaml: ${stack}" >&2; exit 1; }
 
+  # Export .env vars (generate-env.sh writes files but its exports don't propagate)
+  env_file="stacks/${stack}/.env"
+  if [[ -f "$env_file" ]]; then set -a; source "$env_file"; set +a; fi
+
   case "$stack" in
     agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
     observability)  docker compose -f "$file" up -d --remove-orphans
-                    # Source .env for sync script (generate-env.sh exports don't propagate)
-                    set -a; source "stacks/observability/.env"; set +a
                     scripts/sync-dashboards.sh ;;
     flight-tracker) docker compose -f "$file" pull
                     docker compose -f "$file" up -d --remove-orphans
