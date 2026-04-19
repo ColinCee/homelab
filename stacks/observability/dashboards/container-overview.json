@@ -85,7 +85,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"node\"}[5m]))",
+          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}[5m]))",
           "instant": true,
           "refId": "A"
         }
@@ -156,7 +156,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (node_memory_AvailableBytes{job=\"node\"} / node_memory_MemTotal_bytes{job=\"node\"})",
+          "expr": "1 - (node_memory_MemAvailable_bytes{job=\"integrations/unix\"} / node_memory_MemTotal_bytes{job=\"integrations/unix\"})",
           "instant": true,
           "refId": "A"
         }
@@ -227,7 +227,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (node_filesystem_avail_bytes{mountpoint=\"/\",job=\"node\"} / node_filesystem_size_bytes{mountpoint=\"/\",job=\"node\"})",
+          "expr": "1 - (node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"} / node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"})",
           "instant": true,
           "refId": "A"
         }
@@ -289,7 +289,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - node_boot_time_seconds{job=\"node\"}",
+          "expr": "time() - node_boot_time_seconds{job=\"integrations/unix\"}",
           "instant": true,
           "refId": "A"
         }
