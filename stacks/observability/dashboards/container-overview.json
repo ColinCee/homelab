@@ -91,7 +91,8 @@
         }
       ],
       "title": "Host CPU %",
-      "type": "stat"
+      "type": "stat",
+      "description": "avg() already collapses duplicate series from scraper restarts."
     },
     {
       "datasource": {
@@ -147,7 +148,7 @@
           "values": false
         },
         "text": {},
-        "textMode": "auto",
+        "textMode": "value",
         "wideLayout": true
       },
       "targets": [
@@ -156,13 +157,15 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (node_memory_MemAvailable_bytes{job=\"integrations/unix\"} / node_memory_MemTotal_bytes{job=\"integrations/unix\"})",
+          "expr": "1 - (max(node_memory_MemAvailable_bytes{job=\"integrations/unix\"}) / max(node_memory_MemTotal_bytes{job=\"integrations/unix\"}))",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": ""
         }
       ],
       "title": "Host RAM %",
-      "type": "stat"
+      "type": "stat",
+      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
     },
     {
       "datasource": {
@@ -218,7 +221,7 @@
           "values": false
         },
         "text": {},
-        "textMode": "auto",
+        "textMode": "value",
         "wideLayout": true
       },
       "targets": [
@@ -227,13 +230,15 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"} / node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"})",
+          "expr": "1 - (max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / max(node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"}))",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": ""
         }
       ],
       "title": "Disk Usage %",
-      "type": "stat"
+      "type": "stat",
+      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
     },
     {
       "datasource": {
@@ -280,7 +285,7 @@
           "values": false
         },
         "text": {},
-        "textMode": "auto",
+        "textMode": "value",
         "wideLayout": true
       },
       "targets": [
@@ -289,13 +294,15 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - node_boot_time_seconds{job=\"integrations/unix\"}",
+          "expr": "max(time() - node_boot_time_seconds{job=\"integrations/unix\"})",
           "instant": true,
-          "refId": "A"
+          "refId": "A",
+          "legendFormat": ""
         }
       ],
       "title": "Host Uptime",
-      "type": "stat"
+      "type": "stat",
+      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
     },
     {
       "datasource": {
@@ -357,7 +364,8 @@
         }
       ],
       "title": "Containers",
-      "type": "stat"
+      "type": "stat",
+      "description": "max by (name) collapses duplicate series when the Alloy scraper container is recreated."
     },
     {
       "datasource": {
@@ -775,7 +783,8 @@
           }
         }
       ],
-      "type": "table"
+      "type": "table",
+      "description": "Each query uses max by (name) to deduplicate across scraper instance labels."
     },
     {
       "datasource": {
@@ -876,7 +885,8 @@
             "renamePattern": "$1"
           }
         }
-      ]
+      ],
+      "description": "max by (name) collapses duplicate series from scraper restarts."
     },
     {
       "datasource": {
@@ -977,7 +987,8 @@
             "renamePattern": "$1"
           }
         }
-      ]
+      ],
+      "description": "max by (name) collapses duplicate series from scraper restarts."
     }
   ],
   "refresh": "30s",
