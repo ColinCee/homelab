@@ -16,10 +16,25 @@ authoritative sources.
 | **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
 | **CrowdSec** | Security detections and firewall decisions, also exported as metrics |
 
-Dashboards are provisioned from:
+Dashboards are provisioned from JSON files — Grafana reloads them on
+restart but **will not accept API saves** for provisioned dashboards. To
+edit, modify the JSON and restart Grafana.
 
-- [Container Overview](../stacks/observability/dashboards/container-overview.json)
-- [Security](../stacks/observability/dashboards/security.json)
+- [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends
+- [Agent Tasks](../stacks/observability/dashboards/agent-tasks.json) — implement/review task metrics
+- [Security](../stacks/observability/dashboards/security.json) — CrowdSec detections and firewall decisions
+
+### Dashboard patterns
+
+All queries use `max by (name)` (container metrics) or `max()` (host
+metrics) to deduplicate series. When Alloy is recreated, its Prometheus
+`instance` label changes but old series persist until the staleness
+window expires — without aggregation, every metric appears twice.
+
+Datasource UIDs are pinned to `prometheus` and `loki` in
+`provisioning/datasources/datasources.yaml`. Grafana does not update
+UIDs on existing datasources via provisioning — if they drift, fix the
+SQLite DB directly.
 
 ## Logs: Loki via Alloy
 
@@ -57,7 +72,7 @@ Then query it in Grafana Explore:
 
 Prometheus receives metrics from:
 
-- **Host:** Alloy's Unix exporter (`job="node"`)
+- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
 - **Agent service:** `http://100.100.146.119:8585/metrics` (`job="agent"`)

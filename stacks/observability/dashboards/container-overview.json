@@ -23,48 +23,41 @@
   "liveNow": false,
   "panels": [
     {
+      "id": 11,
+      "title": "Cores",
+      "type": "stat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 1,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.6
-              },
-              {
-                "color": "red",
-                "value": 0.8
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 2,
         "x": 0,
         "y": 0
       },
-      "id": 7,
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "text",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -76,7 +69,7 @@
           "values": false
         },
         "text": {},
-        "textMode": "auto",
+        "textMode": "value",
         "wideLayout": true
       },
       "targets": [
@@ -85,19 +78,27 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}[5m]))",
+          "expr": "count(node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"})",
           "instant": true,
+          "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Host CPU %",
-      "type": "stat",
-      "description": "avg() already collapses duplicate series from scraper restarts."
+      "description": "Physical CPU cores on the host."
     },
     {
+      "id": 12,
+      "title": "Host CPU",
+      "type": "gauge",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 2,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -105,8 +106,6 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 1,
-          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -116,29 +115,24 @@
               },
               {
                 "color": "yellow",
-                "value": 0.8
+                "value": 50
               },
               {
                 "color": "red",
-                "value": 0.9
+                "value": 80
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 1
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "id": 8,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -147,9 +141,9 @@
           "fields": "",
           "values": false
         },
-        "text": {},
-        "textMode": "value",
-        "wideLayout": true
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "targets": [
         {
@@ -157,20 +151,27 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (max(node_memory_MemAvailable_bytes{job=\"integrations/unix\"}) / max(node_memory_MemTotal_bytes{job=\"integrations/unix\"}))",
+          "expr": "(1 - avg(rate(node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}[5m]))) * 100",
           "instant": true,
-          "refId": "A",
-          "legendFormat": ""
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
-      "title": "Host RAM %",
-      "type": "stat",
-      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
+      "description": "avg() collapses duplicate series from scraper restarts."
     },
     {
+      "id": 13,
+      "title": "Host RAM",
+      "type": "gauge",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 5,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -178,10 +179,8 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 1,
-          "min": 0,
           "thresholds": {
-            "mode": "absolute",
+            "mode": "percentage",
             "steps": [
               {
                 "color": "green",
@@ -189,29 +188,24 @@
               },
               {
                 "color": "yellow",
-                "value": 0.7
+                "value": 70
               },
               {
                 "color": "red",
-                "value": 0.8
+                "value": 85
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "bytes",
+          "min": 0,
+          "max": 16541065216,
+          "decimals": 1
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "id": 9,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
+        "minVizHeight": 75,
+        "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
           "calcs": [
@@ -220,9 +214,9 @@
           "fields": "",
           "values": false
         },
-        "text": {},
-        "textMode": "value",
-        "wideLayout": true
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "targets": [
         {
@@ -230,20 +224,100 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "1 - (max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / max(node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"}))",
+          "expr": "max(node_memory_MemTotal_bytes{job=\"integrations/unix\"}) - max(node_memory_MemAvailable_bytes{job=\"integrations/unix\"})",
           "instant": true,
-          "refId": "A",
-          "legendFormat": ""
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
-      "title": "Disk Usage %",
-      "type": "stat",
-      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
+      "description": "Used bytes with gauge bar showing % of 16 GB total. max() deduplicates across scraper instances."
     },
     {
+      "id": 14,
+      "title": "Disk",
+      "type": "gauge",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 8,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 85
+              }
+            ]
+          },
+          "unit": "bytes",
+          "min": 0,
+          "max": 500332396544,
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) - max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"})",
+          "instant": true,
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "description": "Used bytes with gauge bar showing % of 466 GB total. max() deduplicates across scraper instances."
+    },
+    {
+      "id": 15,
+      "title": "Uptime",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 11,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -265,15 +339,8 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 10,
       "options": {
-        "colorMode": "background",
+        "colorMode": "value",
         "graphMode": "none",
         "justifyMode": "auto",
         "orientation": "auto",
@@ -296,18 +363,25 @@
           },
           "expr": "max(time() - node_boot_time_seconds{job=\"integrations/unix\"})",
           "instant": true,
-          "refId": "A",
-          "legendFormat": ""
+          "legendFormat": "",
+          "refId": "A"
         }
       ],
-      "title": "Host Uptime",
-      "type": "stat",
-      "description": "max() deduplicates across scraper instance labels. textMode=value hides raw label text."
+      "description": "max() deduplicates across scraper instance labels."
     },
     {
+      "id": 16,
+      "title": "Containers",
+      "type": "stat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 14,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -329,13 +403,6 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 0,
-        "y": 4
-      },
-      "id": 1,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -360,17 +427,25 @@
           },
           "expr": "count(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
           "instant": true,
+          "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Containers",
-      "type": "stat",
       "description": "max by (name) collapses duplicate series when the Alloy scraper container is recreated."
     },
     {
+      "id": 17,
+      "title": "Ctr CPU",
+      "type": "stat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 18,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -392,13 +467,6 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 4
-      },
-      "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -423,16 +491,24 @@
           },
           "expr": "sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) * 100",
           "instant": true,
+          "legendFormat": "",
           "refId": "A"
         }
-      ],
-      "title": "Total CPU",
-      "type": "stat"
+      ]
     },
     {
+      "id": 18,
+      "title": "Ctr RAM",
+      "type": "stat",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 3,
+        "x": 21,
+        "y": 0
       },
       "fieldConfig": {
         "defaults": {
@@ -445,31 +521,15 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "purple",
                 "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 11274289152
-              },
-              {
-                "color": "red",
-                "value": 12884901888
               }
             ]
           },
-          "unit": "bytes",
-          "max": null
+          "unit": "bytes"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 16,
-        "y": 4
-      },
-      "id": 3,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -494,11 +554,11 @@
           },
           "expr": "sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
           "instant": true,
+          "legendFormat": "",
           "refId": "A"
         }
       ],
-      "title": "Container RAM",
-      "type": "stat"
+      "description": "max by (name) collapses duplicate series from scraper restarts."
     },
     {
       "datasource": {
@@ -674,7 +734,7 @@
         "h": 14,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 4
       },
       "id": 4,
       "options": {
@@ -881,7 +941,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "(.+)-\\d+$",
+            "regex": "(.+)-1$",
             "renamePattern": "$1"
           }
         }
@@ -983,7 +1043,7 @@
         {
           "id": "renameByRegex",
           "options": {
-            "regex": "(.+)-\\d+$",
+            "regex": "(.+)-1$",
             "renamePattern": "$1"
           }
         }
