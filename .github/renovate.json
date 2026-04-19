@@ -61,10 +61,11 @@
       "automerge": false
     },
     {
-      "description": "Group uv updates across mise.toml and Dockerfile",
+      "description": "Group uv updates across mise.toml and Dockerfile — drift check guards correctness",
       "groupName": "uv",
       "matchDepPatterns": ["^uv$", "astral-sh/uv"],
-      "automerge": false
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "automerge": true
     },
     {
       "description": "Major updates always require manual review",
