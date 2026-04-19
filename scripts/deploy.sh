@@ -13,7 +13,8 @@ else
 fi
 
 cd "$(dirname "$0")/.."
-git pull --ff-only
+git fetch origin main
+git reset --hard origin/main
 
 install_timer() {
   local unit_base="$1"
