@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .database import connect, run_migrations
 from .ingest import DEFAULT_DIRECTORY_GLOB, ingest_directory, ingest_file, ingest_text
+from .save import save_url
 from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
 
@@ -42,6 +43,15 @@ def main() -> None:
         help=f"Maximum number of results to return (default: {DEFAULT_RESULT_LIMIT})",
     )
 
+    save_parser = subparsers.add_parser("save", help="Save a URL as a note")
+    save_parser.add_argument("url", help="URL to fetch and save as a note")
+    save_parser.add_argument(
+        "--notes-dir",
+        type=Path,
+        default=Path("/notes"),
+        help="Path to the notes repository (default: /notes)",
+    )
+
     args = parser.parse_args()
 
     db = connect()
@@ -53,6 +63,8 @@ def main() -> None:
             _handle_ingest(args)
         elif args.command == "search":
             _handle_search(args)
+        elif args.command == "save":
+            _handle_save(args)
     except KeyboardInterrupt:
         sys.exit(130)
     except Exception as exc:
@@ -99,6 +111,15 @@ def _handle_ingest(args: argparse.Namespace) -> None:
 def _handle_search(args: argparse.Namespace) -> None:
     results = search(args.query, limit=args.limit)
     print(format_search_results(results))
+
+
+def _handle_save(args: argparse.Namespace) -> None:
+    notes_dir = Path(args.notes_dir)
+    if not notes_dir.is_dir():
+        print(f"Error: notes directory not found: {notes_dir}", file=sys.stderr)
+        sys.exit(1)
+    saved_path = save_url(args.url, notes_dir=notes_dir)
+    print(f"Saved: {saved_path}")
 
 
 def _positive_int(value: str) -> int:

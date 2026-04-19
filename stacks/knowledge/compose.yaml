@@ -36,5 +36,21 @@ services:
       postgres:
         condition: service_healthy
 
+  save:
+    profiles: [save]
+    build: ./app
+    mem_limit: 1g
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=${POSTGRES_DB:?}
+      - PGUSER=${POSTGRES_USER:?}
+      - PGPASSWORD=${POSTGRES_PASSWORD:?}
+    volumes:
+      - ${NOTES_DIR:-/home/colin/code/notes}:/notes
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   knowledge-data:

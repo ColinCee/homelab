@@ -68,3 +68,13 @@ ssh beelink "cat '/home/colin/code/notes/Coding/System Design/Practice/Design a 
 - Try multiple searches with different phrasings if the first doesn't return good results
 - Results are ranked by Reciprocal Rank Fusion — absolute score values are small (~0.01–0.03) but ordering is meaningful
 - The knowledge base is updated on every push to the notes repo (automated pipeline)
+
+## Saving articles
+
+To save a web page as a note (with images) for future search:
+
+```bash
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile save run --rm save save \"<URL>\""
+```
+
+This fetches the page, downloads images, converts to markdown, and commits to the notes repo. The ingest pipeline picks it up automatically on the next push.
