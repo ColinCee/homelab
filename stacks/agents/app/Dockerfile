@@ -11,7 +11,7 @@ ARG COPILOT_CLI_VERSION=v1.0.30
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=2.89.0
 # renovate: datasource=github-releases depName=moby/moby
-ARG DOCKER_VERSION=28.2.2
+ARG DOCKER_VERSION=28.5.2
 # renovate: datasource=github-releases depName=docker/compose
 ARG DOCKER_COMPOSE_VERSION=5.1.3
 
