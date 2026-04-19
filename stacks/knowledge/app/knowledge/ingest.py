@@ -120,6 +120,10 @@ def _ingest(
             content_hash=content_hash,
             token=token,
         )
+    except BaseException:
+        if not own_conn:
+            db.rollback()
+        raise
     finally:
         if own_conn:
             db.close()

@@ -10,4 +10,7 @@ RUN uv sync --frozen --no-dev
 
 COPY knowledge/ knowledge/
 
-ENTRYPOINT ["uv", "run", "python", "-m", "knowledge"]
+RUN adduser --system --no-create-home app
+USER app
+
+ENTRYPOINT [".venv/bin/python", "-m", "knowledge"]

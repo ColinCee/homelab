@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
 
 def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     parser = argparse.ArgumentParser(prog="knowledge", description="Knowledge base CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -45,10 +48,16 @@ def main() -> None:
     run_migrations(db)
     db.close()
 
-    if args.command == "ingest":
-        _handle_ingest(args)
-    elif args.command == "search":
-        _handle_search(args)
+    try:
+        if args.command == "ingest":
+            _handle_ingest(args)
+        elif args.command == "search":
+            _handle_search(args)
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _handle_ingest(args: argparse.Namespace) -> None:
