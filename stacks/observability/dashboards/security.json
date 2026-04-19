@@ -286,7 +286,7 @@
       "pluginVersion": "12.4.3",
       "targets": [
         {
-          "expr": "node_netstat_Tcp_CurrEstab{job=\"integrations/unix\"}",
+          "expr": "max(node_netstat_Tcp_CurrEstab{job=\"integrations/unix\"})",
           "instant": true,
           "legendFormat": "",
           "refId": "A"
