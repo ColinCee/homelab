@@ -40,6 +40,7 @@ services:
     profiles: [save]
     build: ./app
     mem_limit: 1g
+    user: "${UID:-1000}:${GID:-1000}"
     environment:
       - PGHOST=postgres
       - PGPORT=5432
