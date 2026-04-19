@@ -4,9 +4,7 @@ What's left to build. Solved items live in their respective [ADRs](decisions/) �
 
 ## Active
 
-| Item | Status | Notes |
-|------|--------|-------|
-| CLI autonomy — CLI owns full lifecycle (commit, push, PR, merge) | 🔧 In progress | ADR-010 accepted; orchestrator slimmed to thin dispatcher ([#57](https://github.com/ColinCee/homelab/issues/57)) |
+No active epics. See [open issues](https://github.com/ColinCee/homelab/issues) for planned work.
 
 ## Planned
 

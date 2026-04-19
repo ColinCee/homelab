@@ -16,7 +16,7 @@ Single-node homelab on a Beelink mini-PC (Ubuntu 24.04, 16 GB RAM) running conta
 
 ## Repo Layout
 
-- `stacks/` — Docker Compose services (agents, home-assistant, mqtt, observability, crowdsec)
+- `stacks/` — Docker Compose services (agents, home-assistant, mqtt, observability, crowdsec, knowledge, flight-tracker)
 - `stacks/agents/app/` — Python agent service (FastAPI, Copilot CLI integration)
 - `docs/` — ADRs, runbooks, requirements (works as an Obsidian vault)
 - `access.md` — local-only server credentials and API keys (never committed, gitignored, lives at `docs/private/access.md`)
@@ -50,7 +50,7 @@ Internet
   ├─ Cloudflare Tunnel → Public services (flight-tracker)
   └─ Tailscale → Admin access (SSH, HA, Grafana)
 
-Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), CrowdSec
+Stacks: Home Assistant, MQTT, Observability (Grafana/Prometheus/Loki/Alloy), CrowdSec, Knowledge (pgvector)
 Agent: FastAPI on beelink:8585 — AI review + issue implementation via Copilot CLI (GPT-5.4)
 Platform: Self-hosted GitHub Actions runner (deploys on push to main)
 ```
