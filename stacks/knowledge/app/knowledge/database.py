@@ -19,19 +19,21 @@ type DatabaseConnection = Connection[Any]
 type DatabaseCursor = Cursor[DBRow]
 
 
-def resolve_database_url(db_url: str | None = None) -> str:
+def resolve_database_url(db_url: str | None = None) -> str | None:
+    """Resolve the database URL from explicit arg, env var, or libpq defaults.
+
+    Returns None when no URL is configured — psycopg falls back to standard
+    PG* environment variables (PGHOST, PGDATABASE, etc.) automatically.
+    """
     if db_url is not None:
         return db_url
 
-    env_db_url = os.getenv(DATABASE_URL_ENV)
-    if env_db_url:
-        return env_db_url
-
-    raise RuntimeError(f"{DATABASE_URL_ENV} must be set to a PostgreSQL DSN")
+    return os.getenv(DATABASE_URL_ENV)
 
 
 def connect(db_url: str | None = None) -> DatabaseConnection:
-    connection = psycopg.connect(resolve_database_url(db_url))
+    url = resolve_database_url(db_url)
+    connection = psycopg.connect(url) if url else psycopg.connect()
     register_vector(connection)
     return connection
 

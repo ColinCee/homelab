@@ -17,5 +17,21 @@ services:
       - knowledge-data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
+  ingest:
+    profiles: [ingest]
+    build: ./app
+    environment:
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGDATABASE=${POSTGRES_DB:?}
+      - PGUSER=${POSTGRES_USER:?}
+      - PGPASSWORD=${POSTGRES_PASSWORD:?}
+      - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
+    volumes:
+      - ${NOTES_DIR:-/home/colin/code/notes}:/notes:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   knowledge-data:
