@@ -72,7 +72,7 @@ run = "docker compose -f stacks/mqtt/compose.yaml up -d"
 
 [tasks."deploy:observability"]
 description = "Deploy observability stack (Grafana, Prometheus, Loki, Alloy)"
-run = "docker compose -f stacks/observability/compose.yaml up -d"
+run = "docker compose -f stacks/observability/compose.yaml up -d && scripts/sync-dashboards.sh"
 
 [tasks."deploy:crowdsec"]
 description = "Deploy CrowdSec IDS"
