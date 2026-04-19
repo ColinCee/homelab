@@ -19,6 +19,9 @@ def main() -> None:
     ingest_parser.add_argument("--path", type=Path, help="File to ingest (.md or .txt)")
     ingest_parser.add_argument("--text", help="Raw text to ingest")
     ingest_parser.add_argument("--title", help="Title for raw text (required with --text)")
+    ingest_parser.add_argument(
+        "--source-id", help="Stable ID for text notes (disambiguates duplicate titles)"
+    )
 
     args = parser.parse_args()
 
@@ -46,7 +49,9 @@ def _handle_ingest(args: argparse.Namespace) -> None:
             sys.exit(1)
         result = ingest_file(path, workspace=args.workspace)
     else:
-        result = ingest_text(args.text, title=args.title, workspace=args.workspace)
+        result = ingest_text(
+            args.text, title=args.title, workspace=args.workspace, source_id=args.source_id
+        )
 
     print(json.dumps(result.model_dump(mode="json"), indent=2))
 

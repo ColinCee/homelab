@@ -48,14 +48,22 @@ def ingest_text(
     *,
     title: str,
     workspace: str,
+    source_id: str | None = None,
     conn: DatabaseConnection | None = None,
     token: str | None = None,
 ) -> IngestResult:
-    """Ingest raw text as a document."""
+    """Ingest raw text as a document.
+
+    *source_id* disambiguates notes with the same title. When omitted the
+    content hash is used, so identical titles with different content won't
+    collide.
+    """
+    content_hash = hashlib.sha256(text.encode()).hexdigest()
+    key = source_id or content_hash[:12]
     return _ingest(
         content=text,
         title=title,
-        source_path=f"text://{title}",
+        source_path=f"text://{title}/{key}",
         workspace=workspace,
         conn=conn,
         token=token,
@@ -119,10 +127,21 @@ def _do_ingest(
     chunks_text = chunk_text(content)
     if not chunks_text:
         logger.warning("No chunks produced from: %s", source_path)
+        # Still update the document and delete stale chunks so search
+        # doesn't return content from a previous version.
+        if existing:
+            doc = Document(
+                workspace=workspace,
+                source_path=source_path,
+                title=title,
+                content_hash=content_hash,
+            )
+            saved_doc = upsert_document(conn, doc)
+            delete_document_chunks(conn, saved_doc)
         conn.commit()
         return IngestResult(
             workspace=workspace,
-            documents_processed=1,
+            documents_processed=1 if existing else 0,
             chunks_created=0,
             documents_skipped=0,
         )
