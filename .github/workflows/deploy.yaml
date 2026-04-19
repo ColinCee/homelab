@@ -30,7 +30,7 @@ jobs:
   deploy:
     runs-on: beelink
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           fetch-depth: 2
 
@@ -59,7 +59,7 @@ jobs:
           MSG=$(git log -1 --pretty=%s 2>/dev/null || echo "unknown")
           echo "msg=${MSG}" >> "$GITHUB_OUTPUT"
 
-      - uses: sarisia/actions-status-discord@v1
+      - uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1
         if: always() && steps.detect.outputs.stacks != ''
         with:
           webhook: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
