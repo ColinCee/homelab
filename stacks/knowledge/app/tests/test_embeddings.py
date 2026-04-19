@@ -4,6 +4,8 @@ import httpx
 import pytest
 
 from knowledge.embeddings import (
+    GITHUB_MODELS_URL,
+    MODEL_NAME,
     TOKEN_ENV,
     _parse_response,
     get_embeddings,
@@ -36,8 +38,11 @@ def test_get_embeddings_calls_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(result) == 2
     assert len(result[0]) == EMBEDDING_DIMENSION
     mock_post.assert_called_once()
-    call_kwargs = mock_post.call_args
-    assert call_kwargs.kwargs["headers"]["Authorization"] == "Bearer test-token"
+    call_args = mock_post.call_args
+    assert call_args.kwargs["headers"]["Authorization"] == "Bearer test-token"
+    # Verify correct GitHub Models endpoint and model ID
+    assert call_args.args[0] == GITHUB_MODELS_URL
+    assert call_args.kwargs["json"]["model"] == MODEL_NAME
 
 
 def test_get_embeddings_requires_token(monkeypatch: pytest.MonkeyPatch) -> None:

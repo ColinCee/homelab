@@ -179,7 +179,91 @@ def test_ingest_text_uses_text_uri(
     # Assert
     assert result.documents_processed == 1
     call_args = mock_upsert.call_args[0]
-    assert call_args[1].source_path == "text://Quick Note"
+    assert call_args[1].source_path.startswith("text://Quick Note/")
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
+@patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest.upsert_document")
+@patch("knowledge.ingest.delete_document_chunks")
+@patch("knowledge.ingest.create_workspace")
+@patch("knowledge.ingest.get_document_by_source", return_value=None)
+def test_ingest_text_different_content_same_title_no_collision(
+    mock_get_source: MagicMock,
+    mock_create_ws: MagicMock,
+    mock_delete: MagicMock,
+    mock_upsert: MagicMock,
+    mock_insert: MagicMock,
+    mock_embed: MagicMock,
+    mock_connect: MagicMock,
+) -> None:
+    """Two text ingests with same title but different content get different source_paths."""
+    # Arrange
+    mock_connect.return_value = _fake_connect()
+    saved = Document(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        workspace="notes",
+        source_path="text://Note/abc",
+        title="Note",
+        content_hash="abc",
+    )
+    mock_upsert.return_value = saved
+
+    # Act
+    ingest_text("Content A", title="Note", workspace="notes")
+    path_a = mock_upsert.call_args[0][1].source_path
+
+    ingest_text("Content B", title="Note", workspace="notes")
+    path_b = mock_upsert.call_args[0][1].source_path
+
+    # Assert — different content hashes produce different source paths
+    assert path_a != path_b
+    assert path_a.startswith("text://Note/")
+    assert path_b.startswith("text://Note/")
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
+@patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest.upsert_document")
+@patch("knowledge.ingest.delete_document_chunks")
+@patch("knowledge.ingest.create_workspace")
+@patch("knowledge.ingest.get_document_by_source")
+def test_zero_chunks_on_reingest_deletes_stale_data(
+    mock_get_source: MagicMock,
+    mock_create_ws: MagicMock,
+    mock_delete: MagicMock,
+    mock_upsert: MagicMock,
+    mock_insert: MagicMock,
+    mock_embed: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Re-ingesting a file that produces zero chunks should delete old chunks."""
+    # Arrange — file with only a heading (chunker returns [])
+    test_file = tmp_path / "empty.md"
+    test_file.write_text("# Just A Heading")
+
+    existing = Document(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        workspace="notes",
+        source_path=str(test_file),
+        title="Old",
+        content_hash="old-hash",
+    )
+    mock_connect.return_value = _fake_connect()
+    mock_get_source.return_value = existing
+    mock_upsert.return_value = existing
+
+    # Act
+    result = ingest_file(test_file, workspace="notes")
+
+    # Assert — stale chunks cleaned up, no embeddings requested
+    assert result.documents_processed == 1
+    assert result.chunks_created == 0
+    mock_delete.assert_called_once()
+    mock_embed.assert_not_called()
 
 
 def test_title_from_markdown_heading(tmp_path: Path) -> None:

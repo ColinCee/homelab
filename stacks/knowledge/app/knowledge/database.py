@@ -43,7 +43,10 @@ def create_workspace(conn: DatabaseConnection, workspace: Workspace) -> Workspac
             INSERT INTO workspaces (name, description)
             VALUES (%s, %s)
             ON CONFLICT (name) DO UPDATE
-            SET description = EXCLUDED.description
+            SET description = CASE
+                WHEN EXCLUDED.description = '' THEN workspaces.description
+                ELSE EXCLUDED.description
+            END
             RETURNING name, description, created_at
             """,
             (workspace.name, workspace.description),

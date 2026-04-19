@@ -10,10 +10,8 @@ from .models import EMBEDDING_DIMENSION
 
 logger = logging.getLogger(__name__)
 
-GITHUB_MODELS_URL = (
-    "https://models.github.ai/inference/openai/deployments/text-embedding-3-large/embeddings"
-)
-MODEL_NAME = "text-embedding-3-large"
+GITHUB_MODELS_URL = "https://models.github.ai/inference/embeddings"
+MODEL_NAME = "openai/text-embedding-3-large"
 TOKEN_ENV = "GITHUB_TOKEN"
 
 _MAX_RETRIES = 3
