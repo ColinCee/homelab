@@ -1,4 +1,4 @@
-"""CLI entrypoint: python -m knowledge ingest ..."""
+"""CLI entrypoint: python -m knowledge <command> ..."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 from .ingest import ingest_file, ingest_text
+from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
 
 def main() -> None:
@@ -23,10 +24,22 @@ def main() -> None:
         "--source-id", help="Stable ID for text notes (disambiguates duplicate titles)"
     )
 
+    search_parser = subparsers.add_parser("search", help="Search ingested chunks")
+    search_parser.add_argument("query", help="Natural language query text")
+    search_parser.add_argument("--workspace", help="Restrict search to one workspace")
+    search_parser.add_argument(
+        "--limit",
+        type=_positive_int,
+        default=DEFAULT_RESULT_LIMIT,
+        help=f"Maximum number of results to return (default: {DEFAULT_RESULT_LIMIT})",
+    )
+
     args = parser.parse_args()
 
     if args.command == "ingest":
         _handle_ingest(args)
+    elif args.command == "search":
+        _handle_search(args)
 
 
 def _handle_ingest(args: argparse.Namespace) -> None:
@@ -54,6 +67,18 @@ def _handle_ingest(args: argparse.Namespace) -> None:
         )
 
     print(json.dumps(result.model_dump(mode="json"), indent=2))
+
+
+def _handle_search(args: argparse.Namespace) -> None:
+    results = search(args.query, workspace=args.workspace, limit=args.limit)
+    print(format_search_results(results))
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("limit must be greater than zero")
+    return parsed
 
 
 if __name__ == "__main__":
