@@ -10,15 +10,21 @@ from .chunker import chunk_text
 from .database import (
     DatabaseConnection,
     connect,
+    delete_document,
     delete_document_chunks,
     get_document_by_source,
     insert_chunks,
+    list_documents_by_source_prefix,
     upsert_document,
 )
 from .embeddings import get_embeddings
-from .models import Chunk, Document, IngestResult
+from .models import Chunk, DirectoryIngestResult, Document, IngestResult
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_DIRECTORY_GLOB = "**/*.md"
+_DEFAULT_DIRECTORY_EXTRA_GLOBS = ("**/*.txt",)
+_INGESTIBLE_SUFFIXES = frozenset({".md", ".txt"})
 
 
 def ingest_file(
@@ -63,6 +69,30 @@ def ingest_text(
         conn=conn,
         token=token,
     )
+
+
+def ingest_directory(
+    directory: Path,
+    *,
+    glob_pattern: str = DEFAULT_DIRECTORY_GLOB,
+    conn: DatabaseConnection | None = None,
+    token: str | None = None,
+) -> DirectoryIngestResult:
+    """Ingest all supported files in a directory tree."""
+    normalized_directory = directory.expanduser().resolve()
+    own_conn = conn is None
+    db = conn or connect()
+
+    try:
+        return _do_directory_ingest(
+            db,
+            directory=normalized_directory,
+            glob_pattern=glob_pattern,
+            token=token,
+        )
+    finally:
+        if own_conn:
+            db.close()
 
 
 def _ingest(
@@ -171,6 +201,112 @@ def _do_ingest(
 def _find_existing(conn: DatabaseConnection, source_path: str) -> Document | None:
     """Find an existing document by source_path."""
     return get_document_by_source(conn, source_path)
+
+
+def _do_directory_ingest(
+    conn: DatabaseConnection,
+    *,
+    directory: Path,
+    glob_pattern: str,
+    token: str | None,
+) -> DirectoryIngestResult:
+    files = _iter_directory_files(directory, glob_pattern)
+    live_paths = {str(path) for path in _iter_supported_directory_files(directory)}
+
+    documents_processed = 0
+    chunks_created = 0
+    documents_skipped = 0
+    files_failed = 0
+
+    for path in files:
+        try:
+            result = ingest_file(path, conn=conn, token=token)
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to ingest %s", path)
+            files_failed += 1
+            continue
+
+        documents_processed += result.documents_processed
+        chunks_created += result.chunks_created
+        documents_skipped += result.documents_skipped
+
+    documents_deleted = _delete_orphaned_documents(
+        conn,
+        directory_prefix=_source_prefix_for_directory(directory),
+        live_paths=live_paths,
+    )
+    return DirectoryIngestResult(
+        files_found=len(files),
+        files_failed=files_failed,
+        documents_processed=documents_processed,
+        chunks_created=chunks_created,
+        documents_skipped=documents_skipped,
+        documents_deleted=documents_deleted,
+    )
+
+
+def _iter_directory_files(directory: Path, glob_pattern: str) -> list[Path]:
+    matched_paths: set[str] = set()
+
+    for pattern in _directory_globs(glob_pattern):
+        for path in directory.glob(pattern):
+            resolved_path = str(Path(path.resolve()))
+            resolved_file = Path(resolved_path)
+            if not resolved_file.is_file():
+                continue
+            if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
+                continue
+            matched_paths.add(resolved_path)
+
+    return [Path(path) for path in sorted(matched_paths)]
+
+
+def _iter_supported_directory_files(directory: Path) -> list[Path]:
+    matched_paths: set[str] = set()
+
+    for path in directory.rglob("*"):
+        resolved_path = str(Path(path.resolve()))
+        resolved_file = Path(resolved_path)
+        if not resolved_file.is_file():
+            continue
+        if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
+            continue
+        matched_paths.add(resolved_path)
+
+    return [Path(path) for path in sorted(matched_paths)]
+
+
+def _directory_globs(glob_pattern: str) -> tuple[str, ...]:
+    if glob_pattern == DEFAULT_DIRECTORY_GLOB:
+        return (glob_pattern, *_DEFAULT_DIRECTORY_EXTRA_GLOBS)
+    return (glob_pattern,)
+
+
+def _delete_orphaned_documents(
+    conn: DatabaseConnection,
+    *,
+    directory_prefix: str,
+    live_paths: set[str],
+) -> int:
+    deleted = 0
+
+    for document in list_documents_by_source_prefix(conn, directory_prefix):
+        if document.source_path in live_paths:
+            continue
+
+        try:
+            deleted += delete_document(conn, document)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            logger.exception("Failed to delete orphaned document: %s", document.source_path)
+
+    return deleted
+
+
+def _source_prefix_for_directory(directory: Path) -> str:
+    return f"{directory.as_posix().rstrip('/')}/"
 
 
 def _title_from_file(path: Path, content: str) -> str:

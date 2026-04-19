@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from knowledge.models import (
     EMBEDDING_DIMENSION,
     Chunk,
+    DirectoryIngestResult,
     Document,
     IngestResult,
     SearchResult,
@@ -95,4 +96,17 @@ def test_ingest_result_rejects_negative_counts() -> None:
             documents_processed=1,
             chunks_created=2,
             documents_skipped=-1,
+        )
+
+
+def test_directory_ingest_result_requires_non_negative_directory_counts() -> None:
+    # Arrange / Act / Assert
+    with pytest.raises(ValidationError, match="greater than or equal to 0"):
+        DirectoryIngestResult(
+            files_found=2,
+            files_failed=-1,
+            documents_processed=1,
+            chunks_created=2,
+            documents_skipped=0,
+            documents_deleted=0,
         )
