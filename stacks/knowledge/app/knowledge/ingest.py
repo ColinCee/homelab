@@ -23,8 +23,8 @@ from .models import Chunk, DirectoryIngestResult, Document, IngestResult
 logger = logging.getLogger(__name__)
 
 DEFAULT_DIRECTORY_GLOB = "**/*.md"
-_DEFAULT_DIRECTORY_EXTRA_GLOBS = ("**/*.txt",)
-_INGESTIBLE_SUFFIXES = frozenset({".md", ".txt"})
+_DEFAULT_DIRECTORY_EXTRA_GLOBS = ("**/*.txt", "**/*.pdf")
+_INGESTIBLE_SUFFIXES = frozenset({".md", ".txt", ".pdf"})
 
 
 def ingest_file(
@@ -34,7 +34,7 @@ def ingest_file(
     token: str | None = None,
 ) -> IngestResult:
     """Ingest a single file into the knowledge base."""
-    content = path.read_text(encoding="utf-8")
+    content = _read_file_content(path)
     title = _title_from_file(path, content)
     source_path = str(path)
     return _ingest(
@@ -317,6 +317,22 @@ def _delete_orphaned_documents(
 
 def _source_prefix_for_directory(directory: Path) -> str:
     return f"{directory.as_posix().rstrip('/')}/"
+
+
+def _read_file_content(path: Path) -> str:
+    """Read file content, extracting text from PDFs."""
+    if path.suffix.lower() == ".pdf":
+        return _extract_pdf_text(path)
+    return path.read_text(encoding="utf-8")
+
+
+def _extract_pdf_text(path: Path) -> str:
+    """Extract text from a PDF using pypdf."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    pages = [page.extract_text() or "" for page in reader.pages]
+    return "\n\n".join(page for page in pages if page.strip())
 
 
 def _title_from_file(path: Path, content: str) -> str:
