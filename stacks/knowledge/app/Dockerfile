@@ -13,4 +13,4 @@ COPY knowledge/ knowledge/
 RUN adduser --system --no-create-home app
 USER app
 
-ENTRYPOINT ["uv", "run", "python", "-m", "knowledge"]
+ENTRYPOINT [".venv/bin/python", "-m", "knowledge"]
