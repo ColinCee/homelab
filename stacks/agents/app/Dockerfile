@@ -1,3 +1,4 @@
+# renovate: datasource=docker depName=python
 FROM python:3.14.4-slim
 
 # Pin tool versions for reproducible builds and supply-chain safety.
@@ -53,6 +54,7 @@ COPY mise.toml /mise/config.toml
 
 # Register base-image Python with mise so it skips compilation.
 # mise detects installed tools by scanning /mise/installs/<tool>/<version>/.
+# renovate: datasource=docker depName=python
 ARG PYTHON_VERSION=3.14.4
 RUN mkdir -p /mise/installs/python/${PYTHON_VERSION}/bin && \
     ln -sf /usr/local/bin/python3 /mise/installs/python/${PYTHON_VERSION}/bin/python && \

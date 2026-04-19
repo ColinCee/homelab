@@ -41,3 +41,6 @@ jobs:
 
       - name: Validate compose files
         run: mise run validate:compose
+
+      - name: Check version consistency
+        run: mise run check:versions

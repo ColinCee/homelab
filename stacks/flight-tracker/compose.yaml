@@ -12,7 +12,7 @@ services:
       - HEATMAP_DB_PATH=/app/data/historical_heatmap.parquet
 
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.3.0
     restart: unless-stopped
     command: tunnel run --token ${TUNNEL_TOKEN:?}
     depends_on:
