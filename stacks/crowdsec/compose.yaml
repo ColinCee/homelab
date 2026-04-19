@@ -19,13 +19,8 @@ services:
     ports:
       # CrowdSec API for bouncers
       - "127.0.0.1:8080:8080"
-    networks:
-      - default
-      - monitoring
-
-networks:
-  monitoring:
-    external: true
+      # Prometheus metrics (scraped by Alloy via Tailscale IP)
+      - "100.100.146.119:6060:6060"
 
 volumes:
   crowdsec-config:
