@@ -443,6 +443,8 @@ def test_cli_ingest_directory_prints_summary(
         calls["token"] = token
         return expected
 
+    monkeypatch.setattr(cli, "connect", lambda: MagicMock())
+    monkeypatch.setattr(cli, "run_migrations", lambda conn: None)
     monkeypatch.setattr(cli, "ingest_directory", fake_ingest_directory)
     monkeypatch.setattr(
         sys,
@@ -477,6 +479,8 @@ def test_cli_rejects_glob_without_directory(
     # Arrange
     file_path = tmp_path / "note.md"
     file_path.write_text("# Note\n\nBody")
+    monkeypatch.setattr(cli, "connect", lambda: MagicMock())
+    monkeypatch.setattr(cli, "run_migrations", lambda conn: None)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -507,6 +511,8 @@ def test_cli_rejects_multiple_ingest_sources(
     file_path = tmp_path / "note.md"
     notes_dir.mkdir()
     file_path.write_text("# Note\n\nBody")
+    monkeypatch.setattr(cli, "connect", lambda: MagicMock())
+    monkeypatch.setattr(cli, "run_migrations", lambda conn: None)
     monkeypatch.setattr(
         sys,
         "argv",

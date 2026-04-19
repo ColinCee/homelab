@@ -44,8 +44,8 @@ def test_format_search_results_includes_ranked_result_details() -> None:
 
 
 def test_format_search_results_truncates_long_content() -> None:
-    # Arrange
-    result = _search_result(content="word " * 60)
+    # Arrange — content must exceed 2000 chars to trigger truncation
+    result = _search_result(content="word " * 500)
 
     # Act
     formatted = format_search_results([result])
@@ -84,6 +84,7 @@ def test_search_embeds_query_and_uses_default_limit(
         conn,
         [0.1] * EMBEDDING_DIMENSION,
         limit=DEFAULT_RESULT_LIMIT,
+        query_text="vector database",
     )
     conn.close.assert_called_once_with()
 
