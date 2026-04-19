@@ -126,10 +126,10 @@ def search_chunks(
                 c.embedding AS chunk_embedding,
                 c.metadata AS chunk_metadata,
                 c.created_at AS chunk_created_at,
-                GREATEST(0.0, LEAST(1.0, 1 - (c.embedding <=> %s))) AS score
+                GREATEST(0.0, LEAST(1.0, 1 - (c.embedding <=> %s::vector))) AS score
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
-            ORDER BY c.embedding <=> %s
+            ORDER BY c.embedding <=> %s::vector
             LIMIT %s
             """,
             (normalized_embedding, normalized_embedding, limit),
