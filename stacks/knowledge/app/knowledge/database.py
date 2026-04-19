@@ -79,36 +79,31 @@ def insert_chunks(conn: DatabaseConnection, chunks: list[Chunk]) -> list[Chunk]:
     if not chunks:
         return []
 
-    inserted_chunks: list[Chunk] = []
-    with _cursor(conn) as cursor:
-        for chunk in chunks:
-            cursor.execute(
-                """
-                INSERT INTO chunks (
-                    id,
-                    document_id,
-                    chunk_index,
-                    content,
-                    embedding,
-                    metadata,
-                    created_at
-                )
-                VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s, %s, COALESCE(%s, now()))
-                RETURNING id, document_id, chunk_index, content, embedding, metadata, created_at
-                """,
-                (
-                    chunk.id,
-                    chunk.document_id,
-                    chunk.chunk_index,
-                    chunk.content,
-                    chunk.embedding,
-                    Jsonb(chunk.metadata),
-                    chunk.created_at,
-                ),
-            )
-            inserted_chunks.append(_chunk_from_row(_fetchone(cursor, operation="insert chunk")))
+    sql = """
+        INSERT INTO chunks (id, document_id, chunk_index, content, embedding, metadata, created_at)
+        VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s, %s, COALESCE(%s, now()))
+        RETURNING id, document_id, chunk_index, content, embedding, metadata, created_at
+    """
+    params = [
+        (
+            c.id,
+            c.document_id,
+            c.chunk_index,
+            c.content,
+            c.embedding,
+            Jsonb(c.metadata),
+            c.created_at,
+        )
+        for c in chunks
+    ]
 
-    return inserted_chunks
+    inserted: list[Chunk] = []
+    with _cursor(conn) as cursor:
+        for row_params in params:
+            cursor.execute(sql, row_params)
+            inserted.append(_chunk_from_row(_fetchone(cursor, operation="insert chunk")))
+
+    return inserted
 
 
 def delete_document_chunks(conn: DatabaseConnection, document: Document) -> int:
@@ -231,6 +226,34 @@ def get_document_by_hash(
         return None
 
     return _document_from_row(row)
+
+
+def get_document_by_source(
+    conn: DatabaseConnection,
+    workspace: str,
+    source_path: str,
+) -> Document | None:
+    """Find a document by workspace + source_path."""
+    normalized_workspace = workspace.strip()
+    normalized_path = source_path.strip()
+    if not normalized_workspace:
+        raise ValueError("workspace must not be blank")
+    if not normalized_path:
+        raise ValueError("source_path must not be blank")
+
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT id, workspace, source_path, title, content_hash, ingested_at
+            FROM documents
+            WHERE workspace = %s AND source_path = %s
+            LIMIT 1
+            """,
+            (normalized_workspace, normalized_path),
+        )
+        row = cursor.fetchone()
+
+    return _document_from_row(row) if row else None
 
 
 def _fetchone(cursor: DatabaseCursor, *, operation: str) -> DBRow:
