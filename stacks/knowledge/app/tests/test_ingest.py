@@ -8,7 +8,15 @@ from uuid import UUID
 import pytest
 
 from knowledge import __main__ as cli
-from knowledge.ingest import _title_from_file, ingest_directory, ingest_file, ingest_text
+from knowledge.ingest import (
+    _extract_pdf_text,
+    _file_content_hash,
+    _read_file_content,
+    _title_from_file,
+    ingest_directory,
+    ingest_file,
+    ingest_text,
+)
 from knowledge.models import EMBEDDING_DIMENSION, DirectoryIngestResult, Document, IngestResult
 
 
@@ -530,3 +538,112 @@ def test_title_from_markdown_heading(tmp_path: Path) -> None:
 def test_title_from_filename(tmp_path: Path) -> None:
     path = tmp_path / "my-cool-doc.txt"
     assert _title_from_file(path, "plain text") == "My Cool Doc"
+
+
+def _create_test_pdf(path: Path, text: str = "Hello from PDF") -> None:
+    """Create a minimal PDF with text content for testing."""
+    content_stream = f"BT /F1 12 Tf 100 700 Td ({text}) Tj ET"
+    pdf_bytes = (
+        b"%PDF-1.4\n"
+        b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
+        b"/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\n"
+        b"4 0 obj<</Length " + str(len(content_stream)).encode() + b">>\n"
+        b"stream\n" + content_stream.encode() + b"\nendstream\nendobj\n"
+        b"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
+        b"xref\n0 6\n"
+        b"0000000000 65535 f \n"
+        b"0000000009 00000 n \n"
+        b"0000000058 00000 n \n"
+        b"0000000115 00000 n \n"
+        b"0000000266 00000 n \n"
+        b"0000000000 00000 n \n"
+        b"trailer<</Size 6/Root 1 0 R>>\n"
+        b"startxref\n0\n%%EOF"
+    )
+    path.write_bytes(pdf_bytes)
+
+
+def test_extract_pdf_text(tmp_path: Path) -> None:
+    """PDF text extraction returns page content."""
+    pdf_path = tmp_path / "test.pdf"
+    _create_test_pdf(pdf_path, "Sample document text")
+    result = _extract_pdf_text(pdf_path)
+    assert "Sample document text" in result
+
+
+def test_read_file_content_pdf(tmp_path: Path) -> None:
+    """_read_file_content dispatches to PDF extraction for .pdf files."""
+    pdf_path = tmp_path / "test.pdf"
+    _create_test_pdf(pdf_path, "PDF content here")
+    result = _read_file_content(pdf_path)
+    assert "PDF content here" in result
+
+
+def test_read_file_content_markdown(tmp_path: Path) -> None:
+    """_read_file_content reads text files normally."""
+    md_path = tmp_path / "test.md"
+    md_path.write_text("# Hello\n\nWorld")
+    result = _read_file_content(md_path)
+    assert result == "# Hello\n\nWorld"
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
+@patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest.upsert_document")
+@patch("knowledge.ingest.delete_document_chunks")
+@patch("knowledge.ingest.get_document_by_source", return_value=None)
+def test_ingest_pdf_file(
+    mock_get_source: MagicMock,
+    mock_delete: MagicMock,
+    mock_upsert: MagicMock,
+    mock_insert: MagicMock,
+    mock_embed: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Full ingest_file pipeline works for PDFs."""
+    mock_connect.return_value = _fake_connect()
+    saved_doc = Document(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        source_path="test.pdf",
+        title="Test",
+        content_hash="abc",
+    )
+    mock_upsert.return_value = saved_doc
+
+    pdf_path = tmp_path / "test.pdf"
+    _create_test_pdf(pdf_path, "Ingestible PDF content")
+
+    result = ingest_file(pdf_path)
+
+    assert isinstance(result, IngestResult)
+    assert result.documents_processed == 1
+    mock_embed.assert_called_once()
+
+
+def test_title_from_pdf_uses_filename(tmp_path: Path) -> None:
+    """PDF titles use filename since there's no markdown heading."""
+    path = tmp_path / "uk261-regulation.pdf"
+    assert _title_from_file(path, "some extracted text") == "Uk261 Regulation"
+
+
+def test_pdf_hash_uses_raw_bytes(tmp_path: Path) -> None:
+    """PDF change detection hashes raw bytes, not extracted text.
+
+    A PDF with different bytes but identical extracted text must produce
+    a different hash so re-ingestion is triggered.
+    """
+    pdf_a = tmp_path / "a.pdf"
+    pdf_b = tmp_path / "b.pdf"
+    _create_test_pdf(pdf_a, "Same text")
+    _create_test_pdf(pdf_b, "Same text")
+
+    # Append garbage bytes to pdf_b — extracted text is unchanged
+    with pdf_b.open("ab") as f:
+        f.write(b"\x00" * 64)
+
+    assert _extract_pdf_text(pdf_a) == _extract_pdf_text(pdf_b)
+    assert _file_content_hash(pdf_a) != _file_content_hash(pdf_b)

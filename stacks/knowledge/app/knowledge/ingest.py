@@ -23,8 +23,8 @@ from .models import Chunk, DirectoryIngestResult, Document, IngestResult
 logger = logging.getLogger(__name__)
 
 DEFAULT_DIRECTORY_GLOB = "**/*.md"
-_DEFAULT_DIRECTORY_EXTRA_GLOBS = ("**/*.txt",)
-_INGESTIBLE_SUFFIXES = frozenset({".md", ".txt"})
+_DEFAULT_DIRECTORY_EXTRA_GLOBS = ("**/*.txt", "**/*.pdf")
+_INGESTIBLE_SUFFIXES = frozenset({".md", ".txt", ".pdf"})
 
 
 def ingest_file(
@@ -34,13 +34,15 @@ def ingest_file(
     token: str | None = None,
 ) -> IngestResult:
     """Ingest a single file into the knowledge base."""
-    content = path.read_text(encoding="utf-8")
+    content = _read_file_content(path)
+    content_hash = _file_content_hash(path)
     title = _title_from_file(path, content)
     source_path = str(path)
     return _ingest(
         content=content,
         title=title,
         source_path=source_path,
+        content_hash=content_hash,
         conn=conn,
         token=token,
     )
@@ -102,8 +104,10 @@ def _ingest(
     source_path: str,
     conn: DatabaseConnection | None,
     token: str | None,
+    content_hash: str | None = None,
 ) -> IngestResult:
-    content_hash = hashlib.sha256(content.encode()).hexdigest()
+    if content_hash is None:
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
     own_conn = conn is None
     db = conn or connect()
 
@@ -317,6 +321,27 @@ def _delete_orphaned_documents(
 
 def _source_prefix_for_directory(directory: Path) -> str:
     return f"{directory.as_posix().rstrip('/')}/"
+
+
+def _file_content_hash(path: Path) -> str:
+    """Hash raw file bytes for change detection (catches binary-only PDF changes)."""
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _read_file_content(path: Path) -> str:
+    """Read file content, extracting text from PDFs."""
+    if path.suffix.lower() == ".pdf":
+        return _extract_pdf_text(path)
+    return path.read_text(encoding="utf-8")
+
+
+def _extract_pdf_text(path: Path) -> str:
+    """Extract text from a PDF using pypdf."""
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    pages = [page.extract_text() or "" for page in reader.pages]
+    return "\n\n".join(page for page in pages if page.strip())
 
 
 def _title_from_file(path: Path, content: str) -> str:
