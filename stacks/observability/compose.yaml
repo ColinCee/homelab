@@ -63,13 +63,6 @@ services:
     depends_on:
       - prometheus
       - loki
-    networks:
-      - default
-      - monitoring
-
-networks:
-  monitoring:
-    external: true
 
 volumes:
   grafana-data:
