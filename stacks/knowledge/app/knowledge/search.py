@@ -5,7 +5,7 @@ from .embeddings import get_embeddings
 from .models import SearchResult
 
 DEFAULT_RESULT_LIMIT = 5
-_EXCERPT_LENGTH = 200
+_EXCERPT_LENGTH = 2000
 
 
 def search(
@@ -24,7 +24,7 @@ def search(
 
     try:
         query_embedding = _embed_query(normalized_query, token=token)
-        return search_chunks(db, query_embedding, limit=limit)
+        return search_chunks(db, query_embedding, limit=limit, query_text=normalized_query)
     finally:
         if own_conn:
             db.close()

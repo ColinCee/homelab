@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .database import connect, run_migrations
 from .ingest import DEFAULT_DIRECTORY_GLOB, ingest_directory, ingest_file, ingest_text
 from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
@@ -39,6 +40,10 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    db = connect()
+    run_migrations(db)
+    db.close()
 
     if args.command == "ingest":
         _handle_ingest(args)
