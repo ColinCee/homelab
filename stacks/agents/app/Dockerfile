@@ -8,7 +8,7 @@ ARG MISE_VERSION=v2026.2.1
 # renovate: datasource=github-releases depName=github/copilot-cli
 ARG COPILOT_CLI_VERSION=v1.0.30
 # renovate: datasource=github-releases depName=cli/cli
-ARG GH_VERSION=2.89.0
+ARG GH_VERSION=2.90.0
 # renovate: datasource=github-releases depName=moby/moby
 ARG DOCKER_VERSION=28.2.2
 # renovate: datasource=github-releases depName=docker/compose
