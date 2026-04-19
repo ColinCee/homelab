@@ -1,9 +1,15 @@
+import json
+import logging
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import UUID
 
-from knowledge.ingest import _title_from_file, ingest_file, ingest_text
-from knowledge.models import EMBEDDING_DIMENSION, Document, IngestResult
+import pytest
+
+from knowledge import __main__ as cli
+from knowledge.ingest import _title_from_file, ingest_directory, ingest_file, ingest_text
+from knowledge.models import EMBEDDING_DIMENSION, DirectoryIngestResult, Document, IngestResult
 
 
 def _fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
@@ -14,6 +20,7 @@ def _fake_connect() -> MagicMock:
     conn = MagicMock()
     conn.commit = MagicMock()
     conn.close = MagicMock()
+    conn.rollback = MagicMock()
     return conn
 
 
@@ -244,6 +251,260 @@ def test_zero_chunks_on_reingest_deletes_stale_data(
     assert result.chunks_created == 0
     mock_delete.assert_called_once()
     mock_embed.assert_not_called()
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.delete_document", return_value=1)
+@patch("knowledge.ingest.list_documents_by_source_prefix")
+@patch("knowledge.ingest.ingest_file")
+def test_ingest_directory_reuses_connection_and_deletes_orphans(
+    mock_ingest_file: MagicMock,
+    mock_list_prefix: MagicMock,
+    mock_delete_document: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    notes_dir = tmp_path / "notes"
+    nested_dir = notes_dir / "nested"
+    nested_dir.mkdir(parents=True)
+    first_file = notes_dir / "alpha.md"
+    second_file = nested_dir / "beta.txt"
+    ignored_file = notes_dir / "gamma.json"
+    first_file.write_text("# Alpha\n\nBody")
+    second_file.write_text("Plain text note")
+    ignored_file.write_text("{}")
+
+    orphan = Document(
+        id=UUID("00000000-0000-0000-0000-000000000099"),
+        source_path=str((notes_dir / "missing.md").resolve()),
+        title="Missing",
+        content_hash="orphan-hash",
+    )
+    conn = _fake_connect()
+    mock_connect.return_value = conn
+    mock_list_prefix.return_value = [orphan]
+    mock_ingest_file.side_effect = [
+        IngestResult(documents_processed=1, chunks_created=2, documents_skipped=0),
+        IngestResult(documents_processed=0, chunks_created=0, documents_skipped=1),
+    ]
+
+    # Act
+    result = ingest_directory(notes_dir)
+
+    # Assert
+    assert result == DirectoryIngestResult(
+        files_found=2,
+        files_failed=0,
+        documents_processed=1,
+        chunks_created=2,
+        documents_skipped=1,
+        documents_deleted=1,
+    )
+    mock_connect.assert_called_once()
+    assert [call.args[0] for call in mock_ingest_file.call_args_list] == [
+        first_file.resolve(),
+        second_file.resolve(),
+    ]
+    assert all(call.kwargs["conn"] is conn for call in mock_ingest_file.call_args_list)
+    mock_list_prefix.assert_called_once_with(conn, f"{notes_dir.resolve()}/")
+    mock_delete_document.assert_called_once_with(conn, orphan)
+    conn.close.assert_called_once()
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.delete_document", return_value=0)
+@patch("knowledge.ingest.list_documents_by_source_prefix", return_value=[])
+@patch("knowledge.ingest.ingest_file")
+def test_ingest_directory_continues_after_file_error(
+    mock_ingest_file: MagicMock,
+    mock_list_prefix: MagicMock,
+    mock_delete_document: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Arrange
+    notes_dir = tmp_path / "notes"
+    notes_dir.mkdir()
+    broken_file = notes_dir / "broken.md"
+    good_file = notes_dir / "good.md"
+    broken_file.write_text("# Broken\n\nBody")
+    good_file.write_text("# Good\n\nBody")
+
+    conn = _fake_connect()
+    mock_connect.return_value = conn
+    mock_ingest_file.side_effect = [
+        RuntimeError("boom"),
+        IngestResult(documents_processed=1, chunks_created=3, documents_skipped=0),
+    ]
+
+    # Act
+    with caplog.at_level(logging.ERROR):
+        result = ingest_directory(notes_dir)
+
+    # Assert
+    assert result == DirectoryIngestResult(
+        files_found=2,
+        files_failed=1,
+        documents_processed=1,
+        chunks_created=3,
+        documents_skipped=0,
+        documents_deleted=0,
+    )
+    conn.rollback.assert_called_once()
+    assert "Failed to ingest" in caplog.text
+    mock_delete_document.assert_not_called()
+    mock_list_prefix.assert_called_once()
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.delete_document", return_value=0)
+@patch("knowledge.ingest.list_documents_by_source_prefix", return_value=[])
+@patch("knowledge.ingest.ingest_file")
+def test_ingest_directory_applies_custom_glob(
+    mock_ingest_file: MagicMock,
+    mock_list_prefix: MagicMock,
+    mock_delete_document: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    notes_dir = tmp_path / "notes"
+    notes_dir.mkdir()
+    markdown_file = notes_dir / "alpha.md"
+    text_file = notes_dir / "beta.txt"
+    markdown_file.write_text("# Alpha\n\nBody")
+    text_file.write_text("Body")
+
+    conn = _fake_connect()
+    mock_connect.return_value = conn
+    mock_ingest_file.return_value = IngestResult(
+        documents_processed=1,
+        chunks_created=1,
+        documents_skipped=0,
+    )
+
+    # Act
+    result = ingest_directory(notes_dir, glob_pattern="**/*.txt")
+
+    # Assert
+    assert result.files_found == 1
+    mock_ingest_file.assert_called_once_with(text_file.resolve(), conn=conn, token=None)
+    mock_delete_document.assert_not_called()
+    mock_list_prefix.assert_called_once()
+
+
+def test_cli_ingest_directory_prints_summary(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    notes_dir = tmp_path / "notes"
+    notes_dir.mkdir()
+    expected = DirectoryIngestResult(
+        files_found=2,
+        files_failed=0,
+        documents_processed=1,
+        chunks_created=4,
+        documents_skipped=1,
+        documents_deleted=1,
+    )
+    calls: dict[str, object] = {}
+
+    def fake_ingest_directory(
+        directory: Path, *, glob_pattern: str, token: str | None = None
+    ) -> DirectoryIngestResult:
+        calls["directory"] = directory
+        calls["glob_pattern"] = glob_pattern
+        calls["token"] = token
+        return expected
+
+    monkeypatch.setattr(cli, "ingest_directory", fake_ingest_directory)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "knowledge",
+            "ingest",
+            "--dir",
+            str(notes_dir),
+            "--glob",
+            "**/*.txt",
+        ],
+    )
+
+    # Act
+    cli.main()
+
+    # Assert
+    assert calls == {
+        "directory": notes_dir,
+        "glob_pattern": "**/*.txt",
+        "token": None,
+    }
+    assert json.loads(capsys.readouterr().out) == expected.model_dump(mode="json")
+
+
+def test_cli_rejects_glob_without_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    file_path = tmp_path / "note.md"
+    file_path.write_text("# Note\n\nBody")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "knowledge",
+            "ingest",
+            "--path",
+            str(file_path),
+            "--glob",
+            "**/*.txt",
+        ],
+    )
+
+    # Act / Assert
+    with pytest.raises(SystemExit, match="1"):
+        cli.main()
+
+    assert capsys.readouterr().err.strip() == "Error: --glob requires --dir"
+
+
+def test_cli_rejects_multiple_ingest_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    notes_dir = tmp_path / "notes"
+    file_path = tmp_path / "note.md"
+    notes_dir.mkdir()
+    file_path.write_text("# Note\n\nBody")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "knowledge",
+            "ingest",
+            "--path",
+            str(file_path),
+            "--dir",
+            str(notes_dir),
+        ],
+    )
+
+    # Act / Assert
+    with pytest.raises(SystemExit, match="1"):
+        cli.main()
+
+    assert (
+        capsys.readouterr().err.strip() == "Error: provide exactly one of --path, --dir, or --text"
+    )
 
 
 def test_title_from_markdown_heading(tmp_path: Path) -> None:

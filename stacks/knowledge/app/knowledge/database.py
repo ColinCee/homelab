@@ -99,6 +99,15 @@ def delete_document_chunks(conn: DatabaseConnection, document: Document) -> int:
     return max(deleted_rows, 0)
 
 
+def delete_document(conn: DatabaseConnection, document: Document) -> int:
+    document_id = _require_document_id(document)
+    with _cursor(conn) as cursor:
+        cursor.execute("DELETE FROM documents WHERE id = %s", (document_id,))
+        deleted_rows = cursor.rowcount
+
+    return max(deleted_rows, 0)
+
+
 def search_chunks(
     conn: DatabaseConnection,
     query_embedding: list[float],
@@ -188,6 +197,29 @@ def get_document_by_source(
         row = cursor.fetchone()
 
     return _document_from_row(row) if row else None
+
+
+def list_documents_by_source_prefix(
+    conn: DatabaseConnection,
+    source_prefix: str,
+) -> list[Document]:
+    normalized_prefix = source_prefix.strip()
+    if not normalized_prefix:
+        raise ValueError("source_prefix must not be blank")
+
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT id, source_path, title, content_hash, ingested_at
+            FROM documents
+            WHERE source_path LIKE %s
+            ORDER BY source_path
+            """,
+            (f"{normalized_prefix}%",),
+        )
+        rows = cursor.fetchall()
+
+    return [_document_from_row(row) for row in rows]
 
 
 def _fetchone(cursor: DatabaseCursor, *, operation: str) -> DBRow:

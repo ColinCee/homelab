@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from .ingest import ingest_file, ingest_text
+from .ingest import DEFAULT_DIRECTORY_GLOB, ingest_directory, ingest_file, ingest_text
 from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
 
@@ -17,10 +17,16 @@ def main() -> None:
 
     ingest_parser = subparsers.add_parser("ingest", help="Ingest documents")
     ingest_parser.add_argument("--path", type=Path, help="File to ingest (.md or .txt)")
+    ingest_parser.add_argument("--dir", type=Path, help="Directory of files to ingest")
     ingest_parser.add_argument("--text", help="Raw text to ingest")
     ingest_parser.add_argument("--title", help="Title for raw text (required with --text)")
     ingest_parser.add_argument(
         "--source-id", help="Stable ID for text notes (disambiguates duplicate titles)"
+    )
+    ingest_parser.add_argument(
+        "--glob",
+        default=DEFAULT_DIRECTORY_GLOB,
+        help=f"Glob pattern for directory ingest (default: {DEFAULT_DIRECTORY_GLOB})",
     )
 
     search_parser = subparsers.add_parser("search", help="Search ingested chunks")
@@ -41,12 +47,17 @@ def main() -> None:
 
 
 def _handle_ingest(args: argparse.Namespace) -> None:
-    if args.path and args.text:
-        print("Error: provide --path or --text, not both", file=sys.stderr)
+    source_flags = [args.path is not None, args.dir is not None, args.text is not None]
+    if sum(source_flags) > 1:
+        print("Error: provide exactly one of --path, --dir, or --text", file=sys.stderr)
         sys.exit(1)
 
-    if not args.path and not args.text:
-        print("Error: provide --path or --text", file=sys.stderr)
+    if not any(source_flags):
+        print("Error: provide --path, --dir, or --text", file=sys.stderr)
+        sys.exit(1)
+
+    if args.glob != DEFAULT_DIRECTORY_GLOB and args.dir is None:
+        print("Error: --glob requires --dir", file=sys.stderr)
         sys.exit(1)
 
     if args.text and not args.title:
@@ -59,6 +70,12 @@ def _handle_ingest(args: argparse.Namespace) -> None:
             print(f"Error: file not found: {path}", file=sys.stderr)
             sys.exit(1)
         result = ingest_file(path)
+    elif args.dir:
+        directory = Path(args.dir)
+        if not directory.is_dir():
+            print(f"Error: directory not found: {directory}", file=sys.stderr)
+            sys.exit(1)
+        result = ingest_directory(directory, glob_pattern=args.glob)
     else:
         result = ingest_text(args.text, title=args.title, source_id=args.source_id)
 

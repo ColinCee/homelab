@@ -87,3 +87,9 @@ class IngestResult(KnowledgeModel):
     documents_processed: int = Field(ge=0)
     chunks_created: int = Field(ge=0)
     documents_skipped: int = Field(ge=0)
+
+
+class DirectoryIngestResult(IngestResult):
+    files_found: int = Field(ge=0)
+    files_failed: int = Field(ge=0)
+    documents_deleted: int = Field(ge=0)
