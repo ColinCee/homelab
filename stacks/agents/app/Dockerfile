@@ -1,5 +1,5 @@
 # renovate: datasource=docker depName=python
-FROM python:3.14.4-slim
+FROM python:3.14.4-slim@sha256:538a18f1db92b4210a0b71aca2d14c156a96dedbe8867465c8ff4dce04d2ec39
 
 # Pin tool versions for reproducible builds and supply-chain safety.
 # Renovate tracks each ARG via the datasource comments below.
