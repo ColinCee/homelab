@@ -53,7 +53,7 @@ class Chunk(KnowledgeModel):
     document_id: UUID
     chunk_index: int = Field(ge=0)
     content: str = Field(min_length=1)
-    embedding: list[float]
+    embedding: list[float] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime | None = None
 
@@ -64,7 +64,9 @@ class Chunk(KnowledgeModel):
 
     @field_validator("embedding", mode="before")
     @classmethod
-    def validate_embedding(cls, value: Any) -> list[float]:
+    def validate_embedding(cls, value: Any) -> list[float] | None:
+        if value is None:
+            return None
         return normalize_embedding(value)
 
     @field_validator("metadata", mode="before")

@@ -17,10 +17,14 @@ TOKEN_ENV = "COPILOT_GITHUB_TOKEN"
 _MAX_RETRIES = 6
 _INITIAL_BACKOFF = 2.0
 _MAX_BACKOFF = 60.0
+_BATCH_SIZE = 20
 
 
 def get_embeddings(texts: list[str], *, token: str | None = None) -> list[list[float]]:
-    """Call GitHub Models API to embed a batch of texts. Returns one vector per input."""
+    """Call GitHub Models API to embed a batch of texts. Returns one vector per input.
+
+    Splits into batches of _BATCH_SIZE to stay within per-request token limits.
+    """
     if not texts:
         return []
 
@@ -28,22 +32,30 @@ def get_embeddings(texts: list[str], *, token: str | None = None) -> list[list[f
     if not resolved_token:
         raise RuntimeError(f"{TOKEN_ENV} must be set for embedding requests")
 
-    payload = {"input": texts, "model": MODEL_NAME}
     headers = {"Authorization": f"Bearer {resolved_token}", "Content-Type": "application/json"}
 
-    data = _post_with_retry(payload, headers)
-    embeddings = _parse_response(data, expected=len(texts))
-    return embeddings
+    all_embeddings: list[list[float]] = []
+    for batch in _batches(texts, _BATCH_SIZE):
+        payload = {"input": batch, "model": MODEL_NAME}
+        data = _post_with_retry(payload, headers)
+        all_embeddings.extend(_parse_response(data, expected=len(batch)))
+
+    return all_embeddings
+
+
+def _batches(items: list[str], size: int) -> list[list[str]]:
+    """Split a list into consecutive batches of at most *size* items."""
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def _post_with_retry(payload: dict, headers: dict) -> dict:
-    """POST with exponential backoff on 429 / 5xx, respects Retry-After header."""
+    """POST with exponential backoff on 429 / 5xx / transport errors."""
     backoff = _INITIAL_BACKOFF
-    last_error: httpx.HTTPStatusError | None = None
+    last_error: Exception | None = None
 
     for attempt in range(_MAX_RETRIES):
-        response = httpx.post(GITHUB_MODELS_URL, json=payload, headers=headers, timeout=60.0)
         try:
+            response = httpx.post(GITHUB_MODELS_URL, json=payload, headers=headers, timeout=60.0)
             response.raise_for_status()
             return response.json()  # type: ignore[no-any-return]
         except httpx.HTTPStatusError as exc:
@@ -61,6 +73,17 @@ def _post_with_retry(payload: dict, headers: dict) -> dict:
                 backoff = min(backoff * 2, _MAX_BACKOFF)
                 continue
             raise
+        except httpx.TransportError as exc:
+            last_error = exc
+            logger.warning(
+                "Embedding API transport error: %s (attempt %d/%d), retrying in %.1fs",
+                exc,
+                attempt + 1,
+                _MAX_RETRIES,
+                backoff,
+            )
+            time.sleep(backoff)
+            backoff = min(backoff * 2, _MAX_BACKOFF)
 
     if last_error is not None:
         raise last_error

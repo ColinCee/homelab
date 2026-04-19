@@ -10,4 +10,7 @@ RUN uv sync --frozen --no-dev
 
 COPY knowledge/ knowledge/
 
+RUN adduser --system --no-create-home app
+USER app
+
 ENTRYPOINT ["uv", "run", "python", "-m", "knowledge"]

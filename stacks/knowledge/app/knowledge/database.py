@@ -70,7 +70,7 @@ def insert_chunks(conn: DatabaseConnection, chunks: list[Chunk]) -> list[Chunk]:
         VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s, %s, COALESCE(%s, now()))
         RETURNING id, document_id, chunk_index, content, embedding, metadata, created_at
     """
-    params = [
+    params_seq = [
         (
             c.id,
             c.document_id,
@@ -85,9 +85,14 @@ def insert_chunks(conn: DatabaseConnection, chunks: list[Chunk]) -> list[Chunk]:
 
     inserted: list[Chunk] = []
     with _cursor(conn) as cursor:
-        for row_params in params:
-            cursor.execute(sql, row_params)
-            inserted.append(_chunk_from_row(_fetchone(cursor, operation="insert chunk")))
+        cursor.executemany(sql, params_seq, returning=True)
+        while True:
+            row = cursor.fetchone()
+            if row is None:
+                if not cursor.nextset():
+                    break
+                continue
+            inserted.append(_chunk_from_row(row))
 
     return inserted
 
@@ -134,7 +139,6 @@ def search_chunks(
                 c.document_id AS chunk_document_id,
                 c.chunk_index AS chunk_chunk_index,
                 c.content AS chunk_content,
-                c.embedding AS chunk_embedding,
                 c.metadata AS chunk_metadata,
                 c.created_at AS chunk_created_at,
                 GREATEST(0.0, LEAST(1.0, 1 - (c.embedding <=> %s::vector))) AS score
@@ -272,7 +276,6 @@ def _search_result_from_row(row: DBRow) -> SearchResult:
                 "document_id": row["chunk_document_id"],
                 "chunk_index": row["chunk_chunk_index"],
                 "content": row["chunk_content"],
-                "embedding": row["chunk_embedding"],
                 "metadata": row["chunk_metadata"],
                 "created_at": row["chunk_created_at"],
             }

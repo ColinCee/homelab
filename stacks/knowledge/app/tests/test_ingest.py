@@ -647,3 +647,27 @@ def test_pdf_hash_uses_raw_bytes(tmp_path: Path) -> None:
 
     assert _extract_pdf_text(pdf_a) == _extract_pdf_text(pdf_b)
     assert _file_content_hash(pdf_a) != _file_content_hash(pdf_b)
+
+
+@patch("knowledge.ingest.connect")
+@patch("knowledge.ingest.get_embeddings", side_effect=RuntimeError("API down"))
+@patch("knowledge.ingest.get_document_by_source", return_value=None)
+def test_ingest_file_rolls_back_shared_connection_on_error(
+    mock_get_source: MagicMock,
+    mock_embed: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """When a shared connection is passed and ingest fails, it must be rolled back."""
+    # Arrange
+    md_file = tmp_path / "note.md"
+    md_file.write_text("# Note\n\nSome content for embedding.")
+    shared_conn = _fake_connect()
+
+    # Act
+    with pytest.raises(RuntimeError, match="API down"):
+        ingest_file(md_file, conn=shared_conn)
+
+    # Assert — shared connection rolled back, NOT closed (caller owns it)
+    shared_conn.rollback.assert_called_once()
+    shared_conn.close.assert_not_called()

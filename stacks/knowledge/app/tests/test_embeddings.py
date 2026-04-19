@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from knowledge.embeddings import (
+    _BATCH_SIZE,
     GITHUB_MODELS_URL,
     MODEL_NAME,
     TOKEN_ENV,
@@ -93,3 +94,58 @@ def test_parse_response_sorts_by_index() -> None:
     data = {"data": [_fake_embedding(1), _fake_embedding(0)]}
     result = _parse_response(data, expected=2)
     assert len(result) == 2
+
+
+def test_get_embeddings_retries_on_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+    ok = _ok_response(1)
+
+    with (
+        patch(
+            "knowledge.embeddings.httpx.post",
+            side_effect=[httpx.ConnectError("connection refused"), ok],
+        ) as mock_post,
+        patch("knowledge.embeddings.time.sleep"),
+    ):
+        result = get_embeddings(["hello"])
+
+    assert len(result) == 1
+    assert mock_post.call_count == 2
+
+
+def test_get_embeddings_batches_large_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+    texts = [f"text-{i}" for i in range(_BATCH_SIZE + 5)]
+
+    batch1_response = _ok_response(_BATCH_SIZE)
+    batch2_response = _ok_response(5)
+
+    with patch(
+        "knowledge.embeddings.httpx.post",
+        side_effect=[batch1_response, batch2_response],
+    ) as mock_post:
+        result = get_embeddings(texts)
+
+    assert len(result) == _BATCH_SIZE + 5
+    assert mock_post.call_count == 2
+    # First call has batch_size items, second has the remainder
+    first_payload = mock_post.call_args_list[0].kwargs["json"]["input"]
+    second_payload = mock_post.call_args_list[1].kwargs["json"]["input"]
+    assert len(first_payload) == _BATCH_SIZE
+    assert len(second_payload) == 5
+
+
+def test_get_embeddings_exhausts_retries_on_transport_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "test-token")
+
+    with (
+        patch(
+            "knowledge.embeddings.httpx.post",
+            side_effect=httpx.ReadTimeout("timed out"),
+        ),
+        patch("knowledge.embeddings.time.sleep"),
+        pytest.raises(httpx.ReadTimeout),
+    ):
+        get_embeddings(["hello"])
