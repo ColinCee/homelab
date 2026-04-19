@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS chunks (
     content TEXT NOT NULL,
     embedding vector(3072) NOT NULL,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -26,3 +27,4 @@ CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx
     ON chunks
     USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING gin (tsv);

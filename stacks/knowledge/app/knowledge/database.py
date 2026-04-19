@@ -38,6 +38,18 @@ def connect(db_url: str | None = None) -> DatabaseConnection:
     return connection
 
 
+def run_migrations(conn: DatabaseConnection) -> None:
+    """Run schema migrations. Safe to call repeatedly (idempotent)."""
+    with _cursor(conn) as cursor:
+        cursor.execute("""
+            ALTER TABLE chunks
+                ADD COLUMN IF NOT EXISTS tsv tsvector
+                GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING gin (tsv)")
+    conn.commit()
+
+
 def upsert_document(conn: DatabaseConnection, document: Document) -> Document:
     with _cursor(conn) as cursor:
         cursor.execute(
@@ -120,12 +132,24 @@ def search_chunks(
     query_embedding: list[float],
     *,
     limit: int = 10,
+    query_text: str = "",
 ) -> list[SearchResult]:
     if limit <= 0:
         raise ValueError("limit must be greater than zero")
 
     normalized_embedding = normalize_embedding(query_embedding)
 
+    if query_text.strip():
+        return _hybrid_search(conn, normalized_embedding, query_text, limit)
+    return _vector_search(conn, normalized_embedding, limit)
+
+
+def _vector_search(
+    conn: DatabaseConnection,
+    embedding: list[float],
+    limit: int,
+) -> list[SearchResult]:
+    """Pure vector similarity search."""
     with _cursor(conn) as cursor:
         cursor.execute(
             """
@@ -147,7 +171,81 @@ def search_chunks(
             ORDER BY c.embedding <=> %s::vector
             LIMIT %s
             """,
-            (normalized_embedding, normalized_embedding, limit),
+            (embedding, embedding, limit),
+        )
+        rows = cursor.fetchall()
+
+    return [_search_result_from_row(row) for row in rows]
+
+
+_RRF_K = 60
+
+
+def _hybrid_search(
+    conn: DatabaseConnection,
+    embedding: list[float],
+    query_text: str,
+    limit: int,
+) -> list[SearchResult]:
+    """RRF hybrid: merge vector similarity and keyword (tsvector) rankings.
+
+    Uses websearch_to_tsquery for safe parsing of natural-language queries.
+    """
+    candidate_limit = limit * 3
+
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            WITH vector_ranked AS (
+                SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %(emb)s::vector) AS rank_v
+                FROM chunks c
+                LIMIT %(candidates)s
+            ),
+            keyword_ranked AS (
+                SELECT c.id,
+                    ROW_NUMBER() OVER (
+                        ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', %(tsq)s)) DESC
+                    ) AS rank_k
+                FROM chunks c
+                WHERE c.tsv @@ websearch_to_tsquery('english', %(tsq)s)
+                LIMIT %(candidates)s
+            ),
+            rrf AS (
+                SELECT
+                    COALESCE(v.id, k.id) AS chunk_id,
+                    COALESCE(1.0 / (%(k)s + v.rank_v), 0.0)
+                      + COALESCE(1.0 / (%(k)s + k.rank_k), 0.0) AS rrf_score
+                FROM vector_ranked v
+                FULL OUTER JOIN keyword_ranked k ON v.id = k.id
+                ORDER BY rrf_score DESC
+                LIMIT %(lim)s
+            )
+            SELECT
+                d.id AS document_id,
+                d.source_path AS document_source_path,
+                d.title AS document_title,
+                d.content_hash AS document_content_hash,
+                d.ingested_at AS document_ingested_at,
+                c.id AS chunk_id,
+                c.document_id AS chunk_document_id,
+                c.chunk_index AS chunk_chunk_index,
+                c.content AS chunk_content,
+                c.embedding AS chunk_embedding,
+                c.metadata AS chunk_metadata,
+                c.created_at AS chunk_created_at,
+                rrf.rrf_score AS score
+            FROM rrf
+            JOIN chunks c ON c.id = rrf.chunk_id
+            JOIN documents d ON d.id = c.document_id
+            ORDER BY rrf.rrf_score DESC
+            """,
+            {
+                "emb": embedding,
+                "tsq": query_text,
+                "k": _RRF_K,
+                "candidates": candidate_limit,
+                "lim": limit,
+            },
         )
         rows = cursor.fetchall()
 
