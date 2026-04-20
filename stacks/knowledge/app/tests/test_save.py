@@ -130,10 +130,12 @@ class TestToMarkdown:
 
 class TestSaveUrl:
     @patch.object(save, "_git_commit_and_push")
+    @patch.object(save, "_git_sync")
     @patch.object(save, "_fetch")
     def test_creates_note_with_correct_structure(
         self,
         mock_fetch: MagicMock,
+        mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -149,10 +151,12 @@ class TestSaveUrl:
         assert "Source: https://example.com/article" in content
 
     @patch.object(save, "_git_commit_and_push")
+    @patch.object(save, "_git_sync")
     @patch.object(save, "_fetch")
     def test_downloads_images(
         self,
         mock_fetch: MagicMock,
+        mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -173,10 +177,12 @@ class TestSaveUrl:
         assert any(assets_dir.iterdir())
 
     @patch.object(save, "_git_commit_and_push")
+    @patch.object(save, "_git_sync")
     @patch.object(save, "_fetch")
     def test_resaves_existing_article_with_updated_content(
         self,
         mock_fetch: MagicMock,
+        mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
@@ -196,10 +202,41 @@ class TestSaveUrl:
         assert "Hello world" in md_path.read_text()
         mock_git.assert_called_once()
 
+    @patch.object(save, "_git_commit_and_push")
+    @patch.object(save, "_git_sync")
+    @patch.object(save, "_fetch")
+    def test_syncs_before_writing(
+        self,
+        mock_fetch: MagicMock,
+        mock_sync: MagicMock,
+        mock_git: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        mock_fetch.return_value = SIMPLE_HTML
+
+        save.save_url("https://example.com/article", notes_dir=tmp_path)
+
+        mock_sync.assert_called_once_with(tmp_path)
+        mock_git.assert_called_once()
+
+
+class TestGitSync:
+    @patch("subprocess.run")
+    def test_fetches_and_resets_to_origin_main(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        mock_run.return_value = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+
+        save._git_sync(tmp_path)
+
+        calls = [call.args[0] for call in mock_run.call_args_list]
+        assert calls[0] == ["git", "fetch", "origin", "main"]
+        assert calls[1] == ["git", "reset", "--hard", "origin/main"]
+
 
 class TestGitCommitAndPush:
     @patch("subprocess.run")
-    def test_runs_git_commands_in_order(self, mock_run: MagicMock, tmp_path: Path) -> None:
+    def test_adds_commits_and_pushes(self, mock_run: MagicMock, tmp_path: Path) -> None:
         article_dir = tmp_path / "resources" / "articles" / "test"
         article_dir.mkdir(parents=True)
 
@@ -210,8 +247,7 @@ class TestGitCommitAndPush:
         save._git_commit_and_push(tmp_path, article_dir, "Test Article")
 
         calls = [call.args[0] for call in mock_run.call_args_list]
-        assert calls[0] == ["git", "fetch", "origin", "main"]
-        assert calls[1] == ["git", "reset", "--hard", "origin/main"]
-        assert calls[2] == ["git", "add", "resources/articles/test"]
-        assert calls[3][0:3] == ["git", "commit", "-m"]
-        assert calls[4] == ["git", "push", "origin", "main"]
+        assert calls[0] == ["git", "add", "resources/articles/test"]
+        assert calls[1][0:3] == ["git", "commit", "-m"]
+        assert "Test Article" in calls[1][3]
+        assert calls[2] == ["git", "push", "origin", "main"]
