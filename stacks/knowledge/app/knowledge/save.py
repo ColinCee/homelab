@@ -31,10 +31,17 @@ _BOILERPLATE_MARKERS = (
     "banner",
     "toc",
     "table-of-contents",
-    "related",
-    "recommend",
+    "related-posts",
+    "related-articles",
+    "recommended-posts",
 )
-_RELATED_HEADINGS = ("related", "recommended", "more from", "you might also", "further reading")
+_RELATED_HEADINGS = (
+    "related content",
+    "related posts",
+    "related articles",
+    "you might also like",
+    "recommended for you",
+)
 _DECORATIVE_IMAGE_MARKERS = ("icon", "logo", "avatar", "sprite")
 
 
@@ -144,27 +151,23 @@ def _attribute_contains_marker(value: object) -> bool:
 
 
 def _strip_related_sections(content: Tag | BeautifulSoup) -> None:
-    """Remove 'Related content' sections identified by heading text."""
+    """Remove 'Related content' sections identified by heading text.
+
+    Only removes sections when a containing <section> or <aside> is found,
+    avoiding accidental truncation of legitimate article content.
+    """
     for heading in content.find_all(["h2", "h3", "h4"]):
         heading_text = heading.get_text(strip=True).lower()
         if not any(marker in heading_text for marker in _RELATED_HEADINGS):
             continue
 
-        # Walk up to find a containing section/div to remove whole block
-        removed = False
+        # Only remove when wrapped in a clear structural container
         for ancestor in heading.parents:
             if ancestor is content:
                 break
             if ancestor.name in ("section", "aside"):
                 ancestor.decompose()
-                removed = True
                 break
-
-        if not removed:
-            # Remove the heading and all following siblings
-            for sibling in list(heading.find_next_siblings()):
-                sibling.decompose()
-            heading.decompose()
 
 
 def _download_images(
