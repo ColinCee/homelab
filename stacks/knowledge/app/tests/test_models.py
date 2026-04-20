@@ -10,6 +10,8 @@ from knowledge.models import (
     DirectoryIngestResult,
     Document,
     IngestResult,
+    NoteLink,
+    RelatedDocument,
     SearchResult,
 )
 
@@ -87,6 +89,32 @@ def test_search_result_serializes_nested_models() -> None:
     assert dumped["chunk"]["id"] == str(chunk_id)
     assert dumped["chunk"]["created_at"] == "2026-04-19T00:05:00Z"
     assert dumped["chunk"]["metadata"] == {"section": "decision"}
+
+
+def test_note_link_requires_score_for_similarity() -> None:
+    # Arrange / Act / Assert
+    with pytest.raises(ValidationError, match="similarity score must be set"):
+        NoteLink(
+            source_id=uuid4(),
+            target_id=uuid4(),
+            link_type="similarity",
+            score=None,
+        )
+
+
+def test_related_document_rejects_score_for_wikilink() -> None:
+    # Arrange / Act / Assert
+    with pytest.raises(ValidationError, match="wikilink score must be null"):
+        RelatedDocument(
+            link_type="wikilink",
+            score=0.7,
+            document=Document(
+                id=uuid4(),
+                source_path="docs/adr.md",
+                title="ADR 001",
+                content_hash="hash-123",
+            ),
+        )
 
 
 def test_ingest_result_rejects_negative_counts() -> None:

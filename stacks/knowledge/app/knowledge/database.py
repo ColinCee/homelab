@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from pathlib import Path
+from typing import Any, LiteralString, cast
 from uuid import UUID
 
 import psycopg
@@ -10,9 +11,10 @@ from psycopg import Connection, Cursor
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .models import Chunk, Document, SearchResult, normalize_embedding
+from .models import Chunk, Document, NoteLink, RelatedDocument, SearchResult, normalize_embedding
 
 DATABASE_URL_ENV = "KNOWLEDGE_DB_URL"
+MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
 
 type DBRow = dict[str, Any]
 type DatabaseConnection = Connection[Any]
@@ -41,12 +43,8 @@ def connect(db_url: str | None = None) -> DatabaseConnection:
 def run_migrations(conn: DatabaseConnection) -> None:
     """Run schema migrations. Safe to call repeatedly (idempotent)."""
     with _cursor(conn) as cursor:
-        cursor.execute("""
-            ALTER TABLE chunks
-                ADD COLUMN IF NOT EXISTS tsv tsvector
-                GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-        """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING gin (tsv)")
+        for migration in _migration_files():
+            cursor.execute(cast(LiteralString, migration.read_text(encoding="utf-8")))
     conn.commit()
 
 
@@ -125,6 +123,60 @@ def delete_document(conn: DatabaseConnection, document: Document) -> int:
         deleted_rows = cursor.rowcount
 
     return max(deleted_rows, 0)
+
+
+def delete_note_links_for_source(
+    conn: DatabaseConnection,
+    document: Document,
+    *,
+    link_type: str | None = None,
+) -> int:
+    document_id = _require_document_id(document)
+    sql = "DELETE FROM note_links WHERE source_id = %s"
+    params: tuple[object, ...] = (document_id,)
+    if link_type is not None:
+        sql = f"{sql} AND link_type = %s"
+        params = (document_id, link_type)
+
+    with _cursor(conn) as cursor:
+        cursor.execute(sql, params)
+        deleted_rows = cursor.rowcount
+
+    return max(deleted_rows, 0)
+
+
+def delete_similarity_links_for_document(conn: DatabaseConnection, document: Document) -> int:
+    document_id = _require_document_id(document)
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            DELETE FROM note_links
+            WHERE link_type = 'similarity'
+              AND (source_id = %s OR target_id = %s)
+            """,
+            (document_id, document_id),
+        )
+        deleted_rows = cursor.rowcount
+
+    return max(deleted_rows, 0)
+
+
+def insert_note_links(conn: DatabaseConnection, links: list[NoteLink]) -> int:
+    if not links:
+        return 0
+
+    with _cursor(conn) as cursor:
+        cursor.executemany(
+            """
+            INSERT INTO note_links (source_id, target_id, link_type, score)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (source_id, target_id, link_type) DO UPDATE
+            SET score = EXCLUDED.score
+            """,
+            [(link.source_id, link.target_id, link.link_type, link.score) for link in links],
+        )
+
+    return len(links)
 
 
 def search_chunks(
@@ -303,6 +355,20 @@ def get_document_by_source(
     return _document_from_row(row) if row else None
 
 
+def list_documents(conn: DatabaseConnection) -> list[Document]:
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT id, source_path, title, content_hash, ingested_at
+            FROM documents
+            ORDER BY source_path
+            """
+        )
+        rows = cursor.fetchall()
+
+    return [_document_from_row(row) for row in rows]
+
+
 def list_documents_by_source_prefix(
     conn: DatabaseConnection,
     source_prefix: str,
@@ -326,9 +392,95 @@ def list_documents_by_source_prefix(
     return [_document_from_row(row) for row in rows]
 
 
+def find_similar_documents(
+    conn: DatabaseConnection,
+    document: Document,
+    *,
+    limit: int = 5,
+) -> list[RelatedDocument]:
+    document_id = _require_document_id(document)
+    if limit <= 0:
+        raise ValueError("limit must be greater than zero")
+
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            WITH source_embedding AS (
+                SELECT AVG(c.embedding) AS embedding
+                FROM chunks c
+                WHERE c.document_id = %(source_id)s
+            ),
+            candidate_embeddings AS (
+                SELECT
+                    d.id,
+                    d.source_path,
+                    d.title,
+                    d.content_hash,
+                    d.ingested_at,
+                    AVG(c.embedding) AS embedding
+                FROM documents d
+                JOIN chunks c ON c.document_id = d.id
+                WHERE d.id <> %(source_id)s
+                GROUP BY d.id, d.source_path, d.title, d.content_hash, d.ingested_at
+            )
+            SELECT
+                ce.id AS document_id,
+                ce.source_path AS document_source_path,
+                ce.title AS document_title,
+                ce.content_hash AS document_content_hash,
+                ce.ingested_at AS document_ingested_at,
+                'similarity' AS link_type,
+                GREATEST(0.0, LEAST(1.0, 1 - (ce.embedding <=> se.embedding))) AS score
+            FROM candidate_embeddings ce
+            JOIN source_embedding se ON se.embedding IS NOT NULL
+            ORDER BY ce.embedding <=> se.embedding
+            LIMIT %(limit)s
+            """,
+            {"source_id": document_id, "limit": limit},
+        )
+        rows = cursor.fetchall()
+
+    return [_related_document_from_row(row) for row in rows]
+
+
+def list_related_documents(
+    conn: DatabaseConnection,
+    document: Document,
+) -> list[RelatedDocument]:
+    document_id = _require_document_id(document)
+    with _cursor(conn) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                d.id AS document_id,
+                d.source_path AS document_source_path,
+                d.title AS document_title,
+                d.content_hash AS document_content_hash,
+                d.ingested_at AS document_ingested_at,
+                nl.link_type,
+                nl.score
+            FROM note_links nl
+            JOIN documents d ON d.id = nl.target_id
+            WHERE nl.source_id = %s
+            ORDER BY
+                CASE nl.link_type WHEN 'wikilink' THEN 0 ELSE 1 END,
+                nl.score DESC NULLS LAST,
+                d.source_path
+            """,
+            (document_id,),
+        )
+        rows = cursor.fetchall()
+
+    return [_related_document_from_row(row) for row in rows]
+
+
 def _like_prefix_pattern(prefix: str) -> str:
     escaped_prefix = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return f"{escaped_prefix}%"
+
+
+def _migration_files() -> list[Path]:
+    return sorted(MIGRATIONS_DIR.glob("*.sql"))
 
 
 def _fetchone(cursor: DatabaseCursor, *, operation: str) -> DBRow:
@@ -376,6 +528,22 @@ def _search_result_from_row(row: DBRow) -> SearchResult:
                 "content": row["chunk_content"],
                 "metadata": row["chunk_metadata"],
                 "created_at": row["chunk_created_at"],
+            }
+        ),
+    )
+
+
+def _related_document_from_row(row: DBRow) -> RelatedDocument:
+    return RelatedDocument(
+        link_type=row["link_type"],
+        score=row["score"],
+        document=Document.model_validate(
+            {
+                "id": row["document_id"],
+                "source_path": row["document_source_path"],
+                "title": row["document_title"],
+                "content_hash": row["document_content_hash"],
+                "ingested_at": row["document_ingested_at"],
             }
         ),
     )

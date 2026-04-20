@@ -21,7 +21,9 @@ services:
 
   ingest:
     profiles: [ingest]
-    build: ./app
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     mem_limit: 2g
     environment:
       - PGHOST=postgres
@@ -38,7 +40,9 @@ services:
 
   save:
     profiles: [save]
-    build: ./app
+    build:
+      context: .
+      dockerfile: app/Dockerfile
     mem_limit: 1g
     environment:
       - PGHOST=postgres

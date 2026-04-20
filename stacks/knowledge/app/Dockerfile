@@ -5,10 +5,11 @@ FROM python:3.14.4-slim@sha256:538a18f1db92b4210a0b71aca2d14c156a96dedbe8867465c
 COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
 
 WORKDIR /app
-COPY pyproject.toml uv.lock ./
+COPY app/pyproject.toml app/uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY knowledge/ knowledge/
+COPY app/knowledge/ knowledge/
+COPY migrations/ migrations/
 
 RUN adduser --system --no-create-home app
 USER app

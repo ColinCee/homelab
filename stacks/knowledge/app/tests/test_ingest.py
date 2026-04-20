@@ -12,12 +12,20 @@ from knowledge.ingest import (
     _extract_pdf_text,
     _file_content_hash,
     _read_file_content,
+    _resolved_wikilink_targets,
+    _similarity_note_links,
     _title_from_file,
     ingest_directory,
     ingest_file,
     ingest_text,
 )
-from knowledge.models import EMBEDDING_DIMENSION, DirectoryIngestResult, Document, IngestResult
+from knowledge.models import (
+    EMBEDDING_DIMENSION,
+    DirectoryIngestResult,
+    Document,
+    IngestResult,
+    RelatedDocument,
+)
 
 
 def _fake_embeddings(texts: list[str], **_: object) -> list[list[float]]:
@@ -35,6 +43,7 @@ def _fake_connect() -> MagicMock:
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
@@ -42,6 +51,7 @@ def test_ingest_file_new_document(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -69,11 +79,13 @@ def test_ingest_file_new_document(
     assert result.documents_skipped == 0
     mock_embed.assert_called_once()
     mock_delete.assert_not_called()
+    mock_refresh_note_links.assert_called_once()
 
 
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source")
@@ -81,6 +93,7 @@ def test_ingest_skips_unchanged_content(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -110,11 +123,13 @@ def test_ingest_skips_unchanged_content(
     assert result.documents_processed == 0
     mock_embed.assert_not_called()
     mock_upsert.assert_not_called()
+    mock_refresh_note_links.assert_not_called()
 
 
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source")
@@ -122,6 +137,7 @@ def test_ingest_reingests_changed_content(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -148,11 +164,13 @@ def test_ingest_reingests_changed_content(
     assert result.documents_processed == 1
     mock_delete.assert_called_once()
     mock_embed.assert_called_once()
+    mock_refresh_note_links.assert_called_once()
 
 
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
@@ -160,6 +178,7 @@ def test_ingest_text_uses_text_uri(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -181,11 +200,13 @@ def test_ingest_text_uses_text_uri(
     assert result.documents_processed == 1
     call_args = mock_upsert.call_args[0]
     assert call_args[1].source_path.startswith("text://Quick Note/")
+    mock_refresh_note_links.assert_called_once()
 
 
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
@@ -193,6 +214,7 @@ def test_ingest_text_different_content_same_title_no_collision(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -219,11 +241,13 @@ def test_ingest_text_different_content_same_title_no_collision(
     assert path_a != path_b
     assert path_a.startswith("text://Note/")
     assert path_b.startswith("text://Note/")
+    assert mock_refresh_note_links.call_count == 2
 
 
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source")
@@ -231,6 +255,7 @@ def test_zero_chunks_on_reingest_deletes_stale_data(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -259,6 +284,81 @@ def test_zero_chunks_on_reingest_deletes_stale_data(
     assert result.chunks_created == 0
     mock_delete.assert_called_once()
     mock_embed.assert_not_called()
+    mock_refresh_note_links.assert_called_once()
+
+
+def test_resolved_wikilink_targets_match_case_insensitive_partial_paths() -> None:
+    # Arrange
+    source = Document(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_path="/notes/source.md",
+        title="Source",
+        content_hash="hash-source",
+    )
+    first_target = Document(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        source_path="/notes/projects/Alpha Note.md",
+        title="Alpha",
+        content_hash="hash-alpha",
+    )
+    second_target = Document(
+        id=UUID("00000000-0000-0000-0000-000000000003"),
+        source_path="/notes/reference/beta.md",
+        title="Beta",
+        content_hash="hash-beta",
+    )
+    content = (
+        "See [[projects/alpha note]], [[BETA]], [[Alpha Note#Overview|alpha]], and [[Missing]]."
+    )
+
+    # Act
+    targets = _resolved_wikilink_targets(
+        content,
+        source_document=source,
+        documents=[source, first_target, second_target],
+    )
+
+    # Assert
+    assert [document.source_path for document in targets] == [
+        "/notes/projects/Alpha Note.md",
+        "/notes/reference/beta.md",
+        "/notes/projects/Alpha Note.md",
+    ]
+
+
+@patch("knowledge.ingest.find_similar_documents")
+def test_similarity_note_links_add_bidirectional_edges(
+    mock_find_similar_documents: MagicMock,
+) -> None:
+    # Arrange
+    source = Document(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_path="docs/source.md",
+        title="Source",
+        content_hash="hash-source",
+    )
+    target = Document(
+        id=UUID("00000000-0000-0000-0000-000000000002"),
+        source_path="docs/target.md",
+        title="Target",
+        content_hash="hash-target",
+    )
+    mock_find_similar_documents.return_value = [
+        RelatedDocument(
+            link_type="similarity",
+            score=0.91,
+            document=target,
+        )
+    ]
+
+    # Act
+    links = _similarity_note_links(MagicMock(), source_document=source)
+
+    # Assert
+    assert {(link.source_id, link.target_id, link.score) for link in links} == {
+        (source.id, target.id, 0.91),
+        (target.id, source.id, 0.91),
+    }
 
 
 @patch("knowledge.ingest.connect")
@@ -598,6 +698,7 @@ def test_read_file_content_markdown(tmp_path: Path) -> None:
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
+@patch("knowledge.ingest._refresh_note_links")
 @patch("knowledge.ingest.upsert_document")
 @patch("knowledge.ingest.delete_document_chunks")
 @patch("knowledge.ingest.get_document_by_source", return_value=None)
@@ -605,6 +706,7 @@ def test_ingest_pdf_file(
     mock_get_source: MagicMock,
     mock_delete: MagicMock,
     mock_upsert: MagicMock,
+    mock_refresh_note_links: MagicMock,
     mock_insert: MagicMock,
     mock_embed: MagicMock,
     mock_connect: MagicMock,
@@ -628,6 +730,7 @@ def test_ingest_pdf_file(
     assert isinstance(result, IngestResult)
     assert result.documents_processed == 1
     mock_embed.assert_called_once()
+    mock_refresh_note_links.assert_called_once()
 
 
 def test_title_from_pdf_uses_filename(tmp_path: Path) -> None:

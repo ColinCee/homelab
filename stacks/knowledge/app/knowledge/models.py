@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 EMBEDDING_DIMENSION = 3072
+type NoteLinkType = Literal["wikilink", "similarity"]
 
 
 def normalize_embedding(value: Any) -> list[float]:
@@ -83,6 +84,35 @@ class SearchResult(KnowledgeModel):
     score: float = Field(ge=0.0, le=1.0)
     document: Document
     chunk: Chunk
+
+
+class NoteLink(KnowledgeModel):
+    source_id: UUID
+    target_id: UUID
+    link_type: NoteLinkType
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_score(self) -> NoteLink:
+        if self.link_type == "wikilink" and self.score is not None:
+            raise ValueError("wikilink score must be null")
+        if self.link_type == "similarity" and self.score is None:
+            raise ValueError("similarity score must be set")
+        return self
+
+
+class RelatedDocument(KnowledgeModel):
+    link_type: NoteLinkType
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
+    document: Document
+
+    @model_validator(mode="after")
+    def validate_score(self) -> RelatedDocument:
+        if self.link_type == "wikilink" and self.score is not None:
+            raise ValueError("wikilink score must be null")
+        if self.link_type == "similarity" and self.score is None:
+            raise ValueError("similarity score must be set")
+        return self
 
 
 class IngestResult(KnowledgeModel):
