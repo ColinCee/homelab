@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .database import connect, run_migrations
 from .ingest import DEFAULT_DIRECTORY_GLOB, ingest_directory, ingest_file, ingest_text
+from .related import format_related_results, related
 from .save import save_url
 from .search import DEFAULT_RESULT_LIMIT, format_search_results, search
 
@@ -43,6 +44,9 @@ def main() -> None:
         help=f"Maximum number of results to return (default: {DEFAULT_RESULT_LIMIT})",
     )
 
+    related_parser = subparsers.add_parser("related", help="List related documents")
+    related_parser.add_argument("source_path", help="Document source_path to inspect")
+
     save_parser = subparsers.add_parser("save", help="Save a URL as a note")
     save_parser.add_argument("url", help="URL to fetch and save as a note")
     save_parser.add_argument(
@@ -63,6 +67,8 @@ def main() -> None:
             _handle_ingest(args)
         elif args.command == "search":
             _handle_search(args)
+        elif args.command == "related":
+            _handle_related(args)
         elif args.command == "save":
             _handle_save(args)
     except KeyboardInterrupt:
@@ -111,6 +117,11 @@ def _handle_ingest(args: argparse.Namespace) -> None:
 def _handle_search(args: argparse.Namespace) -> None:
     results = search(args.query, limit=args.limit)
     print(format_search_results(results))
+
+
+def _handle_related(args: argparse.Namespace) -> None:
+    results = related(args.source_path)
+    print(format_related_results(results))
 
 
 def _handle_save(args: argparse.Namespace) -> None:

@@ -10,7 +10,7 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def _extract_title(soup: BeautifulSoup, fallback_url: str) -> str:
     return urlparse(fallback_url).netloc
 
 
-def _find_content(soup: BeautifulSoup) -> BeautifulSoup:
+def _find_content(soup: BeautifulSoup) -> Tag | BeautifulSoup:
     """Find the main content element, falling back to body."""
     for selector in ("article", "main", '[role="main"]'):
         element = soup.find(selector)
@@ -89,11 +89,16 @@ def _find_content(soup: BeautifulSoup) -> BeautifulSoup:
     return soup.body or soup
 
 
-def _download_images(content: BeautifulSoup, base_url: str, assets_dir: Path, slug: str) -> None:
+def _download_images(
+    content: Tag | BeautifulSoup,
+    base_url: str,
+    assets_dir: Path,
+    slug: str,
+) -> None:
     """Download images and rewrite src attributes to local relative paths."""
     for i, img in enumerate(content.find_all("img")):
         src = img.get("src")
-        if not src:
+        if not isinstance(src, str) or not src:
             continue
 
         abs_url = urljoin(base_url, src)
@@ -120,7 +125,7 @@ def _image_extension(url: str) -> str:
     return ".png"
 
 
-def _to_markdown(content: BeautifulSoup, title: str, source_url: str) -> str:
+def _to_markdown(content: Tag | BeautifulSoup, title: str, source_url: str) -> str:
     """Convert HTML content to a readable markdown note."""
     lines: list[str] = [f"# {title}", "", f"Source: {source_url}", ""]
 
