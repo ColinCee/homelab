@@ -18,6 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
+  "id": null,
   "links": [
     {
       "asDropdown": true,
@@ -974,6 +975,6 @@
   "timezone": "browser",
   "title": "Security",
   "uid": "security",
-  "version": 7,
+  "version": 0,
   "weekStart": ""
 }

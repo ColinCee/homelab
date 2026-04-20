@@ -13,7 +13,6 @@ prometheus.scrape "host" {
   forward_to = [prometheus.remote_write.default.receiver]
 
   scrape_interval = "15s"
-  job_name        = "node"
 }
 
 // ================================
