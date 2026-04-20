@@ -1,6 +1,6 @@
 """Prometheus metrics for the agent service."""
 
-from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
+from prometheus_client import CollectorRegistry, Counter, Histogram
 
 TASK_TYPES = ("review", "implement", "fix")
 TASK_STATUSES = ("complete", "failed", "partial", "rejected")
@@ -32,17 +32,10 @@ TOKENS_TOTAL = Counter(
     registry=METRICS_REGISTRY,
 )
 TOKEN_DIRECTIONS = ("input", "output", "cached", "reasoning")
-TASK_IN_PROGRESS = Gauge(
-    "agent_task_in_progress",
-    "Current number of in-flight agent tasks.",
-    labelnames=("task_type",),
-    registry=METRICS_REGISTRY,
-)
 
 
 def _initialize_metrics() -> None:
     for task_type in TASK_TYPES:
-        TASK_IN_PROGRESS.labels(task_type=task_type).set(0)
         PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type)
         for direction in TOKEN_DIRECTIONS:
             TOKENS_TOTAL.labels(task_type=task_type, direction=direction)
@@ -58,7 +51,6 @@ def reset_metrics() -> None:
         TASK_TOTAL,
         PREMIUM_REQUESTS_TOTAL,
         TOKENS_TOTAL,
-        TASK_IN_PROGRESS,
     ):
         with collector._lock:
             collector._metrics.clear()
