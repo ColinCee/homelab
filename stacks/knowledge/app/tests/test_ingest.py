@@ -43,6 +43,10 @@ def _fake_connect() -> MagicMock:
     return conn
 
 
+def _task_event(stderr: str) -> dict[str, object]:
+    return json.loads(stderr.strip().splitlines()[-1])
+
+
 @patch("knowledge.ingest.connect")
 @patch("knowledge.ingest.get_embeddings", side_effect=_fake_embeddings)
 @patch("knowledge.ingest.insert_chunks", return_value=[])
@@ -668,7 +672,21 @@ def test_cli_ingest_directory_prints_summary(
         "glob_pattern": "**/*.txt",
         "token": None,
     }
-    assert json.loads(capsys.readouterr().out) == expected.model_dump(mode="json")
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == expected.model_dump(mode="json")
+    assert _task_event(captured.err) == {
+        "chunks_created": 4,
+        "command": "ingest",
+        "documents_deleted": 1,
+        "documents_processed": 1,
+        "documents_skipped": 1,
+        "event": "task_completed",
+        "exit_code": 0,
+        "files_failed": 0,
+        "files_found": 2,
+        "status": "succeeded",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }
 
 
 def test_cli_rejects_glob_without_directory(
@@ -698,7 +716,16 @@ def test_cli_rejects_glob_without_directory(
     with pytest.raises(SystemExit, match="1"):
         cli.main()
 
-    assert capsys.readouterr().err.strip() == "Error: --glob requires --dir"
+    captured = capsys.readouterr()
+    assert captured.err.splitlines()[0] == "Error: --glob requires --dir"
+    assert _task_event(captured.err) == {
+        "command": "ingest",
+        "error": "--glob requires --dir",
+        "event": "task_completed",
+        "exit_code": 1,
+        "status": "failed",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }
 
 
 def test_cli_rejects_multiple_ingest_sources(
@@ -730,9 +757,16 @@ def test_cli_rejects_multiple_ingest_sources(
     with pytest.raises(SystemExit, match="1"):
         cli.main()
 
-    assert (
-        capsys.readouterr().err.strip() == "Error: provide exactly one of --path, --dir, or --text"
-    )
+    captured = capsys.readouterr()
+    assert captured.err.splitlines()[0] == "Error: provide exactly one of --path, --dir, or --text"
+    assert _task_event(captured.err) == {
+        "command": "ingest",
+        "error": "provide exactly one of --path, --dir, or --text",
+        "event": "task_completed",
+        "exit_code": 1,
+        "status": "failed",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }
 
 
 def test_title_from_markdown_heading(tmp_path: Path) -> None:

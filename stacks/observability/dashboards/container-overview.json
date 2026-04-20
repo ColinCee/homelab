@@ -1060,6 +1060,146 @@
         }
       ],
       "description": "max by (name) collapses duplicate series from scraper restarts."
+    },
+    {
+      "type": "table",
+      "title": "Knowledge Task Runs",
+      "description": "Structured completion events from journald-backed knowledge CLI containers.",
+      "id": 19,
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "exit_code"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_seconds"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
+      },
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "Line"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Line": true,
+              "Labels": true,
+              "event": true,
+              "id": true,
+              "tsNs": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "command": 1,
+              "status": 2,
+              "exit_code": 3,
+              "duration_seconds": 4,
+              "files_found": 5,
+              "documents_processed": 6,
+              "chunks_created": 7,
+              "documents_skipped": 8,
+              "files_failed": 9,
+              "documents_deleted": 10,
+              "saved_path": 11,
+              "result_count": 12,
+              "error": 13
+            }
+          }
+        }
+      ],
+      "targets": [
+        {
+          "expr": "{job=\"knowledge\"} | json | event = `task_completed`",
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        }
+      ]
     }
   ],
   "refresh": "30s",

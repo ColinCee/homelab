@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from knowledge import __main__ as cli
 from knowledge import save
 
 SAMPLE_HTML = """<!DOCTYPE html>
@@ -30,6 +35,10 @@ SIMPLE_HTML = """<html>
 <head><title>Simple Page</title></head>
 <body><p>Hello world</p></body>
 </html>"""
+
+
+def _task_event(stderr: str) -> dict[str, object]:
+    return json.loads(stderr.strip())
 
 
 class TestExtractTitle:
@@ -251,3 +260,34 @@ class TestGitCommitAndPush:
         assert calls[1][0:3] == ["git", "commit", "-m"]
         assert "Test Article" in calls[1][3]
         assert calls[2] == ["git", "push", "origin", "main"]
+
+
+def test_cli_save_prints_saved_path_and_task_event(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    saved_path = tmp_path / "resources" / "articles" / "saved-note.md"
+
+    monkeypatch.setattr(cli, "connect", lambda: MagicMock())
+    monkeypatch.setattr(cli, "run_migrations", lambda conn: None)
+    monkeypatch.setattr(cli, "save_url", lambda url, *, notes_dir: saved_path)
+    monkeypatch.setattr(
+        sys, "argv", ["knowledge", "save", "https://example.com", "--notes-dir", str(tmp_path)]
+    )
+
+    # Act
+    cli.main()
+
+    # Assert
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"Saved: {saved_path}"
+    assert _task_event(captured.err) == {
+        "command": "save",
+        "event": "task_completed",
+        "exit_code": 0,
+        "saved_path": str(saved_path),
+        "status": "succeeded",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }
