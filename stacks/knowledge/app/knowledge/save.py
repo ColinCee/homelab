@@ -20,7 +20,28 @@ _USER_AGENT = "knowledge-save/1.0"
 _TIMEOUT = 30
 _MIN_IMAGE_BYTES = 2 * 1024
 _STRIP_ELEMENTS = ("nav", "footer", "script", "style", "aside", "noscript", "audio")
-_BOILERPLATE_MARKERS = ("nav", "menu", "footer", "sidebar", "social", "share", "cookie", "banner")
+_BOILERPLATE_MARKERS = (
+    "nav",
+    "menu",
+    "footer",
+    "sidebar",
+    "social",
+    "share",
+    "cookie",
+    "banner",
+    "toc",
+    "table-of-contents",
+    "related-posts",
+    "related-articles",
+    "recommended-posts",
+)
+_RELATED_HEADINGS = (
+    "related content",
+    "related posts",
+    "related articles",
+    "you might also like",
+    "recommended for you",
+)
 _DECORATIVE_IMAGE_MARKERS = ("icon", "logo", "avatar", "sprite")
 
 
@@ -104,6 +125,8 @@ def _strip_boilerplate(content: Tag | BeautifulSoup) -> None:
         if _has_boilerplate_marker(tag):
             tag.decompose()
 
+    _strip_related_sections(content)
+
 
 def _has_boilerplate_marker(tag: Tag) -> bool:
     """Return True when class or role metadata marks the element as boilerplate."""
@@ -127,6 +150,26 @@ def _attribute_contains_marker(value: object) -> bool:
     )
 
 
+def _strip_related_sections(content: Tag | BeautifulSoup) -> None:
+    """Remove 'Related content' sections identified by heading text.
+
+    Only removes sections when a containing <section> or <aside> is found,
+    avoiding accidental truncation of legitimate article content.
+    """
+    for heading in content.find_all(["h2", "h3", "h4"]):
+        heading_text = heading.get_text(strip=True).lower()
+        if not any(marker in heading_text for marker in _RELATED_HEADINGS):
+            continue
+
+        # Only remove when wrapped in a clear structural container
+        for ancestor in heading.parents:
+            if ancestor is content:
+                break
+            if ancestor.name in ("section", "aside"):
+                ancestor.decompose()
+                break
+
+
 def _download_images(
     content: Tag | BeautifulSoup,
     base_url: str,
@@ -134,6 +177,8 @@ def _download_images(
 ) -> None:
     """Download images and rewrite src attributes to local relative paths."""
     saved_image_count = 0
+    h1 = content.find("h1")
+    title_text = h1.get_text(strip=True).lower() if h1 else ""
 
     for img in list(content.find_all("img")):
         source = _image_source(img)
@@ -142,6 +187,17 @@ def _download_images(
             continue
 
         if _is_decorative_image(img, source):
+            img.decompose()
+            continue
+
+        # Skip hero images that just repeat the title
+        alt = img.get("alt", "")
+        if (
+            isinstance(alt, str)
+            and saved_image_count == 0
+            and title_text
+            and alt.strip().lower() == title_text
+        ):
             img.decompose()
             continue
 
