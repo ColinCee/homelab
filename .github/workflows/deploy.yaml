@@ -63,7 +63,9 @@ jobs:
         if: always() && steps.detect.outputs.stacks != ''
         with:
           webhook: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          nocontext: true
           title: Deploy
+          url: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
           description: |
             **Stacks:** ${{ steps.detect.outputs.stacks }}
             **Commit:** ${{ steps.commit.outputs.msg }}
