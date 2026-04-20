@@ -24,6 +24,9 @@ def save_url(url: str, *, notes_dir: Path) -> Path:
 
     Returns the path to the saved markdown file.
     """
+    # Sync to latest remote state before writing anything
+    _git_sync(notes_dir)
+
     html = _fetch(url)
     soup = BeautifulSoup(html, "html.parser")
 
@@ -173,14 +176,8 @@ def _url_slug(url: str) -> str:
     return f"{readable}-{url_hash}"
 
 
-def _git_commit_and_push(notes_dir: Path, article_dir: Path, title: str) -> None:
-    """Commit the saved article and push to origin.
-
-    Same pattern as homelab deploy: reset to origin/main, add new files, push.
-    Safe because the server checkout is not a user-edited working copy.
-    """
-    relative_path = article_dir.relative_to(notes_dir)
-
+def _git_sync(notes_dir: Path) -> None:
+    """Fetch and reset to origin/main so we're on the latest state before writing."""
     def _git(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
             ["git", *args],
@@ -192,6 +189,21 @@ def _git_commit_and_push(notes_dir: Path, article_dir: Path, title: str) -> None
 
     _git("fetch", "origin", "main")
     _git("reset", "--hard", "origin/main")
+
+
+def _git_commit_and_push(notes_dir: Path, article_dir: Path, title: str) -> None:
+    """Commit the saved article and push to origin."""
+    relative_path = article_dir.relative_to(notes_dir)
+
+    def _git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["git", *args],
+            cwd=notes_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
     _git("add", str(relative_path))
     _git("commit", "-m", f"Save article: {title}")
     _git("push", "origin", "main")

@@ -51,8 +51,16 @@ services:
       - PGDATABASE=${POSTGRES_DB:?}
       - PGUSER=${POSTGRES_USER:?}
       - PGPASSWORD=${POSTGRES_PASSWORD:?}
+      - HOME=/home/user
+      - GIT_SSH_COMMAND=ssh -i /home/user/.ssh/id_ed25519
+      - GIT_AUTHOR_NAME=knowledge-save
+      - GIT_AUTHOR_EMAIL=knowledge-save@homelab
+      - GIT_COMMITTER_NAME=knowledge-save
+      - GIT_COMMITTER_EMAIL=knowledge-save@homelab
     volumes:
       - ${NOTES_DIR:-/home/colin/code/notes}:/notes
+      - ~/.ssh/notes_deploy_key:/home/user/.ssh/id_ed25519:ro
+      - /etc/passwd:/etc/passwd:ro
     depends_on:
       postgres:
         condition: service_healthy
