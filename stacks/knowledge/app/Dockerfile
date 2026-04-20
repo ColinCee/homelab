@@ -14,7 +14,9 @@ COPY app/knowledge/ knowledge/
 COPY migrations/ migrations/
 
 RUN adduser --system --no-create-home app && \
-    mkdir -p /home/user/.ssh && chmod 700 /home/user/.ssh && chown 1000:1000 /home/user/.ssh
+    mkdir -p /home/user/.ssh && chmod 700 /home/user/.ssh && \
+    ssh-keyscan github.com > /home/user/.ssh/known_hosts 2>/dev/null && \
+    chown -R 1000:1000 /home/user/.ssh
 USER app
 
 ENTRYPOINT [".venv/bin/python", "-m", "knowledge"]
