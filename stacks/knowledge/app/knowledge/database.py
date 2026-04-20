@@ -145,17 +145,15 @@ def delete_note_links_for_source(
     return max(deleted_rows, 0)
 
 
-def delete_similarity_links_for_document(conn: DatabaseConnection, document: Document) -> int:
-    document_id = _require_document_id(document)
+def delete_note_links(conn: DatabaseConnection, *, link_type: str | None = None) -> int:
+    sql = "DELETE FROM note_links"
+    params: tuple[object, ...] = ()
+    if link_type is not None:
+        sql = f"{sql} WHERE link_type = %s"
+        params = (link_type,)
+
     with _cursor(conn) as cursor:
-        cursor.execute(
-            """
-            DELETE FROM note_links
-            WHERE link_type = 'similarity'
-              AND (source_id = %s OR target_id = %s)
-            """,
-            (document_id, document_id),
-        )
+        cursor.execute(sql, params)
         deleted_rows = cursor.rowcount
 
     return max(deleted_rows, 0)

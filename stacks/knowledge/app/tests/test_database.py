@@ -7,7 +7,7 @@ import pytest
 from knowledge.database import (
     DATABASE_URL_ENV,
     _migration_files,
-    delete_similarity_links_for_document,
+    delete_note_links,
     list_documents_by_source_prefix,
     list_related_documents,
     resolve_database_url,
@@ -104,7 +104,7 @@ def test_list_documents_by_source_prefix_escapes_like_metacharacters(
 
 
 @patch("knowledge.database._cursor")
-def test_delete_similarity_links_for_document_removes_bidirectional_edges(
+def test_delete_note_links_filters_by_link_type(
     mock_cursor_factory: MagicMock,
 ) -> None:
     # Arrange
@@ -112,20 +112,14 @@ def test_delete_similarity_links_for_document_removes_bidirectional_edges(
     cursor = MagicMock()
     cursor.rowcount = 3
     mock_cursor_factory.return_value.__enter__.return_value = cursor
-    document = Document(
-        id=UUID("00000000-0000-0000-0000-000000000001"),
-        source_path="docs/source.md",
-        title="Source",
-        content_hash="hash-source",
-    )
 
     # Act
-    deleted = delete_similarity_links_for_document(conn, document)
+    deleted = delete_note_links(conn, link_type="similarity")
 
     # Assert
     sql, params = cursor.execute.call_args.args
-    assert "source_id = %s OR target_id = %s" in sql
-    assert params == (document.id, document.id)
+    assert sql == "DELETE FROM note_links WHERE link_type = %s"
+    assert params == ("similarity",)
     assert deleted == 3
 
 

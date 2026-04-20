@@ -9,9 +9,11 @@ import pytest
 
 from knowledge import __main__ as cli
 from knowledge.ingest import (
+    _all_similarity_note_links,
     _extract_pdf_text,
     _file_content_hash,
     _read_file_content,
+    _refresh_similarity_note_links,
     _resolved_wikilink_targets,
     _similarity_note_links,
     _title_from_file,
@@ -24,6 +26,7 @@ from knowledge.models import (
     DirectoryIngestResult,
     Document,
     IngestResult,
+    NoteLink,
     RelatedDocument,
 )
 
@@ -331,14 +334,16 @@ def test_similarity_note_links_add_bidirectional_edges(
     mock_find_similar_documents: MagicMock,
 ) -> None:
     # Arrange
+    source_id = UUID("00000000-0000-0000-0000-000000000001")
+    target_id = UUID("00000000-0000-0000-0000-000000000002")
     source = Document(
-        id=UUID("00000000-0000-0000-0000-000000000001"),
+        id=source_id,
         source_path="docs/source.md",
         title="Source",
         content_hash="hash-source",
     )
     target = Document(
-        id=UUID("00000000-0000-0000-0000-000000000002"),
+        id=target_id,
         source_path="docs/target.md",
         title="Target",
         content_hash="hash-target",
@@ -359,6 +364,101 @@ def test_similarity_note_links_add_bidirectional_edges(
         (source.id, target.id, 0.91),
         (target.id, source.id, 0.91),
     }
+
+
+@patch("knowledge.ingest._similarity_note_links")
+@patch("knowledge.ingest.list_documents")
+def test_all_similarity_note_links_deduplicates_edges(
+    mock_list_documents: MagicMock,
+    mock_similarity_note_links: MagicMock,
+) -> None:
+    # Arrange
+    source_id = UUID("00000000-0000-0000-0000-000000000001")
+    target_id = UUID("00000000-0000-0000-0000-000000000002")
+    source = Document(
+        id=source_id,
+        source_path="docs/source.md",
+        title="Source",
+        content_hash="hash-source",
+    )
+    target = Document(
+        id=target_id,
+        source_path="docs/target.md",
+        title="Target",
+        content_hash="hash-target",
+    )
+    mock_list_documents.return_value = [source, target]
+    mock_similarity_note_links.side_effect = [
+        [
+            NoteLink(
+                source_id=source_id,
+                target_id=target_id,
+                link_type="similarity",
+                score=0.91,
+            ),
+            NoteLink(
+                source_id=target_id,
+                target_id=source_id,
+                link_type="similarity",
+                score=0.91,
+            ),
+        ],
+        [
+            NoteLink(
+                source_id=target_id,
+                target_id=source_id,
+                link_type="similarity",
+                score=0.91,
+            ),
+            NoteLink(
+                source_id=source_id,
+                target_id=target_id,
+                link_type="similarity",
+                score=0.91,
+            ),
+        ],
+    ]
+    conn = MagicMock()
+
+    # Act
+    links = _all_similarity_note_links(conn)
+
+    # Assert
+    assert {(link.source_id, link.target_id) for link in links} == {
+        (source_id, target_id),
+        (target_id, source_id),
+    }
+    mock_list_documents.assert_called_once_with(conn)
+    assert [call.args[0] for call in mock_similarity_note_links.call_args_list] == [conn, conn]
+    source_documents = [
+        call.kwargs["source_document"] for call in mock_similarity_note_links.call_args_list
+    ]
+    assert source_documents == [source, target]
+
+
+@patch("knowledge.ingest.insert_note_links")
+@patch("knowledge.ingest.delete_note_links")
+@patch("knowledge.ingest._all_similarity_note_links")
+def test_refresh_similarity_note_links_rebuilds_graph(
+    mock_all_similarity_note_links: MagicMock,
+    mock_delete_note_links: MagicMock,
+    mock_insert_note_links: MagicMock,
+) -> None:
+    # Arrange
+    conn = MagicMock()
+    links = [
+        MagicMock(),
+        MagicMock(),
+    ]
+    mock_all_similarity_note_links.return_value = links
+
+    # Act
+    _refresh_similarity_note_links(conn)
+
+    # Assert
+    mock_delete_note_links.assert_called_once_with(conn, link_type="similarity")
+    mock_all_similarity_note_links.assert_called_once_with(conn)
+    mock_insert_note_links.assert_called_once_with(conn, links)
 
 
 @patch("knowledge.ingest.connect")

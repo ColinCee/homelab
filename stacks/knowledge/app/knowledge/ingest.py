@@ -14,8 +14,8 @@ from .database import (
     connect,
     delete_document,
     delete_document_chunks,
+    delete_note_links,
     delete_note_links_for_source,
-    delete_similarity_links_for_document,
     find_similar_documents,
     get_document_by_source,
     insert_chunks,
@@ -229,9 +229,23 @@ def _refresh_note_links(
     content: str,
 ) -> None:
     delete_note_links_for_source(conn, document, link_type="wikilink")
-    delete_similarity_links_for_document(conn, document)
     insert_note_links(conn, _wikilink_note_links(content, source_document=document, conn=conn))
-    insert_note_links(conn, _similarity_note_links(conn, source_document=document))
+    _refresh_similarity_note_links(conn)
+
+
+def _refresh_similarity_note_links(conn: DatabaseConnection) -> None:
+    delete_note_links(conn, link_type="similarity")
+    insert_note_links(conn, _all_similarity_note_links(conn))
+
+
+def _all_similarity_note_links(conn: DatabaseConnection) -> list[NoteLink]:
+    links_by_key: dict[tuple[UUID, UUID], NoteLink] = {}
+
+    for document in list_documents(conn):
+        for link in _similarity_note_links(conn, source_document=document):
+            links_by_key[(link.source_id, link.target_id)] = link
+
+    return list(links_by_key.values())
 
 
 def _wikilink_note_links(
