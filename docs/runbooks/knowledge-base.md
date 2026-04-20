@@ -1,6 +1,6 @@
 # Knowledge Base Operations
 
-Personal knowledge base backed by Postgres + pgvector. Notes are ingested from the [notes repo](https://github.com/ColinCee/notes) and searchable via semantic similarity.
+Personal knowledge base backed by Postgres + pgvector. Notes are ingested from the [notes repo](https://github.com/ColinCee/notes) and searchable via semantic similarity plus computed note links.
 
 ## Architecture
 
@@ -19,6 +19,14 @@ push to notes repo → GitHub Actions (beelink-notes runner) → ingest-notes.sh
 
 ```bash
 ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest search \"<query>\" --limit 5"
+```
+
+### Show related notes for a document
+
+Returns both resolved `[[wikilinks]]` and embedding-similar documents.
+
+```bash
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest related \"/notes/path/to/note.md\""
 ```
 
 ### Trigger a manual ingest
@@ -41,7 +49,7 @@ Wipe the database and re-ingest all files. Useful if the schema changes or embed
 
 ```bash
 # Drop and recreate the database
-ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 'DELETE FROM chunks; DELETE FROM documents;'"
+ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 'DELETE FROM note_links; DELETE FROM chunks; DELETE FROM documents;'"
 
 # Re-ingest
 ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
