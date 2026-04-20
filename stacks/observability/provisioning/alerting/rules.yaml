@@ -13,9 +13,9 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: "PBFA97CFB590B2093"
+            datasourceUid: prometheus
             model:
-              expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle",job="node"}[5m]))
+              expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle",job="integrations/unix"}[5m]))
               instant: true
               refId: A
           - refId: C
@@ -45,9 +45,9 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: "PBFA97CFB590B2093"
+            datasourceUid: prometheus
             model:
-              expr: 1 - (node_memory_AvailableBytes{job="node"} / node_memory_MemTotal_bytes{job="node"})
+              expr: 1 - (node_memory_AvailableBytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
               instant: true
               refId: A
           - refId: C
@@ -77,11 +77,11 @@ groups:
             relativeTimeRange:
               from: 300
               to: 0
-            datasourceUid: "PBFA97CFB590B2093"
+            datasourceUid: prometheus
             model:
               expr: >-
-                1 - (node_filesystem_avail_bytes{mountpoint="/",job="node"}
-                / node_filesystem_size_bytes{mountpoint="/",job="node"})
+                1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+                / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
               instant: true
               refId: A
           - refId: C
