@@ -1,3 +1,4 @@
+import json
 import sys
 from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
@@ -27,6 +28,10 @@ def _related_document(
             ingested_at=datetime(2026, 4, 19, tzinfo=UTC),
         ),
     )
+
+
+def _task_event(stderr: str) -> dict[str, object]:
+    return json.loads(stderr.strip())
 
 
 def test_format_related_results_includes_link_type_and_score() -> None:
@@ -120,4 +125,13 @@ def test_cli_related_prints_results(
 
     # Assert
     assert calls == {"source_path": "docs/source.md"}
-    assert capsys.readouterr().out.strip() == "1. type=wikilink score=- source=docs/linked.md"
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "1. type=wikilink score=- source=docs/linked.md"
+    assert _task_event(captured.err) == {
+        "command": "related",
+        "event": "task_completed",
+        "exit_code": 0,
+        "result_count": 1,
+        "status": "succeeded",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }

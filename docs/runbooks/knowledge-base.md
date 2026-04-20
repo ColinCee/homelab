@@ -43,6 +43,16 @@ Or directly on beelink:
 ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
 ```
 
+### Inspect recent task runs
+
+- **Grafana:** `Container Overview` → `Knowledge Task Runs`
+- **Loki query:**
+
+  ```logql
+  {job="knowledge"} | json | event = `task_completed`
+  ```
+- **Alerts:** failed runs page the existing Discord Private contact point via Grafana alerting
+
 ### Re-ingest everything from scratch
 
 Wipe the database and re-ingest all files. Useful if the schema changes or embeddings need regenerating.

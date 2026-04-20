@@ -102,3 +102,50 @@ groups:
           summary: "Disk usage above 80% (current: {{ humanizePercentage $value }})"
         labels:
           severity: critical
+
+      - uid: knowledge-task-failed
+        title: Knowledge Task Failed
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: loki
+            model:
+              datasource:
+                type: loki
+                uid: loki
+              editorMode: code
+              expr: >-
+                sum(count_over_time({job="knowledge"} | json | event = `task_completed`
+                | status = `failed` [5m])) or vector(0)
+              instant: true
+              maxDataPoints: 43200
+              queryType: instant
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        dashboardUid: container-overview
+        panelId: 19
+        noDataState: OK
+        execErrState: Alerting
+        for: 0s
+        annotations:
+          summary: "Knowledge task failure detected in the last 5 minutes"
+          description: >-
+            A knowledge CLI task exited non-zero. Inspect the Knowledge Task Runs
+            panel or query {job="knowledge"} in Loki for the full error output.
+        labels:
+          severity: critical

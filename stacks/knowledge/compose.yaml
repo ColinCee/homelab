@@ -34,6 +34,10 @@ services:
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
     volumes:
       - ${NOTES_DIR:-/home/colin/code/notes}:/notes:ro
+    logging:
+      driver: journald
+      options:
+        tag: "knowledge-ingest"
     depends_on:
       postgres:
         condition: service_healthy
@@ -61,6 +65,10 @@ services:
       - ${NOTES_DIR:-/home/colin/code/notes}:/notes
       - ~/.ssh/notes_deploy_key:/home/user/.ssh/id_ed25519:ro
       - /etc/passwd:/etc/passwd:ro
+    logging:
+      driver: journald
+      options:
+        tag: "knowledge-save"
     depends_on:
       postgres:
         condition: service_healthy

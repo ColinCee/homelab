@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
+import sys
 import urllib.request
 from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from knowledge import __main__ as cli
 from knowledge import save
 
 SAMPLE_HTML = """<!DOCTYPE html>
@@ -32,6 +37,10 @@ SIMPLE_HTML = """<html>
 <head><title>Simple Page</title></head>
 <body><p>Hello world</p></body>
 </html>"""
+
+
+def _task_event(stderr: str) -> dict[str, object]:
+    return json.loads(stderr.strip())
 
 
 class TestExtractTitle:
@@ -259,7 +268,6 @@ class TestSaveUrl:
     ) -> None:
         mock_fetch.return_value = SIMPLE_HTML
 
-        # Pre-create the article directory with old content
         slug = save._url_slug("https://example.com/article")
         article_dir = tmp_path / "resources" / "articles" / slug
         assets_dir = article_dir / "assets"
@@ -270,7 +278,6 @@ class TestSaveUrl:
 
         result = save.save_url("https://example.com/article", notes_dir=tmp_path)
 
-        # Should overwrite with new content
         assert result == md_path
         assert "Hello world" in md_path.read_text()
         assert not assets_dir.exists()
@@ -349,3 +356,34 @@ class TestGitCommitAndPush:
             ["git", "add", "resources/articles/test"],
             ["git", "diff", "--cached", "--quiet"],
         ]
+
+
+def test_cli_save_prints_saved_path_and_task_event(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    saved_path = tmp_path / "resources" / "articles" / "saved-note.md"
+
+    monkeypatch.setattr(cli, "connect", lambda: MagicMock())
+    monkeypatch.setattr(cli, "run_migrations", lambda conn: None)
+    monkeypatch.setattr(cli, "save_url", lambda url, *, notes_dir: saved_path)
+    monkeypatch.setattr(
+        sys, "argv", ["knowledge", "save", "https://example.com", "--notes-dir", str(tmp_path)]
+    )
+
+    # Act
+    cli.main()
+
+    # Assert
+    captured = capsys.readouterr()
+    assert captured.out.strip() == f"Saved: {saved_path}"
+    assert _task_event(captured.err) == {
+        "command": "save",
+        "event": "task_completed",
+        "exit_code": 0,
+        "saved_path": str(saved_path),
+        "status": "succeeded",
+        "duration_seconds": pytest.approx(0, abs=1),
+    }

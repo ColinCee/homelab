@@ -56,6 +56,8 @@ services:
       - /:/rootfs:ro
       - /dev/disk:/dev/disk:ro
       - /var/lib/docker:/var/lib/docker:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /run/log/journal:/run/log/journal:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     devices:
