@@ -59,7 +59,7 @@ def test_format_related_results_handles_empty_results() -> None:
     assert formatted == "No related documents found."
 
 
-@patch("knowledge.related.connect")
+@patch("knowledge.database.connect")
 @patch("knowledge.related.list_related_documents")
 @patch("knowledge.related.get_document_by_source")
 def test_related_returns_linked_documents(
@@ -93,8 +93,9 @@ def test_related_returns_linked_documents(
 
 def test_related_rejects_unknown_document() -> None:
     # Arrange / Act / Assert
-    with patch("knowledge.related.get_document_by_source", return_value=None), pytest.raises(
-        ValueError, match=r"document not found: docs/missing\.md"
+    with (
+        patch("knowledge.related.get_document_by_source", return_value=None),
+        pytest.raises(ValueError, match=r"document not found: docs/missing\.md"),
     ):
         related("docs/missing.md", conn=MagicMock())
 

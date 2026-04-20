@@ -86,6 +86,13 @@ class SearchResult(KnowledgeModel):
     chunk: Chunk
 
 
+def _validate_link_score(link_type: NoteLinkType, score: float | None) -> None:
+    if link_type == "wikilink" and score is not None:
+        raise ValueError("wikilink score must be null")
+    if link_type == "similarity" and score is None:
+        raise ValueError("similarity score must be set")
+
+
 class NoteLink(KnowledgeModel):
     source_id: UUID
     target_id: UUID
@@ -94,10 +101,7 @@ class NoteLink(KnowledgeModel):
 
     @model_validator(mode="after")
     def validate_score(self) -> NoteLink:
-        if self.link_type == "wikilink" and self.score is not None:
-            raise ValueError("wikilink score must be null")
-        if self.link_type == "similarity" and self.score is None:
-            raise ValueError("similarity score must be set")
+        _validate_link_score(self.link_type, self.score)
         return self
 
 
@@ -108,10 +112,7 @@ class RelatedDocument(KnowledgeModel):
 
     @model_validator(mode="after")
     def validate_score(self) -> RelatedDocument:
-        if self.link_type == "wikilink" and self.score is not None:
-            raise ValueError("wikilink score must be null")
-        if self.link_type == "similarity" and self.score is None:
-            raise ValueError("similarity score must be set")
+        _validate_link_score(self.link_type, self.score)
         return self
 
 
