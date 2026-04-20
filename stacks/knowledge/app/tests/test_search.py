@@ -63,7 +63,7 @@ def test_format_search_results_handles_empty_results() -> None:
     assert formatted == "No matching chunks found."
 
 
-@patch("knowledge.search.connect")
+@patch("knowledge.database.connect")
 @patch("knowledge.search.search_chunks", return_value=[])
 @patch("knowledge.search.get_embeddings", return_value=[[0.1] * EMBEDDING_DIMENSION])
 def test_search_embeds_query_and_uses_default_limit(

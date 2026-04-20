@@ -365,36 +365,26 @@ def _url_slug(url: str) -> str:
     return _slugify(path_segment) or "page"
 
 
+def _git(notes_dir: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=notes_dir,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
 def _git_sync(notes_dir: Path) -> None:
     """Fetch and reset to origin/main so we're on the latest state before writing."""
-
-    def _git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", *args],
-            cwd=notes_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    _git("fetch", "origin", "main")
-    _git("reset", "--hard", "origin/main")
+    _git(notes_dir, "fetch", "origin", "main")
+    _git(notes_dir, "reset", "--hard", "origin/main")
 
 
 def _git_commit_and_push(notes_dir: Path, article_dir: Path, title: str) -> None:
     """Commit the saved article and push to origin."""
     relative_path = article_dir.relative_to(notes_dir)
-
-    def _git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", *args],
-            cwd=notes_dir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-
-    _git("add", str(relative_path))
+    _git(notes_dir, "add", str(relative_path))
     diff = subprocess.run(
         ["git", "diff", "--cached", "--quiet"],
         cwd=notes_dir,
@@ -405,5 +395,5 @@ def _git_commit_and_push(notes_dir: Path, article_dir: Path, title: str) -> None
     if diff.returncode == 0:
         logger.info("Article content unchanged after save: %s", relative_path)
         return
-    _git("commit", "-m", f"Save article: {title}")
-    _git("push", "origin", "main")
+    _git(notes_dir, "commit", "-m", f"Save article: {title}")
+    _git(notes_dir, "push", "origin", "main")
