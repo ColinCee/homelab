@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, LiteralString, cast
 from uuid import UUID
@@ -38,6 +40,20 @@ def connect(db_url: str | None = None) -> DatabaseConnection:
     connection = psycopg.connect(url) if url else psycopg.connect()
     register_vector(connection)
     return connection
+
+
+@contextmanager
+def managed_connection(
+    conn: DatabaseConnection | None = None,
+) -> Generator[DatabaseConnection]:
+    """Yield a database connection, closing it only if we created it."""
+    own_conn = conn is None
+    db = conn or connect()
+    try:
+        yield db
+    finally:
+        if own_conn:
+            db.close()
 
 
 def run_migrations(conn: DatabaseConnection) -> None:

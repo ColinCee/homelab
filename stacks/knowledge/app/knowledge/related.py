@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from .database import DatabaseConnection, connect, get_document_by_source, list_related_documents
+from .database import (
+    DatabaseConnection,
+    get_document_by_source,
+    list_related_documents,
+    managed_connection,
+)
 from .models import RelatedDocument
 
 
@@ -13,17 +18,11 @@ def related(
     if not normalized_source_path:
         raise ValueError("source_path must not be blank")
 
-    own_conn = conn is None
-    db = conn or connect()
-
-    try:
+    with managed_connection(conn) as db:
         document = get_document_by_source(db, normalized_source_path)
         if document is None:
             raise ValueError(f"document not found: {normalized_source_path}")
         return list_related_documents(db, document)
-    finally:
-        if own_conn:
-            db.close()
 
 
 def format_related_results(results: list[RelatedDocument]) -> str:
@@ -37,8 +36,4 @@ def format_related_results(results: list[RelatedDocument]) -> str:
 
 def _format_related_result(index: int, result: RelatedDocument) -> str:
     score = "-" if result.score is None else f"{result.score:.3f}"
-    return (
-        f"{index}. type={result.link_type} "
-        f"score={score} "
-        f"source={result.document.source_path}"
-    )
+    return f"{index}. type={result.link_type} score={score} source={result.document.source_path}"

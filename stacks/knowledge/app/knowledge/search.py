@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .database import DatabaseConnection, connect, search_chunks
+from .database import DatabaseConnection, managed_connection, search_chunks
 from .embeddings import get_embeddings
 from .models import SearchResult
 
@@ -19,15 +19,9 @@ def search(
     if not normalized_query:
         raise ValueError("query must not be blank")
 
-    own_conn = conn is None
-    db = conn or connect()
-
-    try:
+    with managed_connection(conn) as db:
         query_embedding = _embed_query(normalized_query, token=token)
         return search_chunks(db, query_embedding, limit=limit, query_text=normalized_query)
-    finally:
-        if own_conn:
-            db.close()
 
 
 def format_search_results(results: list[SearchResult]) -> str:
