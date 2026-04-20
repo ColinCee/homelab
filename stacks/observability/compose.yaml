@@ -8,6 +8,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_SERVER_ROOT_URL=http://beelink:3001
       - GF_USERS_DEFAULT_THEME=dark
+      - GF_USERS_HOME_PAGE=/d/container-overview/container-overview
       - GF_UNIFIED_ALERTING_ENABLED=true
       - DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_PRIVATE_WEBHOOK_URL}
     volumes:
