@@ -16,7 +16,6 @@ from metrics import (
     METRICS_REGISTRY,
     PREMIUM_REQUESTS_TOTAL,
     TASK_DURATION_SECONDS,
-    TASK_IN_PROGRESS,
     TASK_TOTAL,
     TOKENS_TOTAL,
 )
@@ -77,7 +76,6 @@ async def lifespan(_app: FastAPI):
         started_at = float(w.get("started_at", 0))
         elapsed = time.time() - started_at if started_at > 0 else 0
         approx_start = time.monotonic() - elapsed
-        TASK_IN_PROGRESS.labels(task_type=task_type).inc()
         _spawn_monitor(container_id, task_type=task_type, number=number, start=approx_start)
         logger.info("Reconnected monitor for running worker %s #%d", task_type, number)
 
@@ -211,7 +209,6 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
     except Exception:
         logger.exception("Monitor failed for worker %s #%d", task_type, number)
     finally:
-        TASK_IN_PROGRESS.labels(task_type=task_type).dec()
         try:
             await remove_container(container_id)
         except Exception:
@@ -257,7 +254,6 @@ async def _dispatch_worker(
     }
 
     start = time.monotonic()
-    TASK_IN_PROGRESS.labels(task_type=task_type).inc()
 
     container_id = await spawn_worker(
         task_type=task_type,

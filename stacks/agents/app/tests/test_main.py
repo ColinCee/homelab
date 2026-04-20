@@ -131,7 +131,6 @@ def test_metrics_endpoint_exposes_prometheus_text():
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/plain")
     assert "# HELP agent_task_total" in resp.text
-    assert 'agent_task_in_progress{task_type="review"} 0.0' in resp.text
 
 
 # --- Review endpoint tests ---
@@ -345,7 +344,6 @@ def test_monitor_records_metrics_on_success(mock_wait, mock_logs, mock_rm):
 
     assert _metric_value("agent_task_total", {"task_type": "review", "status": "complete"}) == 1.0
     assert _metric_value("agent_premium_requests_total", {"task_type": "review"}) == 5.0
-    assert _metric_value("agent_task_in_progress", {"task_type": "review"}) == -1.0
     mock_rm.assert_awaited_once_with("abc123")
 
 

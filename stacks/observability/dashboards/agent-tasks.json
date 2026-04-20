@@ -73,7 +73,7 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_task_in_progress)",
+          "expr": "count(container_last_seen{job=\"docker\", name=~\"worker-.*\"}) OR vector(0)",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
