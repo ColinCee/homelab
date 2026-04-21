@@ -11,51 +11,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-
-      - name: Install dependencies
-        run: uv sync
-
-      - name: Install agent dependencies
-        run: cd stacks/agents/app && uv sync
-
-      - name: Lint (ruff)
-        run: cd stacks/agents/app && uv run ruff check .
-
-      - name: Format check (ruff)
-        run: cd stacks/agents/app && uv run ruff format --check .
-
-      - name: Type check (ty)
-        run: cd stacks/agents/app && uv run ty check .
-
-      - name: Tests (pytest)
-        run: cd stacks/agents/app && uv run pytest tests/ -v
-
-      - name: Knowledge — install dependencies
-        run: cd stacks/knowledge/app && uv sync
-
-      - name: Knowledge — lint (ruff)
-        run: cd stacks/knowledge/app && uv run ruff check .
-
-      - name: Knowledge — type check (ty)
-        run: cd stacks/knowledge/app && uv run ty check .
-
-      - name: Knowledge — unit tests (pytest)
-        run: cd stacks/knowledge/app && uv run pytest tests/ -v --ignore=tests/integration
-
-      - name: Lint YAML
-        run: uv run yamllint -c .yamllint.yaml stacks/
-
-      - name: Lint GitHub Actions
-        run: |
-          find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint
-
-      - name: Validate compose files
-        run: mise run validate:compose
-
-      - name: Check version consistency
-        run: mise run check:versions
+      - name: Run CI (lint + typecheck + test + validate)
+        run: mise run ci
 
   knowledge-integration:
     runs-on: ubuntu-24.04
@@ -79,11 +37,8 @@ jobs:
       PGDATABASE: knowledge
       PGUSER: knowledge
       PGPASSWORD: knowledge
-      RUN_INTEGRATION_TESTS: "1"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4
-      - name: Install dependencies
-        run: cd stacks/knowledge/app && uv sync
       - name: Run integration tests
-        run: cd stacks/knowledge/app && uv run pytest tests/integration/ -v
+        run: mise run test:integration
