@@ -9,33 +9,19 @@ import shutil
 import subprocess
 import urllib.request
 from datetime import date
+from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
-from bs4 import BeautifulSoup, Tag
+import trafilatura
 
 logger = logging.getLogger(__name__)
 
 _USER_AGENT = "knowledge-save/1.0"
 _TIMEOUT = 30
 _MIN_IMAGE_BYTES = 2 * 1024
-_STRIP_ELEMENTS = ("nav", "footer", "script", "style", "aside", "noscript", "audio")
-_BOILERPLATE_MARKERS = (
-    "nav",
-    "menu",
-    "footer",
-    "sidebar",
-    "social",
-    "share",
-    "cookie",
-    "banner",
-    "toc",
-    "table-of-contents",
-    "related",
-    "recommend",
-)
-_RELATED_HEADINGS = ("related", "recommended", "more from", "you might also", "further reading")
 _DECORATIVE_IMAGE_MARKERS = ("icon", "logo", "avatar", "sprite")
+_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 
 
 def save_url(url: str, *, notes_dir: Path) -> Path:
@@ -43,38 +29,23 @@ def save_url(url: str, *, notes_dir: Path) -> Path:
 
     Returns the path to the saved markdown file.
     """
-    # Sync to latest remote state before writing anything
     _git_sync(notes_dir)
 
     html = _fetch(url)
-    soup = BeautifulSoup(html, "html.parser")
-
-    title = _extract_title(soup, url)
+    title, body = _extract_content(html, url)
     slug = _url_slug(url)
     article_dir = notes_dir / "resources" / "articles" / slug
     md_path = article_dir / f"{slug}.md"
 
     if article_dir.exists():
         logger.info("Article already saved: %s (re-saving with updated content)", article_dir)
-
-    # Find the main content area
-    content_element = _find_content(soup)
-    _strip_boilerplate(content_element)
-
-    if article_dir.exists():
         shutil.rmtree(article_dir)
     article_dir.mkdir(parents=True, exist_ok=True)
 
-    # Download images and rewrite src to local paths
-    _download_images(content_element, url, article_dir)
-
-    # Convert to markdown-ish text
-    markdown = _to_markdown(content_element, title, url, saved_on=date.today())
-
-    # Write the note
+    body = _download_images(body, url, article_dir)
+    markdown = _frontmatter(title, url, saved_on=date.today()) + body + "\n"
     md_path.write_text(markdown, encoding="utf-8")
 
-    # Git commit and push
     _git_commit_and_push(notes_dir, article_dir, title)
 
     logger.info("Saved: %s → %s", url, md_path)
@@ -89,174 +60,92 @@ def _fetch(url: str) -> str:
         return response.read().decode(charset)
 
 
-def _extract_title(soup: BeautifulSoup, fallback_url: str) -> str:
-    """Extract page title from <title> or <h1>."""
-    if soup.title and soup.title.string:
-        return soup.title.string.strip()
-    h1 = soup.find("h1")
-    if h1:
-        return h1.get_text(strip=True)
-    return urlparse(fallback_url).netloc
+def _extract_content(html: str, url: str) -> tuple[str, str]:
+    """Extract article title and markdown body from HTML.
 
-
-def _find_content(soup: BeautifulSoup) -> Tag | BeautifulSoup:
-    """Find the main content element, falling back to body."""
-    for selector in ("article", "main", '[role="main"]'):
-        element = soup.select_one(selector)
-        if element:
-            return element
-    return soup.body or soup
-
-
-def _strip_boilerplate(content: Tag | BeautifulSoup) -> None:
-    """Remove obvious navigation, footer, and sharing boilerplate."""
-    for tag_name in _STRIP_ELEMENTS:
-        for tag in content.find_all(tag_name):
-            tag.decompose()
-
-    for tag in list(content.find_all(True)):
-        if _has_boilerplate_marker(tag):
-            tag.decompose()
-
-    _strip_related_sections(content)
-
-
-def _has_boilerplate_marker(tag: Tag) -> bool:
-    """Return True when class or role metadata marks the element as boilerplate."""
-    attrs = tag.attrs if isinstance(tag.attrs, dict) else {}
-    return _attribute_contains_marker(attrs.get("class")) or _attribute_contains_marker(
-        attrs.get("role")
-    )
-
-
-def _attribute_contains_marker(value: object) -> bool:
-    """Return True when an attribute value matches known boilerplate markers."""
-    if isinstance(value, str):
-        values = [value]
-    elif isinstance(value, list):
-        values = [item for item in value if isinstance(item, str)]
-    else:
-        return False
-
-    return any(
-        marker in raw_value.lower() for raw_value in values for marker in _BOILERPLATE_MARKERS
-    )
-
-
-def _strip_related_sections(content: Tag | BeautifulSoup) -> None:
-    """Remove 'Related content' sections identified by heading text.
-
-    Only removes sections when a containing <section> or <aside> is found,
-    avoiding accidental truncation of legitimate article content.
+    Uses trafilatura for content extraction and boilerplate removal.
+    Falls back to a simple <title> parse when trafilatura metadata is empty.
     """
-    for heading in content.find_all(["h2", "h3", "h4"]):
-        heading_text = heading.get_text(strip=True).lower()
-        if not any(marker in heading_text for marker in _RELATED_HEADINGS):
-            continue
+    meta = trafilatura.bare_extraction(html, url=url, with_metadata=True, include_images=True)
+    body = trafilatura.extract(
+        html, url=url, output_format="markdown", include_images=True, include_links=True
+    )
+    extracted_title: str | None = None
+    if meta:
+        raw = getattr(meta, "title", None)
+        if isinstance(raw, str):
+            extracted_title = raw
+    title = extracted_title or _title_from_html(html) or urlparse(url).netloc
+    return str(title), body or ""
 
-        # Only remove when wrapped in a clear structural container
-        for ancestor in heading.parents:
-            if ancestor is content:
-                break
-            if ancestor.name in ("section", "aside"):
-                ancestor.decompose()
-                break
+
+def _title_from_html(html: str) -> str | None:
+    """Extract title from <title> tag without a full HTML parser dependency."""
+
+    class _TitleParser(HTMLParser):
+        def __init__(self) -> None:
+            super().__init__()
+            self._in_title = False
+            self.title: str | None = None
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag == "title":
+                self._in_title = True
+
+        def handle_data(self, data: str) -> None:
+            if self._in_title:
+                self.title = data.strip()
+
+        def handle_endtag(self, tag: str) -> None:
+            if tag == "title":
+                self._in_title = False
+
+    parser = _TitleParser()
+    parser.feed(html)
+    return parser.title
 
 
-def _download_images(
-    content: Tag | BeautifulSoup,
-    base_url: str,
-    article_dir: Path,
-) -> None:
-    """Download images and rewrite src attributes to local relative paths."""
-    saved_image_count = 0
-    h1 = content.find("h1")
-    title_text = h1.get_text(strip=True).lower() if h1 else ""
+def _frontmatter(title: str, source_url: str, *, saved_on: date) -> str:
+    """Build YAML frontmatter block."""
+    return (
+        "---\n"
+        f"title: {json.dumps(title, ensure_ascii=False)}\n"
+        f"source: {source_url}\n"
+        f"saved: {saved_on.isoformat()}\n"
+        "---\n\n"
+    )
 
-    for img in list(content.find_all("img")):
-        source = _image_source(img)
-        if not source:
-            img.decompose()
-            continue
 
-        if _is_decorative_image(img, source):
-            img.decompose()
-            continue
+def _download_images(markdown: str, base_url: str, article_dir: Path) -> str:
+    """Download images referenced in markdown and rewrite URLs to local filenames."""
+    saved_count = 0
 
-        # Skip hero images that just repeat the title
-        alt = img.get("alt", "")
-        if (
-            isinstance(alt, str)
-            and saved_image_count == 0
-            and title_text
-            and alt.strip().lower() == title_text
-        ):
-            img.decompose()
-            continue
+    def _replace_image(match: re.Match[str]) -> str:
+        nonlocal saved_count
+        alt, src = match.group(1), match.group(2)
+        abs_url = urljoin(base_url, src)
 
-        abs_url = urljoin(base_url, source)
         if abs_url.startswith("data:"):
-            img.decompose()
-            continue
+            return ""
+        if any(marker in src.lower() for marker in _DECORATIVE_IMAGE_MARKERS):
+            return ""
 
         try:
             req = urllib.request.Request(abs_url, headers={"User-Agent": _USER_AGENT})
             with urllib.request.urlopen(req, timeout=_TIMEOUT) as response:
                 image_bytes = response.read()
                 if len(image_bytes) < _MIN_IMAGE_BYTES:
-                    img.decompose()
-                    continue
-
-                saved_image_count += 1
+                    return ""
+                saved_count += 1
                 ext = _image_extension(abs_url, _content_type(response))
-                filename = f"{saved_image_count:03d}{ext}"
-                local_path = article_dir / filename
-                local_path.write_bytes(image_bytes)
-            img["src"] = filename
+                filename = f"{saved_count:03d}{ext}"
+                (article_dir / filename).write_bytes(image_bytes)
+            return f"![{alt}]({filename})"
         except Exception:
             logger.warning("Failed to download image: %s", abs_url)
-            img["src"] = abs_url
+            return f"![{alt}]({abs_url})"
 
-
-def _image_source(img: Tag) -> str | None:
-    """Return the best available image URL from common attributes."""
-    for attr in ("src", "data-src", "data-lazy-src", "data-original"):
-        value = img.get(attr)
-        if isinstance(value, str) and value:
-            return value
-
-    for attr in ("srcset", "data-srcset"):
-        value = img.get(attr)
-        if isinstance(value, str) and value:
-            return value.split(",", 1)[0].strip().split(" ", 1)[0]
-
-    return None
-
-
-def _is_decorative_image(img: Tag, source: str) -> bool:
-    """Return True when an image is likely decorative boilerplate."""
-    lower_source = source.lower()
-    if any(marker in lower_source for marker in _DECORATIVE_IMAGE_MARKERS):
-        return True
-
-    alt = img.get("alt")
-    width = _parse_dimension(img.get("width"))
-    height = _parse_dimension(img.get("height"))
-    if isinstance(alt, str) and alt.strip():
-        return False
-    return width is not None and height is not None and width < 100 and height < 100
-
-
-def _parse_dimension(value: object) -> int | None:
-    """Parse an integer width or height attribute."""
-    if isinstance(value, int):
-        return value
-    if not isinstance(value, str):
-        return None
-    match = re.search(r"\d+", value)
-    if not match:
-        return None
-    return int(match.group())
+    return _IMAGE_RE.sub(_replace_image, markdown)
 
 
 def _content_type(response: object) -> str | None:
@@ -291,56 +180,6 @@ def _image_extension(url: str, content_type: str | None = None) -> str:
         if path.endswith(ext):
             return ext
     return ".png"
-
-
-def _to_markdown(
-    content: Tag | BeautifulSoup,
-    title: str,
-    source_url: str,
-    *,
-    saved_on: date,
-) -> str:
-    """Convert HTML content to a readable markdown note."""
-    lines: list[str] = [
-        "---",
-        f"title: {json.dumps(title, ensure_ascii=False)}",
-        f"source: {source_url}",
-        f"saved: {saved_on.isoformat()}",
-        "---",
-        "",
-    ]
-
-    heading_prefix = {"h1": "#", "h2": "##", "h3": "###", "h4": "####"}
-
-    for element in content.find_all(["h1", "h2", "h3", "h4", "p", "li", "img", "pre"]):
-        if element.name in heading_prefix:
-            text = element.get_text(" ", strip=True)
-            if not text:
-                continue
-            lines.append(f"{heading_prefix[element.name]} {text}")
-            lines.append("")
-        elif element.name == "p":
-            if element.find_parent("li") is not None:
-                continue
-            text = element.get_text(" ", strip=True)
-            if text:
-                lines.append(text)
-                lines.append("")
-        elif element.name == "li":
-            text = element.get_text(" ", strip=True)
-            if text:
-                lines.append(f"- {text}")
-        elif element.name == "img":
-            alt = element.get("alt", "")
-            src = element.get("src", "")
-            lines.append(f"![{alt}]({src})")
-            lines.append("")
-        elif element.name == "pre":
-            code = element.get_text()
-            lines.append(f"```\n{code}\n```")
-            lines.append("")
-
-    return "\n".join(lines) + "\n"
 
 
 def _slugify(text: str) -> str:
