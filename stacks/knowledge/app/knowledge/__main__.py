@@ -160,7 +160,20 @@ def _handle_ingest(args: argparse.Namespace) -> dict[str, EventValue]:
 
     payload = result.model_dump(mode="json")
     print(json.dumps(payload, indent=2))
+    if args.dir:
+        _check_directory_ingest_health(result)
     return _normalize_event_fields(payload)
+
+
+def _check_directory_ingest_health(result: object) -> None:
+    files_failed = getattr(result, "files_failed", 0)
+    documents_processed = getattr(result, "documents_processed", 0)
+    if files_failed > 0 and documents_processed == 0:
+        raise CLIError(
+            f"directory ingest failed: {files_failed} files failed and 0 were processed "
+            "— likely a systemic issue (see logs above)",
+            exit_code=2,
+        )
 
 
 def _handle_search(args: argparse.Namespace) -> dict[str, EventValue]:

@@ -10,9 +10,11 @@ trivy = "0.69.3"
 description = "Lint Python, bash, YAML, and GitHub Actions"
 run = [
   "cd stacks/agents/app && uv run ruff check .",
+  "cd stacks/agents/app && uv run ruff format --check .",
   "cd stacks/knowledge/app && uv run ruff check .",
+  "cd stacks/knowledge/app && uv run ruff format --check .",
   "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
-  "uv run yamllint -c .yamllint.yaml stacks/",
+  "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/",
   "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
 ]
 
@@ -31,11 +33,15 @@ run = [
 ]
 
 [tasks.test]
-description = "Run Python tests"
+description = "Run Python tests (unit tests only; excludes integration tests that need live services)"
 run = [
   "cd stacks/agents/app && uv run pytest tests/ -v",
-  "cd stacks/knowledge/app && uv run pytest tests/ -v",
+  "cd stacks/knowledge/app && uv run pytest tests/ -v --ignore=tests/integration",
 ]
+
+[tasks."test:integration"]
+description = "Run integration tests (requires live Postgres; see stacks/knowledge/app/tests/integration/ for env vars)"
+run = "cd stacks/knowledge/app && RUN_INTEGRATION_TESTS=1 uv run pytest tests/integration/ -v"
 
 [tasks."knowledge:lint"]
 description = "Lint the knowledge CLI package"

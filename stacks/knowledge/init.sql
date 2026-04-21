@@ -32,7 +32,4 @@ CREATE UNIQUE INDEX IF NOT EXISTS documents_source_path_idx ON documents (source
 CREATE INDEX IF NOT EXISTS documents_content_hash_idx ON documents (content_hash);
 CREATE UNIQUE INDEX IF NOT EXISTS chunks_document_chunk_idx ON chunks (document_id, chunk_index);
 CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
-CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw_idx
-    ON chunks
-    USING hnsw (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS chunks_tsv_idx ON chunks USING gin (tsv);

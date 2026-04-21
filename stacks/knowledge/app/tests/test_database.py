@@ -6,6 +6,7 @@ import pytest
 
 from knowledge.database import (
     DATABASE_URL_ENV,
+    MIGRATIONS_DIR,
     _migration_files,
     delete_note_links,
     list_documents_by_source_prefix,
@@ -37,6 +38,16 @@ def test_resolve_database_url_falls_back_to_none(monkeypatch: pytest.MonkeyPatch
 
     # Assert — None signals psycopg to use PG* env vars
     assert result is None
+
+
+def test_migrations_dir_resolves_to_real_directory_with_sql_files() -> None:
+    # Regression: MIGRATIONS_DIR previously resolved to a path that didn't exist
+    # in the container, causing run_migrations() to silently no-op.
+    # Assert
+    assert MIGRATIONS_DIR.is_dir(), f"MIGRATIONS_DIR does not exist: {MIGRATIONS_DIR}"
+    sql_files = sorted(MIGRATIONS_DIR.glob("*.sql"))
+    assert sql_files, f"no .sql files found under {MIGRATIONS_DIR}"
+    assert _migration_files() == sql_files
 
 
 def test_migration_files_returns_sorted_sql_paths(
