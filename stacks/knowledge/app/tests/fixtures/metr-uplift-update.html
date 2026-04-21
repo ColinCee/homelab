@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    
+    <meta charset="utf-8">
+    <meta content="ie=edge" http-equiv="x-ua-compatible">
+    <meta content="width=device-width, initial-scale=1" name="viewport">
+
+    
+
+<title>We are Changing our Developer Productivity Experiment Design - METR</title>
+
+  <script type="application/ld+json">
+    {
+      "@context": "http://schema.org",
+      "@type": "BlogPosting",
+      "headline": "We are Changing our Developer Productivity Experiment Design",
+      "author": "METR",
+      "datePublished": "2026-02-24T00:00:00-08:00",
+      "url": "https://metr.org/blog/2026-02-24-uplift-update/"
+    }
+    </script>
+    <meta name="citation_title" content="We are Changing our Developer Productivity Experiment Design">
+    <meta name="citation_date" content="2026/02/24">
+    <meta name="citation_journal_title" content="METR Blog">
+    <meta name="citation_public_url" content="https://metr.org/blog/2026-02-24-uplift-update/">
+
+
+  <meta property="description" content="Our second developer productivity study faces selection effects from wider AI adoption, prompting us to redesign our approach."/>
+
+
+
+  <meta property="og:title" content="We are Changing our Developer Productivity Experiment Design"/>
+  <meta property="twitter:title" content="We are Changing our Developer Productivity Experiment Design"/>
+
+
+
+  <meta property="og:type" content="website">
+
+
+
+
+
+  <meta property="og:image" content="https://metr.org/assets/images/logo/og-image-logo.png">
+  <meta property="twitter:image" content="https://metr.org/assets/images/logo/og-image-logo.png">
+
+
+
+  <meta property="twitter:card" name="twitter:card" content="summary_large_image">
+
+
+
+
+
+
+
+
+    
+      <link rel="icon" href="/assets/images/favicon/favicon.png">
+    
+    <link
+      rel="stylesheet"
+      href="/assets/css/littlefoot.css"
+    />
+    <link href="/assets/css/main.css?v=1776658094" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600;700&family=Instrument+Sans:ital,wght@0,400..700;1,300..700&family=Inter:wght@100..900&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=Source+Sans+3:ital,wght@0,200..900;1,200..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cabin+Sketch&display=swap" rel="stylesheet">
+    <script src="/assets/js/tocbot.js"></script>
+    <link rel="preload" href="/assets/js/substackapi_widget.js" as="script">
+
+    
+
+    
+  <script>
+    if (window.location.hostname === 'evals.alignment.org') {
+      window.location.href = 'https://metr.org' + window.location.pathname;
+    }
+  </script>
+</head>
+
+<body class="page  page-post page-post-1 blog-2026-02-24-uplift-update-page">
+
+<div id="wrapper" class="wrapper">
+  <div>
+    <style>
+  .menu-main-mobile {
+    visibility: hidden;
+  }
+</style>
+<div class="menu-main-mobile " id="menu-main-mobile">
+  
+  <div class="menu-main-mobile-top">
+    <div id="close-overlay" class="menu-main-close">
+      <div class="hamburger"></div>
+    </div>
+  </div>
+
+  <div class="menu-main-mobile-center">
+    
+      <ul class="menu">
+        
+          <li class="menu-item-research active">
+            <a href="/research">Research</a>
+          </li>
+        
+          <li class="menu-item-notes ">
+            <a href="/notes">Notes</a>
+          </li>
+        
+          <li class="menu-item-updates ">
+            <a href="/blog">Updates</a>
+          </li>
+        
+          <li class="menu-item-about ">
+            <a href="/about">About</a>
+          </li>
+        
+          <li class="menu-item-donate ">
+            <a href="/donate">Donate</a>
+          </li>
+        
+          <li class="menu-item-careers ">
+            <a href="/careers">Careers</a>
+          </li>
+        
+
+        
+        <li class=" menu-mobile-search">
+          <a href="/search">
+            Search
+            <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M15.7955 15.8111L21 21M18 10.5C18 14.6421 14.6421 18 10.5 18C6.35786 18 3 14.6421 3 10.5C3 6.35786 6.35786 3 10.5 3C14.6421 3 18 6.35786 18 10.5Z" stroke="#fdfcf9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </a>
+        </li>
+      </ul>
+    
+  </div>
+
+  <div class="menu-main-mobile-bottom">
+    
+      
+
+
+    
+    
+  </div>
+
+</div>
+
+
+    <div class="nav-container ">
+  <div class="container-xxl metr-gutter d-flex">
+    <style>
+  .logo-slideable-text {
+    opacity: 0;
+  }
+</style>
+<div class="logos">
+  <div class="logo logo-desktop">
+    <div class="logo-image">
+      <a href="/">
+        
+        
+        <img height="34" alt="METR Logo" src="/assets/images/logo/logo.svg" class="logo-slideable-image " />
+        <!--<div height="28px" alt="METR Logo text"
+          class="logo-slideable-text">
+          &nbsp;
+        </div> -->
+      </a>
+    </div>
+  </div>
+</div>
+
+    <div class="menu-main">
+  <ul>
+    
+      
+        
+        
+        <li class="active  ">
+          <a href="/research">Research</a>
+        </li>
+      
+    
+      
+        
+        
+        <li class="  ">
+          <a href="/notes">Notes</a>
+        </li>
+      
+    
+      
+        
+        
+        <li class="  ">
+          <a href="/blog">Updates</a>
+        </li>
+      
+    
+      
+        
+        
+        <li class="  ">
+          <a href="/about">About</a>
+        </li>
+      
+    
+      
+        
+        
+        <li class="  ">
+          <a href="/donate">Donate</a>
+        </li>
+      
+    
+      
+        
+        
+        <li class="  ">
+          <a href="/careers">Careers</a>
+        </li>
+      
+    
+
+    
+    <li class="menu-item-dropdown menu-item-search ">
+      <div class="searchbar-container">
+        <a href="#" class="search-trigger">
+          <svg width="24px" height="24px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M15.7955 15.8111L21 21M18 10.5C18 14.6421 14.6421 18 10.5 18C6.35786 18 3 14.6421 3 10.5C3 6.35786 6.35786 3 10.5 3C14.6421 3 18 6.35786 18 10.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </a>
+        <form role="search" action="/search" class="search-form search-form-top-bar">
+          <div>
+            <input name="q" type="text" placeholder="Search..." maxlength="240" value="">
+          </div>
+        </form>
+      </div>
+    </li>
+  </ul>
+</div>
+
+    
+    <div class="hamburger-trigger" id="toggle-menu-main-mobile">
+  <button class="hamburger">Menu</button>
+</div>
+  </div>
+</div>
+
+
+
+
+  <div class="header">
+    <div class="header-title ">We are Changing our Developer Productivity Experiment Design</div>
+    <div class="header-subtitle"><span class="header-text "></span></div>
+    <div class="container-xxl">
+      
+        <div class="header-page-meta">
+          
+            
+              <div class="header-authors">
+                 
+                <h5>CONTRIBUTORS</h5>
+                  <div class="post-authors">
+                    
+                    
+                      
+                      
+                      
+                        
+                        <span class="post-author"><a href="/team/joel-becker/">Joel Becker</a></span>, 
+                      
+                    
+                      
+                      
+                      
+                        
+                        <span class="post-author"><a href="/team/nate-rush/">Nate Rush</a></span>, 
+                      
+                    
+                      
+                      
+                      
+                        
+                        <span class="post-author"><a href="/team/tom-cunningham/">Tom Cunningham</a></span>, 
+                      
+                    
+                      
+                      
+                      
+                        
+                        <span class="post-author"><a href="/team/david-rein/">David Rein</a></span>, 
+                      
+                    
+                      
+                        and
+                      
+                      
+                      
+                        
+                        <span class="post-author"><a href="/team/khalid-mahamud/">Khalid Mahamud</a></span>
+                      
+                    
+                  </div>
+                
+              </div>
+            
+          
+          <div class="header-date">
+            <h5>DATE</h5>
+            <span class="post-date">February 24, 2026</span>
+          </div>
+          
+          
+
+          
+            <div class="header-share">
+              <h5>SHARE</h5>
+              <div class="header-share-items">
+                <button class="copy-link-btn" type="button">
+                  <i class="fa fa-link"></i> Copy Link
+                </button>
+                
+                <button class="citation-popup-trigger" type="button" aria-haspopup="dialog" aria-expanded="false">
+                  <i class="fa-regular fa-copy"></i> Citation
+                </button>
+                <div class="citation-popup" role="dialog" aria-modal="true" aria-label="Citation">
+                  <div class="citation-popup-content">
+                    <div class="citation-popup-header">
+                      <span>BibTeX Citation</span>
+                      <button class="citation-popup-close" type="button" aria-label="Close">&times;</button>
+                    </div>
+                    <div class="citation-popup-body">
+                      <div class="highlight"><pre><code class="language-bibtex" data-lang="bibtex"><span class="nc">@misc</span><span class="p">{</span><span class="p">we-are-changing-our-developer-productivity-experiment-design</span><span class="p">,</span>
+    <span class="na">title</span> <span class="p">=</span> <span class="s">{We are Changing our Developer Productivity Experiment Design}</span><span class="p">,</span>
+    <span class="na">author</span> <span class="p">=</span> <span class="s">{Joel Becker, Nate Rush, Tom Cunningham, David Rein, Khalid Mahamud}</span><span class="p">,</span>
+    <span class="na">howpublished</span> <span class="p">=</span> <span class="s">{\url{https://metr.org/blog/2026-02-24-uplift-update/}}</span><span class="p">,</span>
+    <span class="na">year</span> <span class="p">=</span> <span class="s">{2026}</span><span class="p">,</span>
+    <span class="na">month</span> <span class="p">=</span> <span class="s">{02}</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre></div>
+                      <button class="citation-copy-btn" type="button"><i class="fa-solid fa-clipboard"></i> Copy</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="socials">
+                  
+                  
+                </div>
+              </div>
+            </div>
+          
+        </div>
+      
+    </div>
+  </div>
+
+
+
+
+    
+
+
+
+
+<div class="section pt-0">
+  <div class="container-xxl">
+    <div class="row">
+      <div class="col-12 col-lg-8 offset-lg-2">
+        <div class="content post-content">
+          <nav class="toc-sidebar">
+            <div class="toc-container"></div>
+            <div class="newsletter-signup">
+              <div id="custom-substack-embed"></div>
+              <script>
+                window.CustomSubstackWidget = {
+                  substackUrl: "metr.substack.com",
+                  placeholder: "Enter your email",
+                  buttonText: "Subscribe",
+                  theme: "custom",
+                  colors: {
+                    primary: "var(--color-bg-alt4)",
+                    input: "#FFFFFF",
+                    email: "#353535",
+                    text: "#000000",
+                  }
+                };
+              </script>
+              <script src="/assets/js/substackapi_widget.js"></script>
+            </div>
+          </nav>
+          <p>METR previously published a <a href="https://arxiv.org/pdf/2507.09089">paper</a> which found the use of AI tools caused a 20% slowdown in completing tasks among experienced open-source developers, using data from February to June 2025.</p>
+
+<p>To understand how AI is impacting developer productivity over time, we started a new experiment in August 2025 with a larger pool of developers using the latest AI tools.</p>
+
+<p>Unfortunately, given participant feedback and surveys, we believe that the data from our new experiment gives us an unreliable signal of the current productivity effect of AI tools. The primary reason is that we have observed a significant increase in developers choosing not to participate in the study because they do not wish to work without AI, which likely biases downwards our estimate of AI-assisted speedup. We additionally believe there have been selection effects due to a lower pay rate (we reduced the pay from $150/hr to $50/hr), and that our measurements of time-spent on each task are unreliable for the fraction of developers who use multiple AI agents concurrently.</p>
+
+<p>Based on conversations with study participants, we believe it is likely that developers are more sped up from AI tools now — in early 2026 — compared to our estimates from early 2025. However, because of the selection effects in our experiment, our data is only very weak evidence for the size of this increase.</p>
+
+<p>Our raw results show some evidence for speedup. Our early 2025 study found the use of AI causes tasks to take 19% longer, with a confidence interval between +2% and +39%. For the subset of the original developers who participated in the later study, we now estimate a speedup of -18% with a confidence interval between -38% and +9%. Among newly-recruited developers the estimated speedup is -4%, with a confidence interval between -15% and +9%.</p>
+
+<p><img src="/assets/images/uplift-2026-post/uplift_timeline.png" alt="Late-2025 AI likely accelerated open-source developers, but selection effects obscure the true speedup." /></p>
+
+<p>However the true speedup could be much higher among the developers and tasks which are selected out of the experiment. Some developers self-report very high speedups, though as we documented in our earlier study those estimates can be quite unreliable.</p>
+
+<p>Due to the severity of these selection effects, we are working on changes to the design of our study. Below, we provide further detail and describe our plans for other means of studying the impact of AI on developer productivity.</p>
+
+<h2 id="wider-adoption-of-ai-has-made-it-more-difficult-to-measure-task-level-productivity">Wider adoption of AI has made it more difficult to measure task-level productivity</h2>
+
+<p>Our second study, starting in August, consisted of 10 developers from the original study, plus a new set of 47 developers recruited from a more diverse set of open-source projects. The participants were paid $50/hour for their participation.</p>
+
+<p>As in the initial study, developers were asked to pre-specify each task that they intended to work on, and then submit the task-description for randomization. Each task was assigned to an “AI allowed” or “AI disallowed” condition. The developers would record the amount of time it took to complete the task, and we could thus compare the average time required to complete a typical task with and without AI.</p>
+
+<p>Throughout 2025 there was an increase in the use of agentic tools among open-source developers, such as Claude Code and Codex. This wider adoption of AI has had two important effects in our study:</p>
+
+<ol>
+  <li>
+    <p><strong>Recruitment and retention of developers has become more difficult.</strong> An increased share of developers say they would not want to do 50% of their work without AI, even though our study pays them $50/hour to work on tasks of their own choosing. Our study is thus systematically missing developers who have the most optimistic expectations about AI’s value.</p>
+  </li>
+  <li>
+    <p><strong>Developers have become more selective in which tasks they submit.</strong> When surveyed, 30% to 50% of developers told us that they were choosing not to submit some tasks because they did not want to do them without AI. This implies we are systematically missing tasks which have high expected uplift from AI.</p>
+  </li>
+</ol>
+
+<p>Together, these effects make it likely that our estimate reported above is a lower-bound on the true productivity effects of AI on these developers. The selection effects seem to affect a minority share of developers and of tasks, which limits the degree of bias. However we are likely missing data on the most active adopters of AI, who may be of most interest. As AI capabilities continue to increase and developers’ expectations grow as well, these effects will only get more dramatic, further limiting the validity of this study design.</p>
+
+<p>Based on our interviews and surveys we believe the increase in selection is primarily due to higher expectation of AI-driven uplift by our developers. However the second study also had a lower pay rate, $50/hour instead of $150/hour in the original study, and this also likely contributed to the higher selection.</p>
+
+<p>We also noticed some other problems, though we judged the magnitude of these to be less severe:</p>
+
+<ol start="3">
+  <li>
+    <p>Some developers told us the types of tasks they attempted were different with agentic AI, leaning on the strengths of AI. This has two effects (a) the task-selection will be different between those in our study and those outside it; (b) the time-differences within the study may not represent value-differences, due to the substitution in task-type.</p>
+  </li>
+  <li>
+    <p>Some developers told us the quality of the final work, for a given task, was different between AI-allowed and AI-disallowed conditions, e.g. differences in subjective code quality, or the amount of documentation or tests they chose to create.</p>
+  </li>
+  <li>
+    <p>Some developers were less likely to complete tasks that they submitted if they were assigned to the AI-disallowed condition. One developer did not complete any of the tasks that were assigned to the AI-disallowed condition.</p>
+  </li>
+  <li>
+    <p>Some developers reported it was challenging to report time-spent in completing tasks when they used agentic tools, because they would often work an unrelated task while waiting for the agent to complete its work.</p>
+  </li>
+</ol>
+
+<p>Altogether, these issues make it challenging to interpret our central estimate, and we believe it is likely a bad proxy for the real productivity impact of AI tools on these developers.</p>
+
+<h2 id="selected-developer-quotes">Selected developer quotes</h2>
+
+<p><em>“I’m torn. I’d like to help provide updated data on this question but also I really like using AI!”</em> — a developer from the original study early-2025 when asked to participate in the late-2025 study.</p>
+
+<p><em>“I found I am actually heavily biased sampling the issues … I avoid issues like AI can finish things in just 2 hours, but I have to spend 20 hours. I will feel so painful if the task is decided as AI-disallowed.”</em> — a developer from the new study noting selection effects when choosing what tasks to include in the study.</p>
+
+<p><em>“my head’s going to explode if I try to do too much the old fashioned way because it’s like trying to get across the city walking when all of a sudden I was more used to taking an Uber.”</em> — a developer from the new study noting selection effects when choosing what tasks to include in the study.</p>
+
+<h2 id="other-means-of-measuring-productivity">Other means of measuring productivity</h2>
+
+<p>The impact of AI tools on developer productivity is an important input to AI R&amp;D acceleration, and so we plan to continue exploring the following lines of research:</p>
+
+<ol>
+  <li>
+    <p><strong>More intensive experiments.</strong> The selection issues would be alleviated if we had higher compliance, which could be achieved if we run shorter intense experiments, and possibly pay higher rates.</p>
+  </li>
+  <li>
+    <p><strong>Observational data.</strong> There are many rich data sources on AI use in software development – from aggregate statistics (e.g. <a href="https://newsletter.semianalysis.com/p/claude-code-is-the-inflection-point">approximately 4% of GitHub commits are authored by Claude Code</a>) to fine-grained transcripts (e.g. <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5713646">Sarkar (2025)</a>). We intend to continue observation of our pool of open-source developers to understand how AI is used.</p>
+  </li>
+  <li>
+    <p><strong>Questionnaires.</strong> Despite the difficulty of interpreting self-reported productivity counterfactuals, and thus their potential biases, we are optimistic that careful choice of survey questions, along with time-use studies, could produce useful signals.</p>
+  </li>
+  <li>
+    <p><strong>Fixed-task experiments.</strong> Our original study was novel in letting developers choose their own tasks, before randomization was applied. We could revert to a simpler design in which developers are given a fixed task to complete, either with or without AI assistance.</p>
+  </li>
+  <li>
+    <p><strong>Evaluations.</strong> METR is continuing to build task evals, to measure the ability of agents to autonomously complete tasks, which has a clear relevance to productivity effects of agent adoption.</p>
+  </li>
+  <li>
+    <p><strong>Developer-level experiments.</strong> An alternative design is to randomize at the developer level instead of the task level, i.e. each participant either uses AI for all their tasks or for none. This alleviates some of the task-level selection problems, however it makes the developer-level selection problems worse, and has lower power in detecting productivity effects.</p>
+  </li>
+</ol>
+
+<p>As model capabilities continue to increase, we expect to continue to need to redesign some portions of our capability and measurement techniques.</p>
+
+<h2 id="details-of-the-productivity-study">Details of the productivity study</h2>
+
+<p>We paid developers $50/hour to work on their existing open-source projects, randomizing issues into working with AI-allowed or AI-disallowed. Developers were experienced open-source contributors with median 10 years experience. We have data from 57 developers, across 143 repos, and 800+ tasks.</p>
+
+<p>10 of these developers are from the original study, and the remaining developers are new and recruited from a more diverse set of repositories—including smaller, more greenfield, and less mature repositories.</p>
+
+<p>The full dataset from the early study is available <a href="https://github.com/METR/Measuring-Early-2025-AI-on-Exp-OSS-Devs">here</a>, and the most recent study <a href="https://github.com/METR/Measuring-Late-2025-AI-on-OSS-Devs">here</a>.</p>
+
+        </div>
+        <a class="btn btn-bibtex" role="button">Bib</a>
+<div class="bibtex">
+  <figure class="highlight">
+     <div class="code-display-wrapper">
+        <pre><code class="language-bibtex" data-lang="bibtex"><span class="nc">@misc</span><span class="p">{</span><span class="p">we-are-changing-our-developer-productivity-experiment-design</span><span class="p">,</span>
+    <span class="na">title</span> <span class="p">=</span> <span class="s">{We are Changing our Developer Productivity Experiment Design}</span><span class="p">,</span>
+    <span class="na">author</span> <span class="p">=</span> <span class="s">{Joel Becker, Nate Rush, Tom Cunningham, David Rein, Khalid Mahamud}</span><span class="p">,</span>
+    <span class="na">howpublished</span> <span class="p">=</span> <span class="s">{\url{https://metr.org/blog/2026-02-24-uplift-update/}}</span><span class="p">,</span>
+    <span class="na">year</span> <span class="p">=</span> <span class="s">{2026}</span><span class="p">,</span>
+    <span class="na">month</span> <span class="p">=</span> <span class="s">{02}</span><span class="p">,</span>
+<span class="p">}</span>
+</code></pre>
+        <button class="copy" type="button" aria-label="Copy code to clipboard"><i class="fa-solid fa-clipboard"></i></button>
+     </div>
+  </figure>
+</div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.btn-bibtex').forEach(function(button) {
+      button.addEventListener('click', function() {
+        button.nextElementSibling.classList.toggle('active');
+      });
+    });
+    document.querySelectorAll('.bibtex .copy').forEach(function(button) {
+      button.addEventListener('click', function() {
+        var code = button.closest('.bibtex').querySelector('code');
+        navigator.clipboard.writeText(code.innerText).then(function() {
+          button.querySelector('i').classList.replace('fa-clipboard', 'fa-clipboard-check');
+
+          setTimeout(function() {
+            button.querySelector('i').classList.replace('fa-clipboard-check', 'fa-clipboard');
+          }, 2000);
+        });
+      });
+    });
+  });
+</script>
+
+
+        <div class="subscribe-box mt-5 mb-5">
+          
+          
+          <img height="34" alt="METR Logo" src="/assets/images/gen/home/evals-logo-slideable.svg" class="logo-slideable-image mt-4 mb-4 " />
+          <p><strong>METR</strong> researches, develops, and evaluates frontier AI systems to measure how well they can perform complex tasks autonomously. Subscribe to our newsletter for updates.</p>
+
+          <div class="full-bleed divider-line pt-5 mb-3" style="z-index: 0; border-top-color: #EAECF0; top: 28px;"></div>
+
+          <div id="custom-substack-embed"></div>
+          <script>
+            window.CustomSubstackWidget = {
+              substackUrl: "metr.substack.com",
+              placeholder: "Join our newsletter",
+              buttonText: "Subscribe",
+              theme: "custom",
+              colors: {
+                primary: "var(--color-bg-alt4)",
+                input: "#FFFFFF",
+                email: "#353535",
+                text: "#000000",
+              }
+            };
+          </script>
+          <script src="/assets/js/substackapi_widget.js"></script>
+
+          <p class="mt-4 mb-4">Want to contribute to this work? METR is hiring: <a href="/careers">View open roles</a></p>
+
+        </div>
+
+        <div class="full-bleed divider-line pt-5"></div>
+
+        <div class="section featured-research-section">
+          <div class="featured-research-header">
+            <h2>Featured research</h2>
+          </div>
+
+          <p class="featured-research-description">METR researches, develops and runs cutting-edge tests of AI capabilities, including broad autonomous capabilities and the ability of AI systems to conduct AI R&D.</p>
+
+          <div class="research-tabs-container">
+            <div class="tab-content">
+              <div class="featured-research-tabs-content tab-pane fade show active" id="research-for-the-public" role="tabpanel" aria-labelledby="research-for-the-public-tab">
+                <div class="featured-research-card">
+  
+    <img src="/assets/images/gpt-5-1-research.jpg" alt="GPT-5.1 Evaluation Results" class="img-fluid mb-4" />
+  
+  <h3>GPT-5.1 Evaluation Results</h3>
+  <p class="featured-research-card-description">We evaluate whether GPT-5.1 poses significant catastrophic risks via AI self-improvement, rogue replication, or sabotage of AI labs.</p>
+  <span class="featured-research-card-link">
+    <a href="https://evaluations.metr.org/gpt-5-1-codex-max-report/" class="card-main-link">Read more <i class="fa-solid fa-arrow-down link-arrow"></i></a>
+  </span>
+  
+</div>
+                <div class="featured-research-card">
+  
+    <img src="/assets/images/measuring-ai-ability-to-complete-long-tasks/length-of-tasks-log.png" alt="Measuring AI Ability to Complete Long Tasks" class="img-fluid mb-4" />
+  
+  <h3>Measuring AI Ability to Complete Long Tasks</h3>
+  <p class="featured-research-card-description">We propose measuring AI performance in terms of the length of tasks AI agents can complete. We show that this metric has been consistently exponentially increasing.</p>
+  <span class="featured-research-card-link">
+    <a href="/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/" class="card-main-link">Read more <i class="fa-solid fa-arrow-down link-arrow"></i></a>
+  </span>
+  
+</div>
+                <div class="featured-research-card">
+  
+    <img src="/assets/images/downlift/forecasted-vs-observed.png" alt="Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity" class="img-fluid mb-4" />
+  
+  <h3>Measuring the Impact of Early-2025 AI on Experienced Open-Source Developer Productivity</h3>
+  <p class="featured-research-card-description">We find that when developers use AI tools, they take 19% longer than without—AI makes them slower.</p>
+  <span class="featured-research-card-link">
+    <a href="/blog/2025-07-10-early-2025-ai-experienced-os-dev-study/" class="card-main-link">Read more <i class="fa-solid fa-arrow-down link-arrow"></i></a>
+  </span>
+  
+</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+  </div>
+  <div class="footer-container">
+    <footer class="footer">
+  <div class="container-xxl metr-gutter">
+    <div class="row footer-bottom-section">
+      <div class="col-12 col-lg-5">
+        <div class="logo-image mb-2">
+          <a href="/">
+            <img height="34" alt="METR Logo" src="/assets/images/gen/home/evals-logo-slideable.svg" class="logo-slideable-image ">
+          </a>
+        </div>
+        <p>METR (pronounced 'meter') is a research nonprofit that scientifically measures whether and when AI systems might threaten catastrophic harm to society.</p>
+        <div id="custom-substack-embed"></div>
+        <script>
+          window.CustomSubstackWidget = {
+            substackUrl: "metr.substack.com",
+            placeholder: "Join our newsletter",
+            buttonText: "Subscribe",
+            theme: "custom",
+            colors: {
+              primary: "var(--color-bg-alt4)",
+              input: "#FFFFFF",
+              email: "#353535",
+              text: "#000000",
+            }
+          };
+        </script>
+        <script src="/assets/js/substackapi_widget.js"></script>
+      </div>
+      <div class="col-12 col-lg-6 offset-lg-1 mt-4">
+        <div class="row">
+          <div class="col-12 col-sm-4 mb-4">
+            <h4>Research</h4>
+            <ul>
+              <li><a href="/research">Research</a></li>
+              <li><a href="/notes">Notes</a></li>
+              <li><a href="/blog">Updates</a></li>
+            </ul>
+          </div>
+          <div class="col-12 col-sm-4 mb-4">
+            <h4>Follow METR</h4>
+            <ul>
+              <li><a href="https://metr.substack.com">
+              <svg class="social-icon" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" height="1em" width="1em">
+                <title>Substack</title>
+                <path d="M22.539 8.242H1.46V5.406h21.08v2.836zM1.46 10.812V24L12 18.11 22.54 24V10.812H1.46zM22.54 0H1.46v2.836h21.08V0z" fill="#666" stroke-width="1"></path>
+              </svg>
+              Substack</a></li>
+              <li><a href="https://x.com/METR_Evals">
+                <svg class="social-icon" width="1em" height="1em" viewBox="0 0 24 24" fill="none">
+                  <title>twitter</title><path d="M14.094 10.317 22.28 1H20.34l-7.11 8.088L7.557 1H1.01l8.583 12.231L1.01 23H2.95l7.503-8.543L16.446 23h6.546M3.649 2.432h2.978L20.34 21.639h-2.98" fill="currentColor"></path>
+                </svg> X (Twitter)</a></li>
+              <li><a href="https://www.linkedin.com/company/metr-evals/">
+                <svg class="social-icon" height="1em" width="1em" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+                  viewBox="0 0 382 382" xml:space="preserve">
+                <path style="fill:#0077B7;" d="M347.445,0H34.555C15.471,0,0,15.471,0,34.555v312.889C0,366.529,15.471,382,34.555,382h312.889
+                  C366.529,382,382,366.529,382,347.444V34.555C382,15.471,366.529,0,347.445,0z M118.207,329.844c0,5.554-4.502,10.056-10.056,10.056
+                  H65.345c-5.554,0-10.056-4.502-10.056-10.056V150.403c0-5.554,4.502-10.056,10.056-10.056h42.806
+                  c5.554,0,10.056,4.502,10.056,10.056V329.844z M86.748,123.432c-22.459,0-40.666-18.207-40.666-40.666S64.289,42.1,86.748,42.1
+                  s40.666,18.207,40.666,40.666S109.208,123.432,86.748,123.432z M341.91,330.654c0,5.106-4.14,9.246-9.246,9.246H286.73
+                  c-5.106,0-9.246-4.14-9.246-9.246v-84.168c0-12.556,3.683-55.021-32.813-55.021c-28.309,0-34.051,29.066-35.204,42.11v97.079
+                  c0,5.106-4.139,9.246-9.246,9.246h-44.426c-5.106,0-9.246-4.14-9.246-9.246V149.593c0-5.106,4.14-9.246,9.246-9.246h44.426
+                  c5.106,0,9.246,4.14,9.246,9.246v15.655c10.497-15.753,26.097-27.912,59.312-27.912c73.552,0,73.131,68.716,73.131,106.472
+                  L341.91,330.654L341.91,330.654z"/>
+                </svg>
+              LinkedIn</a></li>
+              <li><a href="https://github.com/METR/">
+                <svg class="social-icon" width="1em" height="1em" viewBox="0 0 98 96" xmlns="http://www.w3.org/2000/svg">
+                  <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z" fill="#666"></path>
+                </svg>
+                GitHub</a></li>
+            </ul>
+          </div>
+          <div class="col-12 col-sm-4 mb-4">
+            <h4>Company</h4>
+            <ul>
+              <li><a href="/about">About Us</a></li>
+              <li><a href="/careers">Careers</a></li>
+              <li><a href="/donate">Donate</a></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-copyright">
+        © 2026 METR. All rights reserved.
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+    
+  </div>
+</div>
+<script src="/assets/js/scripts.js"></script>
+
+
+
+
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-MMLYWX6QCN"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-MMLYWX6QCN');
+</script>
+
+
+
+
+
+<script>
+  document.addEventListener("DOMContentLoaded", function(event) {
+    addIdsToHeaders();
+
+    const postContent = document.querySelector(".content");
+    if (!postContent) return;
+    const headings = postContent.querySelectorAll('h1, h2, h3, h4, h5').length;
+    if (headings >= 4) {
+      const tocSidebar = document.querySelector('.toc-sidebar');
+      if (tocSidebar) {
+        tocSidebar.classList.add('display-toc');
+      }
+      tocbot.init({
+        // Where to render the table of contents.
+        tocSelector: '.toc-container',
+        // Where to grab the headings to build the table of contents.
+        contentSelector: '.content',
+        // Which headings to grab inside of the contentSelector element.
+        headingSelector: 'h1, h2, h3, h4, h5',
+        // Ensure correct positioning
+        hasInnerContainers: true,
+        ignoreSelector: '.hoverover *',
+        scrollSmoothOffset: -72,
+        collapseDepth: 6,
+        disableTocScrollSync: false,
+        positionFixedSelector: '.toc-sidebar',
+        positionFixedClass: 'is-position-fixed',
+        fixedSidebarOffset: 440,
+        onClick: function(e) {
+          const headerId = e.target.getAttribute('href').replace('#', '');
+          openContentByHeaderId(headerId);
+        }
+      });
+
+      // Make TOC sidebar stop before the featured research section
+      function handleTocSidebarPosition() {
+        const tocSidebar = document.querySelector('.toc-sidebar');
+        const featuredResearch = document.querySelector('.featured-research-section');
+        const content = document.querySelector('.content');
+
+        if (!tocSidebar || !featuredResearch || !content) return;
+
+        const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+        const sidebarHeight = tocSidebar.offsetHeight;
+        const featuredResearchTop = featuredResearch.getBoundingClientRect().top + scrollTop;
+        const contentTop = content.getBoundingClientRect().top + scrollTop;
+
+        // The point where the sidebar bottom would hit the featured research section
+        const stopPoint = featuredResearchTop - sidebarHeight - 160;
+
+        if (scrollTop > stopPoint && tocSidebar.classList.contains('is-position-fixed')) {
+          // Switch to absolute positioning, anchored at the stop point
+          tocSidebar.classList.add('is-stopped');
+          tocSidebar.style.top = (stopPoint - contentTop + 70) + 'px'; // 70px matches the original top offset
+        } else {
+          tocSidebar.classList.remove('is-stopped');
+          tocSidebar.style.top = '';
+        }
+      }
+
+      window.addEventListener('scroll', handleTocSidebarPosition);
+      window.addEventListener('resize', handleTocSidebarPosition);
+
+      // Make TOC fade when overlapping with tables, images, or figures
+      function handleTocOverlap() {
+        const tocSidebar = document.querySelector('.toc-sidebar');
+        if (!tocSidebar) return;
+        const isVisible = tocSidebar.offsetWidth > 0 || tocSidebar.offsetHeight > 0;
+        if (!isVisible) return;
+
+        const tocRect = tocSidebar.getBoundingClientRect();
+        const content = document.querySelector('.content');
+        if (!content) return;
+
+        const elements = content.querySelectorAll('table, img, figure');
+        let isOverlapping = false;
+
+        for (const el of elements) {
+          const elRect = el.getBoundingClientRect();
+          const horizontalOverlap = elRect.left < tocRect.right && elRect.right > tocRect.left;
+          const verticalOverlap = elRect.top < tocRect.bottom && elRect.bottom > tocRect.top;
+
+          if (horizontalOverlap && verticalOverlap) {
+            isOverlapping = true;
+            break;
+          }
+        }
+
+        if (isOverlapping) {
+          tocSidebar.classList.add('toc-faded');
+        } else {
+          tocSidebar.classList.remove('toc-faded');
+        }
+      }
+
+      window.addEventListener('scroll', handleTocOverlap);
+      window.addEventListener('resize', handleTocOverlap);
+
+      handleTocOverlap();
+
+      
+        function adjustMainMargin() {
+          // For browsers that don't support the :has selector:
+          if (window.innerWidth >= 992 && window.innerWidth <= 1469 && document.querySelector('.toc-list')) {
+            if (window.innerWidth > 1220) {
+              document.querySelector('.content').style.marginLeft = '10rem';
+              document.querySelector('.content').style.marginRight = '-8rem';
+            } else {
+              document.querySelector('.content').style.marginLeft = '8rem';
+              document.querySelector('.content').style.marginRight = '-8rem';
+            }
+          } else {
+            document.querySelector('.content').style.marginLeft = '';
+            document.querySelector('.content').style.marginRight = '';
+          }
+        }
+
+        window.addEventListener("resize", function(event) {
+          adjustMainMargin();
+        });
+
+        adjustMainMargin();
+      
+
+      window.setTimeout(() => {
+        /* Solves a bug where the TOC links don't land on the right place
+        https://github.com/tscanlin/tocbot/issues/254 */
+        tocbot.refresh();
+      }, 100);
+    }
+  });
+</script>
+
+
+<script type="application/javascript">
+  document.addEventListener('DOMContentLoaded', () => {
+    littlefoot.littlefoot({
+      activateOnHover: true,
+      dismissOnUnhover: true,
+      activateCallback: function(tooltip, button) {
+        const match = button.id.match(/lf-fnref:(\d+):?\d*/);
+        if (match) {
+          const downLink = tooltip.querySelector('.littlefoot__content .a-fn-ref-raw');
+          // move it inside the tag before it (i.e., the paragraph tag)
+          if (downLink) {
+            downLink.setAttribute('href', `#fn:${match[1]}`);
+            const content = tooltip.querySelector('.littlefoot__content');
+            const tags = content.children;
+            if (tags.length > 0) {
+              // find the last tag that isn't this link itself
+              let lastTag = tags[tags.length - 1];
+              if (lastTag === downLink) {
+                lastTag = tags[tags.length - 2];
+              }
+              lastTag.appendChild(downLink);
+            }
+          }
+        }
+      },
+      buttonTemplate: `<button
+        aria-label="Footnote <% number %>"
+        class="littlefoot__button"
+        id="<% reference %>"
+        />
+        <span class="fn-ref-raw">[<% reference %>]</span>
+      </button>`,
+      contentTemplate: `<aside
+          alt="Footnote <% number %>"
+          class="littlefoot__popover"
+          id="fncontent:<% id %>"
+        >
+          <div class="littlefoot__wrapper">
+            <div class="littlefoot__content">
+              <% content %>
+              <a data-footnote-ref="<% reference %>" class="a-fn-ref-raw"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" style="height: 1rem">
+                <path d="M297.4 566.6C309.9 579.1 330.2 579.1 342.7 566.6L502.7 406.6C515.2 394.1 515.2 373.8 502.7 361.3C490.2 348.8 469.9 348.8 457.4 361.3L352 466.7L352 96C352 78.3 337.7 64 320 64C302.3 64 288 78.3 288 96L288 466.7L182.6 361.3C170.1 348.8 149.8 348.8 137.3 361.3C124.8 373.8 124.8 394.1 137.3 406.6L297.3 566.6z"/>
+              </svg></a>
+            </div>
+          </div>
+          <div class="littlefoot__tooltip"></div>
+        </aside>`
+    });
+    // Down arrow from: Font Awesome Free v7.0.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2025 Fonticons, Inc. */
+    transformFootnoteReferences();
+    markLastFootnotesInGroupsByParagraph();
+    wrapFootnotesPrecedingCommasInNoWrapSpans();
+    addSpacesBetweenFootnotes();
+    scrollDownToFootnotesOnClick();
+  });
+</script>
+
+
+
+</body>
+</html>

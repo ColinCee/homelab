@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-import urllib.request
-from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -15,54 +13,180 @@ import pytest
 from knowledge import __main__ as cli
 from knowledge import save
 
-SAMPLE_HTML = """<!DOCTYPE html>
-<html>
-<head><title>Test Article Title</title></head>
-<body>
-<nav><a href="/">Home</a></nav>
-<header><h1>Site Header</h1></header>
-<article>
-    <h1>Test Article Title</h1>
-    <p>This is the first paragraph with important content.</p>
-    <h2>Section Two</h2>
-    <p>More content here about the topic.</p>
-    <img src="/images/diagram.png" alt="Architecture diagram">
-    <p>Final paragraph.</p>
-</article>
-<footer>Copyright 2026</footer>
-</body>
-</html>"""
-
-SIMPLE_HTML = """<html>
-<head><title>Simple Page</title></head>
-<body><p>Hello world</p></body>
-</html>"""
-
 
 def _task_event(stderr: str) -> dict[str, object]:
     return json.loads(stderr.strip())
 
 
-class TestExtractTitle:
+class TestTitleFromHtml:
     def test_extracts_from_title_tag(self) -> None:
-        from bs4 import BeautifulSoup
+        html = "<html><head><title>My Article</title></head><body></body></html>"
+        assert save._title_from_html(html) == "My Article"
 
-        soup = BeautifulSoup(SAMPLE_HTML, "html.parser")
-        assert save._extract_title(soup, "https://example.com") == "Test Article Title"
-
-    def test_falls_back_to_h1(self) -> None:
-        from bs4 import BeautifulSoup
-
-        html = "<html><body><h1>Heading Title</h1></body></html>"
-        soup = BeautifulSoup(html, "html.parser")
-        assert save._extract_title(soup, "https://example.com") == "Heading Title"
-
-    def test_falls_back_to_domain(self) -> None:
-        from bs4 import BeautifulSoup
-
+    def test_returns_none_when_no_title(self) -> None:
         html = "<html><body><p>No title</p></body></html>"
-        soup = BeautifulSoup(html, "html.parser")
-        assert save._extract_title(soup, "https://example.com/page") == "example.com"
+        assert save._title_from_html(html) is None
+
+    def test_strips_whitespace(self) -> None:
+        html = "<html><head><title>  Padded Title  </title></head></html>"
+        assert save._title_from_html(html) == "Padded Title"
+
+
+class TestExtractContent:
+    @patch("trafilatura.extract", return_value="## Heading\n\nBody text")
+    @patch("trafilatura.bare_extraction")
+    def test_uses_trafilatura_title_and_body(
+        self, mock_bare: MagicMock, mock_extract: MagicMock
+    ) -> None:
+        meta = MagicMock()
+        meta.title = "Extracted Title"
+        mock_bare.return_value = meta
+
+        title, body = save._extract_content("<html>...</html>", "https://example.com")
+
+        assert title == "Extracted Title"
+        assert body == "## Heading\n\nBody text"
+
+    @patch("trafilatura.extract", return_value="Some body")
+    @patch("trafilatura.bare_extraction")
+    def test_falls_back_to_html_title_tag(
+        self, mock_bare: MagicMock, mock_extract: MagicMock
+    ) -> None:
+        meta = MagicMock()
+        meta.title = None
+        mock_bare.return_value = meta
+        html = "<html><head><title>Fallback Title</title></head><body>content</body></html>"
+
+        title, _ = save._extract_content(html, "https://example.com")
+
+        assert title == "Fallback Title"
+
+    @patch("trafilatura.extract", return_value="Some body")
+    @patch("trafilatura.bare_extraction")
+    def test_falls_back_to_domain_when_no_title(
+        self, mock_bare: MagicMock, mock_extract: MagicMock
+    ) -> None:
+        meta = MagicMock()
+        meta.title = None
+        mock_bare.return_value = meta
+
+        title, _ = save._extract_content("<html><body>x</body></html>", "https://example.com/page")
+
+        assert title == "example.com"
+
+    @patch("trafilatura.extract", return_value=None)
+    @patch("trafilatura.bare_extraction", return_value=None)
+    def test_returns_empty_body_when_extraction_fails(
+        self, mock_bare: MagicMock, mock_extract: MagicMock
+    ) -> None:
+        title, body = save._extract_content("<html></html>", "https://example.com")
+
+        assert title == "example.com"
+        assert body == ""
+
+
+_FIXTURE_DIR = Path(__file__).parent / "fixtures"
+
+
+class TestExtractContentRegression:
+    """End-to-end tests with real article HTML snapshots.
+
+    Fixtures are saved snapshots of public articles so tests run offline.
+    Source: https://metr.org/blog/2026-02-24-uplift-update/
+    """
+
+    def test_metr_article_produces_structured_markdown(self) -> None:
+        html = (_FIXTURE_DIR / "metr-uplift-update.html").read_text(encoding="utf-8")
+
+        title, body = save._extract_content(html, "https://metr.org/blog/2026-02-24-uplift-update/")
+
+        assert title
+        assert "experiment" in title.lower() or "productivity" in title.lower()
+        assert "##" in body, "Expected markdown headings"
+        assert "![" in body, "Expected image references"
+        assert len(body.splitlines()) > 30, "Expected substantial article content"
+
+
+class TestDownloadImages:
+    def test_downloads_and_rewrites_image_urls(self, tmp_path: Path) -> None:
+        markdown = "Text\n\n![Diagram](https://example.com/img.png)\n\nMore text"
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            response = MagicMock()
+            response.read.return_value = b"\x89PNG" + (b"x" * 3000)
+            response.headers.get_content_type.return_value = "image/png"
+            response.__enter__ = lambda s: response
+            response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = response
+
+            result = save._download_images(markdown, "https://example.com", tmp_path)
+
+        assert "![Diagram](001.png)" in result
+        assert (tmp_path / "001.png").exists()
+        assert len((tmp_path / "001.png").read_bytes()) > 2048
+
+    def test_filters_decorative_images(self, tmp_path: Path) -> None:
+        markdown = "![Site logo](/images/logo.png)\n\n![Chart](/images/chart.png)"
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            response = MagicMock()
+            response.read.return_value = b"\x89PNG" + (b"x" * 3000)
+            response.headers.get_content_type.return_value = "image/png"
+            response.__enter__ = lambda s: response
+            response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = response
+
+            result = save._download_images(markdown, "https://example.com", tmp_path)
+
+        assert "logo" not in result
+        assert "![Chart](001.png)" in result
+
+    def test_strips_images_below_min_size(self, tmp_path: Path) -> None:
+        markdown = "![Tiny](/tiny.png)"
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            response = MagicMock()
+            response.read.return_value = b"\x89PNG" + (b"x" * 100)
+            response.headers.get_content_type.return_value = "image/png"
+            response.__enter__ = lambda s: response
+            response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = response
+
+            result = save._download_images(markdown, "https://example.com", tmp_path)
+
+        assert result == ""
+        assert not list(tmp_path.iterdir())
+
+    def test_keeps_url_on_download_failure(self, tmp_path: Path) -> None:
+        markdown = "![Chart](https://example.com/chart.png)"
+
+        with patch("urllib.request.urlopen", side_effect=OSError("timeout")):
+            result = save._download_images(markdown, "https://example.com", tmp_path)
+
+        assert "![Chart](https://example.com/chart.png)" in result
+
+    def test_resolves_relative_urls(self, tmp_path: Path) -> None:
+        markdown = "![Diagram](/assets/img.png)"
+
+        with patch("urllib.request.urlopen") as mock_urlopen:
+            response = MagicMock()
+            response.read.return_value = b"\x89PNG" + (b"x" * 3000)
+            response.headers.get_content_type.return_value = "image/png"
+            response.__enter__ = lambda s: response
+            response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = response
+
+            save._download_images(markdown, "https://example.com/blog/post", tmp_path)
+
+        call_arg = mock_urlopen.call_args[0][0]
+        assert call_arg.full_url == "https://example.com/assets/img.png"
+
+    def test_strips_data_uri_images(self, tmp_path: Path) -> None:
+        markdown = "![](data:image/png;base64,abc123)"
+
+        result = save._download_images(markdown, "https://example.com", tmp_path)
+
+        assert result == ""
 
 
 class TestUrlSlug:
@@ -89,82 +213,21 @@ class TestUrlSlug:
         assert slug == "article"
 
 
-class TestFindContent:
-    def test_finds_article_element(self) -> None:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(SAMPLE_HTML, "html.parser")
-        content = save._find_content(soup)
-        assert content.name == "article"
-
-    def test_falls_back_to_main(self) -> None:
-        from bs4 import BeautifulSoup
-
-        html = "<html><body><main><p>Content</p></main></body></html>"
-        soup = BeautifulSoup(html, "html.parser")
-        content = save._find_content(soup)
-        assert content.name == "main"
-
-    def test_falls_back_to_body(self) -> None:
-        from bs4 import BeautifulSoup
-
-        html = "<html><body><p>Content</p></body></html>"
-        soup = BeautifulSoup(html, "html.parser")
-        content = save._find_content(soup)
-        assert content.name == "body"
-
-
-class TestToMarkdown:
-    def test_includes_frontmatter(self) -> None:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup("<article><p>Hello</p></article>", "html.parser")
-        md = save._to_markdown(
-            soup,
-            "My Title",
-            "https://example.com",
-            saved_on=date(2026, 4, 20),
-        )
-        assert md.startswith(
-            '---\ntitle: "My Title"\nsource: https://example.com\nsaved: 2026-04-20\n---\n'
-        )
-
-    def test_includes_paragraphs(self) -> None:
-        from bs4 import BeautifulSoup
-
-        html = "<article><p>First para</p><p>Second para</p></article>"
-        soup = BeautifulSoup(html, "html.parser")
-        md = save._to_markdown(soup, "Title", "https://x.com", saved_on=date(2026, 4, 20))
-        assert "First para" in md
-        assert "Second para" in md
-
-    def test_includes_images(self) -> None:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup('<article><img src="001.png" alt="Diagram"></article>', "html.parser")
-        md = save._to_markdown(soup, "Title", "https://x.com", saved_on=date(2026, 4, 20))
-        assert "![Diagram](001.png)" in md
-
-    def test_does_not_duplicate_paragraphs_inside_list_items(self) -> None:
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup("<article><ul><li><p>One item</p></li></ul></article>", "html.parser")
-        md = save._to_markdown(soup, "Title", "https://x.com", saved_on=date(2026, 4, 20))
-        assert md.count("One item") == 1
-
-
 class TestSaveUrl:
     @patch.object(save, "_git_commit_and_push")
     @patch.object(save, "_git_sync")
+    @patch.object(save, "_extract_content")
     @patch.object(save, "_fetch")
     def test_creates_note_with_correct_structure(
         self,
         mock_fetch: MagicMock,
+        mock_extract: MagicMock,
         mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_fetch.return_value = SIMPLE_HTML
+        mock_fetch.return_value = "<html>...</html>"
+        mock_extract.return_value = ("Simple Page", "Hello world")
 
         result = save.save_url("https://example.com/article", notes_dir=tmp_path)
 
@@ -174,99 +237,55 @@ class TestSaveUrl:
         content = result.read_text()
         assert 'title: "Simple Page"' in content
         assert "source: https://example.com/article" in content
+        assert "Hello world" in content
 
     @patch.object(save, "_git_commit_and_push")
     @patch.object(save, "_git_sync")
+    @patch.object(save, "_extract_content")
     @patch.object(save, "_fetch")
-    def test_downloads_meaningful_images_next_to_markdown(
+    def test_downloads_images_from_extracted_markdown(
         self,
         mock_fetch: MagicMock,
+        mock_extract: MagicMock,
         mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_fetch.return_value = SAMPLE_HTML
+        mock_fetch.return_value = "<html>...</html>"
+        mock_extract.return_value = (
+            "Post Title",
+            "Content\n\n![Architecture diagram](https://example.com/images/diagram.png)",
+        )
 
         with patch("urllib.request.urlopen") as mock_urlopen:
-            mock_response = MagicMock()
-            mock_response.read.return_value = b"\x89PNG" + (b"x" * 3000)
-            mock_response.headers.get_content_type.return_value = "image/png"
-            mock_response.__enter__ = lambda s: mock_response
-            mock_response.__exit__ = MagicMock(return_value=False)
-            mock_urlopen.return_value = mock_response
+            response = MagicMock()
+            response.read.return_value = b"\x89PNG" + (b"x" * 3000)
+            response.headers.get_content_type.return_value = "image/png"
+            response.__enter__ = lambda s: response
+            response.__exit__ = MagicMock(return_value=False)
+            mock_urlopen.return_value = response
 
             result = save.save_url("https://example.com/post", notes_dir=tmp_path)
 
         article_dir = result.parent
-        image_paths = sorted(path.name for path in article_dir.iterdir() if path.suffix == ".png")
+        image_paths = sorted(p.name for p in article_dir.iterdir() if p.suffix == ".png")
         assert image_paths == ["001.png"]
         assert "![Architecture diagram](001.png)" in result.read_text()
 
     @patch.object(save, "_git_commit_and_push")
     @patch.object(save, "_git_sync")
-    @patch.object(save, "_fetch")
-    def test_filters_boilerplate_and_junk_images(
-        self,
-        mock_fetch: MagicMock,
-        mock_sync: MagicMock,
-        mock_git: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        mock_fetch.return_value = """<html><body>
-        <main>
-            <div class="top-nav">Products</div>
-            <article>
-                <p>Real content.</p>
-                <div class="share-menu">Share this</div>
-                <img src="/images/logo.png" alt="Site logo">
-                <img src="/images/icon.png" width="32" height="32" alt="">
-                <img src="/images/real-image.png" alt="Real diagram">
-                <audio>Play me</audio>
-                <div role="navigation">The Latest</div>
-            </article>
-            <div class="footer-links">Meta © 2026</div>
-        </main>
-        </body></html>"""
-
-        def fake_urlopen(request: object, timeout: int) -> MagicMock:
-            url = request.full_url if isinstance(request, urllib.request.Request) else str(request)
-            response = MagicMock()
-            response.__enter__ = lambda s: response
-            response.__exit__ = MagicMock(return_value=False)
-            response.headers.get_content_type.return_value = "image/png"
-            if url.endswith("real-image.png"):
-                response.read.return_value = b"\x89PNG" + (b"x" * 3000)
-            else:
-                response.read.return_value = b"\x89PNG" + (b"x" * 100)
-            return response
-
-        with patch("urllib.request.urlopen", side_effect=fake_urlopen):
-            result = save.save_url("https://example.com/post", notes_dir=tmp_path)
-
-        markdown = result.read_text()
-        article_dir = result.parent
-        assert "Real content." in markdown
-        assert "Products" not in markdown
-        assert "Share this" not in markdown
-        assert "The Latest" not in markdown
-        assert "Meta © 2026" not in markdown
-        assert "Play me" not in markdown
-        assert "logo.png" not in markdown
-        assert "icon.png" not in markdown
-        assert "![Real diagram](001.png)" in markdown
-        assert sorted(path.name for path in article_dir.iterdir()) == ["001.png", "post.md"]
-
-    @patch.object(save, "_git_commit_and_push")
-    @patch.object(save, "_git_sync")
+    @patch.object(save, "_extract_content")
     @patch.object(save, "_fetch")
     def test_resaves_existing_article_with_updated_content(
         self,
         mock_fetch: MagicMock,
+        mock_extract: MagicMock,
         mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_fetch.return_value = SIMPLE_HTML
+        mock_fetch.return_value = "<html>...</html>"
+        mock_extract.return_value = ("Simple Page", "Hello world")
 
         slug = save._url_slug("https://example.com/article")
         article_dir = tmp_path / "resources" / "articles" / slug
@@ -285,15 +304,18 @@ class TestSaveUrl:
 
     @patch.object(save, "_git_commit_and_push")
     @patch.object(save, "_git_sync")
+    @patch.object(save, "_extract_content")
     @patch.object(save, "_fetch")
     def test_syncs_before_writing(
         self,
         mock_fetch: MagicMock,
+        mock_extract: MagicMock,
         mock_sync: MagicMock,
         mock_git: MagicMock,
         tmp_path: Path,
     ) -> None:
-        mock_fetch.return_value = SIMPLE_HTML
+        mock_fetch.return_value = "<html>...</html>"
+        mock_extract.return_value = ("Title", "Body")
 
         save.save_url("https://example.com/article", notes_dir=tmp_path)
 
