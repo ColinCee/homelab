@@ -16,7 +16,22 @@ from psycopg.types.json import Jsonb
 from .models import Chunk, Document, NoteLink, RelatedDocument, SearchResult, normalize_embedding
 
 DATABASE_URL_ENV = "KNOWLEDGE_DB_URL"
-MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "migrations"
+
+
+def _resolve_migrations_dir() -> Path:
+    # Repo layout:      stacks/knowledge/app/knowledge/database.py + stacks/knowledge/migrations/
+    # Container layout: /app/knowledge/database.py            + /app/migrations/
+    here = Path(__file__).resolve()
+    candidates = [here.parents[2] / "migrations", here.parents[1] / "migrations"]
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    raise FileNotFoundError(
+        f"Could not locate migrations directory. Tried: {[str(c) for c in candidates]}"
+    )
+
+
+MIGRATIONS_DIR = _resolve_migrations_dir()
 
 type DBRow = dict[str, Any]
 type DatabaseConnection = Connection[Any]
