@@ -31,17 +31,10 @@ _BOILERPLATE_MARKERS = (
     "banner",
     "toc",
     "table-of-contents",
-    "related-posts",
-    "related-articles",
-    "recommended-posts",
+    "related",
+    "recommend",
 )
-_RELATED_HEADINGS = (
-    "related content",
-    "related posts",
-    "related articles",
-    "you might also like",
-    "recommended for you",
-)
+_RELATED_HEADINGS = ("related", "recommended", "more from", "you might also", "further reading")
 _DECORATIVE_IMAGE_MARKERS = ("icon", "logo", "avatar", "sprite")
 
 
