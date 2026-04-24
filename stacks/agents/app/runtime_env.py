@@ -13,6 +13,7 @@ class ApiSettings(BaseSettings):
     github_app_installation_id: str
     github_app_key_file: str
     copilot_github_token: str
+    agent_api_key: str
     model: str = "gpt-5.4"
     log_format: Literal["json", "text"] = "json"
     reasoning_effort: str = "high"

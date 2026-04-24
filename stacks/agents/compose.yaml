@@ -22,6 +22,7 @@ services:
       - MODEL=gpt-5.4
       - REASONING_EFFORT=high
       - COPILOT_GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN:?}
+      - AGENT_API_KEY=${AGENT_API_KEY:?}
     volumes:
       - repo-cache:/repo.git
       - reviews:/reviews

@@ -69,6 +69,7 @@ jobs:
           HTTP_CODE=$(curl -sf --max-time 30 \
             -X POST "http://100.100.146.119:8585/review" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.AGENT_API_KEY }}" \
             -d "$PAYLOAD" \
             -o /dev/null -w "%{http_code}")
 

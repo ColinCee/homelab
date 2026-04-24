@@ -4,8 +4,19 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from auth import require_bearer
+from main import app
 from models import GitHubIssue
 from services.copilot import CLIResult
+
+
+@pytest.fixture(autouse=True)
+def _bypass_bearer_auth():
+    """Bypass bearer auth in tests by default. Auth-specific tests opt out."""
+    app.dependency_overrides[require_bearer] = lambda: None
+    yield
+    app.dependency_overrides.pop(require_bearer, None)
+
 
 MOCK_ISSUE = GitHubIssue.model_validate(
     {
