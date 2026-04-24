@@ -17,8 +17,10 @@ def test_api_settings_accepts_valid_env():
         github_app_installation_id="456",
         github_app_key_file="/key.pem",
         copilot_github_token="tok",
+        agent_api_key="bearer-token",
     )
     assert settings.github_app_id == "123"
+    assert settings.agent_api_key == "bearer-token"
     assert settings.log_format == "json"
     assert settings.model == "gpt-5.4"
 

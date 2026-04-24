@@ -6,11 +6,12 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
+from auth import require_bearer
 from logging_config import configure_logging, resolve_log_format
 from metrics import (
     METRICS_REGISTRY,
@@ -270,7 +271,7 @@ async def _dispatch_worker(
 # --- Review endpoints ---
 
 
-@app.post("/review", status_code=202, response_model=None)
+@app.post("/review", status_code=202, response_model=None, dependencies=[Depends(require_bearer)])
 async def handle_review(req: ReviewRequest):
     """Accept a review request and spawn a worker container."""
     if req.triggered_by not in ALLOWED_ACTORS:
@@ -303,7 +304,9 @@ async def get_review_status(pr_number: int, repo: str = "") -> dict[str, str | i
 # --- Implement endpoints ---
 
 
-@app.post("/implement", status_code=202, response_model=None)
+@app.post(
+    "/implement", status_code=202, response_model=None, dependencies=[Depends(require_bearer)]
+)
 async def handle_implement(req: ImplementRequest):
     """Accept an implementation request and spawn a worker container."""
     if req.triggered_by not in ALLOWED_ACTORS:
