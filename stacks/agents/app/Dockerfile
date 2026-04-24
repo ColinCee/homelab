@@ -7,7 +7,7 @@ FROM python:3.14.4-slim@sha256:538a18f1db92b4210a0b71aca2d14c156a96dedbe8867465c
 # renovate: datasource=github-releases depName=jdx/mise
 ARG MISE_VERSION=v2026.2.1
 # renovate: datasource=github-releases depName=github/copilot-cli
-ARG COPILOT_CLI_VERSION=v1.0.30
+ARG COPILOT_CLI_VERSION=v1.0.36
 # renovate: datasource=github-releases depName=cli/cli
 ARG GH_VERSION=2.89.0
 # renovate: datasource=github-releases depName=moby/moby
