@@ -74,7 +74,7 @@ systemctl --user list-timers knowledge-backup.timer
 journalctl --user -u knowledge-backup.service -n 50
 
 # Loki query in Grafana
-{job="knowledge", service="backup"} | logfmt | event = `knowledge_backup_completed`
+{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
 ```
 
 ### Back up the database now

@@ -20,6 +20,13 @@ if ! [[ "$retention_days" =~ ^[0-9]+$ ]] || (( retention_days < 1 )); then
   exit 1
 fi
 
+json_string() {
+  local value="${1//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  printf '"%s"' "$value"
+}
+
 cd "$repo_root"
 docker compose -f "$compose_file" exec -T postgres sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
@@ -32,8 +39,8 @@ find "$backup_dir" -type f -name 'knowledge-*.dump' -mtime +"$retention_days" -d
 
 backup_size_bytes="$(stat -c%s "$backup_file")"
 retained_count="$(find "$backup_dir" -type f -name 'knowledge-*.dump' | wc -l)"
-printf 'event=knowledge_backup_completed backup_file=%s size_bytes=%s retained_count=%s retention_days=%s\n' \
-  "$backup_file" \
+printf '{"event":"knowledge_backup_completed","status":"success","backup_file":%s,"size_bytes":%s,"retained_count":%s,"retention_days":%s}\n' \
+  "$(json_string "$backup_file")" \
   "$backup_size_bytes" \
   "$retained_count" \
   "$retention_days"
