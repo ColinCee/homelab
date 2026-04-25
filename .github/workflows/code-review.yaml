@@ -30,8 +30,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
-            --method POST -f content='eyes' --silent 2>/dev/null || true
+          if ! ERROR=$(gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
+            --method POST -f content='eyes' --silent 2>&1); then
+            echo "::warning::Could not add eyes reaction to /review comment: $ERROR"
+          fi
 
       - name: Block fork PRs
         env:
