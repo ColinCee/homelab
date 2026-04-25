@@ -15,8 +15,8 @@ The initial approach mounted the entire host `~/.ssh/` directory into the contai
 
 A dedicated ed25519 key added as a GitHub deploy key with write access on the notes repo. Only the single private key file is mounted into the container.
 
-- **Pros:** Minimal blast radius (one key = one repo), no expiry, no runtime dependencies, SSH remote URL works unchanged
-- **Cons:** Manual one-time setup (key generation + adding to GitHub)
+- **Pros:** Minimal blast radius (one key = one repo), no runtime dependencies, SSH remote URL works unchanged
+- **Cons:** No built-in expiry, manual setup and rotation, write deploy keys can push destructive ref updates unless the target repo blocks them
 - **Verdict:** Chosen — right level of scoping for a single-repo push from a homelab container.
 
 ### GitHub App token (HTTPS)
@@ -45,9 +45,45 @@ Use a PAT as an HTTPS credential.
 
 ## Decision
 
-Use a dedicated deploy key (`~/.ssh/notes_deploy_key`) with write access scoped to `ColinCee/notes`. The compose service mounts only this key file and `known_hosts` (both read-only). `HOME=/home/user` is set so SSH finds the key without needing `/etc/passwd`.
+Use a dedicated deploy key (`~/.ssh/notes_deploy_key`) with write access scoped to `ColinCee/notes`. The compose service mounts only this key file read-only. `known_hosts` is baked into the image during build, and `/etc/passwd` is mounted read-only so the host uid resolves to a user for SSH.
 
 Pattern for future stacks needing git push access: generate a per-repo deploy key rather than sharing host credentials.
+
+## Accepted Residual Risks
+
+The deploy key is a long-lived static credential. If it is copied from the host
+or exposed through a container escape, GitHub will not time-bound the credential
+the way it does for GitHub App installation tokens.
+
+The risk is acceptable for this homelab because:
+
+1. The key is scoped to the notes repo instead of all host SSH identities.
+2. The key is mounted read-only and only into the `save` compose profile.
+3. The save command only performs a normal `git push origin main`.
+4. `ColinCee/notes` is the data target for this workflow; the homelab repo and
+   agent credentials are not exposed by this key.
+
+Branch protection or repository rules on `ColinCee/notes` would be a stronger
+server-side mitigation for force-push and branch deletion. If those controls are
+not available for the private notes repo, the fallback control is fast key
+revocation plus restoring from git history or backups.
+
+## Operational Mitigations
+
+The deploy key needs lifecycle management because GitHub deploy keys do not
+expire automatically:
+
+1. Rotate `~/.ssh/notes_deploy_key` after any suspected host/container
+   compromise, accidental key disclosure, or migration to a new host.
+2. Review GitHub deploy-key metadata during routine maintenance; `last_used_at`
+   is sufficient for a manual sanity check at this scale.
+3. Rebuild the knowledge image if GitHub rotates SSH host keys, because
+   `known_hosts` is generated at image build time.
+4. Reconsider GitHub App tokens if this grows beyond a single repo/key or if
+   automated deploy-key monitoring becomes necessary.
+
+The copy-paste procedures live in
+[`docs/runbooks/knowledge-base.md`](../runbooks/knowledge-base.md).
 
 ## References
 

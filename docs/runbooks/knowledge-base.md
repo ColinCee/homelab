@@ -43,6 +43,15 @@ Or directly on beelink:
 ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
 ```
 
+### Save a web page to notes
+
+The save profile fetches the page, writes it into the notes repo, commits, and
+pushes to `main` using the repo-scoped deploy key from ADR-017.
+
+```bash
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile save run --rm save save \"<URL>\""
+```
+
 ### Inspect recent task runs
 
 - **Grafana:** `Container Overview` → `Knowledge Task Runs`
@@ -78,6 +87,51 @@ ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 
 
 # Postgres container status
 ssh beelink "docker ps --filter name=knowledge-postgres"
+```
+
+## Credential Lifecycle
+
+The `save` profile uses a write deploy key at `~/.ssh/notes_deploy_key` on
+beelink. The key is scoped to `ColinCee/notes` and mounted read-only into the
+container; do not mount the whole host `~/.ssh` directory. Rotate it after host
+compromise, accidental disclosure, or moving the save workflow to a new machine.
+
+### Rotate the notes deploy key
+
+Generate a replacement key on beelink and print the public key:
+
+```bash
+ssh beelink 'ssh-keygen -t ed25519 -N "" -C "knowledge-save-$(date +%Y-%m-%d)" -f ~/.ssh/notes_deploy_key.next && chmod 600 ~/.ssh/notes_deploy_key.next'
+ssh beelink 'cat ~/.ssh/notes_deploy_key.next.pub'
+```
+
+Add the printed public key to `ColinCee/notes` as a **write** deploy key in
+GitHub: **Settings -> Deploy keys -> Add deploy key -> Allow write access**.
+Then swap the host key and verify that the container can authenticate without
+writing to the notes repo:
+
+```bash
+ssh beelink 'mv ~/.ssh/notes_deploy_key ~/.ssh/notes_deploy_key.old.$(date +%Y%m%d) && mv ~/.ssh/notes_deploy_key.next ~/.ssh/notes_deploy_key && chmod 600 ~/.ssh/notes_deploy_key'
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD"
+```
+
+After verification, delete the old deploy key from GitHub and clean up the
+temporary files:
+
+```bash
+gh api repos/ColinCee/notes/keys --jq '.[] | [.id, .title, .read_only, (.last_used_at // "never")] | @tsv'
+gh api -X DELETE repos/ColinCee/notes/keys/<old-key-id>
+ssh beelink 'rm -f ~/.ssh/notes_deploy_key.old.* ~/.ssh/notes_deploy_key.next.pub'
+```
+
+### Refresh GitHub SSH host keys
+
+The knowledge image writes `/home/user/.ssh/known_hosts` at build time with
+`ssh-keyscan github.com`. If GitHub rotates SSH host keys, confirm the new
+fingerprints against GitHub's published documentation, then rebuild and verify:
+
+```bash
+ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose build --no-cache save && docker compose --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD"
 ```
 
 ## Troubleshooting
