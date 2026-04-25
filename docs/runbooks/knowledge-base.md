@@ -63,6 +63,20 @@ ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --pr
   ```
 - **Alerts:** failed runs page the existing Discord Private contact point via Grafana alerting
 
+### Inspect database backups
+
+Backup timer output is collected from journald by Alloy and sent to Loki with
+`job="knowledge", service="backup"`.
+
+```bash
+# Timer status on beelink
+systemctl --user list-timers knowledge-backup.timer
+journalctl --user -u knowledge-backup.service -n 50
+
+# Loki query in Grafana
+{job="knowledge", service="backup"} | logfmt | event = `knowledge_backup_completed`
+```
+
 ### Back up the database now
 
 Nightly backups are installed with the knowledge stack. Dumps are stored outside

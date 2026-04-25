@@ -30,4 +30,10 @@ mv "$tmp_file" "$backup_file"
 trap - EXIT
 find "$backup_dir" -type f -name 'knowledge-*.dump' -mtime +"$retention_days" -delete
 
-echo "Wrote ${backup_file}"
+backup_size_bytes="$(stat -c%s "$backup_file")"
+retained_count="$(find "$backup_dir" -type f -name 'knowledge-*.dump' | wc -l)"
+printf 'event=knowledge_backup_completed backup_file=%s size_bytes=%s retained_count=%s retention_days=%s\n' \
+  "$backup_file" \
+  "$backup_size_bytes" \
+  "$retained_count" \
+  "$retention_days"

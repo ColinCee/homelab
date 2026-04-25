@@ -160,6 +160,15 @@ loki.source.journal "knowledge_ingest" {
   }
 }
 
+loki.source.journal "knowledge_backup" {
+  forward_to = [loki.write.default.receiver]
+  matches    = "_SYSTEMD_USER_UNIT=knowledge-backup.service"
+  labels = {
+    job     = "knowledge",
+    service = "backup",
+  }
+}
+
 // ================================
 // Logs Destination (Loki)
 // ================================
