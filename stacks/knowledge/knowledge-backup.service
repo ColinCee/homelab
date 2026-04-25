@@ -1,0 +1,7 @@
+[Unit]
+Description=Back up knowledge Postgres database
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/colin/code/homelab
+ExecStart=/home/colin/code/homelab/scripts/backup-knowledge-db.sh

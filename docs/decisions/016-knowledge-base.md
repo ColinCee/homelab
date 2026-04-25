@@ -17,7 +17,9 @@ Requirements:
 - **Chinese language support** — user is learning Chinese, notes contain mixed languages
 - **Security** — notes contain personal and work-sensitive information, Tailscale-only access
 - **Low resource usage** — Beelink has 16 GB RAM shared across all services
-- **Rebuildable** — the vector index is derived data; the notes repo is the source of truth
+- **Recoverable** — the notes repo is the source of truth, while Postgres data
+  is recoverable either from a database backup or by re-ingesting when GitHub
+  Models and the configured embedding model are available
 
 ## Options Considered
 
@@ -74,8 +76,13 @@ Models are `openai/text-embedding-3-large` (3072 dims) and
 Chose `text-embedding-3-large` for higher quality. Free via GitHub Models API
 with a fine-grained PAT (`models:read` permission required since March 2025).
 Rate-limited on the free tier (~10-50 RPM), which is fine for incremental
-updates but slow for bulk ingestion (~12 min for 195 files). Content hashing
-means re-runs skip unchanged files.
+updates but slow for bulk ingestion (~12 min for 195 files under current
+limits). Content hashing means re-runs skip unchanged files.
+
+This makes the vector index rebuildable, but only while the notes repo, GitHub
+Models API, and `openai/text-embedding-3-large` remain available. A database
+backup is still useful for fast rollback after a bad ingest and for recovery
+when the embedding service is unavailable.
 
 **Dimension constraint:** pgvector HNSW indexes support up to 2000 dimensions
 for the `vector` type, but 3072 exceeds that limit. Using `halfvec(3072)`
@@ -115,6 +122,8 @@ bugs became irrelevant — the container owns its own environment.
 - **text-embedding-3-large** (3072 dims) via GitHub Models API
 - **Containerized ingest** as a Docker Compose profile service — runs on push to
   notes repo via GitHub Actions, skips unchanged files via content hash
+- **Nightly `pg_dump` backup** of the knowledge database to host storage for
+  fast restore when re-ingest is unavailable or undesirable
 - **Copilot CLI skill** (`knowledge-search`) for agent access via SSH + Docker
 - **Trust boundary**: only the human CLI session and the beelink runner have
   access. The homelab review/implement agent has no access to notes.
