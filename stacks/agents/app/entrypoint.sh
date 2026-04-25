@@ -16,4 +16,5 @@ if [ -S /var/run/docker.sock ]; then
     usermod -aG "$DOCKER_GROUP" agent
 fi
 
-exec runuser -u agent -- "$@"
+# Preserve PATH so /app/.venv/bin and mise shims remain available after dropping privileges.
+exec runuser --preserve-environment -u agent -- "$@"

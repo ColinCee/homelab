@@ -27,12 +27,11 @@ jobs:
       PR_NUMBER: ${{ github.event.issue.number }}
     steps:
       - name: React to /review comment
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "/repos/$REPO/issues/comments/${{ github.event.comment.id }}/reactions" \
-            --method POST -f content='eyes' --silent
+            --method POST -f content='eyes' --silent 2>/dev/null || true
 
       - name: Block fork PRs
         env:

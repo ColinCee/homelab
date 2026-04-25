@@ -1,8 +1,18 @@
 from __future__ import annotations
 
+import logging
 import re
+import warnings
 
-import jieba
+# jieba emits Python 3.14 SyntaxWarnings during import; install the filter first.
+warnings.filterwarnings(
+    "ignore",
+    category=SyntaxWarning,
+    module=r"jieba(\.|$)",
+)
+import jieba  # noqa: E402
+
+jieba.setLogLevel(logging.WARNING)
 
 _CJK_SPAN_RE = re.compile(r"[\u3400-\u9fff]+")
 _ENGLISH_TERM_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9+#._-]*")

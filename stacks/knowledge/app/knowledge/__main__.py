@@ -26,7 +26,7 @@ class CLIError(Exception):
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    _configure_logging()
 
     parser = argparse.ArgumentParser(prog="knowledge", description="Knowledge base CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -117,6 +117,12 @@ def _run_migrations() -> None:
         run_migrations(db)
     finally:
         db.close()
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("jieba").setLevel(logging.WARNING)
 
 
 def _run_command(args: argparse.Namespace) -> dict[str, EventValue]:
