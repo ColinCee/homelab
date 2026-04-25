@@ -30,6 +30,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+MANDARIN_EVAL_DIR = FIXTURES_DIR / "mandarin_eval"
 INIT_SQL = Path(__file__).resolve().parents[3] / "init.sql"
 
 EMBEDDING_DIMENSION = 3072
@@ -184,20 +185,16 @@ def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
     assert any("sample_note.md" in hit.document.source_path for hit in hits)
 
 
-def test_eval_queries_find_expected_mandarin_notes(fresh_db: None, tmp_path: Path) -> None:
+def test_eval_queries_find_expected_mandarin_notes(fresh_db: None) -> None:
     from knowledge.ingest import ingest_directory
     from knowledge.search import search
 
-    # This is a stable synthetic corpus, not the live private notes repo.
-    # The paths mirror real note locations so source_path behavior stays realistic.
-    notes_dir = tmp_path / "notes"
-    _write_mandarin_eval_notes(notes_dir)
     eval_cases = json.loads(
         (FIXTURES_DIR / "chinese_retrieval_eval_queries.json").read_text(encoding="utf-8")
     )
 
     with patch("knowledge.ingest.get_embeddings", side_effect=_eval_embeddings):
-        ingest_result = ingest_directory(notes_dir, glob_pattern="**/*.md")
+        ingest_result = ingest_directory(MANDARIN_EVAL_DIR, glob_pattern="**/*.md")
 
     assert ingest_result.files_failed == 0
 
@@ -211,43 +208,3 @@ def test_eval_queries_find_expected_mandarin_notes(fresh_db: None, tmp_path: Pat
                 for source in sources
                 for expected in case["expected_sources"]
             ), f"{case['id']} did not return expected sources. got={sources}"
-
-
-def _write_mandarin_eval_notes(notes_dir: Path) -> None:
-    notes = {
-        "areas/mandarin/song-based-character-learning.md": """
-# Song-Based Character Learning Plan
-
-The current song sequence includes 学猫叫, 月亮代表我的心, and 童话.
-After unsuspending 学猫叫 characters, expect a review spike and monitor retention.
-""",
-        "areas/mandarin/song-vocabulary-priorities.md": """
-# Song Vocabulary Priorities
-
-Worth learning compounds include 内疚, 狼狈, 堕落, and 胆怯.
-Literary compounds include 憧憬, 蹒跚, 徜徉, 褴褛, and 聆听.
-Onomatopoeia and interjections include 喵, 怦, and 唔.
-These are non-RSH characters from songs.
-""",
-        "areas/mandarin/anki-retention-and-pacing.md": """
-# Anki Retention & Pacing Guide
-
-FSRS retention should stay near 85 percent. Use Hard for tone errors and Again for
-true failures. Unsuspending 学猫叫 can cause a review spike.
-""",
-        "areas/mandarin/background.md": """
-# Language Background
-
-Cantonese heritage helps Mandarin tone awareness, but interference remains a risk.
-""",
-        "areas/mandarin/learning-strategy.md": """
-# Mandarin Learning Strategy
-
-Milestones include HSK progress, wuxia reading fluency, and Mandarin conversation.
-""",
-    }
-
-    for relative_path, content in notes.items():
-        path = notes_dir / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content.strip(), encoding="utf-8")
