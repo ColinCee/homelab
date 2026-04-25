@@ -70,6 +70,9 @@ ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --pr
 ssh beelink "systemctl --user list-timers knowledge-backup.timer"
 ssh beelink "journalctl --user -u knowledge-backup.service -n 50"
 ssh beelink "ls -lh /home/colin/backups/knowledge/knowledge-*.dump"
+
+# Loki query in Grafana
+{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
 ```
 
 ### Back up the database now
