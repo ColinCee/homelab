@@ -14,6 +14,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from .models import Chunk, Document, NoteLink, RelatedDocument, SearchResult, normalize_embedding
+from .tokenize import cjk_search_text, english_relaxed_query_text
 
 DATABASE_URL_ENV = "KNOWLEDGE_DB_URL"
 
@@ -76,6 +77,7 @@ def run_migrations(conn: DatabaseConnection) -> None:
     with _cursor(conn) as cursor:
         for migration in _migration_files():
             cursor.execute(cast(LiteralString, migration.read_text(encoding="utf-8")))
+        _backfill_cjk_tokens(cursor)
     conn.commit()
 
 
@@ -107,9 +109,11 @@ def insert_chunks(conn: DatabaseConnection, chunks: list[Chunk]) -> list[Chunk]:
         return []
 
     sql = """
-        INSERT INTO chunks (id, document_id, chunk_index, content, embedding, metadata, created_at)
-        VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s, %s, COALESCE(%s, now()))
-        RETURNING id, document_id, chunk_index, content, embedding, metadata, created_at
+        INSERT INTO chunks (
+            id, document_id, chunk_index, content, embedding, metadata, cjk_tokens, created_at
+        )
+        VALUES (COALESCE(%s, gen_random_uuid()), %s, %s, %s, %s, %s, %s, COALESCE(%s, now()))
+        RETURNING id, document_id, chunk_index, content, embedding, metadata, cjk_tokens, created_at
     """
     params_seq = [
         (
@@ -119,6 +123,7 @@ def insert_chunks(conn: DatabaseConnection, chunks: list[Chunk]) -> list[Chunk]:
             c.content,
             c.embedding,
             Jsonb(c.metadata),
+            c.cjk_tokens or cjk_search_text(c.content),
             c.created_at,
         )
         for c in chunks
@@ -268,11 +273,13 @@ def _hybrid_search(
     query_text: str,
     limit: int,
 ) -> list[SearchResult]:
-    """RRF hybrid: merge vector similarity and keyword (tsvector) rankings.
+    """RRF hybrid: merge vector similarity and English/Chinese keyword rankings.
 
     Uses websearch_to_tsquery for safe parsing of natural-language queries.
     """
-    candidate_limit = limit * 3
+    candidate_limit = max(limit * 10, 50)
+    cjk_query_text = cjk_search_text(query_text)
+    english_relaxed_text = english_relaxed_query_text(query_text)
 
     with _cursor(conn) as cursor:
         cursor.execute(
@@ -282,22 +289,70 @@ def _hybrid_search(
                 FROM chunks c
                 LIMIT %(candidates)s
             ),
-            keyword_ranked AS (
+            english_strict_query AS (
+                SELECT websearch_to_tsquery('english', %(tsq)s) AS query
+            ),
+            english_strict_ranked AS (
                 SELECT c.id,
                     ROW_NUMBER() OVER (
-                        ORDER BY ts_rank_cd(c.tsv, websearch_to_tsquery('english', %(tsq)s)) DESC
-                    ) AS rank_k
+                        ORDER BY ts_rank_cd(c.tsv, q.query) DESC
+                    ) AS rank_en_strict
                 FROM chunks c
-                WHERE c.tsv @@ websearch_to_tsquery('english', %(tsq)s)
+                CROSS JOIN english_strict_query q
+                WHERE c.tsv @@ q.query
                 LIMIT %(candidates)s
+            ),
+            english_relaxed_query AS (
+                SELECT CASE
+                    WHEN %(english_relaxed)s = '' THEN NULL::tsquery
+                    ELSE websearch_to_tsquery('english', %(english_relaxed)s)
+                END AS query
+            ),
+            english_relaxed_ranked AS (
+                SELECT c.id,
+                    ROW_NUMBER() OVER (
+                        ORDER BY ts_rank_cd(c.tsv, q.query) DESC
+                    ) AS rank_en_relaxed
+                FROM chunks c
+                CROSS JOIN english_relaxed_query q
+                WHERE q.query IS NOT NULL AND c.tsv @@ q.query
+                LIMIT %(candidates)s
+            ),
+            cjk_query AS (
+                SELECT CASE
+                    WHEN %(cjk_tsq)s = '' THEN NULL::tsquery
+                    ELSE websearch_to_tsquery('simple', %(cjk_tsq)s)
+                END AS query
+            ),
+            cjk_ranked AS (
+                SELECT c.id,
+                    ROW_NUMBER() OVER (
+                        ORDER BY ts_rank_cd(c.tsv_zh, q.query) DESC
+                    ) AS rank_cjk
+                FROM chunks c
+                CROSS JOIN cjk_query q
+                WHERE q.query IS NOT NULL AND c.tsv_zh @@ q.query
+                LIMIT %(candidates)s
+            ),
+            rrf_scores AS (
+                SELECT v.id AS chunk_id, 1.0 / (%(k)s + v.rank_v) AS score
+                FROM vector_ranked v
+                UNION ALL
+                SELECT s.id AS chunk_id, 1.0 / (%(k)s + s.rank_en_strict) AS score
+                FROM english_strict_ranked s
+                UNION ALL
+                SELECT r.id AS chunk_id, 1.0 / (%(k)s + r.rank_en_relaxed) AS score
+                FROM english_relaxed_ranked r
+                UNION ALL
+                SELECT z.id AS chunk_id, 1.0 / (%(k)s + z.rank_cjk) AS score
+                FROM cjk_ranked z
             ),
             rrf AS (
                 SELECT
-                    COALESCE(v.id, k.id) AS chunk_id,
-                    COALESCE(1.0 / (%(k)s + v.rank_v), 0.0)
-                      + COALESCE(1.0 / (%(k)s + k.rank_k), 0.0) AS rrf_score
-                FROM vector_ranked v
-                FULL OUTER JOIN keyword_ranked k ON v.id = k.id
+                    chunk_id,
+                    SUM(score) AS rrf_score
+                FROM rrf_scores
+                GROUP BY chunk_id
                 ORDER BY rrf_score DESC
                 LIMIT %(lim)s
             )
@@ -323,6 +378,8 @@ def _hybrid_search(
             {
                 "emb": embedding,
                 "tsq": query_text,
+                "english_relaxed": english_relaxed_text,
+                "cjk_tsq": cjk_query_text,
                 "k": _RRF_K,
                 "candidates": candidate_limit,
                 "lim": limit,
@@ -508,6 +565,24 @@ def _like_prefix_pattern(prefix: str) -> str:
     return f"{escaped_prefix}%"
 
 
+def _backfill_cjk_tokens(cursor: DatabaseCursor) -> None:
+    cursor.execute(
+        """
+        SELECT id, content
+        FROM chunks
+        WHERE cjk_tokens = '' AND content ~ '[一-龿]'
+        """
+    )
+    rows = cursor.fetchall()
+    if not rows:
+        return
+
+    cursor.executemany(
+        "UPDATE chunks SET cjk_tokens = %s WHERE id = %s",
+        [(cjk_search_text(row["content"]), row["id"]) for row in rows],
+    )
+
+
 def _migration_files() -> list[Path]:
     return sorted(MIGRATIONS_DIR.glob("*.sql"))
 
@@ -556,6 +631,7 @@ def _search_result_from_row(row: DBRow) -> SearchResult:
                 "chunk_index": row["chunk_chunk_index"],
                 "content": row["chunk_content"],
                 "metadata": row["chunk_metadata"],
+                "cjk_tokens": row.get("chunk_cjk_tokens", ""),
                 "created_at": row["chunk_created_at"],
             }
         ),

@@ -15,6 +15,7 @@ wired together.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -29,6 +30,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
+MANDARIN_EVAL_DIR = FIXTURES_DIR / "mandarin_eval"
 INIT_SQL = Path(__file__).resolve().parents[3] / "init.sql"
 
 EMBEDDING_DIMENSION = 3072
@@ -41,6 +43,32 @@ def _stub_embeddings(texts: list[str], *, token: str | None = None) -> list[list
     vector = [0.0] * EMBEDDING_DIMENSION
     vector[0] = 1.0
     return [vector for _ in texts]
+
+
+def _eval_embeddings(texts: list[str], *, token: str | None = None) -> list[list[float]]:
+    # Make vector retrieval point at the background note by default. The eval
+    # then needs lexical RRF signals to lift non-background expected results.
+    return [_unit_vector(_eval_embedding_index(text)) for text in texts]
+
+
+def _eval_embedding_index(text: str) -> int:
+    if "Language Background" in text or "Cantonese Mandarin tone interference" in text:
+        return 0
+    if "Mandarin Learning Strategy" in text:
+        return 1
+    if "Anki Retention" in text:
+        return 2
+    if "Song-Based Character" in text:
+        return 3
+    if "Song Vocabulary" in text:
+        return 4
+    return 0
+
+
+def _unit_vector(index: int) -> list[float]:
+    vector = [0.0] * EMBEDDING_DIMENSION
+    vector[index] = 1.0
+    return vector
 
 
 @pytest.fixture
@@ -111,6 +139,27 @@ def test_hnsw_index_exists_on_embedding_column(fresh_db: None) -> None:
     assert "halfvec_cosine_ops" in row["indexdef"].lower()
 
 
+def test_chinese_fts_index_exists(fresh_db: None) -> None:
+    from knowledge.database import _cursor, connect
+
+    conn = connect()
+    try:
+        with _cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE tablename = 'chunks' AND indexname = 'chunks_tsv_zh_idx'
+                """
+            )
+            row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None, "GIN index chunks_tsv_zh_idx not found on chunks table"
+    assert "gin" in row["indexdef"].lower()
+
+
 def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
     # Regression for the full bug class: with migrations applied and embeddings
     # stubbed, a freshly ingested note must be searchable.
@@ -134,3 +183,28 @@ def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
 
     assert hits, "expected at least one search hit for the ingested fixture"
     assert any("sample_note.md" in hit.document.source_path for hit in hits)
+
+
+def test_eval_queries_find_expected_mandarin_notes(fresh_db: None) -> None:
+    from knowledge.ingest import ingest_directory
+    from knowledge.search import search
+
+    eval_cases = json.loads(
+        (FIXTURES_DIR / "chinese_retrieval_eval_queries.json").read_text(encoding="utf-8")
+    )
+
+    with patch("knowledge.ingest.get_embeddings", side_effect=_eval_embeddings):
+        ingest_result = ingest_directory(MANDARIN_EVAL_DIR, glob_pattern="**/*.md")
+
+    assert ingest_result.files_failed == 0
+
+    with patch("knowledge.search.get_embeddings", side_effect=_eval_embeddings):
+        for case in eval_cases:
+            hits = search(case["query"], limit=1)
+            sources = [hit.document.source_path for hit in hits]
+
+            assert any(
+                source.endswith(expected)
+                for source in sources
+                for expected in case["expected_sources"]
+            ), f"{case['id']} did not return expected sources. got={sources}"
