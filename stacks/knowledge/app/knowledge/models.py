@@ -58,11 +58,14 @@ class Chunk(KnowledgeModel):
     content: str = Field(min_length=1)
     embedding: list[float] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+    cjk_tokens: str = ""
     created_at: datetime | None = None
 
-    @field_validator("content")
+    @field_validator("content", "cjk_tokens")
     @classmethod
     def validate_content(cls, value: str) -> str:
+        if value == "":
+            return value
         return _normalize_required_text(value)
 
     @field_validator("embedding", mode="before")

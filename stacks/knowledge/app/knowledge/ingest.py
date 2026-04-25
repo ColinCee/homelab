@@ -20,6 +20,7 @@ from .database import (
 from .embeddings import get_embeddings
 from .links import refresh_note_links
 from .models import Chunk, DirectoryIngestResult, Document, IngestResult
+from .tokenize import cjk_search_text
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,7 @@ def _do_ingest(
             chunk_index=i,
             content=text,
             embedding=embedding,
+            cjk_tokens=cjk_search_text(text),
         )
         for i, (text, embedding) in enumerate(zip(chunks_text, embeddings, strict=True))
     ]

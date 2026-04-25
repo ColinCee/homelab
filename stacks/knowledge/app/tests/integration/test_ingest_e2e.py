@@ -15,6 +15,7 @@ wired together.
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -41,6 +42,32 @@ def _stub_embeddings(texts: list[str], *, token: str | None = None) -> list[list
     vector = [0.0] * EMBEDDING_DIMENSION
     vector[0] = 1.0
     return [vector for _ in texts]
+
+
+def _eval_embeddings(texts: list[str], *, token: str | None = None) -> list[list[float]]:
+    # Make vector retrieval point at the background note by default. The eval
+    # then needs lexical RRF signals to lift non-background expected results.
+    return [_unit_vector(_eval_embedding_index(text)) for text in texts]
+
+
+def _eval_embedding_index(text: str) -> int:
+    if "Language Background" in text or "Cantonese Mandarin tone interference" in text:
+        return 0
+    if "Mandarin Learning Strategy" in text:
+        return 1
+    if "Anki Retention" in text:
+        return 2
+    if "Song-Based Character" in text:
+        return 3
+    if "Song Vocabulary" in text:
+        return 4
+    return 0
+
+
+def _unit_vector(index: int) -> list[float]:
+    vector = [0.0] * EMBEDDING_DIMENSION
+    vector[index] = 1.0
+    return vector
 
 
 @pytest.fixture
@@ -111,6 +138,27 @@ def test_hnsw_index_exists_on_embedding_column(fresh_db: None) -> None:
     assert "halfvec_cosine_ops" in row["indexdef"].lower()
 
 
+def test_chinese_fts_index_exists(fresh_db: None) -> None:
+    from knowledge.database import _cursor, connect
+
+    conn = connect()
+    try:
+        with _cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT indexdef
+                FROM pg_indexes
+                WHERE tablename = 'chunks' AND indexname = 'chunks_tsv_zh_idx'
+                """
+            )
+            row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None, "GIN index chunks_tsv_zh_idx not found on chunks table"
+    assert "gin" in row["indexdef"].lower()
+
+
 def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
     # Regression for the full bug class: with migrations applied and embeddings
     # stubbed, a freshly ingested note must be searchable.
@@ -134,3 +182,72 @@ def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
 
     assert hits, "expected at least one search hit for the ingested fixture"
     assert any("sample_note.md" in hit.document.source_path for hit in hits)
+
+
+def test_eval_queries_find_expected_mandarin_notes(fresh_db: None, tmp_path: Path) -> None:
+    from knowledge.ingest import ingest_directory
+    from knowledge.search import search
+
+    # This is a stable synthetic corpus, not the live private notes repo.
+    # The paths mirror real note locations so source_path behavior stays realistic.
+    notes_dir = tmp_path / "notes"
+    _write_mandarin_eval_notes(notes_dir)
+    eval_cases = json.loads(
+        (FIXTURES_DIR / "chinese_retrieval_eval_queries.json").read_text(encoding="utf-8")
+    )
+
+    with patch("knowledge.ingest.get_embeddings", side_effect=_eval_embeddings):
+        ingest_result = ingest_directory(notes_dir, glob_pattern="**/*.md")
+
+    assert ingest_result.files_failed == 0
+
+    with patch("knowledge.search.get_embeddings", side_effect=_eval_embeddings):
+        for case in eval_cases:
+            hits = search(case["query"], limit=1)
+            sources = [hit.document.source_path for hit in hits]
+
+            assert any(
+                source.endswith(expected)
+                for source in sources
+                for expected in case["expected_sources"]
+            ), f"{case['id']} did not return expected sources. got={sources}"
+
+
+def _write_mandarin_eval_notes(notes_dir: Path) -> None:
+    notes = {
+        "areas/mandarin/song-based-character-learning.md": """
+# Song-Based Character Learning Plan
+
+The current song sequence includes 学猫叫, 月亮代表我的心, and 童话.
+After unsuspending 学猫叫 characters, expect a review spike and monitor retention.
+""",
+        "areas/mandarin/song-vocabulary-priorities.md": """
+# Song Vocabulary Priorities
+
+Worth learning compounds include 内疚, 狼狈, 堕落, and 胆怯.
+Literary compounds include 憧憬, 蹒跚, 徜徉, 褴褛, and 聆听.
+Onomatopoeia and interjections include 喵, 怦, and 唔.
+These are non-RSH characters from songs.
+""",
+        "areas/mandarin/anki-retention-and-pacing.md": """
+# Anki Retention & Pacing Guide
+
+FSRS retention should stay near 85 percent. Use Hard for tone errors and Again for
+true failures. Unsuspending 学猫叫 can cause a review spike.
+""",
+        "areas/mandarin/background.md": """
+# Language Background
+
+Cantonese heritage helps Mandarin tone awareness, but interference remains a risk.
+""",
+        "areas/mandarin/learning-strategy.md": """
+# Mandarin Learning Strategy
+
+Milestones include HSK progress, wuxia reading fluency, and Mandarin conversation.
+""",
+    }
+
+    for relative_path, content in notes.items():
+        path = notes_dir / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content.strip(), encoding="utf-8")

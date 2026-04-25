@@ -1,0 +1,133 @@
+[
+  {
+    "id": "zh-song-core-sequence",
+    "query": "学猫叫 月亮代表我的心 童话",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-based-character-learning.md"
+    ],
+    "expected_terms": ["学猫叫", "月亮代表我的心", "童话"],
+    "notes": "Chinese exact-title query for the song learning sequence. Chinese lexical retrieval should contribute candidates, not rely on vector-only fallback."
+  },
+  {
+    "id": "zh-song-vocab-worth-learning",
+    "query": "内疚 狼狈 堕落 胆怯",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["内疚", "狼狈", "堕落", "胆怯"],
+    "notes": "Chinese compound lookup for non-RSH characters worth active study."
+  },
+  {
+    "id": "zh-literary-compounds",
+    "query": "憧憬 蹒跚 徜徉 褴褛 聆听",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["憧憬", "蹒跚", "徜徉", "褴褛", "聆听"],
+    "notes": "Chinese compound query where segmentation quality matters more than semantic similarity."
+  },
+  {
+    "id": "zh-no-space-song-sequence",
+    "query": "学猫叫月亮代表我的心童话",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-based-character-learning.md"
+    ],
+    "expected_terms": ["学猫叫", "月亮代表我的心", "童话"],
+    "notes": "Realistic Chinese query with no spaces between song titles. Current English FTS returns zero keyword candidates."
+  },
+  {
+    "id": "zh-no-space-worth-learning",
+    "query": "内疚狼狈堕落胆怯",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["内疚", "狼狈", "堕落", "胆怯"],
+    "notes": "No-space Chinese compound query. A Chinese lexical retriever should segment this into searchable terms."
+  },
+  {
+    "id": "zh-no-space-literary",
+    "query": "憧憬蹒跚徜徉褴褛聆听",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["憧憬", "蹒跚", "徜徉", "褴褛", "聆听"],
+    "notes": "No-space literary compound query for testing Chinese segmentation rather than exact whitespace token matching."
+  },
+  {
+    "id": "zh-subterm-song",
+    "query": "月亮童话",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-based-character-learning.md"
+    ],
+    "expected_terms": ["月亮", "童话"],
+    "notes": "Short no-space Chinese query that should match notes mentioning 月亮代表我的心 and 童话."
+  },
+  {
+    "id": "zh-single-character-sounds",
+    "query": "喵怦唔",
+    "language": "zh",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["喵", "怦", "唔"],
+    "notes": "No-space single-character query for onomatopoeia and interjections."
+  },
+  {
+    "id": "mixed-song-review-spike",
+    "query": "学猫叫 review spike retention",
+    "language": "mixed",
+    "expected_sources": [
+      "areas/mandarin/song-based-character-learning.md",
+      "areas/mandarin/anki-retention-and-pacing.md"
+    ],
+    "expected_terms": ["学猫叫", "review spike", "retention"],
+    "notes": "Mixed-language query that should benefit from vector, English FTS, and Chinese FTS together."
+  },
+  {
+    "id": "mixed-rsh-song-characters",
+    "query": "non RSH characters 喵 怦 唔",
+    "language": "mixed",
+    "expected_sources": [
+      "areas/mandarin/song-vocabulary-priorities.md"
+    ],
+    "expected_terms": ["non-RSH", "喵", "怦", "唔"],
+    "notes": "Mixed query with English descriptor plus Chinese single-character terms."
+  },
+  {
+    "id": "en-fsrs-pacing",
+    "query": "FSRS Hard Again tone errors retention 85 percent",
+    "language": "en",
+    "expected_sources": [
+      "areas/mandarin/anki-retention-and-pacing.md"
+    ],
+    "expected_terms": ["FSRS", "Hard", "Again", "tone errors", "85"],
+    "notes": "English FTS regression guard for the Anki pacing note."
+  },
+  {
+    "id": "en-cantonese-interference",
+    "query": "Cantonese Mandarin tone interference background",
+    "language": "en",
+    "expected_sources": [
+      "areas/mandarin/background.md"
+    ],
+    "expected_terms": ["Cantonese", "Mandarin", "interference"],
+    "notes": "English query for heritage/background context."
+  },
+  {
+    "id": "en-learning-milestones",
+    "query": "wuxia reading fluency HSK milestones Mandarin",
+    "language": "en",
+    "expected_sources": [
+      "areas/mandarin/learning-strategy.md"
+    ],
+    "expected_terms": ["wuxia", "HSK", "Milestones"],
+    "notes": "English semantic and keyword query for the overall Mandarin strategy note."
+  }
+]
