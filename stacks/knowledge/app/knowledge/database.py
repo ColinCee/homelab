@@ -246,10 +246,10 @@ def _vector_search(
                 c.content AS chunk_content,
                 c.metadata AS chunk_metadata,
                 c.created_at AS chunk_created_at,
-                GREATEST(0.0, LEAST(1.0, 1 - (c.embedding <=> %s::vector))) AS score
+                GREATEST(0.0, LEAST(1.0, 1 - (c.embedding <=> %s::halfvec))) AS score
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
-            ORDER BY c.embedding <=> %s::vector
+            ORDER BY c.embedding <=> %s::halfvec
             LIMIT %s
             """,
             (embedding, embedding, limit),
@@ -278,7 +278,7 @@ def _hybrid_search(
         cursor.execute(
             """
             WITH vector_ranked AS (
-                SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %(emb)s::vector) AS rank_v
+                SELECT c.id, ROW_NUMBER() OVER (ORDER BY c.embedding <=> %(emb)s::halfvec) AS rank_v
                 FROM chunks c
                 LIMIT %(candidates)s
             ),

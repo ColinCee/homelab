@@ -48,13 +48,13 @@ avoid running a separate service.
 
 Postgres with the pgvector extension. One container handles both relational
 storage (documents, metadata, content hashes) and vector similarity search
-(HNSW index, cosine distance). Every knowledge management tool evaluated
+(HNSW index, cosine distance, halfvec for 3072-dim embeddings). Every knowledge management tool evaluated
 (Khoj, AnythingLLM, Open WebUI) supports Postgres as a backend — so if we
 ever add a UI, it can plug into the existing database.
 
 | Feature | pgvector | Qdrant | Chroma |
 |---------|----------|--------|--------|
-| Vector search | ✅ HNSW + cosine | ✅ native | ✅ native |
+| Vector search | ✅ HNSW + cosine (halfvec) | ✅ native | ✅ native |
 | Relational queries | ✅ full SQL | ❌ | ❌ |
 | Metadata filtering | ✅ SQL WHERE | ✅ payload filters | ✅ where filters |
 | RAM usage | ~100 MB | ~200 MB | ~150 MB |
@@ -76,6 +76,11 @@ with a fine-grained PAT (`models:read` permission required since March 2025).
 Rate-limited on the free tier (~10-50 RPM), which is fine for incremental
 updates but slow for bulk ingestion (~12 min for 195 files). Content hashing
 means re-runs skip unchanged files.
+
+**Dimension constraint:** pgvector HNSW indexes support up to 2000 dimensions
+for the `vector` type, but 3072 exceeds that limit. Using `halfvec(3072)`
+(half-precision float16) instead — HNSW supports up to 4000 dimensions on
+`halfvec`. The precision loss is negligible for cosine similarity ranking.
 
 ### MCP vs Copilot CLI skill for integration
 
