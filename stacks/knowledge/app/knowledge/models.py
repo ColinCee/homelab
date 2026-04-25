@@ -14,6 +14,8 @@ type NoteLinkType = Literal["wikilink", "similarity"]
 def normalize_embedding(value: Any) -> list[float]:
     if hasattr(value, "tolist"):
         value = value.tolist()
+    elif hasattr(value, "to_list"):
+        value = value.to_list()
 
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
         raise TypeError("embedding must be a sequence of floats")

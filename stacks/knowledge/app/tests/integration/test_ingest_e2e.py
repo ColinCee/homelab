@@ -87,6 +87,30 @@ def test_migrations_create_all_expected_tables(fresh_db: None) -> None:
     assert tables == ["chunks", "documents", "note_links"]
 
 
+def test_hnsw_index_exists_on_embedding_column(fresh_db: None) -> None:
+    # The HNSW index is the whole point of the halfvec migration — verify it
+    # exists so a future schema change doesn't silently regress to seq scans.
+    from knowledge.database import _cursor, connect
+
+    conn = connect()
+    try:
+        with _cursor(conn) as cursor:
+            cursor.execute(
+                """
+                SELECT indexname, indexdef
+                FROM pg_indexes
+                WHERE tablename = 'chunks' AND indexname = 'chunks_embedding_idx'
+                """
+            )
+            row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    assert row is not None, "HNSW index chunks_embedding_idx not found on chunks table"
+    assert "hnsw" in row["indexdef"].lower()
+    assert "halfvec_cosine_ops" in row["indexdef"].lower()
+
+
 def test_ingest_then_search_roundtrip(fresh_db: None, tmp_path: Path) -> None:
     # Regression for the full bug class: with migrations applied and embeddings
     # stubbed, a freshly ingested note must be searchable.

@@ -30,6 +30,35 @@ def test_chunk_requires_expected_embedding_dimension() -> None:
         )
 
 
+def test_chunk_accepts_halfvec_like_object() -> None:
+    """pgvector returns HalfVector objects (with to_list()) for halfvec columns."""
+
+    # Arrange — simulate pgvector's HalfVector which has to_list() but isn't a Sequence
+    class FakeHalfVector:
+        def __init__(self, values: list[float]) -> None:
+            self._values = values
+
+        def to_list(self) -> list[float]:
+            return list(self._values)
+
+    document_id = uuid4()
+    embedding = [0.0] * EMBEDDING_DIMENSION
+    embedding[0] = 1.0
+
+    # Act
+    chunk = Chunk(
+        document_id=document_id,
+        chunk_index=0,
+        content="Test content",
+        embedding=FakeHalfVector(embedding),  # ty: ignore[invalid-argument-type]
+    )
+
+    # Assert
+    assert chunk.embedding is not None
+    assert len(chunk.embedding) == EMBEDDING_DIMENSION
+    assert chunk.embedding[0] == 1.0
+
+
 def test_document_validates_string_inputs() -> None:
     # Arrange
     document_id = uuid4()
