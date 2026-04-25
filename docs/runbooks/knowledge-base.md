@@ -12,7 +12,7 @@ push to notes repo → GitHub Actions (beelink-notes runner) → ingest-notes.sh
 - **Postgres** runs permanently in `stacks/knowledge/compose.yaml`
 - **Ingest** is an on-demand container (compose profile), not always running
 - **Embeddings** use `openai/text-embedding-3-large` via `models.github.ai` (COPILOT_GITHUB_TOKEN)
-- **Backups** run nightly via `knowledge-backup.timer` to `/home/colin/backups/knowledge`
+- **Backups** run nightly via `knowledge-backup.timer` to `/home/colin/backups/knowledge` with 14-day retention
 
 ## Common Operations
 
@@ -65,11 +65,19 @@ ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --pr
 
 ### Back up the database now
 
-Nightly backups are installed with the knowledge stack. Run one manually before
-schema work, embedding changes, or risky ingest fixes:
+Nightly backups are installed with the knowledge stack. Dumps are stored outside
+the git repo and Docker volume at `/home/colin/backups/knowledge`, retained for
+14 days, and validated with `pg_restore --list` before being kept. Run one
+manually before schema work, embedding changes, or risky ingest fixes:
 
 ```bash
 ssh beelink "cd /home/colin/code/homelab && scripts/backup-knowledge-db.sh"
+```
+
+Override the location or retention for one-off runs if needed:
+
+```bash
+ssh beelink "cd /home/colin/code/homelab && KNOWLEDGE_BACKUP_DIR=/path/to/backups KNOWLEDGE_BACKUP_RETENTION_DAYS=30 scripts/backup-knowledge-db.sh"
 ```
 
 ### Restore from a database backup

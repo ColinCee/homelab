@@ -122,8 +122,9 @@ bugs became irrelevant — the container owns its own environment.
 - **text-embedding-3-large** (3072 dims) via GitHub Models API
 - **Containerized ingest** as a Docker Compose profile service — runs on push to
   notes repo via GitHub Actions, skips unchanged files via content hash
-- **Nightly `pg_dump` backup** of the knowledge database to host storage for
-  fast restore when re-ingest is unavailable or undesirable
+- **Nightly `pg_dump` backup** of the knowledge database to host storage outside
+  the git repo and Docker volume, retained for 14 days for fast restore when
+  re-ingest is unavailable or undesirable
 - **Copilot CLI skill** (`knowledge-search`) for agent access via SSH + Docker
 - **Trust boundary**: only the human CLI session and the beelink runner have
   access. The homelab review/implement agent has no access to notes.
