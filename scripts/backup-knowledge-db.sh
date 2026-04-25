@@ -4,7 +4,7 @@ set -euo pipefail
 # Dump the knowledge Postgres database to a host-side backup directory.
 # Intended for the user-level systemd timer installed by scripts/deploy.sh.
 
-backup_dir="${1:-${KNOWLEDGE_BACKUP_DIR:-/home/colin/backups/knowledge}}"
+backup_dir="${KNOWLEDGE_BACKUP_DIR:-/home/colin/backups/knowledge}"
 retention_days="${KNOWLEDGE_BACKUP_RETENTION_DAYS:-14}"
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 compose_file="${repo_root}/stacks/knowledge/compose.yaml"
@@ -20,13 +20,6 @@ if ! [[ "$retention_days" =~ ^[0-9]+$ ]] || (( retention_days < 1 )); then
   exit 1
 fi
 
-json_string() {
-  local value="${1//\\/\\\\}"
-  value="${value//\"/\\\"}"
-  value="${value//$'\n'/\\n}"
-  printf '"%s"' "$value"
-}
-
 cd "$repo_root"
 docker compose -f "$compose_file" exec -T postgres sh -c \
   'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom --no-owner --no-acl' \
@@ -39,8 +32,8 @@ find "$backup_dir" -type f -name 'knowledge-*.dump' -mtime +"$retention_days" -d
 
 backup_size_bytes="$(stat -c%s "$backup_file")"
 retained_count="$(find "$backup_dir" -type f -name 'knowledge-*.dump' | wc -l)"
-printf '{"event":"knowledge_backup_completed","status":"success","backup_file":%s,"size_bytes":%s,"retained_count":%s,"retention_days":%s}\n' \
-  "$(json_string "$backup_file")" \
+printf 'Backup complete: file=%s size_bytes=%s retained_count=%s retention_days=%s\n' \
+  "$backup_file" \
   "$backup_size_bytes" \
   "$retained_count" \
   "$retention_days"

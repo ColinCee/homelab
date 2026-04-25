@@ -65,16 +65,11 @@ ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --pr
 
 ### Inspect database backups
 
-Backup timer output is collected from journald by Alloy and sent to Loki with
-`job="knowledge", service="backup"`.
-
 ```bash
 # Timer status on beelink
-systemctl --user list-timers knowledge-backup.timer
-journalctl --user -u knowledge-backup.service -n 50
-
-# Loki query in Grafana
-{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
+ssh beelink "systemctl --user list-timers knowledge-backup.timer"
+ssh beelink "journalctl --user -u knowledge-backup.service -n 50"
+ssh beelink "ls -lh /home/colin/backups/knowledge/knowledge-*.dump"
 ```
 
 ### Back up the database now
@@ -133,10 +128,8 @@ Full re-ingest takes ~12 minutes under current GitHub Models limits. Tighter
 rate limits or model outages make this slower or unavailable. Incremental runs
 skip unchanged files via content hash and finish in ~30 seconds.
 
-If `openai/text-embedding-3-large` is retired, switching models is a schema
-change: update the model name and embedding dimension in the knowledge app,
-adjust `halfvec(<dimension>)` in the schema/migration, then re-ingest from
-scratch after taking a database backup.
+If `openai/text-embedding-3-large` is retired, backups preserve the existing
+search index while a separate model/schema migration is planned.
 
 ### Check database health
 
