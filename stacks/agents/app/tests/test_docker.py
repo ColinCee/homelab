@@ -192,7 +192,7 @@ def test_stop_worker_handles_nonexistent(mock_docker):
 
 @patch("services.docker._run_docker", new_callable=AsyncMock)
 def test_cleanup_orphaned_workers_removes_exited_and_harvests(mock_docker):
-    """Cleanup should harvest logs/timestamps and return info for metrics."""
+    """Cleanup should harvest logs/timestamps and return info for fallback logging."""
     mock_docker.side_effect = [
         "worker-review-42 Exited (0) 5 minutes ago",  # ps -a
         '{"status": "complete", "premium_requests": 5}\n',  # logs

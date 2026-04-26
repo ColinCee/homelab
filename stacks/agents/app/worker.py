@@ -307,7 +307,7 @@ async def main() -> int:
             "event": "task_completed",
             "status": result.status,
             "repo": result.repo or settings.repo,
-            "duration_seconds": result.elapsed_seconds,
+            "duration_seconds": result.elapsed_seconds or 0,
             "premium_requests": result.premium_requests,
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,

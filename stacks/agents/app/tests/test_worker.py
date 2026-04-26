@@ -1,6 +1,7 @@
 """Tests for the ephemeral worker entrypoint."""
 
 import asyncio
+import logging
 import os
 from contextlib import ExitStack
 from unittest.mock import AsyncMock, patch
@@ -235,6 +236,34 @@ def test_review_success_returns_zero(capsys):
     result = TaskResult.model_validate_json(capsys.readouterr().out.strip())
     assert result.status == "complete"
     mock_review.assert_awaited_once()
+
+
+def test_review_success_emits_task_completion_event(capsys, caplog):
+    mock_review = AsyncMock(return_value=TaskResult(status="complete", premium_requests=2))
+    caplog.set_level(logging.INFO)
+    with ExitStack() as stack:
+        _enter_patches(stack, _review_patches(mock_review), REVIEW_ENV)
+        from worker import main
+
+        exit_code = asyncio.run(main())
+
+    assert exit_code == 0
+    events = [
+        record.__dict__
+        for record in caplog.records
+        if record.__dict__.get("event") == "task_completed"
+    ]
+    [event] = events
+    assert event["task_type"] == "review"
+    assert event["pr_number"] == 42
+    assert event["status"] == "complete"
+    assert event["repo"] == "user/repo"
+    assert event["duration_seconds"] == 0
+    assert event["premium_requests"] == 2
+    assert event["input_tokens"] == 0
+    assert event["output_tokens"] == 0
+    assert event["cached_tokens"] == 0
+    assert event["reasoning_tokens"] == 0
 
 
 def test_review_posts_progress_comment():
