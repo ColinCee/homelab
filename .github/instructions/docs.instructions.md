@@ -13,7 +13,7 @@ docs-specific editing guidance.
 ## Structure
 
 - `docs/roadmap.md` — active work, planned items, and known limitations (solved items archived in ADRs)
-- `docs/decisions/` — append-only ADRs numbered sequentially (e.g., `001-dokploy.md`)
+- `docs/decisions/` — ADRs numbered sequentially (e.g., `001-dokploy.md`)
 - `docs/runbooks/` — operational how-tos with commands you can copy-paste
 - `docs/private/` — encrypted sensitive docs (security audits, network topology)
 
@@ -47,6 +47,14 @@ ADRs follow this structure — keep it consistent:
 
 - Include a feature comparison table when evaluating multiple options
 - Verdicts should be one sentence explaining why it was chosen or rejected
+
+## ADR Currency
+
+ADRs preserve decision history, but they are not immutable typo museums. Update a
+current ADR in place when the decision still stands and the change only corrects
+stale implementation references, clarifies accepted residual risks, or documents
+the mitigations that make the decision safe. Use a new superseding ADR when the
+decision, tradeoff, or architecture has materially changed.
 
 ## Writing Style
 

@@ -76,9 +76,10 @@ For each runbook in `docs/runbooks/`:
 
 ### 7. ADR currency
 
-ADRs are append-only and don't go stale in the traditional sense, but check:
+ADRs preserve decision history, but accepted/current ADRs can still need low-churn corrections:
 
-- Is any ADR's decision contradicted by current implementation? If so, it should be marked "Superseded" with a pointer to the new reality.
+- If the decision still stands but the ADR has stale implementation references, incomplete residual-risk framing, or unclear mitigations, update the ADR in place.
+- If the decision, tradeoff, or architecture has materially changed, mark the ADR "Superseded" with a pointer to the new reality.
 - Are there architecture/security decisions that lack an ADR? (Check for patterns that were decided but never written up.)
 
 ## Identifying high-value gaps
@@ -116,11 +117,11 @@ After presenting findings, fix all stale docs in a single commit:
 3. Commit with `docs:` conventional prefix
 4. Create a PR for review
 
-Do NOT write ADRs without human input — they require tradeoff reasoning that only the author knows. Flag them as gaps and ask.
+Do NOT write new ADRs without human input — they require tradeoff reasoning that only the author knows. Flag them as gaps and ask. In-place corrections to current ADRs are fine when they preserve the existing decision and only clarify facts, risks, or mitigations.
 
 ## What NOT to do
 
 - Don't rewrite docs for style — only fix factual inaccuracies
 - Don't add detail that belongs in source code (exact schemas, constants, timeouts)
 - Don't create new docs without confirming the gap is real and high-value
-- Don't update ADRs — they're append-only. If one is wrong, suggest a superseding ADR.
+- Don't rewrite ADR history to pretend a different decision was made. Use in-place edits only for factual corrections or clearer risk/mitigation framing; use a superseding ADR when the decision changed.
