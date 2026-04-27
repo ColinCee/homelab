@@ -12,6 +12,7 @@ push to notes repo → GitHub Actions (beelink-notes runner) → ingest-notes.sh
 - **Postgres** runs permanently in `stacks/knowledge/compose.yaml`
 - **Ingest** is an on-demand container (compose profile), not always running
 - **Embeddings** use `openai/text-embedding-3-large` via `models.github.ai` (COPILOT_GITHUB_TOKEN)
+- **Backups** run nightly via `knowledge-backup.timer` to `/home/colin/backups/knowledge` with 14-day retention
 
 ## Common Operations
 
@@ -62,9 +63,61 @@ ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --pr
   ```
 - **Alerts:** failed runs page the existing Discord Private contact point via Grafana alerting
 
+### Inspect database backups
+
+```bash
+# Timer status on beelink
+ssh beelink "systemctl --user list-timers knowledge-backup.timer"
+ssh beelink "journalctl --user -u knowledge-backup.service -n 50"
+ssh beelink "ls -lh /home/colin/backups/knowledge/knowledge-*.dump"
+
+# Loki query in Grafana
+{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
+```
+
+### Back up the database now
+
+Nightly backups are installed with the knowledge stack. Dumps are stored outside
+the git repo and Docker volume at `/home/colin/backups/knowledge`, retained for
+14 days, and validated with `pg_restore --list` before being kept. Run one
+manually before schema work, embedding changes, or risky ingest fixes:
+
+```bash
+ssh beelink "cd /home/colin/code/homelab && scripts/backup-knowledge-db.sh"
+```
+
+Override the location or retention for one-off runs if needed:
+
+```bash
+ssh beelink "cd /home/colin/code/homelab && KNOWLEDGE_BACKUP_DIR=/path/to/backups KNOWLEDGE_BACKUP_RETENTION_DAYS=30 scripts/backup-knowledge-db.sh"
+```
+
+### Restore from a database backup
+
+Use this when the database volume is corrupted, a bad ingest needs rollback, or
+GitHub Models is unavailable and re-ingest would not work. Pick the backup file
+first:
+
+```bash
+ssh beelink "ls -1t /home/colin/backups/knowledge/knowledge-*.dump | head"
+```
+
+Then restore it:
+
+```bash
+ssh beelink
+cd /home/colin/code/homelab
+BACKUP=/home/colin/backups/knowledge/knowledge-<timestamp>.dump
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" --maintenance-db=postgres --force --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' < "$BACKUP"
+```
+
 ### Re-ingest everything from scratch
 
-Wipe the database and re-ingest all files. Useful if the schema changes or embeddings need regenerating.
+Wipe derived data and re-ingest all files. This depends on the notes repo,
+GitHub Models API, and the configured embedding model all being available.
+Prefer restoring a backup when recovering from a bad ingest and the old vectors
+are still valid.
 
 ```bash
 # Drop and recreate the database
@@ -74,7 +127,12 @@ ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 
 ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
 ```
 
-Full re-ingest takes ~12 minutes (rate-limited by the embedding API). Incremental runs skip unchanged files via content hash and finish in ~30 seconds.
+Full re-ingest takes ~12 minutes under current GitHub Models limits. Tighter
+rate limits or model outages make this slower or unavailable. Incremental runs
+skip unchanged files via content hash and finish in ~30 seconds.
+
+If `openai/text-embedding-3-large` is retired, backups preserve the existing
+search index while a separate model/schema migration is planned.
 
 ### Check database health
 

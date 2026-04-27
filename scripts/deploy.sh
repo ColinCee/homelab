@@ -37,12 +37,14 @@ for stack in "${stacks[@]}"; do
 
   # Export .env vars (generate-env.sh writes files but its exports don't propagate)
   env_file="stacks/${stack}/.env"
+  # shellcheck source=/dev/null
   if [[ -f "$env_file" ]]; then set -a; source "$env_file"; set +a; fi
 
   case "$stack" in
     agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
     knowledge)      docker compose -f "$file" build ingest
-                    docker compose -f "$file" up -d --remove-orphans ;;
+                    docker compose -f "$file" up -d --remove-orphans
+                    install_timer "stacks/knowledge/knowledge-backup" ;;
     observability)  docker compose -f "$file" up -d --remove-orphans
                     scripts/sync-dashboards.sh ;;
     flight-tracker) docker compose -f "$file" pull
