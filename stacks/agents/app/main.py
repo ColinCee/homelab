@@ -1,6 +1,7 @@
 """Agent service — FastAPI app for Beelink-hosted AI agents."""
 
 import asyncio
+import json
 import logging
 import os
 import time
@@ -8,18 +9,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
-from prometheus_client import make_asgi_app
 from pydantic import BaseModel
 
 from auth import require_bearer
 from logging_config import configure_logging, resolve_log_format
-from metrics import (
-    METRICS_REGISTRY,
-    PREMIUM_REQUESTS_TOTAL,
-    TASK_DURATION_SECONDS,
-    TASK_TOTAL,
-    TOKENS_TOTAL,
-)
 from models import TaskResult
 from services.docker import (
     cleanup_orphaned_workers,
@@ -45,24 +38,26 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     await reap_old_worktrees()
 
-    # Harvest metrics from workers that completed while we were down
+    # Clean up workers that completed while we were down. The worker usually
+    # emitted its own task_completed event; emit an API fallback only if it did not.
     for w in await cleanup_orphaned_workers():
-        result = parse_worker_result(str(w.get("logs", "")))
+        logs = str(w.get("logs", ""))
+        result = parse_worker_result(logs)
         fallback = "failed"
         status = _task_status_label(result.status if result else fallback)
         premium = _premium_requests(result)
-        _record_task_metrics(
-            task_type=str(w["task_type"]),
-            status=status,
-            duration_seconds=float(w.get("duration_seconds", 0)),
-            premium_requests=premium,
-            input_tokens=result.input_tokens if result else 0,
-            output_tokens=result.output_tokens if result else 0,
-            cached_tokens=result.cached_tokens if result else 0,
-            reasoning_tokens=result.reasoning_tokens if result else 0,
-        )
+        if not _logs_contain_task_completion(logs):
+            _emit_task_completion(
+                task_type=str(w["task_type"]),
+                number=int(w["number"]),
+                status=status,
+                duration_seconds=float(w.get("duration_seconds", 0)),
+                premium_requests=premium,
+                result=result,
+                source="api_orphan_harvest",
+            )
         logger.info(
-            "Harvested metrics from orphaned worker %s #%s (status=%s, premium=%d)",
+            "Cleaned up orphaned worker %s #%s (status=%s, premium=%d)",
             w["task_type"],
             w["number"],
             status,
@@ -84,7 +79,6 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Homelab Agent Service", version="0.7.0", lifespan=lifespan)
-app.mount("/metrics", make_asgi_app(registry=METRICS_REGISTRY))
 
 MODEL = os.environ.get("MODEL", "gpt-5.4")
 REASONING_EFFORT = os.environ.get("REASONING_EFFORT", "high")
@@ -107,30 +101,49 @@ def _worker_log_format() -> str:
     return resolve_log_format(os.environ.get("LOG_FORMAT"))
 
 
-def _record_task_metrics(
+def _logs_contain_task_completion(logs: str) -> bool:
+    for line in logs.splitlines():
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and payload.get("event") == "task_completed":
+            return True
+    return False
+
+
+def _emit_task_completion(
     *,
     task_type: str,
+    number: int,
     status: str,
     duration_seconds: float,
     premium_requests: int,
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    cached_tokens: int = 0,
-    reasoning_tokens: int = 0,
+    result: TaskResult | None,
+    source: str,
 ) -> None:
-    TASK_DURATION_SECONDS.labels(task_type=task_type, status=status).observe(duration_seconds)
-    TASK_TOTAL.labels(task_type=task_type, status=status).inc()
-    if premium_requests:
-        PREMIUM_REQUESTS_TOTAL.labels(task_type=task_type).inc(premium_requests)
-    token_map = {
-        "input": input_tokens,
-        "output": output_tokens,
-        "cached": cached_tokens,
-        "reasoning": reasoning_tokens,
+    event: dict[str, object] = {
+        "event": "task_completed",
+        "source": source,
+        "task_type": task_type,
+        "status": status,
+        "duration_seconds": round(duration_seconds, 3),
+        "premium_requests": premium_requests,
+        "input_tokens": result.input_tokens if result else 0,
+        "output_tokens": result.output_tokens if result else 0,
+        "cached_tokens": result.cached_tokens if result else 0,
+        "reasoning_tokens": result.reasoning_tokens if result else 0,
     }
-    for direction, count in token_map.items():
-        if count:
-            TOKENS_TOTAL.labels(task_type=task_type, direction=direction).inc(count)
+    if task_type == "implement":
+        event["issue_number"] = number
+    elif task_type == "review":
+        event["pr_number"] = number
+    if result and result.repo:
+        event["repo"] = result.repo
+    if result and result.error:
+        event["error"] = result.error
+
+    logger.info("task_completed", extra=event)
 
 
 class ReviewRequest(BaseModel):
@@ -160,7 +173,7 @@ async def health() -> dict[str, str]:
 
 
 async def _monitor_worker(container_id: str, *, task_type: str, number: int, start: float) -> None:
-    """Wait for a worker container to exit and record metrics."""
+    """Wait for a worker container to exit and clean it up."""
     monitor_key = f"{task_type}-{number}"
     try:
         exit_code = await wait_container(container_id)
@@ -186,16 +199,16 @@ async def _monitor_worker(container_id: str, *, task_type: str, number: int, sta
         status = _task_status_label(result.status if result else fallback_status)
         premium = _premium_requests(result)
 
-        _record_task_metrics(
-            task_type=task_type,
-            status=status,
-            duration_seconds=duration,
-            premium_requests=premium,
-            input_tokens=result.input_tokens if result else 0,
-            output_tokens=result.output_tokens if result else 0,
-            cached_tokens=result.cached_tokens if result else 0,
-            reasoning_tokens=result.reasoning_tokens if result else 0,
-        )
+        if not _logs_contain_task_completion(logs):
+            _emit_task_completion(
+                task_type=task_type,
+                number=number,
+                status=status,
+                duration_seconds=duration,
+                premium_requests=premium,
+                result=result,
+                source="api_monitor",
+            )
         error = result.error if result and result.error else ""
         logger.info(
             "Worker %s #%d finished (exit=%d, status=%s, duration=%.0fs, premium=%d%s)",

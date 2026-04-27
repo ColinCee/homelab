@@ -54,6 +54,23 @@ def test_set_task_context_adds_pr_number_to_json_logs(capsys: pytest.CaptureFixt
     assert "issue_number" not in payload
 
 
+def test_task_context_does_not_overwrite_explicit_log_fields(
+    capsys: pytest.CaptureFixture[str],
+):
+    configure_logging("json")
+    set_task_context("review", 99)
+
+    logging.getLogger("tests.logging").info(
+        "api fallback",
+        extra={"task_type": "implement", "issue_number": 10},
+    )
+
+    payload = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert payload["task_type"] == "implement"
+    assert payload["issue_number"] == 10
+    assert "pr_number" not in payload
+
+
 def test_resolve_log_format_rejects_invalid_value():
     with pytest.raises(ValueError, match="LOG_FORMAT must be 'json' or 'text'"):
         resolve_log_format("pretty")

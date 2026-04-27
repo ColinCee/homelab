@@ -16,7 +16,6 @@ from main import (
     app,
     handle_review,
 )
-from metrics import METRICS_REGISTRY, reset_metrics
 
 _ACTOR = "ColinCee"
 _TOKEN = "ghs_test_token"
@@ -26,18 +25,18 @@ def _client():
     return TestClient(app)
 
 
-def _metric_value(name: str, labels: dict[str, str]) -> float:
-    value = METRICS_REGISTRY.get_sample_value(name, labels)
-    assert value is not None
-    return value
+def _completion_events(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]]:
+    return [
+        record.__dict__
+        for record in caplog.records
+        if record.__dict__.get("event") == "task_completed"
+    ]
 
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    reset_metrics()
     _monitor_tasks.clear()
     yield
-    reset_metrics()
     _monitor_tasks.clear()
 
 
@@ -81,8 +80,10 @@ def test_startup_reaps_worktrees_and_orphans(mock_reap, mock_cleanup, mock_disco
 @patch("main.discover_running_workers", new_callable=AsyncMock, return_value=[])
 @patch("main.cleanup_orphaned_workers", new_callable=AsyncMock)
 @patch("main.reap_old_worktrees", new_callable=AsyncMock)
-def test_startup_harvests_metrics_from_orphans(mock_reap, mock_cleanup, mock_discover):
-    """Startup should record metrics from stopped workers before removing them."""
+def test_startup_logs_fallback_completion_for_orphans(
+    mock_reap, mock_cleanup, mock_discover, caplog
+):
+    """Startup emits a fallback completion event when orphan logs lack one."""
     mock_cleanup.return_value = [
         {
             "task_type": "review",
@@ -91,12 +92,18 @@ def test_startup_harvests_metrics_from_orphans(mock_reap, mock_cleanup, mock_dis
             "duration_seconds": 300.0,
         }
     ]
+    caplog.set_level(logging.INFO)
 
     with TestClient(app):
         pass
 
-    assert _metric_value("agent_task_total", {"task_type": "review", "status": "complete"}) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "review"}) == 5.0
+    [event] = _completion_events(caplog)
+    assert event["source"] == "api_orphan_harvest"
+    assert event["task_type"] == "review"
+    assert event["pr_number"] == 42
+    assert event["status"] == "complete"
+    assert event["duration_seconds"] == 300.0
+    assert event["premium_requests"] == 5
 
 
 @patch("main._spawn_monitor")
@@ -126,11 +133,9 @@ def test_startup_reconnects_monitors_for_running_workers(
     assert call_kwargs.kwargs["number"] == 10
 
 
-def test_metrics_endpoint_exposes_prometheus_text():
+def test_metrics_endpoint_is_not_exposed():
     resp = _client().get("/metrics")
-    assert resp.status_code == 200
-    assert resp.headers["content-type"].startswith("text/plain")
-    assert "# HELP agent_task_total" in resp.text
+    assert resp.status_code == 404
 
 
 # --- Review endpoint tests ---
@@ -335,15 +340,18 @@ def test_implement_rejects_duplicate_in_flight(mock_running):
 @patch("main.remove_container", new_callable=AsyncMock)
 @patch("main.get_logs", new_callable=AsyncMock)
 @patch("main.wait_container", new_callable=AsyncMock)
-def test_monitor_records_metrics_on_success(mock_wait, mock_logs, mock_rm):
-    """Monitor should record metrics when worker exits successfully."""
+def test_monitor_does_not_duplicate_worker_completion_event(mock_wait, mock_logs, mock_rm, caplog):
+    """Monitor cleanup should not emit another terminal event when the worker already did."""
     mock_wait.return_value = 0
-    mock_logs.return_value = '{"status": "complete", "premium_requests": 5}\n'
+    mock_logs.return_value = (
+        '{"event": "task_completed", "status": "complete", "premium_requests": 5}\n'
+        '{"status": "complete", "premium_requests": 5}\n'
+    )
+    caplog.set_level(logging.INFO)
 
     asyncio.run(_monitor_worker("abc123", task_type="review", number=42, start=0.0))
 
-    assert _metric_value("agent_task_total", {"task_type": "review", "status": "complete"}) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "review"}) == 5.0
+    assert _completion_events(caplog) == []
     mock_rm.assert_awaited_once_with("abc123")
 
 
@@ -354,28 +362,32 @@ def test_monitor_does_not_trigger_review_after_implement(mock_wait, mock_logs, m
     """Review is now handled inside the implement worker, not triggered by the monitor."""
     mock_wait.return_value = 0
     mock_logs.return_value = (
+        '{"event": "task_completed", "status": "complete", "premium_requests": 2}\n'
         '{"status": "complete", "repo": "user/repo", "pr_number": 99, "premium_requests": 2}\n'
     )
 
     asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
 
-    assert (
-        _metric_value("agent_task_total", {"task_type": "implement", "status": "complete"}) == 1.0
-    )
+    mock_rm.assert_awaited_once_with("abc123")
 
 
 @patch("main.remove_container", new_callable=AsyncMock)
 @patch("main.get_logs", new_callable=AsyncMock)
 @patch("main.wait_container", new_callable=AsyncMock)
-def test_monitor_records_metrics_on_failure(mock_wait, mock_logs, mock_rm):
-    """Monitor should record failure metrics when worker exits with non-zero."""
+def test_monitor_logs_fallback_completion_on_failure(mock_wait, mock_logs, mock_rm, caplog):
+    """Monitor emits a fallback completion event when worker logs lack one."""
     mock_wait.return_value = 1
     mock_logs.return_value = '{"status": "failed", "premium_requests": 3}\n'
+    caplog.set_level(logging.INFO)
 
     asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
 
-    assert _metric_value("agent_task_total", {"task_type": "implement", "status": "failed"}) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "implement"}) == 3.0
+    [event] = _completion_events(caplog)
+    assert event["source"] == "api_monitor"
+    assert event["task_type"] == "implement"
+    assert event["issue_number"] == 10
+    assert event["status"] == "failed"
+    assert event["premium_requests"] == 3
     mock_rm.assert_awaited_once_with("abc123")
 
 
@@ -412,15 +424,16 @@ def test_monitor_does_not_log_worker_output_on_success(mock_wait, mock_logs, moc
 @patch("main.get_logs", new_callable=AsyncMock)
 @patch("main.wait_container", new_callable=AsyncMock)
 def test_monitor_records_rejected_status(mock_wait, mock_logs, mock_rm):
-    """Monitor should record 'rejected' status correctly, not as 'complete'."""
+    """Monitor should treat 'rejected' as a terminal status, not as 'complete'."""
     mock_wait.return_value = 1
-    mock_logs.return_value = '{"status": "rejected", "premium_requests": 0}\n'
+    mock_logs.return_value = (
+        '{"event": "task_completed", "status": "rejected", "premium_requests": 0}\n'
+        '{"status": "rejected", "premium_requests": 0}\n'
+    )
 
     asyncio.run(_monitor_worker("abc123", task_type="implement", number=10, start=0.0))
 
-    assert (
-        _metric_value("agent_task_total", {"task_type": "implement", "status": "rejected"}) == 1.0
-    )
+    mock_rm.assert_awaited_once_with("abc123")
 
 
 @patch("main.remove_container", new_callable=AsyncMock)
@@ -433,8 +446,7 @@ def test_monitor_handles_unparseable_logs(mock_wait, mock_logs, mock_rm):
 
     asyncio.run(_monitor_worker("abc123", task_type="review", number=42, start=0.0))
 
-    assert _metric_value("agent_task_total", {"task_type": "review", "status": "complete"}) == 1.0
-    assert _metric_value("agent_premium_requests_total", {"task_type": "review"}) == 0.0
+    mock_rm.assert_awaited_once_with("abc123")
 
 
 @patch("main.remove_container", new_callable=AsyncMock)

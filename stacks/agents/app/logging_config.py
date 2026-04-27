@@ -31,10 +31,15 @@ class TaskContextFilter(logging.Filter):
         self.pr_number = pr_number
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.task_type = self.task_type
-        if self.issue_number is not None:
+        record_task_type = getattr(record, "task_type", None)
+        if record_task_type is None:
+            record.task_type = self.task_type
+            record_task_type = self.task_type
+        if record_task_type != self.task_type:
+            return True
+        if self.issue_number is not None and getattr(record, "issue_number", None) is None:
             record.issue_number = self.issue_number
-        if self.pr_number is not None:
+        if self.pr_number is not None and getattr(record, "pr_number", None) is None:
             record.pr_number = self.pr_number
         return True
 

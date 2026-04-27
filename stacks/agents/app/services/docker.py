@@ -272,11 +272,11 @@ def parse_worker_result(logs: str) -> TaskResult | None:
 
 
 async def cleanup_orphaned_workers() -> list[dict[str, Any]]:
-    """Remove stopped worker containers and return their info for metric harvesting.
+    """Remove stopped worker containers and return their info for log fallback.
 
     Called on startup to clean up containers that weren't reaped because
     the API was restarted while monitoring them. Returns parsed info so
-    main.py can record metrics before the data is lost.
+    main.py can emit a fallback completion event when worker logs do not have one.
     """
     harvested: list[dict[str, Any]] = []
     try:
