@@ -5,7 +5,7 @@ FROM python:3.14.4-slim@sha256:538a18f1db92b4210a0b71aca2d14c156a96dedbe8867465c
 # Renovate tracks each ARG via the datasource comments below.
 # When bumping Python, also update: mise.toml (python), pyproject.toml (requires-python, target-version) x2.
 # renovate: datasource=github-releases depName=jdx/mise
-ARG MISE_VERSION=v2026.2.1
+ARG MISE_VERSION=v2026.4.23
 # renovate: datasource=github-releases depName=github/copilot-cli
 ARG COPILOT_CLI_VERSION=v1.0.36
 # renovate: datasource=github-releases depName=cli/cli
