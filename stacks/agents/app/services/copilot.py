@@ -56,7 +56,7 @@ def _redact_secrets(text: str, extra_secrets: frozenset[str] = frozenset()) -> s
 
 
 class TaskError(Exception):
-    """Wraps a post-CLI failure, preserving stats for metrics accumulation."""
+    """Wraps a post-CLI failure, preserving token and request stats."""
 
     def __init__(
         self,

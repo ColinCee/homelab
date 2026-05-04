@@ -2,8 +2,7 @@
 
 Defense-in-depth on top of the Tailscale boundary and `ALLOWED_ACTORS`
 trust check. Only the dispatch endpoints (`/review`, `/implement`) require
-the bearer token; `/health`, `/metrics`, and status endpoints stay open
-for monitoring.
+the bearer token; `/health` and status endpoints stay open for monitoring.
 """
 
 import os

@@ -26,14 +26,19 @@ No Grafana restart is needed — the sync script pushes via `POST /api/dashboard
   or `{"type": "loki", "uid": "loki"}`. These UIDs are pinned in
   `provisioning/datasources/datasources.yaml`.
 
-## Metric job labels
+## Metric and log job labels
 
-| Metrics | Job label | Exporter |
-|---------|-----------|----------|
-| Host (CPU, RAM, disk, uptime) | `job="integrations/unix"` | Alloy's `prometheus.exporter.unix` (overrides configured `job_name`) |
-| Container (CPU, memory, network) | `job="docker"` | Alloy's `prometheus.exporter.cadvisor` |
-| CrowdSec | `job="crowdsec"` | Direct scrape |
-| Agent service | `job="agent"` | App `/metrics` endpoint |
+| Source | Job label | Use |
+|--------|-----------|-----|
+| Host metrics (CPU, RAM, disk, uptime) | `job="integrations/unix"` | Prometheus via Alloy's `prometheus.exporter.unix` (overrides configured `job_name`) |
+| Container metrics (CPU, memory, network, active workers) | `job="docker"` | Prometheus via Alloy's `prometheus.exporter.cadvisor` |
+| CrowdSec metrics | `job="crowdsec"` | Prometheus direct scrape |
+| Agent task logs | `job="agent"` | Loki Docker logs with `task_completed` events |
+
+Agent task counts, status, duration, premium request, and token panels should use
+LogQL over the `task_completed` events in `{job="agent"}`. Active worker panels
+still use Prometheus Docker container metrics because they describe live
+container state rather than terminal task outcomes.
 
 ## Scraper instance deduplication
 

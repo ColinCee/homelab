@@ -97,8 +97,8 @@
       "type": "stat",
       "title": "Total Tasks",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 4,
@@ -144,11 +144,11 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total)",
+          "expr": "sum(count_over_time({job=\"agent\"} | json | event = `task_completed` [$__range]))",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -157,8 +157,8 @@
       "type": "stat",
       "title": "Success Rate",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 4,
@@ -204,11 +204,11 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total{status=\"complete\"}) / sum(agent_task_total) * 100",
+          "expr": "sum(count_over_time({job=\"agent\"} | json | event = `task_completed` | status = `complete` [$__range])) / sum(count_over_time({job=\"agent\"} | json | event = `task_completed` [$__range])) * 100",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -217,8 +217,8 @@
       "type": "stat",
       "title": "Failed",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 4,
@@ -264,11 +264,11 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_task_total{status=\"failed\"})",
+          "expr": "sum(count_over_time({job=\"agent\"} | json | event = `task_completed` | status = `failed` [$__range]))",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -277,8 +277,8 @@
       "type": "stat",
       "title": "Premium Requests",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 4,
@@ -324,11 +324,11 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_premium_requests_total)",
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap premium_requests [$__range]))",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -337,8 +337,8 @@
       "type": "stat",
       "title": "Total Tokens",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 4,
@@ -384,11 +384,11 @@
       },
       "targets": [
         {
-          "expr": "sum(agent_tokens_total)",
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap input_tokens [$__range])) + sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap output_tokens [$__range])) + sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap cached_tokens [$__range])) + sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap reasoning_tokens [$__range]))",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -397,8 +397,8 @@
       "type": "piechart",
       "title": "Tasks by Status",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -435,12 +435,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (status)(agent_task_total)",
+          "expr": "sum by (status)(count_over_time({job=\"agent\"} | json | event = `task_completed` [$__range]))",
           "legendFormat": "{{status}}",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -449,8 +449,8 @@
       "type": "piechart",
       "title": "Tokens by Direction",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -487,12 +487,39 @@
       },
       "targets": [
         {
-          "expr": "sum by (direction)(agent_tokens_total)",
-          "legendFormat": "{{direction}}",
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap input_tokens [$__range]))",
+          "legendFormat": "input",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap output_tokens [$__range]))",
+          "legendFormat": "output",
+          "refId": "B",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap cached_tokens [$__range]))",
+          "legendFormat": "cached",
+          "refId": "C",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          }
+        },
+        {
+          "expr": "sum(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap reasoning_tokens [$__range]))",
+          "legendFormat": "reasoning",
+          "refId": "D",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -501,8 +528,8 @@
       "type": "bargauge",
       "title": "Avg Duration by Type",
       "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
+        "type": "loki",
+        "uid": "loki"
       },
       "gridPos": {
         "h": 8,
@@ -553,12 +580,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (task_type)(agent_task_duration_seconds_sum) / sum by (task_type)(agent_task_duration_seconds_count)",
+          "expr": "sum by (task_type)(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap duration_seconds [$__range])) / sum by (task_type)(count_over_time({job=\"agent\"} | json | event = `task_completed` [$__range]))",
           "legendFormat": "{{task_type}}",
           "refId": "A",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           }
         }
       ]
@@ -717,8 +744,8 @@
           "type": "timeseries",
           "title": "Task Throughput (daily)",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           },
           "gridPos": {
             "h": 8,
@@ -765,12 +792,12 @@
           },
           "targets": [
             {
-              "expr": "sum by (task_type)(increase(agent_task_total[1d]))",
+              "expr": "sum by (task_type)(count_over_time({job=\"agent\"} | json | event = `task_completed` [1d]))",
               "legendFormat": "{{task_type}}",
               "refId": "A",
               "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
+                "type": "loki",
+                "uid": "loki"
               }
             }
           ]
@@ -779,8 +806,8 @@
           "type": "timeseries",
           "title": "Premium Requests (daily)",
           "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+            "type": "loki",
+            "uid": "loki"
           },
           "gridPos": {
             "h": 8,
@@ -827,12 +854,12 @@
           },
           "targets": [
             {
-              "expr": "sum by (task_type)(increase(agent_premium_requests_total[1d]))",
+              "expr": "sum by (task_type)(sum_over_time({job=\"agent\"} | json | event = `task_completed` | unwrap premium_requests [1d]))",
               "legendFormat": "{{task_type}}",
               "refId": "A",
               "datasource": {
-                "type": "prometheus",
-                "uid": "prometheus"
+                "type": "loki",
+                "uid": "loki"
               }
             }
           ]

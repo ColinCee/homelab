@@ -9,8 +9,25 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 failed=0
 
+# VS Code's Git process can inherit a Windows locale that is not generated in
+# WSL. Normalize child process locale so Python tooling behaves consistently.
+export LC_ALL=C.UTF-8
+export LANG=C.UTF-8
+
 fail() { echo -e "${RED}FAIL${NC} $1"; failed=1; }
 pass() { echo -e "${GREEN}OK${NC}   $1"; }
+
+tool_path() {
+  local tool="$1"
+  if command -v mise &>/dev/null; then
+    mise which "$tool" 2>/dev/null && return
+  fi
+  command -v "$tool" 2>/dev/null
+}
+
+UV_BIN="$(tool_path uv || true)"
+ACTIONLINT_BIN="$(tool_path actionlint || true)"
+SHELLCHECK_BIN="$(tool_path shellcheck || true)"
 
 # ── Git-crypt: prevent plaintext commits in docs/private/ ──
 for f in $(git diff --cached --name-only | grep '^docs/private/' || true); do
@@ -25,8 +42,8 @@ for f in $(git diff --cached --name-only | grep '^docs/private/' || true); do
 done
 
 # ── Ruff lint ──
-if command -v uv &>/dev/null; then
-  if (cd stacks/agents/app && uv run ruff check . --quiet 2>/dev/null); then
+if [ -n "$UV_BIN" ]; then
+  if (cd stacks/agents/app && "$UV_BIN" run ruff check . --quiet 2>/dev/null); then
     pass "ruff lint"
   else
     fail "ruff lint (run: cd stacks/agents/app && uv run ruff check .)"
@@ -34,8 +51,8 @@ if command -v uv &>/dev/null; then
 fi
 
 # ── Ruff format ──
-if command -v uv &>/dev/null; then
-  if (cd stacks/agents/app && uv run ruff format --check --quiet . 2>/dev/null); then
+if [ -n "$UV_BIN" ]; then
+  if (cd stacks/agents/app && "$UV_BIN" run ruff format --check --quiet . 2>/dev/null); then
     pass "ruff format"
   else
     fail "ruff format (run: cd stacks/agents/app && uv run ruff format .)"
@@ -43,8 +60,8 @@ if command -v uv &>/dev/null; then
 fi
 
 # ── YAML lint ──
-if command -v uv &>/dev/null; then
-  if uv run yamllint -c .yamllint.yaml stacks/ 2>/dev/null; then
+if [ -n "$UV_BIN" ]; then
+  if "$UV_BIN" run yamllint -c .yamllint.yaml stacks/ 2>/dev/null; then
     pass "yamllint"
   else
     fail "yamllint (run: uv run yamllint -c .yamllint.yaml stacks/)"
@@ -52,8 +69,8 @@ if command -v uv &>/dev/null; then
 fi
 
 # ── Actionlint ──
-if command -v actionlint &>/dev/null; then
-  if find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint 2>/dev/null; then
+if [ -n "$ACTIONLINT_BIN" ]; then
+  if find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs "$ACTIONLINT_BIN" 2>/dev/null; then
     pass "actionlint"
   else
     fail "actionlint (run: actionlint .github/workflows/*.yaml)"
@@ -61,11 +78,11 @@ if command -v actionlint &>/dev/null; then
 fi
 
 # ── Shellcheck ──
-if command -v shellcheck &>/dev/null; then
+if [ -n "$SHELLCHECK_BIN" ]; then
   shells=()
   if ls .githooks/* &>/dev/null; then shells+=(.githooks/*); fi
   if [ ${#shells[@]} -gt 0 ]; then
-    if shellcheck "${shells[@]}" 2>/dev/null; then
+    if "$SHELLCHECK_BIN" "${shells[@]}" 2>/dev/null; then
       pass "shellcheck"
     else
       fail "shellcheck"
@@ -74,8 +91,8 @@ if command -v shellcheck &>/dev/null; then
 fi
 
 # ── Pytest ──
-if command -v uv &>/dev/null; then
-  if (cd stacks/agents/app && uv run pytest tests/ -q --no-header 2>/dev/null); then
+if [ -n "$UV_BIN" ]; then
+  if (cd stacks/agents/app && "$UV_BIN" run pytest tests/ -q --no-header 2>/dev/null); then
     pass "pytest"
   else
     fail "pytest (run: cd stacks/agents/app && uv run pytest tests/ -v)"
