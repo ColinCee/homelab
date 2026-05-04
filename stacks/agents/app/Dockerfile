@@ -83,7 +83,7 @@ RUN python3 --version && uv --version && envsubst --version && \
 
 WORKDIR /app
 COPY stacks/agents/app/pyproject.toml stacks/agents/app/uv.lock ./
-RUN uv sync --frozen
+RUN UV_PROJECT_ENVIRONMENT=/opt/agent-venv uv sync --frozen
 
 # Pre-warm uv cache with root dev deps (yamllint, ruff, ty, pytest) so
 # runtime `uv sync` in worktrees hits cache instead of downloading.
@@ -101,7 +101,8 @@ COPY stacks/agents/app/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 ENV HOME=/home/agent
-ENV PATH="/app/.venv/bin:/mise/shims:$PATH"
+ENV UV_PROJECT_ENVIRONMENT="/opt/agent-venv"
+ENV PATH="/opt/agent-venv/bin:/mise/shims:$PATH"
 # Trust mise configs in worktrees (agent clones repos into /reviews/).
 ENV MISE_TRUSTED_CONFIG_PATHS="/reviews"
 
@@ -110,4 +111,4 @@ ENV MISE_TRUSTED_CONFIG_PATHS="/reviews"
 EXPOSE 8585
 ENTRYPOINT ["/entrypoint.sh"]
 # API mode (default) — override with 'python -m worker' for ephemeral workers
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8585"]
