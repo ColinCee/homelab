@@ -16,6 +16,6 @@ if [ -S /var/run/docker.sock ]; then
     usermod -aG "$DOCKER_GROUP" agent
 fi
 
-# runuser resets PATH despite --preserve-environment on this host; re-apply
-# the image PATH so venv executables and mise shims remain available.
+# Re-apply the image PATH after dropping privileges so API and worker commands
+# use the image-managed Python runtime and mise shims.
 exec runuser --preserve-environment -u agent -- env PATH="$PATH" "$@"

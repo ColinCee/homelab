@@ -5,8 +5,7 @@
 # Dockerfile and app source
 !stacks/agents/app/**
 
-# Keep host-local Python artifacts out of the image. The Dockerfile creates
-# /app/.venv during the build; copying a host venv can leave broken symlinks.
+# Keep host-local Python artifacts out of the build context.
 stacks/agents/app/.venv/
 stacks/agents/app/**/__pycache__/
 stacks/agents/app/**/*.pyc
