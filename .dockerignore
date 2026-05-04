@@ -5,6 +5,15 @@
 # Dockerfile and app source
 !stacks/agents/app/**
 
+# Keep host-local Python artifacts out of the image. The Dockerfile creates
+# /app/.venv during the build; copying a host venv can leave broken symlinks.
+stacks/agents/app/.venv/
+stacks/agents/app/**/__pycache__/
+stacks/agents/app/**/*.pyc
+stacks/agents/app/.pytest_cache/
+stacks/agents/app/.ruff_cache/
+stacks/agents/app/.env
+
 # Repo-level config needed by the build (mise install in Dockerfile)
 !mise.toml
 
