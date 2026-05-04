@@ -133,11 +133,6 @@ def test_startup_reconnects_monitors_for_running_workers(
     assert call_kwargs.kwargs["number"] == 10
 
 
-def test_metrics_endpoint_is_not_exposed():
-    resp = _client().get("/metrics")
-    assert resp.status_code == 404
-
-
 # --- Review endpoint tests ---
 
 

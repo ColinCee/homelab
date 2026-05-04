@@ -11,7 +11,7 @@ authoritative sources.
 | Component | What it does |
 |-----------|---------------|
 | **Grafana** | Dashboards, Explore, and alert routing |
-| **Prometheus** | Metrics storage for host, containers, CrowdSec, and agent metrics |
+| **Prometheus** | Metrics storage for host, containers, and CrowdSec |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
 | **CrowdSec** | Security detections and firewall decisions, also exported as metrics |
@@ -34,6 +34,10 @@ All queries use `max by (name)` (container metrics) or `max()` (host
 metrics) to deduplicate series. When Alloy is recreated, its Prometheus
 `instance` label changes but old series persist until the staleness
 window expires — without aggregation, every metric appears twice.
+
+The Agent Tasks dashboard derives task counts, status, duration, premium request,
+and token totals from Loki `task_completed` events. Active worker counts still
+come from Prometheus Docker container metrics.
 
 Datasource UIDs are pinned to `prometheus` and `loki` in
 `provisioning/datasources/datasources.yaml`. Grafana does not update
@@ -72,6 +76,15 @@ Then query it in Grafana Explore:
 {container_name="<current-agent-container-name>"} |= "ERROR"
 ```
 
+Agent task outcomes are easiest to inspect through the shared `job="agent"`
+label that Alloy applies to the API and worker containers:
+
+```logql
+{job="agent"} | json | event = `task_completed`
+sum(count_over_time({job="agent"} | json | event = `task_completed` | status = `failed` [1h]))
+sum(sum_over_time({job="agent"} | json | event = `task_completed` | unwrap premium_requests [1d]))
+```
+
 ## Metrics: Prometheus
 
 Prometheus receives metrics from:
@@ -79,26 +92,21 @@ Prometheus receives metrics from:
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
-- **Agent service:** `http://100.100.146.119:8585/metrics` (`job="agent"`)
 
 Useful checks:
 
 ```bash
 curl -sf http://beelink:8585/health
-curl -sf http://beelink:8585/metrics | grep '^agent_'
 ```
 
 Useful PromQL:
 
 ```promql
-agent_task_in_progress
-sum by (task_type) (increase(agent_task_total{status="failed"}[1h]))
-sum by (task_type) (increase(agent_premium_requests_total[1d]))
+count(container_last_seen{job="docker", name=~"worker-.*"}) OR vector(0)
 ```
 
-Use `agent_task_total` and `agent_task_duration_seconds` from
-`stacks/agents/app/metrics.py` when you want task-level health rather than raw
-container health.
+Use the Agent Tasks dashboard or the LogQL examples above for task-level health.
+Use Prometheus container metrics when you want raw worker container state.
 
 ## Alerts
 
@@ -114,10 +122,10 @@ The shipped rules cover host-level pressure such as:
 
 ## Common debugging path
 
-1. **Task looks stuck:** check `curl -sf http://beelink:8585/health`, then
-   inspect `agent_task_in_progress` and the current API container logs.
+1. **Task looks stuck:** check `curl -sf http://beelink:8585/health`, inspect
+   active worker containers with Prometheus, then check the current API and
+   worker logs in Loki.
 2. **A worker failed earlier:** query Loki by exact worker container name, such
    as `{container_name="worker-implement-118"}`.
-3. **Failures are spiking:** graph
-   `sum by (task_type) (increase(agent_task_total{status="failed"}[1h]))` and
+3. **Failures are spiking:** graph `task_completed` failures in Loki and
    correlate with `{container_name=~"worker-(implement|review)-.*"} |= "ERROR"`.

@@ -21,16 +21,17 @@ linked here instead of treating this doc as a protocol spec.
 6. The CLI owns the repo work: edit files, commit, push, create the draft PR,
    wait for checks, mark ready, and merge. The lifecycle contract lives in
    `.github/skills/bot-implement/SKILL.md`.
-7. The worker prints a JSON result; the API monitor in `main.py` records
-   Prometheus metrics, removes the stopped worker container, and if the run
-   produced a PR, comments `/review` on that PR.
-8. That `/review` comment starts the independent advisory review flow in a fresh
-   worker session.
+7. The worker prints a JSON result, emits a structured `task_completed` log event
+   for Loki, and exits. The API monitor in `main.py` reads the result as a
+   fallback, emits a completion event only if the worker did not, and removes the
+   stopped worker container.
+8. If an implementation leaves a PR needing human attention, the independent
+   advisory review flow can still be triggered with `/review`.
 
 ## `/review` end to end
 
-1. A trusted human, or the implement monitor, comments `/review` on a PR; the
-   workflow contract lives in `.github/workflows/code-review.yaml`.
+1. A trusted human comments `/review` on a PR; the workflow contract lives in
+   `.github/workflows/code-review.yaml`.
 2. The workflow mints a GitHub App token, joins Tailscale, and POSTs to
    `POST /review`.
 3. `main.py` validates the triggering actor and spawns `worker-review-<pr>`.
@@ -70,7 +71,7 @@ container (`services/docker.py`, `stacks/agents/compose.yaml`).
 | Surface | Owns |
 |---------|------|
 | GitHub Actions workflows | Trigger parsing, GitHub App token minting, Tailscale connectivity, dispatch to the Beelink API |
-| FastAPI API + orchestrators | Trust checks, worker spawn/monitoring, worktree setup, metrics, progress plumbing, post-implement `/review` trigger |
+| FastAPI API + orchestrators | Trust checks, worker spawn/monitoring, worktree setup, task-completion logging, and progress plumbing |
 | Copilot CLI | File edits, git operations, PR lifecycle, and the review comment itself |
 
 That split is the current contract from
