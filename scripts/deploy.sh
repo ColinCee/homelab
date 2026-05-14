@@ -13,8 +13,9 @@ else
 fi
 
 cd "$(dirname "$0")/.."
-git fetch origin main
-git reset --hard "${DEPLOY_REF:-origin/main}"
+if [[ "${SKIP_DEPLOY_CHECKOUT_SYNC:-}" != "1" ]]; then
+  scripts/prepare-deploy-checkout.sh
+fi
 
 compose() {
   local file="$1"

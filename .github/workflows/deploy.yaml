@@ -48,6 +48,7 @@ jobs:
         env:
           STACKS: ${{ steps.detect.outputs.stacks }}
           DEPLOY_REF: ${{ github.sha }}
+          DEPLOY_GIT_REF: ${{ github.ref }}
           AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
           BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
           BOT_APP_INSTALLATION_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
@@ -58,8 +59,9 @@ jobs:
           KNOWLEDGE_DB_PASSWORD: ${{ secrets.KNOWLEDGE_DB_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
+          scripts/prepare-deploy-checkout.sh
           scripts/generate-env.sh
-          scripts/deploy.sh
+          SKIP_DEPLOY_CHECKOUT_SYNC=1 scripts/deploy.sh
 
       - name: Get commit message
         if: always() && steps.detect.outputs.stacks != ''
