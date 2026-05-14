@@ -26,6 +26,9 @@ concurrency:
   group: deploy
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: beelink
@@ -44,11 +47,17 @@ jobs:
         if: steps.detect.outputs.stacks != ''
         env:
           STACKS: ${{ steps.detect.outputs.stacks }}
-          ALL_SECRETS: ${{ toJson(secrets) }}
+          DEPLOY_REF: ${{ github.sha }}
+          AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
+          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
+          BOT_APP_INSTALLATION_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
+          CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
+          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          KNOWLEDGE_DB_PASSWORD: ${{ secrets.KNOWLEDGE_DB_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          git fetch origin main
-          git reset --hard origin/main
           scripts/generate-env.sh
           scripts/deploy.sh
 

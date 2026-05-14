@@ -14,11 +14,24 @@ for f in "$REPO_ROOT"/stacks/*/compose.yaml; do
   all+=("$(basename "$(dirname "$f")")")
 done
 
+is_known_stack() {
+  local candidate="$1"
+  local stack
+  for stack in "${all[@]}"; do
+    [[ "$stack" == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
 if [[ "${INPUT_STACK:-}" == "all" ]]; then
   echo "stacks=${all[*]}" >> "$OUTPUT"
   echo "Deploying: all (${all[*]})"
   exit 0
 elif [[ -n "${INPUT_STACK:-}" ]]; then
+  if ! is_known_stack "$INPUT_STACK"; then
+    echo "❌ Invalid stack: ${INPUT_STACK}" >&2
+    exit 1
+  fi
   echo "stacks=${INPUT_STACK}" >> "$OUTPUT"
   echo "Deploying: ${INPUT_STACK}"
   exit 0

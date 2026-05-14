@@ -7,7 +7,12 @@ set -euo pipefail
 
 # Export placeholders for all secret references in .env.example files.
 # grep -oE used instead of -P for portability (no PCRE dependency).
-for var in $(grep -ohE '\$\{[A-Z_]+' stacks/*/.env.example 2>/dev/null | sed 's/\${//' | sort -u); do
+mapfile -t env_vars < <(
+  grep -ohE '\$\{[A-Z_][A-Z0-9_]*\}' stacks/*/.env.example 2>/dev/null \
+    | sed -E 's/^\$\{([^}]+)\}$/\1/' \
+    | sort -u || true
+)
+for var in "${env_vars[@]}"; do
   export "${var}=placeholder"
 done
 
@@ -21,6 +26,11 @@ scripts/generate-env.sh "${stacks[@]}"
 # Validate each compose file
 for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
-  docker compose -f "$f" config --quiet || exit 1
+  env_file="$(dirname "$f")/.env"
+  if [[ -f "$env_file" ]]; then
+    docker compose --env-file "$env_file" -f "$f" config --quiet || exit 1
+  else
+    docker compose -f "$f" config --quiet || exit 1
+  fi
 done
 echo "All compose files valid"

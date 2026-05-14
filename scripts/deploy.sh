@@ -14,7 +14,54 @@ fi
 
 cd "$(dirname "$0")/.."
 git fetch origin main
-git reset --hard origin/main
+git reset --hard "${DEPLOY_REF:-origin/main}"
+
+compose() {
+  local file="$1"
+  local env_file="$2"
+  shift 2
+
+  if [[ -f "$env_file" ]]; then
+    docker compose --env-file "$env_file" -f "$file" "$@"
+  else
+    docker compose -f "$file" "$@"
+  fi
+}
+
+read_generated_env_value() {
+  local env_file="$1"
+  local key="$2"
+  local line
+  local value
+
+  [[ -f "$env_file" ]] || return 1
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" == "${key}="* ]] || continue
+    value="${line#*=}"
+    if [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+      value="${value//\\\'/$'\''}"
+      value="${value//\\\\/\\}"
+    fi
+    printf '%s' "$value"
+    return 0
+  done < "$env_file"
+  return 1
+}
+
+ensure_grafana_password() {
+  local env_file="$1"
+
+  if [[ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
+    return
+  fi
+  if GRAFANA_ADMIN_PASSWORD="$(read_generated_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"; then
+    export GRAFANA_ADMIN_PASSWORD
+    return
+  fi
+  echo "❌ GRAFANA_ADMIN_PASSWORD is required for observability deploy" >&2
+  exit 1
+}
 
 install_timer() {
   local unit_base="$1"
@@ -35,22 +82,20 @@ for stack in "${stacks[@]}"; do
   file="stacks/${stack}/compose.yaml"
   [[ -f "$file" ]] || { echo "❌ No compose.yaml: ${stack}" >&2; exit 1; }
 
-  # Export .env vars (generate-env.sh writes files but its exports don't propagate)
   env_file="stacks/${stack}/.env"
-  # shellcheck source=/dev/null
-  if [[ -f "$env_file" ]]; then set -a; source "$env_file"; set +a; fi
 
   case "$stack" in
-    agents)         docker compose -f "$file" up -d --build --remove-orphans ;;
-    knowledge)      docker compose -f "$file" build ingest
-                    docker compose -f "$file" up -d --remove-orphans
+    agents)         compose "$file" "$env_file" up -d --build --remove-orphans ;;
+    knowledge)      compose "$file" "$env_file" build ingest
+                    compose "$file" "$env_file" up -d --remove-orphans
                     install_timer "stacks/knowledge/knowledge-backup" ;;
-    observability)  docker compose -f "$file" up -d --remove-orphans
+    observability)  compose "$file" "$env_file" up -d --remove-orphans
+                    ensure_grafana_password "$env_file"
                     scripts/sync-dashboards.sh ;;
-    flight-tracker) docker compose -f "$file" pull
-                    docker compose -f "$file" up -d --remove-orphans
+    flight-tracker) compose "$file" "$env_file" pull
+                    compose "$file" "$env_file" up -d --remove-orphans
                     install_timer "stacks/flight-tracker/flight-tracker-poll" ;;
-    *)              docker compose -f "$file" up -d --remove-orphans ;;
+    *)              compose "$file" "$env_file" up -d --remove-orphans ;;
   esac
   echo "✅ ${stack}"
 done
