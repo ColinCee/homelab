@@ -60,8 +60,9 @@ Internet
 ```
 Push to main
   → Self-hosted runner on beelink detects changed stacks
-  → Generates .env from GitHub secrets + .env.example templates
-  → docker compose up
+  → Syncs server checkout to the triggering commit
+  → Generates .env from allowlisted GitHub secrets + .env.example templates
+  → docker compose --env-file up
 ```
 
 ## Tooling

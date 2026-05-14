@@ -10,9 +10,11 @@ up`. Replacing it with a GitHub Actions pipeline gives us:
 
 1. **True IaC** — compose files, scripts, and workflow are all in the repo
 2. **GitHub as single source of truth for secrets** — `.env.example` templates
-   in the repo, real values in GitHub secrets, no manual syncing to the server
-3. **Zero-delay deploys on push** — auto-detect changed stacks, generate `.env`,
-   `docker compose up` — no Dokploy clicks
+   in the repo, real values in GitHub secrets, no manual syncing to the server;
+   the deploy workflow passes only the named secrets required by stack templates
+3. **Zero-delay deploys on push** — auto-detect changed stacks, sync the server
+   checkout to the triggering commit, generate `.env`, `docker compose up` — no
+   Dokploy clicks
 4. **Agent compatibility** — the agent can edit workflows and compose files
    directly; Dokploy's DB-stored config was opaque to it
 
@@ -141,7 +143,7 @@ Setup:
 2. Run as a systemd service under a dedicated user
 3. Change `deploy.yaml`: `runs-on: beelink` (deploy job only)
 4. Remove from workflow: Tailscale connect, deploy key setup, SSH steps
-5. Deploy step becomes: `generate-env.sh` → `deploy.sh` (both local)
+5. Deploy step becomes: sync checkout → `generate-env.sh` → `deploy.sh` (all local)
 6. Remove secrets: DEPLOY_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET,
    DOKPLOY_API_KEY
 7. Remove from repo: `deploy-gate.sh`
@@ -152,11 +154,21 @@ Setup:
 What stays unchanged:
 
 - `detect-stacks.sh` — stack change detection
-- `generate-env.sh` — `.env` generation from templates
-- `deploy.sh` — git pull + docker compose up
+- `generate-env.sh` — `.env` generation from templates using only allowlisted
+  workflow secrets
+- `deploy.sh` — Docker Compose deploy using generated `.env` files as data
 - `.env.example` templates — secret variable mapping
 - GitHub secrets for app credentials (BOT_APP_ID, etc.)
 - `workflow_dispatch` manual deploy UI
+
+### Secret handling hardening
+
+Generated stack `.env` files are inputs to Docker Compose, not shell scripts.
+The deploy workflow must pass an explicit allowlist of GitHub secrets, render the
+stack templates after the server checkout is on the deployed commit, and run
+Compose with `--env-file`. This keeps the push/manual deploy UX while avoiding a
+single `toJson(secrets)` environment blob and avoiding `eval`/`source` execution
+of generated dotenv files.
 
 ### Tailscale security improvement
 

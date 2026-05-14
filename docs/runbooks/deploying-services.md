@@ -7,11 +7,13 @@ How to add and deploy services on the homelab.
 Push to `main` triggers the deploy workflow (`.github/workflows/deploy.yaml`):
 
 ```
-push to main → detect changed stacks → generate .env → docker compose up
+push to main → detect changed stacks → sync checkout → generate .env → docker compose --env-file up
 ```
 
 The workflow runs on a self-hosted runner on beelink ([ADR-012](../decisions/012-deploy-pipeline.md)).
 Manual deploys are available via `workflow_dispatch` in the GitHub Actions UI.
+Before rendering `.env` files, the server checkout is reset to the workflow
+commit, so deploy scripts and templates come from the commit being deployed.
 
 For local/manual deploys on the server:
 
@@ -61,6 +63,8 @@ MY_SECRET=${MY_SECRET}
 ```
 
 Then add `MY_SECRET` to the deploy workflow's env block and as a GitHub secret.
+The deploy workflow intentionally passes only named secrets to the deploy step;
+do not use `toJson(secrets)` or source generated `.env` files as shell.
 
 ## Conventions
 

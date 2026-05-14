@@ -50,12 +50,13 @@ Two practical rules matter when you are tracing traffic:
 Push to `main` triggers the deploy workflow:
 
 ```text
-push to main → detect changed stacks → generate .env from GitHub secrets → docker compose up
+push to main → detect changed stacks → sync checkout → generate .env → docker compose --env-file up
 ```
 
 The workflow runs on a self-hosted runner on beelink — no SSH, no tailnet
-join from CI. Secrets live in GitHub and are written to `.env` files via
-`.env.example` templates at deploy time
+join from CI. Secrets live in GitHub, are exposed to deploy as an explicit
+allowlist, and are written to stack `.env` files via `.env.example` templates
+at deploy time
 ([ADR-012](decisions/012-deploy-pipeline.md)).
 
 ### External services (GHCR image polling)
