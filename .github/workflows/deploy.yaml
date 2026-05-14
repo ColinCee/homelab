@@ -59,7 +59,8 @@ jobs:
           KNOWLEDGE_DB_PASSWORD: ${{ secrets.KNOWLEDGE_DB_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          scripts/prepare-deploy-checkout.sh
+          git fetch --no-tags origin "$DEPLOY_GIT_REF"
+          git reset --hard "$DEPLOY_REF"
           scripts/generate-env.sh
           SKIP_DEPLOY_CHECKOUT_SYNC=1 scripts/deploy.sh
 
