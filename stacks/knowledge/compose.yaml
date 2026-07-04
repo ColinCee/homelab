@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:0.8.3-pg17-trixie@sha256:3a3147ccd9a0aee952bb69e1acea1eb3cc7183544185b87a662f872cfa47ae3b
+    image: pgvector/pgvector:0.8.4-pg17-trixie@sha256:a6b0b983e72808f7dd479b03b709ce9584197aa0eb0bb944a489edc91d193ca8
     restart: unless-stopped
     ports:
       - "100.100.146.119:5432:5432"
