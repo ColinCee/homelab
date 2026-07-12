@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-24.04
     services:
       postgres:
-        image: pgvector/pgvector:0.8.4-pg17-trixie@sha256:a6b0b983e72808f7dd479b03b709ce9584197aa0eb0bb944a489edc91d193ca8
+        image: pgvector/pgvector:0.8.5-pg17-trixie@sha256:69573b32242ca232f65871d4cb916ba7210a372b9bd74068204c1a9a57bada4f
         env:
           POSTGRES_DB: knowledge
           POSTGRES_USER: knowledge
