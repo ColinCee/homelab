@@ -13,7 +13,7 @@ ARG GH_VERSION=2.89.0
 # renovate: datasource=github-releases depName=moby/moby
 ARG DOCKER_VERSION=28.2.2
 # renovate: datasource=github-releases depName=docker/compose
-ARG DOCKER_COMPOSE_VERSION=5.1.3
+ARG DOCKER_COMPOSE_VERSION=5.3.1
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
 COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
