@@ -16,7 +16,7 @@ ARG DOCKER_VERSION=28.2.2
 ARG DOCKER_COMPOSE_VERSION=5.1.3
 
 # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
-COPY --from=ghcr.io/astral-sh/uv:0.11.3 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.3@sha256:90bbb3c16635e9627f49eec6539f956d70746c409209041800a0280b93152823 /uv /usr/local/bin/uv
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git ca-certificates gettext-base && \
