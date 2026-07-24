@@ -1,6 +1,6 @@
 services:
   grafana:
-    image: grafana/grafana:12.4.6@sha256:dc91df727e7a90043b74ed4e2df7e4302f0eb3ad8f1e9fe278b0f7a7689d3432
+    image: grafana/grafana:13.1.0@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
     restart: unless-stopped
     ports:
       - "100.100.146.119:3001:3000"
