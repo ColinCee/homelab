@@ -1,5 +1,5 @@
 # renovate: datasource=docker depName=python
-FROM python:3.14.4-slim@sha256:538a18f1db92b4210a0b71aca2d14c156a96dedbe8867465c8ff4dce04d2ec39
+FROM python:3.14.7-slim@sha256:ce40764625a4ff50df3548277632e7f96c4e77fe75fa848aae9885476e7df5a4
 
 # Pin tool versions for reproducible builds and supply-chain safety.
 # Renovate tracks each ARG via the datasource comments below.
@@ -55,7 +55,7 @@ COPY mise.toml /mise/config.toml
 # Register base-image Python with mise so it skips compilation.
 # mise detects installed tools by scanning /mise/installs/<tool>/<version>/.
 # renovate: datasource=docker depName=python
-ARG PYTHON_VERSION=3.14.4
+ARG PYTHON_VERSION=3.14.7
 RUN mkdir -p /mise/installs/python/${PYTHON_VERSION}/bin && \
     ln -sf /usr/local/bin/python3 /mise/installs/python/${PYTHON_VERSION}/bin/python && \
     ln -sf /usr/local/bin/python3 /mise/installs/python/${PYTHON_VERSION}/bin/python3 && \
