@@ -1,187 +1,20 @@
-# ADR-012: Deploy pipeline — CI-to-server transport
+# ADR-012: Deploy on the Beelink runner
 
-**Date:** 2026-04-17
 **Status:** Accepted
 
-## Context
+Use a self-hosted GitHub Actions runner for trusted `main` deployments and
+GitHub-hosted runners for pull-request CI. This avoids giving a hosted CI machine
+tailnet access or maintaining a separate deployment platform.
 
-Dokploy managed container lifecycle but added little value over `docker compose
-up`. Replacing it with a GitHub Actions pipeline gives us:
+The workflow owns Git checkout and secret rendering. `scripts/deploy.sh` applies
+the current checkout and installs the service timers. Reconcile all stacks rather
+than maintaining changed-file detection; Compose leaves unchanged containers
+running.
 
-1. **True IaC** — compose files, scripts, and workflow are all in the repo
-2. **GitHub as single source of truth for secrets** — `.env.example` templates
-   in the repo, real values in GitHub secrets, no manual syncing to the server;
-   the deploy workflow passes only the named secrets required by stack templates
-3. **Zero-delay deploys on push** — auto-detect changed stacks, sync the server
-   checkout to the triggering commit, generate `.env`, `docker compose up` — no
-   Dokploy clicks
-4. **Agent compatibility** — the agent can edit workflows and compose files
-   directly; Dokploy's DB-stored config was opaque to it
+Repository write access can become host-level execution through workflows and
+Compose. Protect `main`, require CI before merge, and keep merging a human
+decision. An in-file branch condition is not a substitute for GitHub access
+controls.
 
-The pipeline is built (`deploy.yaml`, `detect-stacks.sh`, `generate-env.sh`,
-`deploy.sh`). The open question was how CI reaches beelink to execute the
-deploy.
-
-The first attempt joined a GitHub-hosted runner to the tailnet via Tailscale
-OAuth (`tag:ci`), then SSHed to beelink with a restricted deploy key and
-forced-command gate. This hit two blockers:
-
-1. **Tailscale SSH intercepts port 22** before sshd sees the connection, so
-   `authorized_keys` (and the forced-command gate) are never consulted.
-2. **Tailnet membership is the real exposure** — even if SSH is gated, a
-   compromised CI runner on the tailnet can reach any service bound to the
-   Tailscale IP. The deploy key restriction is irrelevant if the attacker
-   pivots from the tailnet node.
-
-This is a public repository, which constrains some options (e.g., self-hosted
-runners must not be reachable from fork PR workflows).
-
-## Options Considered
-
-### A: Tailscale SSH `accept` for CI
-
-Add `tag:ci` to the SSH ACL so Tailscale SSH accepts the connection directly.
-
-**Pros:**
-- Simple — one ACL change, no sshd config
-- No deploy key needed (Tailscale handles auth)
-
-**Cons:**
-- CI gets full shell access as `colin` — forced-command gate is bypassed
-- Tailnet exposure unchanged — compromised runner has network access to all
-  services on beelink
-- If Tailscale OAuth credentials leak, attacker has full SSH
-
-**Verdict: Rejected.** Solves the SSH interception problem but doesn't address
-the fundamental tailnet exposure concern. Increases blast radius compared to the
-current (broken) design.
-
-### B: sshd on a second port (2222) for CI
-
-Configure sshd to listen on port 2222 alongside Tailscale SSH on port 22. CI
-SSHes to port 2222 where sshd reads `authorized_keys` and the forced-command
-gate works.
-
-**Pros:**
-- Forced-command gate works (sshd handles the connection)
-- Desktop Tailscale SSH unchanged
-- Minimal blast radius for the deploy key itself
-
-**Cons:**
-- CI runner still joins the tailnet — network exposure unchanged
-- Extra port to manage, document, and firewall
-- Added complexity for marginal security gain (the deploy key is restricted,
-  but the tailnet membership is not)
-
-**Verdict: Rejected.** Restricts what the deploy key can do, but doesn't
-restrict what the tailnet node can reach. The threat model concern is network
-position, not SSH command scope.
-
-### C: Disable Tailscale SSH entirely
-
-Turn off Tailscale SSH, use regular sshd for all connections. Desktop manages
-SSH keys in `authorized_keys`.
-
-**Pros:**
-- Forced-command gate works
-- Simpler mental model (one SSH path)
-
-**Cons:**
-- CI runner still joins the tailnet
-- Desktop loses Tailscale SSH convenience and session audit logging
-- Lose Tailscale's automatic key management for trusted devices
-
-**Verdict: Rejected.** Same tailnet exposure as B, plus loses desktop
-convenience. All three SSH-based options share the core problem: a CI runner on
-the tailnet is a high-value pivot point.
-
-### D: Self-hosted GitHub Actions runner on beelink
-
-Run a GitHub Actions runner directly on beelink. The runner connects **outbound**
-to GitHub — no CI machine joins the tailnet. Workflow jobs execute locally.
-
-**Pros:**
-- No tailnet exposure — runner initiates outbound HTTPS to GitHub, nothing
-  inbound
-- No SSH at all — deploy scripts run locally on beelink
-- `.env` generation happens locally (no file transfer)
-- Removes 3 secrets (DEPLOY_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET)
-  and `deploy-gate.sh`
-- GitHub auto-updates the runner binary
-- Keeps everything already built: `detect-stacks.sh`, `generate-env.sh`,
-  `deploy.sh`
-
-**Cons:**
-- Anyone with repo write access can modify workflows to run arbitrary code on
-  beelink (inherent to self-hosted runners)
-- GitHub warns against self-hosted runners on public repos due to fork PR risk
-
-**Public repo mitigation:** Only `deploy.yaml` uses the self-hosted runner
-label (`beelink`), and it only triggers on `push:main` + `workflow_dispatch` —
-both require write access. All PR-triggered workflows (`ci.yaml`,
-`code-review.yaml`, `implement.yaml`) stay on `ubuntu-24.04`. Fork PRs cannot
-reach the self-hosted runner.
-
-| Workflow | Trigger | Runner | Fork PR risk |
-|----------|---------|--------|-------------|
-| ci.yaml | pull_request | ubuntu-24.04 | None |
-| code-review.yaml | issue_comment | **beelink** | None (role-gated + fork-block) |
-| implement.yaml | issues, issue_comment | **beelink** | None (issues aren't forkable) |
-| deploy.yaml | push:main, workflow_dispatch | **beelink** | None (can't trigger) |
-
-**Verdict: Recommended.** Eliminates the tailnet exposure problem entirely.
-The remaining risk (repo write access = code execution on beelink) is
-acceptable for a single-user homelab where collaborator access is controlled.
-
-## Decision
-
-**Option D: Self-hosted runner on beelink.**
-
-Setup:
-
-1. Install GitHub Actions runner on beelink with label `beelink`
-2. Run as a systemd service under a dedicated user
-3. Change `deploy.yaml`: `runs-on: beelink` (deploy job only)
-4. Remove from workflow: Tailscale connect, deploy key setup, SSH steps
-5. Deploy step becomes: sync checkout → `generate-env.sh` → `deploy.sh` (all local)
-6. Remove secrets: DEPLOY_SSH_KEY, TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET,
-   DOKPLOY_API_KEY
-7. Remove from repo: `deploy-gate.sh`
-8. Remove from beelink: deploy key from `authorized_keys`
-9. Decommission Dokploy: remove swarm services, volumes, leave swarm
-10. Revoke Tailscale OAuth client (`tag:ci`) — no CI nodes on tailnet at all
-
-What stays unchanged:
-
-- `detect-stacks.sh` — stack change detection
-- `generate-env.sh` — `.env` generation from templates using only allowlisted
-  workflow secrets
-- `deploy.sh` — Docker Compose deploy using generated `.env` files as data
-- `.env.example` templates — secret variable mapping
-- GitHub secrets for app credentials (BOT_APP_ID, etc.)
-- `workflow_dispatch` manual deploy UI
-
-### Secret handling hardening
-
-Generated stack `.env` files are inputs to Docker Compose, not shell scripts.
-The deploy workflow must pass an explicit allowlist of GitHub secrets, render the
-stack templates after the server checkout is on the deployed commit, and run
-Compose with `--env-file`. This keeps the push/manual deploy UX while avoiding a
-single `toJson(secrets)` environment blob and avoiding `eval`/`source` execution
-of generated dotenv files.
-
-### Tailscale security improvement
-
-With no CI runners joining the tailnet, the Tailscale OAuth client and its
-`tag:ci` ACL can be revoked entirely. The tailnet surface shrinks to only
-trusted physical devices (desktop + mobile). This eliminates the class of
-attack where a compromised CI runner pivots through tailnet to reach
-services on beelink.
-
-## References
-
-- `.github/workflows/deploy.yaml` — deploy workflow
-- ADR-001: Dokploy (superseded)
-- ADR-006: Dokploy GitOps (superseded)
-- ADR-010: Agent security model
-- [GitHub docs: self-hosted runner security](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners#self-hosted-runner-security)
+The [runbook](../runbooks/deploying-services.md) owns operator commands and
+retirement steps. Generated `.env` files are Compose data, never shell scripts.

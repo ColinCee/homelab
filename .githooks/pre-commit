@@ -1,106 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pre-commit hook — catch issues locally before CI.
-# Install: git config core.hooksPath .githooks
-
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m'
-failed=0
-
-# VS Code's Git process can inherit a Windows locale that is not generated in
-# WSL. Normalize child process locale so Python tooling behaves consistently.
-export LC_ALL=C.UTF-8
-export LANG=C.UTF-8
-
-fail() { echo -e "${RED}FAIL${NC} $1"; failed=1; }
-pass() { echo -e "${GREEN}OK${NC}   $1"; }
-
-tool_path() {
-  local tool="$1"
-  if command -v mise &>/dev/null; then
-    mise which "$tool" 2>/dev/null && return
+# Check staged blobs, not decrypted working files. CI owns lint and tests.
+while IFS= read -r -d '' file; do
+  header=$(git show ":$file" | od -An -tx1 | awk 'NR == 1 { for (i = 1; i <= 10; i++) printf "%s", $i }')
+  if [[ "$header" != "00474954435259505400" ]]; then
+    printf 'Refusing plaintext commit of %s; configure git-crypt first.\n' "$file" >&2
+    exit 1
   fi
-  command -v "$tool" 2>/dev/null
-}
-
-UV_BIN="$(tool_path uv || true)"
-ACTIONLINT_BIN="$(tool_path actionlint || true)"
-SHELLCHECK_BIN="$(tool_path shellcheck || true)"
-
-# ── Git-crypt: prevent plaintext commits in docs/private/ ──
-for f in $(git diff --cached --name-only | grep '^docs/private/' || true); do
-  blob=$(git ls-files -s "$f" 2>/dev/null | awk '{print $2}')
-  if [ -n "$blob" ]; then
-    header=$(git cat-file -p "$blob" | head -c 10)
-    case "$header" in
-      *GITCRYPT*) ;;
-      *) fail "$f would be committed in PLAINTEXT!" ;;
-    esac
-  fi
-done
-
-# ── Ruff lint ──
-if [ -n "$UV_BIN" ]; then
-  if (cd stacks/agents/app && "$UV_BIN" run ruff check . --quiet 2>/dev/null); then
-    pass "ruff lint"
-  else
-    fail "ruff lint (run: cd stacks/agents/app && uv run ruff check .)"
-  fi
-fi
-
-# ── Ruff format ──
-if [ -n "$UV_BIN" ]; then
-  if (cd stacks/agents/app && "$UV_BIN" run ruff format --check --quiet . 2>/dev/null); then
-    pass "ruff format"
-  else
-    fail "ruff format (run: cd stacks/agents/app && uv run ruff format .)"
-  fi
-fi
-
-# ── YAML lint ──
-if [ -n "$UV_BIN" ]; then
-  if "$UV_BIN" run yamllint -c .yamllint.yaml stacks/ 2>/dev/null; then
-    pass "yamllint"
-  else
-    fail "yamllint (run: uv run yamllint -c .yamllint.yaml stacks/)"
-  fi
-fi
-
-# ── Actionlint ──
-if [ -n "$ACTIONLINT_BIN" ]; then
-  if find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs "$ACTIONLINT_BIN" 2>/dev/null; then
-    pass "actionlint"
-  else
-    fail "actionlint (run: actionlint .github/workflows/*.yaml)"
-  fi
-fi
-
-# ── Shellcheck ──
-if [ -n "$SHELLCHECK_BIN" ]; then
-  shells=()
-  if ls .githooks/* &>/dev/null; then shells+=(.githooks/*); fi
-  if [ ${#shells[@]} -gt 0 ]; then
-    if "$SHELLCHECK_BIN" "${shells[@]}" 2>/dev/null; then
-      pass "shellcheck"
-    else
-      fail "shellcheck"
-    fi
-  fi
-fi
-
-# ── Pytest ──
-if [ -n "$UV_BIN" ]; then
-  if (cd stacks/agents/app && "$UV_BIN" run pytest tests/ -q --no-header 2>/dev/null); then
-    pass "pytest"
-  else
-    fail "pytest (run: cd stacks/agents/app && uv run pytest tests/ -v)"
-  fi
-fi
-
-if [ "$failed" -ne 0 ]; then
-  echo ""
-  echo -e "${RED}Pre-commit checks failed. Fix issues above or skip with: git commit --no-verify${NC}"
-  exit 1
-fi
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- docs/private/)

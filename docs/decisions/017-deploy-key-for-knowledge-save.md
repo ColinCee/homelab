@@ -61,7 +61,7 @@ The risk is acceptable for this homelab because:
 2. The key is mounted read-only and only into the `save` compose profile.
 3. The save command only performs a normal `git push origin main`.
 4. `ColinCee/notes` is the data target for this workflow; the homelab repo and
-   agent credentials are not exposed by this key.
+   unrelated repository credentials are not exposed by this key.
 
 Branch protection or repository rules on `ColinCee/notes` would be a stronger
 server-side mitigation for force-push and branch deletion. If those controls are

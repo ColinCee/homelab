@@ -3,18 +3,18 @@ set -euo pipefail
 
 # Deploy one or more stacks. Runs on the server.
 #
-# Usage: deploy.sh agents observability
-#    or: STACKS="agents observability" deploy.sh
+# Usage: scripts/deploy.sh [stack ...] (defaults to all stacks).
+# Deploys this checkout without fetching or resetting Git.
 
+cd "$(dirname "$0")/.."
 if (( $# )); then
   stacks=("$@")
 else
-  read -ra stacks <<< "${STACKS:?Set STACKS env var or pass stack names as args}"
-fi
-
-cd "$(dirname "$0")/.."
-if [[ "${SKIP_DEPLOY_CHECKOUT_SYNC:-}" != "1" ]]; then
-  scripts/prepare-deploy-checkout.sh
+  stacks=()
+  for file in stacks/*/compose.yaml; do
+    stack="${file#stacks/}"
+    stacks+=("${stack%/compose.yaml}")
+  done
 fi
 
 compose() {
@@ -27,41 +27,6 @@ compose() {
   else
     docker compose -f "$file" "$@"
   fi
-}
-
-read_generated_env_value() {
-  local env_file="$1"
-  local key="$2"
-  local line
-  local value
-
-  [[ -f "$env_file" ]] || return 1
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ "$line" == "${key}="* ]] || continue
-    value="${line#*=}"
-    if [[ "$value" == \'*\' && "$value" == *\' ]]; then
-      value="${value:1:${#value}-2}"
-      value="${value//\\\'/$'\''}"
-      value="${value//\\\\/\\}"
-    fi
-    printf '%s' "$value"
-    return 0
-  done < "$env_file"
-  return 1
-}
-
-ensure_grafana_password() {
-  local env_file="$1"
-
-  if [[ -n "${GRAFANA_ADMIN_PASSWORD:-}" ]]; then
-    return
-  fi
-  if GRAFANA_ADMIN_PASSWORD="$(read_generated_env_value "$env_file" GRAFANA_ADMIN_PASSWORD)"; then
-    export GRAFANA_ADMIN_PASSWORD
-    return
-  fi
-  echo "❌ GRAFANA_ADMIN_PASSWORD is required for observability deploy" >&2
-  exit 1
 }
 
 install_timer() {
@@ -86,13 +51,9 @@ for stack in "${stacks[@]}"; do
   env_file="stacks/${stack}/.env"
 
   case "$stack" in
-    agents)         compose "$file" "$env_file" up -d --build --remove-orphans ;;
     knowledge)      compose "$file" "$env_file" build ingest
                     compose "$file" "$env_file" up -d --remove-orphans
                     install_timer "stacks/knowledge/knowledge-backup" ;;
-    observability)  compose "$file" "$env_file" up -d --remove-orphans
-                    ensure_grafana_password "$env_file"
-                    scripts/sync-dashboards.sh ;;
     flight-tracker) compose "$file" "$env_file" pull
                     compose "$file" "$env_file" up -d --remove-orphans
                     install_timer "stacks/flight-tracker/flight-tracker-poll" ;;

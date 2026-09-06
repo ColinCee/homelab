@@ -6,8 +6,8 @@ set -euo pipefail
 # constants (no ${}) pass through unchanged.
 # Generated .env files are data for Docker Compose; never source them as shell.
 #
-# Usage: generate-env.sh agents observability
-#    or: STACKS="agents observability" generate-env.sh
+# Usage: generate-env.sh observability knowledge
+#    or: STACKS="observability knowledge" generate-env.sh
 
 quote_env_value() {
   local value="$1"

@@ -5,22 +5,8 @@ on:
     branches: [main]
     paths:
       - "stacks/**"
-      - "pyproject.toml"
-      - "uv.lock"
-  workflow_dispatch:
-    inputs:
-      stack:
-        description: "Stack to deploy"
-        type: choice
-        options:
-          - all
-          - agents
-          - knowledge
-          - observability
-          - flight-tracker
-          - home-assistant
-          - mqtt
-          - crowdsec
+      - "scripts/**"
+      - ".github/workflows/deploy.yaml"
 
 concurrency:
   group: deploy
@@ -31,27 +17,14 @@ permissions:
 
 jobs:
   deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: beelink
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-        with:
-          fetch-depth: 2
-
-      - name: Detect changed stacks
-        id: detect
-        env:
-          INPUT_STACK: ${{ inputs.stack }}
-        run: scripts/detect-stacks.sh
 
       - name: Deploy
-        if: steps.detect.outputs.stacks != ''
         env:
-          STACKS: ${{ steps.detect.outputs.stacks }}
           DEPLOY_REF: ${{ github.sha }}
-          DEPLOY_GIT_REF: ${{ github.ref }}
-          AGENT_API_KEY: ${{ secrets.AGENT_API_KEY }}
-          BOT_APP_ID: ${{ secrets.BOT_APP_ID }}
-          BOT_APP_INSTALLATION_ID: ${{ secrets.BOT_APP_INSTALLATION_ID }}
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
@@ -59,26 +32,12 @@ jobs:
           KNOWLEDGE_DB_PASSWORD: ${{ secrets.KNOWLEDGE_DB_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          git fetch --no-tags origin "$DEPLOY_GIT_REF"
+          git fetch --no-tags origin main
           git reset --hard "$DEPLOY_REF"
-          scripts/generate-env.sh
-          SKIP_DEPLOY_CHECKOUT_SYNC=1 scripts/deploy.sh
-
-      - name: Get commit message
-        if: always() && steps.detect.outputs.stacks != ''
-        id: commit
-        run: |
-          MSG=$(git log -1 --pretty=%s 2>/dev/null || echo "unknown")
-          echo "msg=${MSG}" >> "$GITHUB_OUTPUT"
-
-      - uses: sarisia/actions-status-discord@eb045afee445dc055c18d3d90bd0f244fd062708 # v1
-        if: always() && steps.detect.outputs.stacks != ''
-        with:
-          webhook: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
-          nocontext: true
-          title: Deploy
-          url: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
-          description: |
-            **Stacks:** ${{ steps.detect.outputs.stacks }}
-            **Commit:** ${{ steps.commit.outputs.msg }}
-            **Actor:** ${{ github.actor }}
+          stacks=()
+          for file in stacks/*/compose.yaml; do
+            stack="${file#stacks/}"
+            stacks+=("${stack%/compose.yaml}")
+          done
+          scripts/generate-env.sh "${stacks[@]}"
+          scripts/deploy.sh "${stacks[@]}"

@@ -5,120 +5,35 @@ shellcheck = "0.11.0"
 actionlint = "1.7.12"
 trivy = "0.69.3"
 
-# ── Dev ────────────────────────────────────────────
 [tasks.lint]
-description = "Lint Python, bash, YAML, and GitHub Actions"
+description = "Lint Python, shell, YAML, and Actions"
 run = [
-  "cd stacks/agents/app && uv run ruff check .",
-  "cd stacks/agents/app && uv run ruff format --check .",
-  "cd stacks/knowledge/app && uv run ruff check .",
-  "cd stacks/knowledge/app && uv run ruff format --check .",
-  "if ls .githooks/* &>/dev/null; then shellcheck .githooks/*; else echo 'No githooks to lint'; fi",
+  "cd stacks/knowledge/app && uv run ruff check . && uv run ruff format --check .",
+  "shellcheck scripts/*.sh .githooks/pre-commit",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/",
-  "if [ -d .github/workflows ]; then find .github/workflows -name '*.yaml' -o -name '*.yml' | grep -v '.lock.yml' | xargs actionlint; else echo 'No workflows to lint'; fi",
+  "actionlint",
 ]
 
 [tasks.format]
-description = "Format Python code"
-run = [
-  "cd stacks/agents/app && uv run ruff format .",
-  "cd stacks/knowledge/app && uv run ruff format .",
-]
+description = "Format Python"
+run = "cd stacks/knowledge/app && uv run ruff format ."
 
 [tasks.typecheck]
-description = "Type-check Python code"
-run = [
-  "cd stacks/agents/app && uv run ty check .",
-  "cd stacks/knowledge/app && uv run ty check .",
-]
-
-[tasks.test]
-description = "Run Python tests (unit tests only; excludes integration tests that need live services)"
-run = [
-  "cd stacks/agents/app && uv run pytest tests/ -v",
-  "cd stacks/knowledge/app && uv run pytest tests/ -v --ignore=tests/integration",
-]
-
-[tasks."test:integration"]
-description = "Run integration tests (requires live Postgres; see stacks/knowledge/app/tests/integration/ for env vars)"
-run = "cd stacks/knowledge/app && RUN_INTEGRATION_TESTS=1 uv run pytest tests/integration/ -v"
-
-[tasks."knowledge:lint"]
-description = "Lint the knowledge CLI package"
-run = "cd stacks/knowledge/app && uv run ruff check ."
-
-[tasks."knowledge:typecheck"]
-description = "Type-check the knowledge CLI package"
+description = "Type-check Python"
 run = "cd stacks/knowledge/app && uv run ty check ."
 
-[tasks."knowledge:test"]
-description = "Run tests for the knowledge CLI package"
-run = "cd stacks/knowledge/app && uv run pytest tests/ -v"
+[tasks.test]
+description = "Run unit tests"
+run = "cd stacks/knowledge/app && uv run pytest tests/ -q --ignore=tests/integration"
 
-[tasks."check:versions"]
-description = "Check version consistency between mise.toml and Dockerfile"
-run = "scripts/check-versions.sh"
+[tasks."test:integration"]
+description = "Run integration tests against live Postgres"
+run = "cd stacks/knowledge/app && RUN_INTEGRATION_TESTS=1 uv run pytest tests/integration/ -q"
+
+[tasks."validate:compose"]
+description = "Validate Compose without changing local secrets"
+run = "scripts/validate-compose.sh"
 
 [tasks.ci]
-description = "Full CI check (lint + typecheck + test + validate)"
-depends = ["lint", "typecheck", "test", "validate:compose", "check:versions"]
-
-# ── Deploy ─────────────────────────────────────────
-[tasks."deploy:all"]
-description = "Deploy all stacks"
-depends = ["deploy:ha", "deploy:mqtt", "deploy:observability", "deploy:crowdsec", "deploy:knowledge", "deploy:agents", "deploy:flight-tracker"]
-
-[tasks."deploy:ha"]
-description = "Deploy Home Assistant"
-run = "docker compose -f stacks/home-assistant/compose.yaml up -d"
-
-[tasks."deploy:mqtt"]
-description = "Deploy MQTT broker"
-run = "docker compose -f stacks/mqtt/compose.yaml up -d"
-
-[tasks."deploy:observability"]
-description = "Deploy observability stack (Grafana, Prometheus, Loki, Alloy)"
-run = "docker compose -f stacks/observability/compose.yaml up -d && scripts/sync-dashboards.sh"
-
-[tasks."deploy:crowdsec"]
-description = "Deploy CrowdSec IDS"
-run = "docker compose -f stacks/crowdsec/compose.yaml up -d"
-
-[tasks."deploy:knowledge"]
-description = "Deploy knowledge Postgres + pgvector"
-run = "docker compose -f stacks/knowledge/compose.yaml up -d"
-
-[tasks."deploy:agents"]
-description = "Deploy AI agent service"
-run = "docker compose -f stacks/agents/compose.yaml up -d --build"
-
-[tasks."deploy:flight-tracker"]
-description = "Deploy flight tracker (pull from GHCR)"
-run = "docker compose -f stacks/flight-tracker/compose.yaml pull && docker compose -f stacks/flight-tracker/compose.yaml up -d"
-
-# ── Sync ───────────────────────────────────────────
-[tasks."sync:dashboards"]
-description = "Push dashboard JSON files to Grafana via API"
-run = "scripts/sync-dashboards.sh"
-
-# ── Check ──────────────────────────────────────────
-[tasks."check:health"]
-description = "Run health checks against all services"
-run = "curl -sf http://100.100.146.119:8585/health && echo ' Agent OK ✅'"
-
-[tasks."check:vulnerabilities"]
-description = "Scan Docker images for CVEs"
-run = """
-for f in stacks/*/compose.yaml; do
-  images=$(docker compose -f "$f" config --images 2>/dev/null)
-  for img in $images; do
-    echo "Scanning $img..."
-    trivy image --severity HIGH,CRITICAL "$img"
-  done
-done
-"""
-
-# ── Validate ───────────────────────────────────────
-[tasks."validate:compose"]
-description = "Validate all compose files"
-run = "scripts/validate-compose.sh"
+description = "Run CI checks"
+depends = ["lint", "typecheck", "test", "validate:compose"]
