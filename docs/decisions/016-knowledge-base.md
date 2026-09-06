@@ -126,8 +126,8 @@ bugs became irrelevant — the container owns its own environment.
   the git repo and Docker volume, retained for 14 days for fast restore when
   re-ingest is unavailable or undesirable
 - **Copilot CLI skill** (`knowledge-search`) for agent access via SSH + Docker
-- **Trust boundary**: only the human CLI session and the beelink runner have
-  access. The homelab review/implement agent has no access to notes.
+- **Trust boundary**: only the human CLI session and the Beelink notes runner
+  have access.
 
 ### Data flow
 

@@ -1,87 +1,89 @@
-# Deploying Services
+# Deploying services
 
-How to add and deploy services on the homelab.
+The [deploy workflow](../../.github/workflows/deploy.yaml) runs on Beelink for
+stack, script, or workflow changes pushed to protected `main`. It resets the
+server checkout to the triggering commit, renders `.env` files from explicitly
+named GitHub secrets, and reconciles all stacks. Compose leaves unchanged
+containers running. CI and deployment are separate workflows; require CI on
+pull requests before merging.
 
-## How Deploys Work
+## Manual deployment
 
-Push to `main` triggers the deploy workflow (`.github/workflows/deploy.yaml`):
-
-```
-push to main → detect changed stacks → sync checkout → generate .env → docker compose --env-file up
-```
-
-The workflow runs on a self-hosted runner on beelink ([ADR-012](../decisions/012-deploy-pipeline.md)).
-Manual deploys are available via `workflow_dispatch` in the GitHub Actions UI.
-Before rendering `.env` files, the server checkout is reset to the workflow
-commit, so deploy scripts and templates come from the commit being deployed.
-
-For local/manual deploys on the server:
+On Beelink, select the intended checkout yourself, then:
 
 ```bash
-mise run deploy:agents       # Deploy one stack
-mise run deploy:all          # Deploy everything
+cd /home/colin/code/homelab
+scripts/deploy.sh             # All stacks
+scripts/deploy.sh knowledge   # Selected stack
 ```
 
-## Adding a New Stack
+The script uses existing per-stack `.env` files and never resets Git. To render
+new files, export the secrets named by that stack's `.env.example` and run
+`scripts/generate-env.sh <stack>`. Never source a generated `.env` as shell.
 
-1. **Create the stack directory** with a `compose.yaml`:
+## Adding a stack
+
+1. Add `stacks/<name>/compose.yaml` with pinned images, persistent volumes, and
+   `restart: unless-stopped`. Bind admin ports to Tailscale; reserve host
+   networking for services that need it.
+2. If needed, add `.env.example` and explicitly name its secrets in the deploy
+   workflow. Do not pass the entire GitHub secrets collection.
+3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
+   deployment registry needs updating.
+
+Within a stack, use Docker service names. Across stacks, use a host-mapped
+Tailscale port rather than assuming shared Docker DNS.
+
+## Timers and dashboards
+
+`scripts/deploy.sh` installs the knowledge backup and flight-tracker image-poll
+user timers. Keep those stack-specific actions in the deploy script.
+External image hosting is described in [ADR-013](../decisions/013-external-service-hosting.md).
+
+Grafana loads dashboard JSON from the read-only mounted directory. It polls for
+updates; no API uploader or separate dashboard-sync command is needed.
+
+## Docker startup ordering
+
+Published admin ports bind to the Tailscale address. Docker must wait for that
+address, not merely for `tailscaled.service` to start. Otherwise containers can
+fail to start or remain running without their network attachments.
+
+Install the drop-in once on Beelink (requires sudo):
 
 ```bash
-mkdir -p stacks/my-service
+sudo install -D -m 644 systemd/docker.service.d/tailscale.conf \
+  /etc/systemd/system/docker.service.d/tailscale.conf
+sudo systemctl daemon-reload
 ```
 
-2. **Write `compose.yaml`:**
+This affects the next Docker start; do not restart Docker just to install it.
+The bounded wait fails the start if the expected address is missing rather than
+publishing services on a public interface. If the server's Tailscale IP changes,
+update both this drop-in and the Compose bindings.
 
-```yaml
-services:
-  my-service:
-    image: some-image:latest
-    restart: unless-stopped
-    ports:
-      - "100.100.146.119:8080:8080"
-    volumes:
-      - my-data:/data
-
-volumes:
-  my-data:
-```
-
-3. **Add a mise deploy task** in `mise.toml`:
-
-```toml
-[tasks."deploy:my-service"]
-description = "Deploy my-service"
-run = "docker compose -f stacks/my-service/compose.yaml up -d"
-```
-
-4. **Add to `deploy:all` depends** in `mise.toml`.
-
-5. **If the stack needs secrets**, create `stacks/my-service/.env.example`:
+For containers already stranded without networking, recreate only affected
+services with their existing `.env` and named volumes:
 
 ```bash
-MY_SECRET=${MY_SECRET}
+docker compose --env-file stacks/observability/.env \
+  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana
+docker compose -f stacks/crowdsec/compose.yaml up -d --force-recreate
 ```
 
-Then add `MY_SECRET` to the deploy workflow's env block and as a GitHub secret.
-The deploy workflow intentionally passes only named secrets to the deploy step;
-do not use `toJson(secrets)` or source generated `.env` files as shell.
+## One-time retirement of the old agents
 
-## Conventions
+Deleting repository files does not stop existing containers. Before considering
+the retirement complete:
 
-- **Port binding:** `100.100.146.119:hostPort:containerPort` — binds to Tailscale only (CGNAT, only routable within tailnet)
-- **Host network:** Only `network_mode: host` when required (e.g., Home Assistant needs Bluetooth/mDNS)
-- **Volumes:** Named volumes for persistence. Data directories gitignored via `stacks/*/data/`
-- **Image versions:** Pin tags (e.g., `grafana/grafana:11.5`) for Renovate to track and auto-PR updates
-- **Cross-stack networking:** Use the Tailscale IP (`100.100.146.119`) or host-mapped ports — containers in different compose stacks can't resolve each other via Docker DNS
+1. Disable the old implementation/review workflows in GitHub if they are still
+   enabled, and stop the API before its workers so it cannot create more.
+2. Inspect `docker ps -a --format '{{.ID}} {{.Names}}'`. Remove only the confirmed
+   `agents-agent-*` and `worker-implement-*` / `worker-review-*` containers with
+   `docker rm -f <confirmed-container-ids>`. Do not prune Docker or delete volumes.
+3. Remove the retired agent dashboard in Grafana if the former API-uploaded copy
+   remains. File provisioning does not automatically delete old unmanaged dashboards.
+4. Revoke agent-only API/App credentials and remove the obsolete port 8585 ACL.
+   Check for shared use first; knowledge still uses `COPILOT_GITHUB_TOKEN`.
 
-## Hosting External Services
-
-For services whose source lives in a different repo (e.g., flight-tracker),
-the image is built in that repo's CI and pulled by beelink via a systemd timer.
-See [ADR-013](../decisions/013-external-service-hosting.md) for the full pattern.
-
-1. Create `stacks/<name>/compose.yaml` referencing the GHCR image
-2. Create `stacks/<name>/<name>-poll.service` and `<name>-poll.timer`
-   (copy from `stacks/flight-tracker/` as a template)
-3. Add a case in `scripts/deploy.sh` to pull + install the timer
-4. In the external repo, add a GHCR build+push job to CI
+Keep any transcripts or volumes until deliberately choosing to delete them.

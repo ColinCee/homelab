@@ -55,7 +55,7 @@ Only register the runner for private repos. Public repos use GitHub-hosted runne
 
 | Repo | Visibility | Runner registered | Trigger pattern | Why |
 |------|-----------|-------------------|-----------------|-----|
-| ColinCee/homelab | Public | ✅ | push to main, workflow_dispatch, issue_comment (trusted actors only) | Deploy, agent dispatch |
+| ColinCee/homelab | Public | ✅ | push to main only | Deploy |
 | ColinCee/notes | Private | ✅ (planned) | push to main | Auto-ingest notes into pgvector |
 | ColinCee/flight-tracker-backend | Public | ❌ | N/A — uses GHCR polling | Public repo, can't trust fork PRs |
 

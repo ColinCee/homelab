@@ -77,14 +77,6 @@ discovery.relabel "docker_logs" {
     target_label = "instance"
     replacement  = constants.hostname
   }
-  // Map agent API and worker containers to job="agent" so Loki queries
-  // match the same job label used by the Prometheus agent scrape target.
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/(agents-agent-.*|worker-.*)"
-    target_label  = "job"
-    replacement   = "agent"
-  }
 }
 
 // ================================
@@ -104,30 +96,24 @@ loki.process "docker" {
   // Parse JSON log lines (silently passes through non-JSON lines)
   stage.json {
     expressions = {
-      level        = "level",
-      logger       = "logger",
-      task_type    = "task_type",
-      issue_number = "issue_number",
-      pr_number    = "pr_number",
+      level  = "level",
+      logger = "logger",
     }
   }
 
   // Low-cardinality fields as Loki labels (fast stream filtering)
   stage.labels {
     values = {
-      level     = "level",
-      task_type = "task_type",
+      level = "level",
     }
   }
 
   // High-cardinality fields as structured metadata (searchable, no stream explosion)
   stage.structured_metadata {
     values = {
-      logger       = "logger",
-      issue_number = "issue_number",
-      pr_number    = "pr_number",
-      event        = "event",
-      stage        = "stage",
+      logger = "logger",
+      event  = "event",
+      stage  = "stage",
     }
   }
 
