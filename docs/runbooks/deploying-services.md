@@ -43,6 +43,34 @@ External image hosting is described in [ADR-013](../decisions/013-external-servi
 Grafana loads dashboard JSON from the read-only mounted directory. It polls for
 updates; no API uploader or separate dashboard-sync command is needed.
 
+## Docker startup ordering
+
+Published admin ports bind to the Tailscale address. Docker must wait for that
+address, not merely for `tailscaled.service` to start. Otherwise containers can
+fail to start or remain running without their network attachments.
+
+Install the drop-in once on Beelink (requires sudo):
+
+```bash
+sudo install -D -m 644 systemd/docker.service.d/tailscale.conf \
+  /etc/systemd/system/docker.service.d/tailscale.conf
+sudo systemctl daemon-reload
+```
+
+This affects the next Docker start; do not restart Docker just to install it.
+The bounded wait fails the start if the expected address is missing rather than
+publishing services on a public interface. If the server's Tailscale IP changes,
+update both this drop-in and the Compose bindings.
+
+For containers already stranded without networking, recreate only affected
+services with their existing `.env` and named volumes:
+
+```bash
+docker compose --env-file stacks/observability/.env \
+  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana
+docker compose -f stacks/crowdsec/compose.yaml up -d --force-recreate
+```
+
 ## One-time retirement of the old agents
 
 Deleting repository files does not stop existing containers. Before considering
