@@ -40,13 +40,13 @@ def test_missing_inputs_are_checked_before_any_output_is_replaced(tmp_path: Path
 
 
 def test_generation_is_atomic_and_restricts_file_mode(tmp_path: Path) -> None:
-    stack = tmp_path / "stacks" / "knowledge"
+    stack = tmp_path / "stacks" / "sample"
     stack.mkdir(parents=True)
     (stack / ".env.example").write_text(
         "# keep comments\nPASSWORD=${PASSWORD}\nconstant=value\n", encoding="utf-8"
     )
 
-    generated = generate_env_files(tmp_path, ("knowledge",), environment={"PASSWORD": "secret"})
+    generated = generate_env_files(tmp_path, ("sample",), environment={"PASSWORD": "secret"})
 
     assert generated == (stack / ".env",)
     assert (stack / ".env").read_text() == (

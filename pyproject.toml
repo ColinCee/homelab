@@ -28,7 +28,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "scripts/tailscale_policy.py" = "py312"
 "scripts/deploy.py" = "py312"
 "scripts/generate_env.py" = "py312"
-"stacks/knowledge/operations.py" = "py312"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "stacks/knowledge/tests"]
+testpaths = ["tests"]

@@ -1,9 +1,0 @@
-[Unit]
-Description=Back up knowledge Postgres database
-
-[Service]
-Type=oneshot
-WorkingDirectory=/home/colin/code/homelab/stacks/knowledge
-Environment=KNOWLEDGE_BACKUP_DIR=/home/colin/backups/knowledge
-Environment=KNOWLEDGE_BACKUP_RETENTION_DAYS=14
-ExecStart=/usr/bin/python3 /home/colin/code/homelab/stacks/knowledge/operations.py backup

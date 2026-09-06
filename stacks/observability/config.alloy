@@ -125,37 +125,6 @@ loki.process "docker" {
 }
 
 // ================================
-// Ephemeral Knowledge Task Logs (journald)
-// ================================
-
-loki.source.journal "knowledge_save" {
-  forward_to = [loki.write.default.receiver]
-  matches    = "CONTAINER_TAG=knowledge-save"
-  labels = {
-    job     = "knowledge",
-    service = "save",
-  }
-}
-
-loki.source.journal "knowledge_ingest" {
-  forward_to = [loki.write.default.receiver]
-  matches    = "CONTAINER_TAG=knowledge-ingest"
-  labels = {
-    job     = "knowledge",
-    service = "ingest",
-  }
-}
-
-loki.source.journal "knowledge_backup" {
-  forward_to = [loki.write.default.receiver]
-  matches    = "_SYSTEMD_USER_UNIT=knowledge-backup.service"
-  labels = {
-    job     = "knowledge",
-    service = "backup",
-  }
-}
-
-// ================================
 // Logs Destination (Loki)
 // ================================
 
