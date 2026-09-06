@@ -2,8 +2,9 @@ apiVersion: 1
 templates:
   - orgId: 1
     name: homelab-discord
+    # Grafana's provisioning validator needs an untrimmed opening define.
     template: |
-      {{- define "homelab.discord.heading" -}}
+      {{ define "homelab.discord.heading" -}}
       {{- if or (eq .Labels.alertname "GrafanaTestAlert") (eq .Labels.notification_test "true") -}}
       Test — Discord notifications
       {{- else if eq .Labels.alertname "DatasourceNoData" -}}
