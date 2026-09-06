@@ -5,6 +5,10 @@ contactPoints:
     receivers:
       - uid: discord-private
         type: discord
+        disableResolveMessage: false
         settings:
           url: ${DISCORD_PRIVATE_WEBHOOK_URL}
           use_discord_username: true
+          use_embed_description: true
+          title: '{{ template "homelab.discord.title" . }}'
+          message: '{{ template "homelab.discord.message" . }}'

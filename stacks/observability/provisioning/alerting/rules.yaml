@@ -31,9 +31,14 @@ groups:
                     type: gt
                     params: [0.8]
               refId: C
+        noDataState: NoData
+        execErrState: Error
         for: 5m
         annotations:
-          summary: "CPU usage above 80% for 5 minutes (current: {{ with $values.A }}{{ humanizePercentage .Value }}{{ else }}no data{{ end }})"
+          summary: "Beelink CPU usage"
+          value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
+          description: "Threshold: above 80% for 5 minutes (5-minute CPU average)."
+          action: "Check CPU consumers in Container Overview."
         labels:
           severity: warning
 
@@ -47,7 +52,7 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: 1 - (node_memory_AvailableBytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
+              expr: 1 - (node_memory_MemAvailable_bytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
               instant: true
               refId: A
           - refId: C
@@ -63,9 +68,14 @@ groups:
                     type: gt
                     params: [0.9]
               refId: C
+        noDataState: NoData
+        execErrState: Error
         for: 5m
         annotations:
-          summary: "RAM usage above 90% for 5 minutes (current: {{ with $values.A }}{{ humanizePercentage .Value }}{{ else }}no data{{ end }})"
+          summary: "Beelink RAM usage"
+          value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
+          description: "Threshold: above 90% for 5 minutes."
+          action: "Check memory consumers in Container Overview."
         labels:
           severity: warning
 
@@ -97,9 +107,14 @@ groups:
                     type: gt
                     params: [0.8]
               refId: C
+        noDataState: NoData
+        execErrState: Error
         for: 10m
         annotations:
-          summary: "Disk usage above 80% (current: {{ with $values.A }}{{ humanizePercentage .Value }}{{ else }}no data{{ end }})"
+          summary: "Beelink root disk usage"
+          value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
+          description: "Threshold: above 80% for 10 minutes."
+          action: "Inspect root filesystem usage before removing files; preserve Docker volumes."
         labels:
           severity: critical
 
@@ -139,11 +154,11 @@ groups:
               refId: C
         dashboardUid: container-overview
         panelId: 19
-        noDataState: OK
-        execErrState: Alerting
+        noDataState: NoData
+        execErrState: Error
         for: 0s
         annotations:
-          summary: "Knowledge task failure detected in the last 5 minutes"
+          summary: "Knowledge task failures in the last 5 minutes"
           description: >-
             A knowledge CLI task exited non-zero. Inspect the Knowledge Task Runs
             panel or query {job="knowledge"} in Loki for the full error output.

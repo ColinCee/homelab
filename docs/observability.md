@@ -91,6 +91,9 @@ max(crowdsec_acquisition_source_hits_total{job="crowdsec"})
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and currently routes to the
 `Discord Private` contact point.
+After deploying alerting file changes, reload them with Grafana's authenticated
+`POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
+are not polled. A Grafana-only restart also reloads them.
 
 Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
 hostname. Discord validates the URL in Grafana's alert embed and rejects
@@ -101,6 +104,18 @@ The shipped rules cover host-level pressure such as:
 - high CPU
 - high RAM
 - high disk usage
+
+Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
+does not exist in Alloy's Unix exporter. Verify the rule's exact query in
+Prometheus when a dashboard has data but an alert does not.
+
+Discord uses the provisioned `homelab-discord` notification template in one
+embed. Threshold alerts show an evaluated percentage and threshold duration.
+No-data and evaluation errors remain separate alerts, grouped by affected rule;
+they mean monitoring is unavailable, not that a resource threshold was crossed.
+Resolved messages describe an ended alert, not proof of recovery. Check the
+current evaluation before declaring the resource healthy. Tests are explicitly
+labelled and do not represent resource incidents.
 
 ## Common debugging path
 
