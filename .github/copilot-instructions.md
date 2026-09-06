@@ -5,13 +5,17 @@ and `docs/runbooks/deploying-services.md` for deployment.
 
 - Keep the simplest working solution. Do not add generic frameworks, wrappers,
   or instructions for things the code already makes clear.
-- Keep each service and its configuration under `stacks/<name>/`.
+- Keep each service, operational command, and scheduled unit under
+  `stacks/<name>/`; shared deployment logic must stay stack-name agnostic.
 - Bind admin ports to Tailscale, not all interfaces. Use host networking only
   when required by the service.
 - Pin container images and Actions. Renovate may auto-merge non-major updates
   after checks and the release-age gate pass; major updates remain manual.
 - Never source generated `.env` files or expose secrets. Private operational
   records belong in the separate notes repository, not this public repository.
+- Do not add image polling or stack-specific deployment branches. Git and
+  Renovate own pinned image revisions; Compose and stack-owned units own
+  application operations.
 - Prepare Tailscale policy changes, but leave `scripts/tailscale_policy.py`
   credential entry and live approval to the user's own terminal. Never request
   a Bitwarden vault session or run these prompts through an agent tool.

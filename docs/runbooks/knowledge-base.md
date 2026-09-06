@@ -15,9 +15,11 @@ cd /home/colin/code/homelab
 ```
 
 Postgres runs continuously; ingest and save are on-demand Compose profiles.
-The notes repository's workflow calls `scripts/ingest-notes.sh` on push.
-That script pulls the notes checkout with `--ff-only`, then ingests its
-read-only `/notes` mount. Embeddings are sent to GitHub Models.
+The notes repository's workflow calls the compatibility entrypoint
+`scripts/ingest-notes.sh` on push. It forwards to the typed, stack-owned
+`stacks/knowledge/operations.py` command, which pulls the notes checkout with
+`--ff-only` and ingests its read-only `/notes` mount. Embeddings are sent to
+GitHub Models.
 
 ```bash
 # Search or follow related notes; quote queries as shell data.
@@ -84,13 +86,16 @@ the whole host. Treat dumps as private note content.
 ```bash
 systemctl --user list-timers knowledge-backup.timer
 journalctl --user -u knowledge-backup.service -n 50
-scripts/backup-knowledge-db.sh
+python3 stacks/knowledge/operations.py backup
 ls -lt /home/colin/backups/knowledge/
 ```
 
-The script checks dump readability with `pg_restore --list` before keeping it;
-that is not a full restore test. `KNOWLEDGE_BACKUP_DIR` and
-`KNOWLEDGE_BACKUP_RETENTION_DAYS` override location and retention.
+The stack operation writes a dump beside its final name, checks readability
+with `pg_restore --list`, then atomically publishes it and removes dumps older
+than the retention period. That is not a full restore test.
+`KNOWLEDGE_BACKUP_DIR` and `KNOWLEDGE_BACKUP_RETENTION_DAYS` override location
+and retention. The installed timer uses the same operation from
+`stacks/knowledge/systemd/`.
 
 ### Restore a dump
 
