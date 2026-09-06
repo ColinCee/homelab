@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy one or more stacks. Runs on the server.
-#
 # Usage: scripts/deploy.sh [stack ...] (defaults to all stacks).
 # Deploys this checkout without fetching or resetting Git.
 
@@ -36,18 +34,17 @@ install_timer() {
   local dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
   mkdir -p "$dir"
   cp "${unit_base}.service" "${unit_base}.timer" "$dir/"
-  # Runner process may lack user bus access; set it explicitly
+  # Runner process may lack user bus access; set it explicitly.
   export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
   export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}"
   systemctl --user daemon-reload
   systemctl --user enable --now "${name}.timer"
-  echo "  ⏱ ${name}.timer installed"
+  echo "  Timer installed: ${name}"
 }
 
 for stack in "${stacks[@]}"; do
   file="stacks/${stack}/compose.yaml"
-  [[ -f "$file" ]] || { echo "❌ No compose.yaml: ${stack}" >&2; exit 1; }
-
+  [[ -f "$file" ]] || { echo "No compose.yaml: ${stack}" >&2; exit 1; }
   env_file="stacks/${stack}/.env"
 
   case "$stack" in
@@ -59,5 +56,5 @@ for stack in "${stacks[@]}"; do
                     install_timer "stacks/flight-tracker/flight-tracker-poll" ;;
     *)              compose "$file" "$env_file" up -d --remove-orphans ;;
   esac
-  echo "✅ ${stack}"
+  echo "Deployed: ${stack}"
 done
