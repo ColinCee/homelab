@@ -16,6 +16,18 @@ push to notes repo → GitHub Actions (beelink-notes runner) → ingest-notes.sh
 
 ## Common Operations
 
+### Keep private records out of ingestion
+
+Place a `.noindex` file in a directory to exclude its entire subtree from
+bulk ingestion. Explicit single-file ingestion also refuses those files before
+reading their content or calling the embedding API. A full-directory ingestion
+also removes previously indexed documents in excluded subtrees.
+
+The private notes repository uses this for `areas/homelab/` and
+`archive/homelab/`. This is an ingestion exclusion, not encryption or an access
+control boundary against users who can read the files. Keep actual credentials
+in Bitwarden, not tracked notes.
+
 ### Search the knowledge base
 
 ```bash

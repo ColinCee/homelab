@@ -9,8 +9,8 @@ and `docs/runbooks/deploying-services.md` for deployment.
 - Bind admin ports to Tailscale, not all interfaces. Use host networking only
   when required by the service.
 - Pin container images and Actions; dependency updates require human merge.
-- Never source generated `.env` files or expose secrets. Preserve git-crypt
-  protection for `docs/private/`.
+- Never source generated `.env` files or expose secrets. Private operational
+  records belong in the separate notes repository, not this public repository.
 - Prepare Tailscale policy changes, but leave `scripts/tailscale_policy.py`
   credential entry and live approval to the user's own terminal. Never request
   a Bitwarden vault session or run these prompts through an agent tool.

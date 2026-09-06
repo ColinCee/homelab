@@ -36,6 +36,8 @@ def ingest_file(
     token: str | None = None,
 ) -> IngestResult:
     """Ingest a single file into the knowledge base."""
+    if _is_excluded(path):
+        raise ValueError(f"Excluded from ingestion by .noindex: {path}")
     content = _read_file_content(path)
     content_hash = _file_content_hash(path)
     title = _title_from_file(path, content)
@@ -259,6 +261,12 @@ def _do_directory_ingest(
     )
 
 
+def _is_excluded(path: Path) -> bool:
+    # Apply the same privacy boundary to bulk and explicitly requested files.
+    parents = set(path.absolute().parents) | set(path.resolve().parents)
+    return any((parent / ".noindex").exists() for parent in parents)
+
+
 def _iter_directory_files(directory: Path, glob_pattern: str) -> list[Path]:
     matched_paths: set[str] = set()
 
@@ -267,6 +275,8 @@ def _iter_directory_files(directory: Path, glob_pattern: str) -> list[Path]:
             resolved_path = str(Path(path.resolve()))
             resolved_file = Path(resolved_path)
             if not resolved_file.is_file():
+                continue
+            if _is_excluded(path):
                 continue
             if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
                 continue
@@ -282,6 +292,8 @@ def _iter_supported_directory_files(directory: Path) -> list[Path]:
         resolved_path = str(Path(path.resolve()))
         resolved_file = Path(resolved_path)
         if not resolved_file.is_file():
+            continue
+        if _is_excluded(path):
             continue
         if resolved_file.suffix.lower() not in _INGESTIBLE_SUFFIXES:
             continue

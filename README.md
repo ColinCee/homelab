@@ -22,7 +22,6 @@ mise run lint
 mise run typecheck
 mise run test
 mise run ci                 # Also requires Docker for Compose validation
-git config core.hooksPath .githooks  # Guard against plaintext private-doc commits
 ```
 
 CI runs on GitHub-hosted runners. Dependency updates arrive as Renovate PRs;
@@ -52,7 +51,8 @@ adding services, and retiring the old agent containers.
 - [Runbooks](docs/runbooks/): deployment and knowledge-base operations
 - [Roadmap](docs/roadmap.md): known limitations and planned work
 - [Decisions](docs/decisions/): rationale worth retaining, not a required process
-- `docs/private/`: git-crypt-encrypted operational records; never commit plaintext
+- Private operational records live in the workspace's `notes/areas/homelab/`;
+  historical security snapshots live in `notes/archive/homelab/`.
 
 Host firewall rules, Tailscale ACLs, and running services must be checked on the
 host; repository configuration alone does not prove the live security posture.
