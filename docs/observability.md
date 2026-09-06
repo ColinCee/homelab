@@ -1,10 +1,13 @@
 # Observability
 
-This is the "where do I look first?" page. For the design rationale, see
-[ADR-003](decisions/003-observability.md). For exact scrape and log pipeline
-config, use `stacks/observability/compose.yaml`,
-`stacks/observability/config.alloy`, and the Grafana provisioning files as the
-authoritative sources.
+Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
+provisioning under `stacks/observability/` own exact settings and retention.
+Alloy collects both logs and metrics to avoid separate collectors. Tracing and
+multi-tenant metrics infrastructure are unnecessary for this single host.
+
+Monitoring on Beelink cannot detect its own complete outage from outside.
+Retain an independent external heartbeat when host-outage detection is needed;
+do not treat an on-host dashboard as proof of availability.
 
 ## What's deployed
 
@@ -25,15 +28,15 @@ updates. UI edits are disabled so Git remains the source of truth.
 
 ### Dashboard patterns
 
-All queries use `max by (name)` (container metrics) or `max()` (host
-metrics) to deduplicate series. When Alloy is recreated, its Prometheus
-`instance` label changes but old series persist until the staleness
-window expires — without aggregation, every metric appears twice.
+Use `max by (name)` for container metrics or `max()` for a single host value
+where deduplication is needed. Alloy recreation changes the `instance` label;
+old series remain temporarily visible and can double-count values.
 
 Datasource UIDs are pinned to `prometheus` and `loki` in
 `provisioning/datasources/datasources.yaml`. Grafana does not update
-UIDs on existing datasources via provisioning — if they drift, fix the
-SQLite DB directly.
+UIDs on existing datasources via provisioning. If they drift, inspect the
+provisioned and live datasource identities before making changes; do not
+blindly edit Grafana's database.
 
 ## Logs: Loki via Alloy
 

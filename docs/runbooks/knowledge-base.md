@@ -1,231 +1,193 @@
-# Knowledge Base Operations
+# Knowledge search
 
-Personal knowledge base backed by Postgres + pgvector. Notes are ingested from the [notes repo](https://github.com/ColinCee/notes) and searchable via semantic similarity plus computed note links.
+The private notes Git repository is the source of truth. Postgres + pgvector
+stores a derived search index: relational metadata, keyword search, and vectors
+in one service rather than a separate search platform.
 
-## Architecture
+## Run commands
 
-```
-push to notes repo → GitHub Actions (beelink-notes runner) → ingest-notes.sh
-    → docker compose --profile ingest run → embeds via GitHub Models API → pgvector
-```
-
-- **Postgres** runs permanently in `stacks/knowledge/compose.yaml`
-- **Ingest** is an on-demand container (compose profile), not always running
-- **Embeddings** use `openai/text-embedding-3-large` via `models.github.ai` (COPILOT_GITHUB_TOKEN)
-- **Backups** run nightly via `knowledge-backup.timer` to `/home/colin/backups/knowledge` with 14-day retention
-
-## Common Operations
-
-### Keep private records out of ingestion
-
-Place a `.noindex` file in a directory to exclude its entire subtree from
-bulk ingestion. Explicit single-file ingestion also refuses those files before
-reading their content or calling the embedding API. A full-directory ingestion
-also removes previously indexed documents in excluded subtrees.
-
-The private notes repository uses this for `areas/homelab/` and
-`archive/homelab/`. This is an ingestion exclusion, not encryption or an access
-control boundary against users who can read the files. Keep actual credentials
-in Bitwarden, not tracked notes.
-
-### Search the knowledge base
-
-```bash
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest search \"<query>\" --limit 5"
-```
-
-### Show related notes for a document
-
-Returns both resolved `[[wikilinks]]` and embedding-similar documents.
-
-```bash
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile ingest run --rm ingest related \"/notes/path/to/note.md\""
-```
-
-### Trigger a manual ingest
-
-From the notes repo GitHub Actions tab, or:
-
-```bash
-gh workflow run ingest.yaml --repo ColinCee/notes
-```
-
-Or directly on beelink:
-
-```bash
-ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
-```
-
-### Save a web page to notes
-
-The save profile fetches the page, writes it into the notes repo, commits, and
-pushes to `main` using the repo-scoped deploy key from ADR-017.
-
-```bash
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile save run --rm save save \"<URL>\""
-```
-
-### Inspect recent task runs
-
-- **Grafana:** `Container Overview` → `Knowledge Task Runs`
-- **Loki query:**
-
-  ```logql
-  {job="knowledge"} | json | event = `task_completed`
-  ```
-- **Alerts:** failed runs page the existing Discord Private contact point via Grafana alerting
-
-### Inspect database backups
-
-```bash
-# Timer status on beelink
-ssh beelink "systemctl --user list-timers knowledge-backup.timer"
-ssh beelink "journalctl --user -u knowledge-backup.service -n 50"
-ssh beelink "ls -lh /home/colin/backups/knowledge/knowledge-*.dump"
-
-# Loki query in Grafana
-{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
-```
-
-### Back up the database now
-
-Nightly backups are installed with the knowledge stack. Dumps are stored outside
-the git repo and Docker volume at `/home/colin/backups/knowledge`, retained for
-14 days, and validated with `pg_restore --list` before being kept. Run one
-manually before schema work, embedding changes, or risky ingest fixes:
-
-```bash
-ssh beelink "cd /home/colin/code/homelab && scripts/backup-knowledge-db.sh"
-```
-
-Override the location or retention for one-off runs if needed:
-
-```bash
-ssh beelink "cd /home/colin/code/homelab && KNOWLEDGE_BACKUP_DIR=/path/to/backups KNOWLEDGE_BACKUP_RETENTION_DAYS=30 scripts/backup-knowledge-db.sh"
-```
-
-### Restore from a database backup
-
-Use this when the database volume is corrupted, a bad ingest needs rollback, or
-GitHub Models is unavailable and re-ingest would not work. Pick the backup file
-first:
-
-```bash
-ssh beelink "ls -1t /home/colin/backups/knowledge/knowledge-*.dump | head"
-```
-
-Then restore it:
+Open a server shell first. Examples below run on Beelink, avoiding nested local
+and remote shell quoting:
 
 ```bash
 ssh beelink
 cd /home/colin/code/homelab
-BACKUP=/home/colin/backups/knowledge/knowledge-<timestamp>.dump
-docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c 'dropdb -U "$POSTGRES_USER" --maintenance-db=postgres --force --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"'
-docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c 'pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' < "$BACKUP"
 ```
 
-### Re-ingest everything from scratch
-
-Wipe derived data and re-ingest all files. This depends on the notes repo,
-GitHub Models API, and the configured embedding model all being available.
-Prefer restoring a backup when recovering from a bad ingest and the old vectors
-are still valid.
+Postgres runs continuously; ingest and save are on-demand Compose profiles.
+The notes repository's workflow calls `scripts/ingest-notes.sh` on push.
+That script pulls the notes checkout with `--ff-only`, then ingests its
+read-only `/notes` mount. Embeddings are sent to GitHub Models.
 
 ```bash
-# Drop and recreate the database
-ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 'DELETE FROM note_links; DELETE FROM chunks; DELETE FROM documents;'"
+# Search or follow related notes; quote queries as shell data.
+docker compose -f stacks/knowledge/compose.yaml --profile ingest run --rm ingest search 'query' --limit 5
+docker compose -f stacks/knowledge/compose.yaml --profile ingest run --rm ingest related '/notes/path/to/note.md'
 
-# Re-ingest
-ssh beelink "cd /home/colin/code/homelab && bash scripts/ingest-notes.sh"
+# Pull and ingest the notes checkout; unchanged content hashes are skipped.
+scripts/ingest-notes.sh
+
+# Save a web page: writes a note, commits, and pushes to notes/main.
+docker compose -f stacks/knowledge/compose.yaml --profile save run --rm save save 'https://example.com/page'
 ```
 
-Full re-ingest takes ~12 minutes under current GitHub Models limits. Tighter
-rate limits or model outages make this slower or unavailable. Incremental runs
-skip unchanged files via content hash and finish in ~30 seconds.
+Only save or ingest when intended: these are write operations, not search.
+For other CLI options, append `--help` to the container command.
 
-If `openai/text-embedding-3-large` is retired, backups preserve the existing
-search index while a separate model/schema migration is planned.
+## Privacy and access
 
-### Check database health
+Place `.noindex` in a directory to exclude its subtree from bulk ingestion.
+Explicit single-file ingestion also refuses excluded files before reading
+content or calling embeddings. A completed full-directory ingest removes
+previously indexed documents from excluded subtrees; adding the marker alone
+does not erase existing database records or backups.
+
+Private homelab records use `notes/areas/homelab/.noindex`. This is not encryption
+or filesystem access control. A private Git repository and Tailscale-only
+database access do not prevent non-excluded content being sent to the embedding
+provider. Keep actual credentials in Bitwarden, not tracked notes.
+
+The save container mounts only `~/.ssh/notes_deploy_key`, scoped to the notes
+repository, rather than all host SSH identities. Read-only mounting prevents
+file modification, not key theft. This key has no automatic expiry and can
+perform destructive pushes unless repository rules prohibit them. Restrict
+access to the host and keep recoverable copies of the notes.
+
+## Change retrieval or schema
+
+| Surface | Where and why |
+|---------|---------------|
+| CLI and ingestion | `stacks/knowledge/app/knowledge/`: container execution avoids host Python/PATH dependencies; Docker DNS connects to Postgres. |
+| Embeddings | `embeddings.py` and `models.py` own provider, model, and dimensions. The configured model is `openai/text-embedding-3-large`. |
+| Storage | `stacks/knowledge/init.sql` bootstraps new databases; `migrations/` upgrades existing ones. CLI commands rerun migration SQL, so changes must be idempotent. |
+| Ranking | `database.py` combines vector, strict/relaxed English FTS, and Chinese FTS using reciprocal rank fusion, avoiding calibration of incompatible raw scores. |
+| Chinese text | `tokenize.py` uses Jieba with Postgres `simple` FTS. English FTS alone misses unspaced Chinese; preserve this lexical path. |
+
+The 3072-dimension embeddings use `halfvec` because they exceed pgvector's
+2000-dimension HNSW limit for `vector`. Changing models requires a deliberate
+schema and full re-embedding plan; equal dimensions do not make models
+interchangeable.
+
+Before changing retrieval, use the existing app tests and
+`tests/fixtures/chinese_retrieval_eval_queries.json` under the app directory.
+Preserve English, Chinese, and mixed-language behavior rather than adding a
+new search engine without evidence. Root `mise.toml` owns test commands;
+integration tests require an explicitly configured live Postgres database.
+
+## Back up and recover
+
+The user-level `knowledge-backup.timer` runs nightly. Dumps live outside the
+Docker volume at `/home/colin/backups/knowledge`, with 14-day retention.
+These host-local backups help with bad ingestion or volume loss, not loss of
+the whole host. Treat dumps as private note content.
 
 ```bash
-# Document and chunk counts
-ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 'SELECT count(*) as docs, (SELECT count(*) FROM chunks) as chunks FROM documents;'"
-
-# Most recently ingested documents
-ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c 'SELECT source_path, ingested_at FROM documents ORDER BY ingested_at DESC LIMIT 10;'"
-
-# Postgres container status
-ssh beelink "docker ps --filter name=knowledge-postgres"
+systemctl --user list-timers knowledge-backup.timer
+journalctl --user -u knowledge-backup.service -n 50
+scripts/backup-knowledge-db.sh
+ls -lt /home/colin/backups/knowledge/
 ```
 
-## Credential Lifecycle
+The script checks dump readability with `pg_restore --list` before keeping it;
+that is not a full restore test. `KNOWLEDGE_BACKUP_DIR` and
+`KNOWLEDGE_BACKUP_RETENTION_DAYS` override location and retention.
 
-The `save` profile uses a write deploy key at `~/.ssh/notes_deploy_key` on
-beelink. The key is scoped to `ColinCee/notes` and mounted read-only into the
-container; do not mount the whole host `~/.ssh` directory. Rotate it after host
-compromise, accidental disclosure, or moving the save workflow to a new machine.
+### Restore a dump
 
-### Rotate the notes deploy key
-
-Generate a replacement key on beelink and print the public key:
+This replaces the database. Pause ingestion/save jobs and the backup timer,
+stop active ingest/save containers, and take a pre-change dump if possible.
+Choose an exact existing backup and inspect it **before** dropping anything:
 
 ```bash
-ssh beelink 'ssh-keygen -t ed25519 -N "" -C "knowledge-save-$(date +%Y-%m-%d)" -f ~/.ssh/notes_deploy_key.next && chmod 600 ~/.ssh/notes_deploy_key.next'
-ssh beelink 'cat ~/.ssh/notes_deploy_key.next.pub'
+BACKUP='/home/colin/backups/knowledge/knowledge-<timestamp>.dump'
+test -s "$BACKUP" &&
+  docker compose -f stacks/knowledge/compose.yaml exec -T postgres pg_restore --list < "$BACKUP"
 ```
 
-Add the printed public key to `ColinCee/notes` as a **write** deploy key in
-GitHub: **Settings -> Deploy keys -> Add deploy key -> Allow write access**.
-Then swap the host key and verify that the container can authenticate without
-writing to the notes repo:
+Proceed only if that succeeds and the selected backup is the intended one:
 
 ```bash
-ssh beelink 'mv ~/.ssh/notes_deploy_key ~/.ssh/notes_deploy_key.old.$(date +%Y%m%d) && mv ~/.ssh/notes_deploy_key.next ~/.ssh/notes_deploy_key && chmod 600 ~/.ssh/notes_deploy_key'
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD"
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c \
+  'dropdb -U "$POSTGRES_USER" --maintenance-db=postgres --force --if-exists "$POSTGRES_DB" && createdb -U "$POSTGRES_USER" "$POSTGRES_DB"' &&
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c \
+  'pg_restore --exit-on-error -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' < "$BACKUP"
 ```
 
-After verification, delete the old deploy key from GitHub and clean up the
-temporary files:
+Inspect document counts and command behavior before resuming paused jobs.
+Re-enable the backup timer afterward.
+
+### Rebuild the index
+
+Prefer a backup for recovery. Re-ingestion requires the notes, embedding API,
+and configured model to be available. A backup preserves vectors during an API
+outage, but normal search still needs the API to embed the query.
+
+Only after backing up and confirming a rebuild is possible, pause writers and
+clear derived records in one transaction:
 
 ```bash
-gh api repos/ColinCee/notes/keys --jq '.[] | [.id, .title, .read_only, (.last_used_at // "never")] | @tsv'
-gh api -X DELETE repos/ColinCee/notes/keys/<old-key-id>
-ssh beelink 'rm -f ~/.ssh/notes_deploy_key.old.* ~/.ssh/notes_deploy_key.next.pub'
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c \
+  'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "BEGIN; DELETE FROM note_links; DELETE FROM chunks; DELETE FROM documents; COMMIT;"'
+scripts/ingest-notes.sh
 ```
 
-### Refresh GitHub SSH host keys
+Resume normal jobs after successful ingestion. Do not clear the index to fix
+an unavailable API.
 
-The knowledge image writes `/home/user/.ssh/known_hosts` at build time with
-`ssh-keyscan github.com`. If GitHub rotates SSH host keys, confirm the new
-fingerprints against GitHub's published documentation, then rebuild and verify:
+## Rotate save credentials
+
+Rotate after suspected disclosure/compromise or moving hosts. For suspected
+compromise, revoke the old key immediately; do not wait for a replacement.
+For routine rotation, generate a new key on Beelink:
 
 ```bash
-ssh beelink "cd /home/colin/code/homelab/stacks/knowledge && docker compose build --no-cache save && docker compose --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD"
+ssh-keygen -t ed25519 -N "" -C "knowledge-save-$(date +%Y-%m-%d)" -f ~/.ssh/notes_deploy_key.next
+chmod 600 ~/.ssh/notes_deploy_key.next
+cat ~/.ssh/notes_deploy_key.next.pub
 ```
 
-## Troubleshooting
-
-### Ingest fails with 403 Forbidden
-
-The `COPILOT_GITHUB_TOKEN` PAT needs the **Models: Read** permission under Account permissions. Edit the token at https://github.com/settings/tokens.
-
-### Ingest fails with 429 Too Many Requests
-
-Rate-limited by the embedding API. The ingest retries 3 times per file with exponential backoff. A circuit breaker aborts after 5 consecutive failures. Re-running the ingest picks up where it left off (unchanged files are skipped).
-
-### Ingest container can't connect to Postgres
-
-The ingest container connects via Docker service name (`postgres`), not Tailscale IP. Check that the postgres container is running and healthy:
+Add the public key under the notes repository's **Settings -> Deploy keys**,
+with write access. Pause save operations while replacing the key; do not
+overwrite an existing `.old` backup:
 
 ```bash
-ssh beelink "docker ps --filter name=knowledge-postgres"
+test ! -e ~/.ssh/notes_deploy_key.old &&
+  mv ~/.ssh/notes_deploy_key ~/.ssh/notes_deploy_key.old &&
+  mv ~/.ssh/notes_deploy_key.next ~/.ssh/notes_deploy_key &&
+  chmod 600 ~/.ssh/notes_deploy_key
+docker compose -f stacks/knowledge/compose.yaml --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD
 ```
 
-### Search returns duplicates
+After authentication succeeds, remove the old deploy key in GitHub and delete
+only `~/.ssh/notes_deploy_key.old` and `~/.ssh/notes_deploy_key.next.pub`.
+Resume save operations. Deploy keys need manual lifecycle management; consider
+short-lived App tokens only if that trade-off changes.
 
-Old bare-metal ingest paths (`/home/colin/code/notes/...`) may coexist with container paths (`/notes/...`). Clean up:
+The image bakes in GitHub SSH host keys. If those change, confirm fingerprints
+against GitHub's published documentation before rebuilding:
 
 ```bash
-ssh beelink "docker exec knowledge-postgres-1 psql -U knowledge -d knowledge -c \"DELETE FROM documents WHERE source_path LIKE '/home/colin%';\""
+docker compose -f stacks/knowledge/compose.yaml build --no-cache save
+docker compose -f stacks/knowledge/compose.yaml --profile save run --rm --entrypoint git save ls-remote git@github.com:ColinCee/notes.git HEAD
+```
+
+## Troubleshoot
+
+Use [observability](../observability.md) for task logs and alerts.
+
+| Symptom | Action |
+|---------|--------|
+| HTTP 403 from embeddings | Check the PAT's **Models: Read** account permission and provider access. |
+| HTTP 410 from embeddings | The configured endpoint previously returned Gone. Preserve the index and investigate provider/model availability; retries or a token rotation do not resolve a retired endpoint. |
+| HTTP 429 or transient failures | The client backs off; ingestion aborts after repeated consecutive file failures. Rerun once the provider recovers; unchanged files are skipped. |
+| Postgres unavailable | Check Compose status and logs. Ingest uses Docker DNS `postgres`, not localhost or the Tailscale address. |
+| Duplicate results | Inspect source paths before deleting anything. Historical host paths and `/notes/` paths can describe the same file. |
+
+```bash
+docker compose -f stacks/knowledge/compose.yaml ps
+docker compose -f stacks/knowledge/compose.yaml logs --tail 50 postgres
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) AS docs, (SELECT count(*) FROM chunks) AS chunks FROM documents;"'
+docker compose -f stacks/knowledge/compose.yaml exec -T postgres sh -c \
+  'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT source_path, ingested_at FROM documents ORDER BY ingested_at DESC LIMIT 10;"'
 ```

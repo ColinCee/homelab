@@ -24,35 +24,24 @@ mise run test
 mise run ci                 # Also requires Docker for Compose validation
 ```
 
-CI runs on GitHub-hosted runners. Dependency updates arrive as Renovate PRs;
-merging is a human decision. There is no issue-implementation or review service.
+[`mise.toml`](mise.toml) owns check commands and tool versions; uv owns the
+knowledge application's Python dependencies. Add checks there rather than
+creating another runner or Git hook.
 
-## Deployment
+CI runs on GitHub-hosted runners. Renovate proposes pinned dependency updates;
+passing CI is not approval to deploy. A human merges them. Release delays and
+grouping live in [Renovate configuration](.github/renovate.json).
 
-Changes to stacks, scripts, or the deploy workflow on `main` reconcile all stacks
-on Beelink. The workflow checks out the triggering commit, renders stack secrets,
-and runs `scripts/deploy.sh`. Unchanged containers are left running by Compose.
-Main must be protected: the deploy runner has host-level access.
+## Maintain and extend
 
-On the server, to deploy the current checkout using existing stack `.env` files:
+- [Deploy and manage services](docs/runbooks/deploying-services.md): trust boundaries, secrets, adding/removing stacks, startup recovery.
+- [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
+- [Operate and extend knowledge search](docs/runbooks/knowledge-base.md): ingestion, privacy, retrieval, backups, credentials.
+- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
+- Private operational records live in the workspace's `notes/areas/homelab/`.
 
-```bash
-scripts/deploy.sh            # All stacks
-scripts/deploy.sh knowledge  # One stack
-```
-
-This command does not fetch or reset Git. See the
-[deployment runbook](docs/runbooks/deploying-services.md) for secrets, timers,
-adding services, and retiring the old agent containers.
-
-## Operations
-
-- [Observability](docs/observability.md): metrics, logs, dashboards, alerts
-- [Runbooks](docs/runbooks/): deployment and knowledge-base operations
-- [Roadmap](docs/roadmap.md): known limitations and planned work
-- [Decisions](docs/decisions/): rationale worth retaining, not a required process
-- Private operational records live in the workspace's `notes/areas/homelab/`;
-  historical security snapshots live in `notes/archive/homelab/`.
+Keep current instructions and necessary rationale together. Configuration owns
+exact settings; Git history retains obsolete explanations.
 
 Host firewall rules, Tailscale ACLs, and running services must be checked on the
 host; repository configuration alone does not prove the live security posture.

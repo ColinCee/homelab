@@ -7,6 +7,18 @@ named GitHub secrets, and reconciles all stacks. Compose leaves unchanged
 containers running. CI and deployment are separate workflows; require CI on
 pull requests before merging.
 
+## Trust boundary
+
+The runner can execute host-level commands through Docker and workflows.
+Repository write access is therefore privileged, even for private repositories.
+Keep PR CI on GitHub-hosted runners and Beelink deployment restricted to trusted
+`main`. Protect that branch and require human approval before merge; workflow
+conditions alone are not access controls.
+
+This avoids giving hosted CI tailnet access or maintaining another deployment
+platform. Admin ports stay bound to Tailscale. Secrets are explicitly passed
+to Compose, never sourced as shell code.
+
 ## Manual deployment
 
 On Beelink, select the intended checkout yourself, then:
@@ -38,7 +50,16 @@ Tailscale port rather than assuming shared Docker DNS.
 
 `scripts/deploy.sh` installs the knowledge backup and flight-tracker image-poll
 user timers. Keep those stack-specific actions in the deploy script.
-External image hosting is described in [ADR-013](../decisions/013-external-service-hosting.md).
+
+For externally built services, CI in the source repo publishes to GHCR.
+The flight-tracker timer pulls the backend image every 30 seconds and reconciles
+it with Compose. Polling avoids cross-repo dispatch credentials and an update
+service with Docker socket access; it does not make the image untrusted-code
+safe. Whoever can publish the selected image can change what runs on Beelink.
+
+To add another polled service, follow the flight-tracker `.service`/`.timer`
+units and add its timer installation to `deploy.sh`. User timers require
+`loginctl enable-linger colin` on the host to run without a login session.
 
 Grafana loads dashboard JSON from the read-only mounted directory. It polls for
 updates; no API uploader or separate dashboard-sync command is needed.
@@ -71,19 +92,13 @@ docker compose --env-file stacks/observability/.env \
 docker compose -f stacks/crowdsec/compose.yaml up -d --force-recreate
 ```
 
-## One-time retirement of the old agents
+## Remove a service
 
-Deleting repository files does not stop existing containers. Before considering
-the retirement complete:
+Deleting a stack directory does not stop its containers or installed timers.
+Disable its workflows/timers first, then stop and remove only confirmed
+containers. Preserve volumes until their data is deliberately retired or backed
+up; do not use broad Docker pruning.
 
-1. Disable the old implementation/review workflows in GitHub if they are still
-   enabled, and stop the API before its workers so it cannot create more.
-2. Inspect `docker ps -a --format '{{.ID}} {{.Names}}'`. Remove only the confirmed
-   `agents-agent-*` and `worker-implement-*` / `worker-review-*` containers with
-   `docker rm -f <confirmed-container-ids>`. Do not prune Docker or delete volumes.
-3. Remove the retired agent dashboard in Grafana if the former API-uploaded copy
-   remains. File provisioning does not automatically delete old unmanaged dashboards.
-4. Revoke agent-only API/App credentials and remove the obsolete port 8585 ACL.
-   Check for shared use first; knowledge still uses `COPILOT_GITHUB_TOKEN`.
-
-Keep any transcripts or volumes until deliberately choosing to delete them.
+Remove unused credentials, network grants, and unmanaged Grafana dashboards
+after checking for shared use. Remove the stack and any special deployment
+handling from Git last, so the configuration remains available during shutdown.
