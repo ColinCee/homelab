@@ -11,6 +11,8 @@ from knowledge import __main__ as cli
 from knowledge.ingest import (
     _extract_pdf_text,
     _file_content_hash,
+    _iter_directory_files,
+    _iter_supported_directory_files,
     _read_file_content,
     _title_from_file,
     ingest_directory,
@@ -39,6 +41,63 @@ def _fake_connect() -> MagicMock:
 
 def _task_event(stderr: str) -> dict[str, object]:
     return json.loads(stderr.strip().splitlines()[-1])
+
+
+@pytest.mark.parametrize("suffix", [".md", ".txt", ".pdf"])
+def test_noindex_excludes_nested_files_and_symlinks(tmp_path: Path, suffix: str) -> None:
+    private = tmp_path / "private"
+    nested = private / "nested"
+    nested.mkdir(parents=True)
+    (private / ".noindex").touch()
+    secret = nested / f"private{suffix}"
+    secret.write_text("Private content")
+    public = tmp_path / f"public{suffix}"
+    public.write_text("Public content")
+    (tmp_path / f"alias{suffix}").symlink_to(secret)
+    private_alias = nested / f"alias{suffix}"
+    private_alias.symlink_to(public)
+
+    assert _iter_directory_files(tmp_path, "**/*") == [public.resolve()]
+    assert _iter_directory_files(tmp_path, "**/*.md") == [public.resolve()]
+    assert _iter_supported_directory_files(tmp_path) == [public.resolve()]
+    assert _iter_directory_files(nested, "**/*") == []
+    with patch("knowledge.ingest._read_file_content") as read:
+        for path in (secret, tmp_path / f"alias{suffix}", private_alias):
+            with pytest.raises(ValueError, match="Excluded from ingestion"):
+                ingest_file(path)
+        read.assert_not_called()
+
+
+@patch("knowledge.database.connect")
+@patch("knowledge.ingest.delete_document", return_value=1)
+@patch("knowledge.ingest.list_documents_by_source_prefix")
+@patch("knowledge.ingest.ingest_file")
+def test_noindex_removes_previously_indexed_documents(
+    mock_ingest_file: MagicMock,
+    mock_list_prefix: MagicMock,
+    mock_delete_document: MagicMock,
+    mock_connect: MagicMock,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / ".noindex").touch()
+    private_file = tmp_path / "private.md"
+    private_file.write_text("Private content")
+    document = Document(
+        id=UUID("00000000-0000-0000-0000-000000000001"),
+        source_path=str(private_file.resolve()),
+        title="Private",
+        content_hash="old-hash",
+    )
+    conn = _fake_connect()
+    mock_connect.return_value = conn
+    mock_list_prefix.return_value = [document]
+
+    result = ingest_directory(tmp_path)
+
+    assert result.files_found == 0
+    assert result.documents_deleted == 1
+    mock_ingest_file.assert_not_called()
+    mock_delete_document.assert_called_once_with(conn, document)
 
 
 @patch("knowledge.database.connect")
