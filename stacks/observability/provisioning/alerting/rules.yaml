@@ -33,7 +33,7 @@ groups:
               refId: C
         for: 5m
         annotations:
-          summary: "CPU usage above 80% for 5 minutes (current: {{ humanizePercentage $value }})"
+          summary: "CPU usage above 80% for 5 minutes (current: {{ humanizePercentage $values.A.Value }})"
         labels:
           severity: warning
 
@@ -65,7 +65,7 @@ groups:
               refId: C
         for: 5m
         annotations:
-          summary: "RAM usage above 90% for 5 minutes (current: {{ humanizePercentage $value }})"
+          summary: "RAM usage above 90% for 5 minutes (current: {{ humanizePercentage $values.A.Value }})"
         labels:
           severity: warning
 
@@ -99,7 +99,7 @@ groups:
               refId: C
         for: 10m
         annotations:
-          summary: "Disk usage above 80% (current: {{ humanizePercentage $value }})"
+          summary: "Disk usage above 80% (current: {{ humanizePercentage $values.A.Value }})"
         labels:
           severity: critical
 

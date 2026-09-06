@@ -92,6 +92,10 @@ Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and currently routes to the
 `Discord Private` contact point.
 
+Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
+hostname. Discord validates the URL in Grafana's alert embed and rejects
+host-only URLs with HTTP 400.
+
 The shipped rules cover host-level pressure such as:
 
 - high CPU
