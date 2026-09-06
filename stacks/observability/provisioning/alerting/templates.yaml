@@ -59,17 +59,10 @@ templates:
       Check the current rule evaluation.
       {{- end }}
       {{- else if eq .Status "resolved" -}}
-      {{ if eq .Labels.alertname "Knowledge Task Failed" -}}
-      Failure alert ended; this does not mean the failed task succeeded.
-      {{- else -}}
       This alert instance ended; closure alone does not confirm recovery.
       {{ if match "^[0-9]+(\\.[0-9]+)?%$" .Annotations.value }}Last reported value: {{ .Annotations.value }}.
       {{ end -}}
-      {{- end }}
       Check the current rule evaluation.
-      {{- else if eq .Labels.alertname "Knowledge Task Failed" -}}
-      A knowledge task failed in the last 5 minutes.
-      Inspect Knowledge Task Runs or the task logs in Loki.
       {{- else if match "^[0-9]+(\\.[0-9]+)?%$" .Annotations.value -}}
       {{ .Annotations.summary }}: **{{ .Annotations.value }}**.
       {{ .Annotations.description }}

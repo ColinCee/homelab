@@ -29,8 +29,8 @@ not a continuously running GitOps controller.
 - `stacks/<name>/compose.yaml` is the required entry point. Discover it without
   a stack registry; support deploying all stacks or explicitly selected names.
 - Keep optional `.env.example`, configuration, application code, and operational
-  commands beside Compose. Knowledge owns ingestion and backup implementation;
-  an external workflow may trigger those commands without owning their logic.
+  commands beside Compose. An external workflow may trigger stack-owned
+  commands without owning their logic.
 - Reserve `stacks/<name>/systemd/` for optional user `.service`/`.timer` pairs,
   with stack-prefixed unit names. Discover and install them generically; do not
   introduce arbitrary pre/post-deploy hooks.
@@ -43,11 +43,11 @@ not a continuously running GitOps controller.
   rollback across stacks.
 
 The implementation builds with all Compose profiles enabled, then starts only
-the normal services with `up`. Profile jobs such as knowledge `ingest` and
-`save` are therefore built and ready for on-demand use without being run by
-deployment. Compose `--wait` supplies bounded readiness: healthchecks are used
-where declared and services without one are considered ready when running.
-Readiness is not a full application or endpoint health audit.
+the normal services with `up`. This leaves images for any on-demand profile
+jobs ready without running one-off operations during deployment. Compose
+`--wait` supplies bounded readiness: healthchecks are used where declared and
+services without one are considered ready when running. Readiness is not a
+full application or endpoint health audit.
 
 Adding an ordinary stack should require only its folder. Adding scheduled work
 should require only stack-owned commands and units. A new secret still requires
@@ -87,9 +87,9 @@ On Beelink, select the intended checkout yourself, then:
 ```bash
 cd /home/colin/code/homelab
 scripts/deploy.sh                              # Discover and deploy all stacks
-scripts/deploy.sh knowledge                    # Deploy one stack
-scripts/deploy.sh observability knowledge       # Deploy selected stacks
-scripts/deploy.sh --readiness-timeout 180 knowledge
+scripts/deploy.sh observability                 # Deploy one stack
+scripts/deploy.sh observability crowdsec        # Deploy selected stacks
+scripts/deploy.sh --readiness-timeout 180 observability
 ```
 
 The command validates every selected Compose file, `.env`, and systemd pair

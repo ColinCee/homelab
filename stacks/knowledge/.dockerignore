@@ -1,5 +1,0 @@
-app/.venv/
-app/.pytest_cache/
-app/tests/
-app/__pycache__/
-app/*.pyc

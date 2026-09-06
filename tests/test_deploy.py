@@ -101,8 +101,8 @@ def test_compose_validation_failure_prevents_all_mutations(tmp_path: Path) -> No
 def test_deployment_does_not_forward_shell_secrets_to_compose(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _make_stack(tmp_path, "knowledge")
-    monkeypatch.setenv("KNOWLEDGE_DB_PASSWORD", "not-forwarded")
+    _make_stack(tmp_path, "sample")
+    monkeypatch.setenv("SAMPLE_SECRET", "not-forwarded")
     runner, calls = _recording_runner()
     plans = deploy.discover_stack_plans(tmp_path)
 
@@ -115,7 +115,7 @@ def test_deployment_does_not_forward_shell_secrets_to_compose(
 
 
 def test_builds_all_profiles_but_does_not_start_profile_jobs(tmp_path: Path) -> None:
-    _make_stack(tmp_path, "knowledge")
+    _make_stack(tmp_path, "sample")
     runner, calls = _recording_runner()
     plans = deploy.discover_stack_plans(tmp_path)
 

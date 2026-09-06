@@ -55,15 +55,6 @@ docker ps --format '{{.Names}}'
 {container_name="<current-container-name>"} |= "ERROR"
 ```
 
-Knowledge commands and backups also write structured events to journald. Use
-the service-specific labels when inspecting those runs:
-
-```logql
-{job="knowledge", service="ingest"} | json | event = `task_completed`
-{job="knowledge", service="save"} | json | event = `task_completed`
-{job="knowledge", service="backup"} | json | event = `knowledge_backup_completed`
-```
-
 ## Metrics: Prometheus
 
 Prometheus receives metrics from:
@@ -121,7 +112,5 @@ labelled and do not represent resource incidents.
 
 1. **A service is unavailable:** check its Compose status, then inspect the
    current container logs in Loki.
-2. **Knowledge ingest or save failed:** inspect the matching `job="knowledge"`
-   journald stream and verify the Postgres container is healthy.
-3. **Metrics are stale:** check Alloy first, then Prometheus targets and the
+2. **Metrics are stale:** check Alloy first, then Prometheus targets and the
    container metrics in Grafana.
