@@ -18,5 +18,7 @@ and `docs/runbooks/deploying-services.md` for deployment.
   Do not reintroduce unattended implementation, review, or merge agents.
 - Use the existing `mise` tasks for relevant checks. Keep tests for meaningful
   behavior, not implementation details.
-- Update the relevant runbook when operator steps change. Keep facts in one
-  place; do not add an ADR for routine changes.
+- Update the relevant operational doc when behavior changes. Keep necessary
+  rationale beside its instructions or code, not in ADRs or a decision log.
+  Delete obsolete guidance; archive only for a concrete retention need.
+  Track future work in issues rather than another roadmap.
