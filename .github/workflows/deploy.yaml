@@ -22,9 +22,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Deploy
+      - name: Select exact revision
         env:
           DEPLOY_REF: ${{ github.sha }}
+        run: |
+          cd /home/colin/code/homelab
+          git fetch --no-tags origin main
+          git reset --hard "$DEPLOY_REF"
+
+      - name: Render stack environments
+        env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
@@ -32,12 +39,9 @@ jobs:
           KNOWLEDGE_DB_PASSWORD: ${{ secrets.KNOWLEDGE_DB_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          git fetch --no-tags origin main
-          git reset --hard "$DEPLOY_REF"
-          stacks=()
-          for file in stacks/*/compose.yaml; do
-            stack="${file#stacks/}"
-            stacks+=("${stack%/compose.yaml}")
-          done
-          scripts/generate-env.sh "${stacks[@]}"
-          scripts/deploy.sh "${stacks[@]}"
+          scripts/generate-env.sh
+
+      - name: Deploy discovered stacks
+        run: |
+          cd /home/colin/code/homelab
+          scripts/deploy.sh

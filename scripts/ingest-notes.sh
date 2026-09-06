@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Ingest notes into the knowledge base via the containerized CLI.
-# Called by the ColinCee/notes GitHub Actions workflow on push to main.
+# Compatibility entrypoint for the notes workflow. Keep this path stable while
+# the stack-owned implementation lives beside its Compose file.
+if (( $# > 1 )); then
+  echo "Usage: scripts/ingest-notes.sh [notes-directory]" >&2
+  exit 2
+fi
 
-NOTES_DIR="${1:-/home/colin/code/notes}"
-HOMELAB_DIR="/home/colin/code/homelab"
-COMPOSE_FILE="${HOMELAB_DIR}/stacks/knowledge/compose.yaml"
-
-cd "$NOTES_DIR"
-git pull --ff-only
-
-cd "$HOMELAB_DIR"
-NOTES_DIR="$NOTES_DIR" docker compose -f "$COMPOSE_FILE" --profile ingest run --rm ingest ingest --dir /notes
+repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+notes_dir="${1:-/home/colin/code/notes}"
+exec python3 "$repo_root/stacks/knowledge/operations.py" ingest --notes-dir "$notes_dir"

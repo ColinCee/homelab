@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Validate active Compose stacks with placeholder secrets, without overwriting .env.
+# Validate every Compose service and profile with placeholder secrets, without
+# overwriting .env.
 mapfile -t env_vars < <(
   for compose_file in stacks/*/compose.yaml; do
     example="${compose_file%/compose.yaml}/.env.example"
@@ -19,9 +20,9 @@ for f in stacks/*/compose.yaml; do
   echo "Validating $f..."
   env_file="$(dirname "$f")/.env.example"
   if [[ -f "$env_file" ]]; then
-    docker compose --env-file "$env_file" -f "$f" config --quiet
+    docker compose --env-file "$env_file" -f "$f" --profile '*' config --quiet
   else
-    docker compose -f "$f" config --quiet
+    docker compose -f "$f" --profile '*' config --quiet
   fi
 done
 echo "All compose files valid"

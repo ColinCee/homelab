@@ -2,6 +2,7 @@
 Description=Nightly knowledge database backup
 
 [Timer]
+Unit=knowledge-backup.service
 OnCalendar=*-*-* 03:30:00
 Persistent=true
 

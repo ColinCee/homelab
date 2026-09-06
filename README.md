@@ -38,7 +38,7 @@ automatically. Non-major versions can still break behavior, especially before
 
 ## Maintain and extend
 
-- [Deploy and manage services](docs/runbooks/deploying-services.md): trust boundaries, secrets, adding/removing stacks, startup recovery.
+- [Deploy and manage services](docs/runbooks/deploying-services.md): stack ownership and deployment contract, secrets, adding/removing stacks, startup recovery.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [Operate and extend knowledge search](docs/runbooks/knowledge-base.md): ingestion, privacy, retrieval, backups, credentials.
 - [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
