@@ -8,6 +8,7 @@ trivy = "0.69.3"
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
+  "uv run ruff check scripts/ tests/ && uv run ruff format --check scripts/ tests/",
   "cd stacks/knowledge/app && uv run ruff check . && uv run ruff format --check .",
   "shellcheck scripts/*.sh .githooks/pre-commit",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/",
@@ -16,15 +17,15 @@ run = [
 
 [tasks.format]
 description = "Format Python"
-run = "cd stacks/knowledge/app && uv run ruff format ."
+run = ["uv run ruff format scripts/ tests/", "cd stacks/knowledge/app && uv run ruff format ."]
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "cd stacks/knowledge/app && uv run ty check ."
+run = ["uv run ty check scripts/tailscale_policy.py", "cd stacks/knowledge/app && uv run ty check ."]
 
 [tasks.test]
 description = "Run unit tests"
-run = "cd stacks/knowledge/app && uv run pytest tests/ -q --ignore=tests/integration"
+run = ["uv run pytest tests/ -q", "cd stacks/knowledge/app && uv run pytest tests/ -q --ignore=tests/integration"]
 
 [tasks."test:integration"]
 description = "Run integration tests against live Postgres"
