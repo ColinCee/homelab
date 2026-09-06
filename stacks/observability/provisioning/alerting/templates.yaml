@@ -5,12 +5,15 @@ templates:
     # Grafana's provisioning validator needs an untrimmed opening define.
     template: |
       {{ define "homelab.discord.heading" -}}
+      {{- $noData := or (eq .Labels.alertname "DatasourceNoData") (and (eq .Status "firing") (eq .Annotations.grafana_state_reason "NoData")) -}}
+      {{- $error := or (eq .Labels.alertname "DatasourceError") (and (eq .Status "firing") (eq .Annotations.grafana_state_reason "Error")) -}}
+      {{- $rule := or .Labels.rulename .Labels.alertname -}}
       {{- if or (eq .Labels.alertname "GrafanaTestAlert") (eq .Labels.notification_test "true") -}}
       Test — Discord notifications
-      {{- else if eq .Labels.alertname "DatasourceNoData" -}}
-      {{ if eq .Status "firing" }}Monitoring gap{{ else }}Monitoring gap ended{{ end }} — {{ .Labels.rulename }}
-      {{- else if eq .Labels.alertname "DatasourceError" -}}
-      {{ if eq .Status "firing" }}Monitoring error{{ else }}Monitoring error ended{{ end }} — {{ .Labels.rulename }}
+      {{- else if $noData -}}
+      {{ if eq .Status "firing" }}Monitoring gap{{ else }}Monitoring gap ended{{ end }} — {{ $rule }}
+      {{- else if $error -}}
+      {{ if eq .Status "firing" }}Monitoring error{{ else }}Monitoring error ended{{ end }} — {{ $rule }}
       {{- else -}}
       {{ if eq .Status "firing" }}Firing{{ else }}Resolved{{ end }} — {{ .Labels.alertname }}
       {{- end -}}
@@ -26,6 +29,8 @@ templates:
 
       {{- define "homelab.discord.message" -}}
       {{- range .Alerts }}
+      {{- $noData := or (eq .Labels.alertname "DatasourceNoData") (and (eq .Status "firing") (eq .Annotations.grafana_state_reason "NoData")) -}}
+      {{- $error := or (eq .Labels.alertname "DatasourceError") (and (eq .Status "firing") (eq .Annotations.grafana_state_reason "Error")) -}}
       {{- if gt (len $.Alerts) 1 }}**{{ template "homelab.discord.heading" . }}**
       {{ end -}}
       {{- if or (eq .Labels.alertname "GrafanaTestAlert") (eq .Labels.notification_test "true") -}}
@@ -35,7 +40,7 @@ templates:
       {{- with .Labels.severity }}{{ . | title }} · {{ end -}}
       {{- if eq .Status "firing" }}Since {{ .StartsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}
       {{- else }}Ended {{ .EndsAt.UTC.Format "02 Jan 2006 15:04 UTC" }}{{ end }}
-      {{ if eq .Labels.alertname "DatasourceNoData" -}}
+      {{ if $noData -}}
       {{ if eq .Status "firing" -}}
       {{ if eq .Labels.datasource_uid "prometheus" }}Prometheus
       {{- else if eq .Labels.datasource_uid "loki" }}Loki{{ else }}The datasource{{ end }} returned no data. Resource health is unknown.
@@ -44,7 +49,7 @@ templates:
       The no-data alert ended; this does not confirm resource recovery.
       Check the current rule evaluation.
       {{- end }}
-      {{- else if eq .Labels.alertname "DatasourceError" -}}
+      {{- else if $error -}}
       {{ if eq .Status "firing" -}}
       Grafana could not evaluate the rule. Resource health is unknown.
       Check the rule error and {{ if eq .Labels.datasource_uid "loki" }}Loki
