@@ -12,8 +12,10 @@ pull requests before merging.
 The runner can execute host-level commands through Docker and workflows.
 Repository write access is therefore privileged, even for private repositories.
 Keep PR CI on GitHub-hosted runners and Beelink deployment restricted to trusted
-`main`. Protect that branch and require human approval before merge; workflow
-conditions alone are not access controls.
+`main`. Renovate auto-merges eligible dependency PRs after checks; other changes
+are human-directed. Admins can bypass the ruleset, including via agents using
+their credentials. Renovate has no such bypass. Workflow conditions alone are
+not access controls.
 
 This avoids giving hosted CI tailnet access or maintaining another deployment
 platform. Admin ports stay bound to Tailscale. Secrets are explicitly passed

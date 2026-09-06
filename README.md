@@ -28,9 +28,13 @@ mise run ci                 # Also requires Docker for Compose validation
 knowledge application's Python dependencies. Add checks there rather than
 creating another runner or Git hook.
 
-CI runs on GitHub-hosted runners. Renovate proposes pinned dependency updates;
-passing CI is not approval to deploy. A human merges them. Release delays and
-grouping live in [Renovate configuration](.github/renovate.json).
+CI runs on GitHub-hosted runners. Renovate auto-merges non-major dependency
+updates after checks and the release-age gate pass; major updates remain manual.
+Renovate performs the merge itself so pending checks, including the age gate,
+are not bypassed by GitHub's native auto-merge. Merged service updates deploy
+automatically. Non-major versions can still break behavior, especially before
+1.0. Release delays and grouping live in
+[Renovate configuration](.github/renovate.json).
 
 ## Maintain and extend
 

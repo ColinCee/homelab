@@ -5,7 +5,9 @@
     "docker:enableMajor",
     "helpers:pinGitHubActionDigests"
   ],
-  "automerge": false,
+  "automerge": true,
+  "automergeType": "pr",
+  "platformAutomerge": false,
   "minimumReleaseAge": "3 days",
   "docker": {
     "pinDigests": true
@@ -14,6 +16,10 @@
     "minimumReleaseAge": "0 days"
   },
   "packageRules": [
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false
+    },
     {
       "groupName": "python",
       "matchDepNames": ["python"]
