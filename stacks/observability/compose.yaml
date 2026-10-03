@@ -15,6 +15,10 @@ services:
       - GF_USERS_DEFAULT_THEME=dark
       - GF_USERS_HOME_PAGE=/d/container-overview/container-overview
       - GF_UNIFIED_ALERTING_ENABLED=true
+      # Dashboards are readable without logging in; editing and admin still
+      # need the password. Safe only because the port is bound to Tailscale.
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_PRIVATE_WEBHOOK_URL}
     volumes:
       - grafana-data:/var/lib/grafana
