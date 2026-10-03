@@ -39,10 +39,13 @@ runs, a stopped container and a server that was down overnight.
 
 ```bash
 docker logs --tail 50 backup                 # Recent runs
-docker exec backup /bin/sh /backup.sh once   # Back up now
+docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1'  # Back up now
 docker exec backup restic snapshots          # List snapshots
 docker exec backup restic ls latest /data/home-assistant
 ```
+
+The redirect sends a manual run's output to the container log, so its
+`backup ok` line counts towards the alert like a scheduled run.
 
 ## Restoring
 
