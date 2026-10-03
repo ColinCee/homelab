@@ -56,6 +56,7 @@ services:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
+      - alloy-data:/var/lib/alloy/data
       - /proc:/rootproc:ro
       - /sys:/sys:ro
       - /:/rootfs:ro
@@ -93,3 +94,4 @@ volumes:
   grafana-data:
   prometheus-data:
   loki-data:
+  alloy-data:
