@@ -21,7 +21,7 @@ prometheus.scrape "host" {
 
 prometheus.exporter.cadvisor "docker" {
   docker_only = true
-  docker      = "tcp://docker-socket-proxy:2375"
+  docker_host = "tcp://docker-socket-proxy:2375"
 }
 
 discovery.relabel "cadvisor" {
