@@ -106,6 +106,9 @@ generated `.env` as shell.
 1. Add `stacks/<name>/compose.yaml` with pinned images, persistent volumes, and
    `restart: unless-stopped`. Bind admin ports to Tailscale; reserve host
    networking for services that need it.
+   Services that read a bind-mounted config file without reloading it should
+   set `labels: {homelab.config-hash: ${STACK_CONFIG_HASH:-}}` so deploys
+   recreate them when the stack's tracked files change.
 2. If needed, add `.env.example` and explicitly name its secrets in the deploy
    workflow. Do not pass the entire GitHub secrets collection.
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
