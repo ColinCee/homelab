@@ -35,6 +35,10 @@ jobs:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
           scripts/generate-env.sh

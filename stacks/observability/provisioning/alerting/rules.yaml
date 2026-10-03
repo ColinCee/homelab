@@ -117,3 +117,41 @@ groups:
           action: "Inspect root filesystem usage before removing files; preserve Docker volumes."
         labels:
           severity: critical
+
+      - uid: backup-missed
+        title: Backup Missed
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 93600
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: sum(count_over_time({container_name="backup"} |= "backup ok" [26h])) or vector(0)
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "Beelink off-site backup"
+          value: "{{ with $values.A }}{{ .Value }}{{ end }} successful backups in 26 hours"
+          description: "Threshold: no successful restic backup to R2 in the last 26 hours."
+          action: "Check `docker logs backup`; see docs/runbooks/backups.md."
+        labels:
+          severity: critical

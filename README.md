@@ -12,6 +12,7 @@ access; Cloudflare Tunnel exposes the flight tracker.
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy |
 | `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
+| `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 
 ## Development
 
@@ -38,6 +39,7 @@ automatically. Non-major versions can still break behavior, especially before
 ## Maintain and extend
 
 - [Deploy and manage services](docs/runbooks/deploying-services.md): stack ownership and deployment contract, secrets, adding/removing stacks, startup recovery.
+- [Backups](docs/runbooks/backups.md): what is backed up off-site, alerting, and how to restore.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
 - Private operational records live in the workspace's `notes/areas/homelab/`.

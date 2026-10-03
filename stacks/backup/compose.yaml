@@ -1,0 +1,57 @@
+services:
+  # Nightly encrypted restic backup of state that is not in Git. See
+  # docs/runbooks/backups.md for what is covered and how to restore.
+  backup:
+    container_name: backup
+    hostname: beelink
+    image: restic/restic:0.18.1@sha256:39d9072fb5651c80d75c7a811612eb60b4c06b32ffe87c2e9f3c7222e1797e76
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    command: ["loop"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - DAC_READ_SEARCH # Read sources owned by other container users
+    environment:
+      TZ: Etc/UTC
+      BACKUP_TIME: "02:30"
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?}
+      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?}
+      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?}
+      RESTIC_CACHE_DIR: /cache
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    healthcheck:
+      # Ready once the repository is reachable with the supplied credentials.
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - restic-cache:/cache
+      - ../home-assistant/config:/data/home-assistant:ro
+      - ../mqtt/data:/data/mqtt:ro
+      - grafana-data:/data/grafana:ro
+      - heatmap-data:/data/flight-tracker:ro
+      - crowdsec-config:/data/crowdsec:ro
+
+volumes:
+  restic-cache:
+  # Owned by other stacks; deploy those first on a fresh host.
+  grafana-data:
+    external: true
+    name: observability_grafana-data
+  heatmap-data:
+    external: true
+    name: flight-tracker_heatmap-data
+  crowdsec-config:
+    external: true
+    name: crowdsec_crowdsec-config
