@@ -20,7 +20,7 @@ run = "uv run ruff format scripts/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py"
+run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/deploy_watchdog.py"
 
 [tasks.test]
 description = "Run unit tests"
