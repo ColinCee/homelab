@@ -35,6 +35,20 @@ Each successful run logs `backup ok`. The Grafana rule **Backup Missed** fires
 to Discord when Loki has seen no such line for 26 hours, which covers failed
 runs, a stopped container and a server that was down overnight.
 
+## Size cap
+
+R2 is free up to 10 GB and has no server-side quota, so the script enforces
+the limit itself. Before uploading it adds the repository's stored size to
+the size of the pending changes; if the total would pass 8 GB
+(`MAX_REPO_BYTES`) it uploads nothing, logs `backup SKIPPED`, and the run
+counts as failed, so **Backup Missed** fires. **Backup Storage High** warns
+earlier, at 5 GB. The bucket's token is scoped to this bucket and nothing
+else writes to it.
+
+To recover, find what grew (`docker exec backup restic stats`, then
+`restic diff` between snapshots), exclude it in `backup.sh`, and forget the
+oversized snapshots with `restic forget --prune <id>`.
+
 ## Operating
 
 ```bash

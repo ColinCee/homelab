@@ -155,3 +155,43 @@ groups:
           action: "Check `docker logs backup`; see docs/runbooks/backups.md."
         labels:
           severity: critical
+
+      - uid: backup-storage-high
+        title: Backup Storage High
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 93600
+              to: 0
+            datasourceUid: loki
+            model:
+              expr: >-
+                max(max_over_time({container_name="backup"} |= "repository size:"
+                | regexp "repository size: (?P<bytes>[0-9]+) bytes" | unwrap bytes [26h])) or vector(0)
+              queryType: instant
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5000000000]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Beelink backup storage in R2"
+          value: "{{ with $values.A }}{{ humanize1024 .Value }}B{{ end }}"
+          description: "Threshold: above 5 GB. Uploads stop at 8 GB; R2 bills past 10 GB."
+          action: "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
+        labels:
+          severity: warning
