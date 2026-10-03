@@ -75,9 +75,11 @@ services:
     tmpfs:
       - /run
     environment:
+      ALLOW_LOGS: 1
       CONTAINERS: 1
       IMAGES: 1
       INFO: 1
+      NETWORKS: 1
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
