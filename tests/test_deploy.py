@@ -165,3 +165,30 @@ def test_installs_and_enables_discovered_timer_pairs(tmp_path: Path) -> None:
         command == ["systemctl", "--user", "enable", "--now", "alpha-backup.timer"]
         for command, _ in calls
     )
+
+
+def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> None:
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    stack_dir = _make_stack(tmp_path, "sample")
+    (stack_dir / "app.conf").write_text("a\n", encoding="utf-8")
+    git("init", "-q")
+    git("add", ".")
+    before = deploy.stack_config_hash(tmp_path, stack_dir)
+
+    (stack_dir / "data").mkdir()
+    (stack_dir / "data" / "state.db").write_text("runtime\n", encoding="utf-8")
+    (stack_dir / "compose.yaml").write_text("services: {x: {}}\n", encoding="utf-8")
+    assert deploy.stack_config_hash(tmp_path, stack_dir) == before
+
+    (stack_dir / "app.conf").write_text("b\n", encoding="utf-8")
+    after = deploy.stack_config_hash(tmp_path, stack_dir)
+    assert after != before
+
+    runner, calls = _recording_runner()
+    deploy.deploy(tmp_path, deploy.discover_stack_plans(tmp_path), runner=runner)
+
+    up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
+    assert isinstance(up_env, dict)
+    assert up_env["STACK_CONFIG_HASH"] == after
