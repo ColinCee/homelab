@@ -32,6 +32,7 @@ updates. UI edits are disabled so Git remains the source of truth.
 
 - [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends
 - [Security](../stacks/observability/dashboards/security.json) — CrowdSec detections and firewall decisions
+- [Backups](../stacks/observability/dashboards/backups.json) — off-site backup successes, failures, stored size and run log
 
 ### Dashboard patterns
 

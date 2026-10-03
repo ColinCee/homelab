@@ -47,12 +47,22 @@ within_cap() {
   fi
 }
 
+verify() {
+  # A plain check only reads metadata. Once a week, download and verify every
+  # stored byte so silent corruption in R2 is found before a restore needs it.
+  if [ "$(date -u +%u)" = "${DEEP_CHECK_DAY:-7}" ] || [ "${DEEP_CHECK:-}" = 1 ]; then
+    restic check --read-data && echo "deep check ok"
+  else
+    restic check
+  fi
+}
+
 run_backup() {
   within_cap &&
     backup_data &&
     restic forget --host beelink --prune \
       --keep-daily 7 --keep-weekly 4 --keep-monthly 6 &&
-    restic check &&
+    verify &&
     echo "repository size: $(repo_bytes) bytes of $MAX_REPO_BYTES allowed"
 }
 
