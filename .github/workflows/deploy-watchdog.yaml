@@ -21,9 +21,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Check runner and queued deploys
+      - name: Check for stuck deploys
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          RUNNER_STATUS_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
         run: python3 scripts/deploy_watchdog.py

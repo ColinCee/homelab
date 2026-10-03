@@ -11,11 +11,10 @@ do not treat an on-host dashboard as proof of availability.
 
 The [deploy watchdog](../.github/workflows/deploy-watchdog.yaml) runs every 15
 minutes on GitHub-hosted runners and posts to Discord when a `deploy.yaml` run
-has been queued for over 15 minutes or the `beelink` runner is offline. It
-posts once when a problem starts and once when it clears, using its previous
-run's conclusion as state. The runner check needs a `RUNNER_STATUS_TOKEN`
-secret (fine-grained token, this repository, Administration: read-only);
-without it, only queued deploys are checked.
+has been queued for over 15 minutes, which usually means the `beelink` runner
+is down. It posts once when a problem starts and once when it clears, using its
+previous run's conclusion as state. Healthchecks.io remains the external
+heartbeat for full host outages.
 
 ## What's deployed
 

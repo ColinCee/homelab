@@ -17,10 +17,6 @@ def _run(number: int, created: str, *, status: str = "queued", started: str | No
     }
 
 
-def _runner(name: str, status: str, label: str = "beelink") -> dict[str, Any]:
-    return {"name": name, "status": status, "labels": [{"name": "self-hosted"}, {"name": label}]}
-
-
 def test_flags_only_runs_queued_past_the_limit() -> None:
     runs = [
         _run(1, "2026-10-03T11:30:00Z"),
@@ -40,20 +36,6 @@ def test_rerun_attempt_uses_its_own_start_time() -> None:
     assert watchdog.stalled_runs(runs, NOW, LIMIT) == []
 
 
-def test_runner_online_is_healthy() -> None:
-    runners = [_runner("beelink", "online"), _runner("other", "offline", label="x")]
-
-    assert watchdog.runner_problems(runners, "beelink") == []
-
-
-def test_runner_offline_or_missing_is_a_problem() -> None:
-    offline = watchdog.runner_problems([_runner("beelink", "offline")], "beelink")
-    missing = watchdog.runner_problems([_runner("other", "online", label="x")], "beelink")
-
-    assert offline[0].summary == "Self-hosted runner offline: beelink"
-    assert "No self-hosted runner" in missing[0].summary
-
-
 def test_notifies_only_on_state_transitions() -> None:
     problem = [watchdog.Problem("down")]
 
@@ -64,12 +46,12 @@ def test_notifies_only_on_state_transitions() -> None:
     assert not watchdog.should_notify([], "success")
 
 
-def test_api_errors_become_problems_and_runner_check_is_optional() -> None:
+def test_api_errors_become_problems() -> None:
     def broken(path: str, query: str = "") -> Any:
         raise OSError("boom")
 
     problems = watchdog.collect_problems(
-        broken, None, "o/r", workflow="deploy.yaml", label="beelink", now=NOW, max_queued=LIMIT
+        broken, "o/r", workflow="deploy.yaml", now=NOW, max_queued=LIMIT
     )
 
     assert [p.summary for p in problems] == ["Could not list queued deploy runs: boom"]

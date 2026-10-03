@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Alert when the Beelink runner is offline or a deploy stays queued.
+"""Alert when a deploy stays queued, usually because the Beelink runner is down.
 
 Runs on GitHub-hosted runners because on-host monitoring cannot detect its own
-outage. Notifies Discord only when the watchdog's state changes, using the
-previous watchdog run's conclusion as state.
+outage; Healthchecks.io covers full host outages. Notifies Discord only when
+the watchdog's state changes, using the previous watchdog run's conclusion as
+state.
 """
 
 from __future__ import annotations
@@ -56,26 +57,9 @@ def stalled_runs(
     return problems
 
 
-def runner_problems(runners: Iterable[Mapping[str, Any]], label: str) -> list[Problem]:
-    """Return a problem when no runner with the label is online."""
-    matching = [
-        runner
-        for runner in runners
-        if any(item.get("name") == label for item in runner.get("labels", []))
-    ]
-    if not matching:
-        return [Problem(f"No self-hosted runner has the `{label}` label")]
-    if any(runner.get("status") == "online" for runner in matching):
-        return []
-    names = ", ".join(sorted(runner["name"] for runner in matching))
-    return [Problem(f"Self-hosted runner offline: {names}")]
-
-
 def format_message(problems: list[Problem], recovered: bool) -> str:
     if recovered:
-        return (
-            "✅ **Deploy watchdog recovered**: runner online and no deploy is stuck in the queue."
-        )
+        return "✅ **Deploy watchdog recovered**: no deploy is stuck in the queue."
     lines = ["🚨 **Deploy watchdog**: deploys to Beelink are stalled."]
     for problem in problems:
         lines.append(f"- {problem.summary}" + (f" ({problem.url})" if problem.url else ""))
@@ -120,11 +104,9 @@ def post_discord(webhook_url: str, content: str) -> None:
 
 def collect_problems(
     fetch: Fetch,
-    runner_fetch: Fetch | None,
     repo: str,
     *,
     workflow: str,
-    label: str,
     now: datetime,
     max_queued: timedelta,
 ) -> list[Problem]:
@@ -135,14 +117,6 @@ def collect_problems(
     except Exception as exc:
         problems.append(Problem(f"Could not list queued deploy runs: {exc}"))
 
-    if runner_fetch is None:
-        print("RUNNER_STATUS_TOKEN not set; skipping runner status check")
-    else:
-        try:
-            data = runner_fetch(f"/repos/{repo}/actions/runners", "per_page=100")
-            problems += runner_problems(data["runners"], label)
-        except Exception as exc:
-            problems.append(Problem(f"Could not read runner status: {exc}"))
     return problems
 
 
@@ -164,7 +138,6 @@ def main() -> int:
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--deploy-workflow", default="deploy.yaml")
     parser.add_argument("--watchdog-workflow", default="deploy-watchdog.yaml")
-    parser.add_argument("--runner-label", default="beelink")
     parser.add_argument("--max-queued-minutes", type=_positive_int, default=15)
     args = parser.parse_args()
 
@@ -174,13 +147,10 @@ def main() -> int:
         return 2
 
     fetch = github_fetch(token)
-    runner_token = os.environ.get("RUNNER_STATUS_TOKEN")
     problems = collect_problems(
         fetch,
-        github_fetch(runner_token) if runner_token else None,
         args.repo,
         workflow=args.deploy_workflow,
-        label=args.runner_label,
         now=datetime.now(UTC),
         max_queued=timedelta(minutes=args.max_queued_minutes),
     )
