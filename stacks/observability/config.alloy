@@ -21,6 +21,7 @@ prometheus.scrape "host" {
 
 prometheus.exporter.cadvisor "docker" {
   docker_only = true
+  docker      = "tcp://docker-socket-proxy:2375"
 }
 
 discovery.relabel "cadvisor" {
@@ -58,7 +59,7 @@ prometheus.remote_write "default" {
 // ================================
 
 discovery.docker "containers" {
-  host = "unix:///var/run/docker.sock"
+  host = "tcp://docker-socket-proxy:2375"
 }
 
 discovery.relabel "docker_logs" {
@@ -84,7 +85,7 @@ discovery.relabel "docker_logs" {
 // ================================
 
 loki.source.docker "containers" {
-  host          = "unix:///var/run/docker.sock"
+  host          = "tcp://docker-socket-proxy:2375"
   targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.docker_logs.rules
   forward_to    = [loki.process.docker.receiver]
