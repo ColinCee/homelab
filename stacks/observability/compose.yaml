@@ -2,6 +2,8 @@ services:
   grafana:
     image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     ports:
       - "100.100.146.119:3001:3000"
     environment:
@@ -19,6 +21,8 @@ services:
   prometheus:
     image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command:
       - --web.enable-remote-write-receiver
       - --config.file=/etc/prometheus/prometheus.yml
@@ -30,6 +34,8 @@ services:
   loki:
     image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command: -config.file=/etc/loki/local-config.yaml
     labels:
       # Recreate when mounted config changes (set by scripts/deploy.py).
@@ -77,6 +83,8 @@ services:
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     read_only: true
     tmpfs:
       - /run
