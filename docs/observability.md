@@ -34,6 +34,12 @@ updates. UI edits are disabled so Git remains the source of truth.
 - [Security](../stacks/observability/dashboards/security.json) — CrowdSec detections and firewall decisions
 - [Backups](../stacks/observability/dashboards/backups.json) — off-site backup successes, failures, stored size and run log
 
+Grafana allows anonymous read-only (Viewer) access so dashboards open without
+a login, including for agents checking a change. Editing, Explore and
+administration still require the admin password. This relies on the port
+being bound to the Tailscale address and on the tailnet policy limiting who
+can reach it; remove `GF_AUTH_ANONYMOUS_*` if either changes.
+
 ### Dashboard patterns
 
 Use `max by (name)` for container metrics or `max()` for a single host value
