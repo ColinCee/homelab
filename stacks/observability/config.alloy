@@ -65,6 +65,12 @@ discovery.docker "containers" {
 discovery.relabel "docker_logs" {
   targets = []
 
+  // The socket proxy logs every Alloy API request; keep it out of Loki.
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/.*docker-socket-proxy.*"
+    action        = "drop"
+  }
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/(.*)"
