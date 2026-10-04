@@ -162,7 +162,7 @@ prometheus.scrape "crowdsec" {
 // Probes the public API through Cloudflare and the tunnel. Succeeds only when
 // the backend is serving live upstream aircraft data, not stale cache.
 prometheus.exporter.blackbox "flight_tracker" {
-  config = "{ modules: { aircraft_live: { prober: http, timeout: 15s, http: { valid_status_codes: [200], fail_if_body_not_matches_regexp: ['\"apiHealth\":\\s*\"live\"'] } } } }"
+  config = "{ modules: { aircraft_live: { prober: http, timeout: 15s, http: { preferred_ip_protocol: ip4, ip_protocol_fallback: false, valid_status_codes: [200], fail_if_body_not_matches_regexp: ['\"apiHealth\":\\s*\"live\"'] } } } }"
 
   target {
     name    = "flight-tracker"
