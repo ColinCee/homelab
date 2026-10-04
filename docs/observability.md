@@ -76,6 +76,11 @@ Prometheus receives metrics from:
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
+- **Flight tracker:** Alloy's blackbox exporter probes the public
+  `https://api.colincheung.dev/aircraft` every minute
+  (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
+  when the response says `"apiHealth":"live"`, so tunnel, backend and
+  upstream data source failures all show as 0.
 
 Useful checks:
 
@@ -109,6 +114,7 @@ The shipped rules cover host-level pressure such as:
 - high CPU
 - high RAM
 - high disk usage
+- **Flight Tracker Down**: the live-data probe has failed for 10 minutes
 
 Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
 does not exist in Alloy's Unix exporter. Verify the rule's exact query in
