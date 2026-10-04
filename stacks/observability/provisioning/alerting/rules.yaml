@@ -195,3 +195,40 @@ groups:
           action: "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
         labels:
           severity: warning
+
+      - uid: flight-tracker-down
+        title: Flight Tracker Down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(probe_success{job="integrations/blackbox/flight-tracker"})
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Flight tracker live radar"
+          value: "{{ with $values.A }}{{ .Value }}{{ end }} (1 = live, 0 = down)"
+          description: "Threshold: https://api.colincheung.dev/aircraft not serving live aircraft for 10 minutes."
+          action: "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
+        labels:
+          severity: critical
