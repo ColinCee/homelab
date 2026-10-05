@@ -1,0 +1,39 @@
+name: Server health
+
+# Weekly health report from Beelink in the job summary, read by the Monday
+# gardening routine. On the first Monday of the month it also prunes unused
+# Docker images and build cache and test-restores a file from backup.
+on:
+  schedule:
+    - cron: "30 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      maintenance:
+        description: "Also prune unused images and run a restore test"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: beelink
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Report health
+        env:
+          EVENT: ${{ github.event_name }}
+          MAINTENANCE: ${{ inputs.maintenance }}
+        run: |
+          if [[ "$MAINTENANCE" == "true" ]] || { [[ "$EVENT" == "schedule" ]] && (( 10#$(date -u +%d) <= 7 )); }; then
+            scripts/server-health.sh --maintenance
+          else
+            scripts/server-health.sh
+          fi

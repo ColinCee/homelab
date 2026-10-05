@@ -14,6 +14,10 @@ access; Cloudflare Tunnel exposes the flight tracker.
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 
+The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
+pending updates) to its job summary. On the first Monday of each month it also
+prunes unused Docker images and test-restores a file from backup.
+
 ## Development
 
 ```bash
