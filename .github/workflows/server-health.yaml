@@ -13,8 +13,11 @@ on:
         type: boolean
         default: false
 
+# Own group: sharing "deploy" would let a queued health run cancel a pending
+# deploy. Pruning only removes images older than a week, so it is safe
+# alongside a deploy.
 concurrency:
-  group: deploy
+  group: server-health
   cancel-in-progress: false
 
 permissions:
