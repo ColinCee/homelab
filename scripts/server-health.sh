@@ -5,16 +5,17 @@ set -euo pipefail
 #   server-health.sh                report only
 #   server-health.sh --maintenance  also prune unused Docker images and build
 #                                   cache, and test-restore a file from backup
-out="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+# Also printed to the log, which agents can read through the API.
+out="${GITHUB_STEP_SUMMARY:-/dev/null}"
 status=0
 
-row() { printf '| %s | %s |\n' "$1" "$2" >>"$out"; }
+row() { printf '| %s | %s |\n' "$1" "$2" | tee -a "$out"; }
 bad() {
   row "$1" "FAIL: $2"
   status=1
 }
 
-printf '## Beelink health\n\n| Check | Result |\n|---|---|\n' >>"$out"
+printf '## Beelink health\n\n| Check | Result |\n|---|---|\n' | tee -a "$out"
 
 row "Uptime" "$(uptime -p)"
 row "Root disk" "$(df -h / | awk 'NR==2 {print $3 " used of " $2 " (" $5 ")"}')"
