@@ -46,7 +46,7 @@ fi
 
 for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
   https://api.colincheung.dev/health; do
-  result="$(curl -s -o /dev/null -m 15 -w '%{http_code} in %{time_total}s' "$url" || true)"
+  result="$(curl -4 -s -o /dev/null -m 15 -w '%{http_code} in %{time_total}s' "$url" || true)"
   if [[ "$result" == 200* ]]; then
     row "$url" "$result"
   else
