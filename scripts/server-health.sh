@@ -25,6 +25,9 @@ if docker logs --since 26h backup 2>&1 | grep -qx 'backup ok'; then
   row "Last backup" "ok within 26h"
 else
   bad "Last backup" "no 'backup ok' in the last 26h"
+  # Log only, not the summary: the failed run's output says why.
+  echo "Backup log, last 26h:"
+  docker logs --since 26h backup 2>&1 | tail -n 40 || true
 fi
 size_line="$(grep '^repository size:' <<<"$backup_log" | tail -n 1 || true)"
 row "R2 repository" "${size_line:-no size logged in 8 days}"
