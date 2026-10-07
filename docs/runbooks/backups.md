@@ -67,6 +67,9 @@ docker exec backup restic ls latest /data/home-assistant
 The redirect sends a manual run's output to the container log, so its
 `backup ok` line counts towards the alert like a scheduled run.
 
+Without SSH, run the **Server health** workflow with `backup_now` ticked: it
+runs the same command, then reports, printing the backup log if it failed.
+
 ## Restoring
 
 Restore into a scratch directory first, then copy what is needed into place

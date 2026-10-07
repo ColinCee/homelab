@@ -12,6 +12,10 @@ on:
         description: "Also prune unused images and run a restore test"
         type: boolean
         default: false
+      backup_now:
+        description: "Run a backup before reporting"
+        type: boolean
+        default: false
 
 # Own group: sharing "deploy" would let a queued health run cancel a pending
 # deploy. Pruning only removes images older than a week, so it is safe
@@ -29,6 +33,12 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Back up now
+        if: inputs.backup_now
+        # Same as the runbook: output goes to the container log so the
+        # Backup Missed alert counts it. Failure shows in the report below.
+        run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
 
       - name: Report health
         env:
