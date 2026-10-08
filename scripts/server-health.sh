@@ -58,6 +58,23 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
   fi
 done
 
+# Grafana alerts: anonymous Viewer access is enough to read state and history.
+grafana=http://100.100.146.119:3001
+firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
+  jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
+  firing="unknown (Grafana API unreachable)"
+if [[ -n "$firing" ]]; then
+  bad "Firing alerts" "$firing"
+else
+  row "Firing alerts" "none"
+fi
+# Log only: alert state changes in the last 7 days, newest last.
+echo "Alert state changes, last 7 days:"
+curl -sf -m 10 "$grafana/api/v1/rules/history?from=$(date -d '7 days ago' +%s)&to=$(date +%s)&limit=200" |
+  jq -r '.data.values as $v | range(0; ($v[0] | length)) |
+    "\($v[0][.] / 1000 | todate) \($v[1][.].ruleTitle // $v[1][.].ruleUID) \($v[1][.].previous) -> \($v[1][.].current)"' 2>/dev/null ||
+  echo "(history unavailable)"
+
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
 if [[ -f /var/run/reboot-required ]]; then
