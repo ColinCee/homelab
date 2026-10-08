@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -63,3 +64,28 @@ def test_message_lists_problems_with_links() -> None:
     )
 
     assert "- Deploy run #1 queued for 30 min (https://x/1)" in message
+
+
+def test_fire_routine_posts_alert_text(monkeypatch) -> None:
+    sent = {}
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    def fake_urlopen(request, timeout):
+        sent["url"] = request.full_url
+        sent["headers"] = dict(request.header_items())
+        sent["body"] = json.loads(request.data)
+        return Response()
+
+    monkeypatch.setattr(watchdog.urllib.request, "urlopen", fake_urlopen)
+    watchdog.fire_routine("tok", "deploy stalled")
+
+    assert sent["url"].endswith("/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire")
+    assert sent["headers"]["Authorization"] == "Bearer tok"
+    assert sent["headers"]["Anthropic-version"] == "2023-06-01"
+    assert sent["body"] == {"text": "deploy stalled"}

@@ -20,6 +20,7 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
       - DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_PRIVATE_WEBHOOK_URL}
+      - CLAUDE_ROUTINE_TOKEN=${CLAUDE_ROUTINE_TOKEN}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./provisioning:/etc/grafana/provisioning:ro

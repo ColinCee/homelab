@@ -102,6 +102,28 @@ def post_discord(webhook_url: str, content: str) -> None:
         pass
 
 
+ROUTINE_FIRE_URL = (
+    "https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire"
+)
+
+
+def fire_routine(token: str, text: str) -> None:
+    """Wake the Claude alert-triage routine with the alert text."""
+    request = urllib.request.Request(
+        ROUTINE_FIRE_URL,
+        data=json.dumps({"text": text}).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=30):
+        pass
+
+
 def collect_problems(
     fetch: Fetch,
     repo: str,
@@ -164,6 +186,12 @@ def main() -> int:
             post_discord(webhook_url, format_message(problems, recovered=not problems))
         else:
             print("DISCORD_WEBHOOK_URL not set; skipping notification")
+        routine_token = os.environ.get("CLAUDE_ROUTINE_TOKEN")
+        if problems and routine_token:
+            try:
+                fire_routine(routine_token, format_message(problems, recovered=False))
+            except Exception as exc:
+                print(f"::warning::Could not wake Claude triage routine: {exc}")
 
     return 1 if problems else 0
 

@@ -77,3 +77,10 @@ templates:
 
       {{ end -}}
       {{- end }}
+  - orgId: 1
+    name: homelab-claude
+    # The Claude routine API takes {"text": "..."}; reuse the Discord wording.
+    template: |
+      {{ define "homelab.claude.payload" -}}
+      {{ coll.Dict "text" (print (tmpl.Exec "homelab.discord.title" .) "\n\n" (tmpl.Exec "homelab.discord.message" .)) | data.ToJSON }}
+      {{- end }}
