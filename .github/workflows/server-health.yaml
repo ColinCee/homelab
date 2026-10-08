@@ -16,6 +16,10 @@ on:
         description: "Run a backup before reporting"
         type: boolean
         default: false
+      test_alert:
+        description: "Send a test alert to the Claude triage routine"
+        type: boolean
+        default: false
 
 # Own group: sharing "deploy" would let a queued health run cancel a pending
 # deploy. Pruning only removes images older than a week, so it is safe
@@ -39,6 +43,23 @@ jobs:
         # Same as the runbook: output goes to the container log so the
         # Backup Missed alert counts it. Failure shows in the report below.
         run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
+
+      - name: Send test alert to Claude
+        if: inputs.test_alert
+        env:
+          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        # Same endpoint and payload shape as Grafana's claude-triage receiver.
+        run: |
+          curl -sf -u "admin:$GRAFANA_ADMIN_PASSWORD" \
+            http://100.100.146.119:3001/api/v1/provisioning/contact-points |
+            jq -r '.[] | select(.uid == "claude-triage") | "Grafana receiver: \(.name) / \(.type)"' ||
+            echo "Grafana receiver: could not read (admin login failed?)"
+          curl -sS -o /dev/null -w 'Routine fire: HTTP %{http_code}\n' -X POST \
+            https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire \
+            -H "Authorization: Bearer $CLAUDE_ROUTINE_TOKEN" \
+            -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
+            -d '{"text": "Test — Server health test_alert. Delivery check only; no resource alert fired."}'
 
       - name: Report health
         env:
