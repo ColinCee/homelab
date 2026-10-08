@@ -101,8 +101,10 @@ max(crowdsec_acquisition_source_hits_total{job="crowdsec"})
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and currently routes to the
 `Discord Private` contact point. That contact point also has a webhook to the
-"Homelab alert triage" Claude routine, which investigates firing alerts and
-reports in the project thread (resolves go to Discord only). The deploy
+"Homelab alert triage" Claude routine (resolves go to Discord only). Each fire
+starts a short relay session that posts "Homelab alert: …" in the Claude
+project chat, which routes it to the homelab alerts thread for triage. Test the
+whole chain with Server health → `test_alert`. The deploy
 watchdog wakes the same routine when a deploy stalls. Both need the
 `CLAUDE_ROUTINE_TOKEN` secret (claude.ai/code/routines → routine → API
 trigger → Generate token); without it the webhook gets a 401 and Discord is
