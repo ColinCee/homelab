@@ -79,7 +79,7 @@ stuck deploys.
 - [Backups](docs/runbooks/backups.md): what is backed up off-site, alerting, and how to restore.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
-- Private operational records live in the workspace's `notes/areas/homelab/`.
+- Private operational records live in the workspace's `notes/04-dev/homelab/`.
 
 Keep current instructions and necessary rationale together. Configuration owns
 exact settings; Git history retains obsolete explanations.
