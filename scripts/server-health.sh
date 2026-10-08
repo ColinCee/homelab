@@ -68,11 +68,10 @@ if [[ -n "$firing" ]]; then
 else
   row "Firing alerts" "none"
 fi
-# Log only: alert state changes in the last 7 days, newest last.
+# Log only: alert state changes in the last 7 days (Grafana stores them as annotations).
 echo "Alert state changes, last 7 days:"
-curl -sf -m 10 "$grafana/api/v1/rules/history?from=$(date -d '7 days ago' +%s)&to=$(date +%s)&limit=200" |
-  jq -r '.data.values as $v | range(0; ($v[0] | length)) |
-    "\($v[0][.] / 1000 | todate) \($v[1][.].ruleTitle // $v[1][.].ruleUID) \($v[1][.].previous) -> \($v[1][.].current)"' 2>/dev/null ||
+curl -sf -m 10 "$grafana/api/annotations?type=alert&limit=100&from=$(date -d '7 days ago' +%s000)" |
+  jq -r 'sort_by(.time)[] | "\(.time / 1000 | todate) \(.alertName // .text) \(.prevState) -> \(.newState)"' ||
   echo "(history unavailable)"
 
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
