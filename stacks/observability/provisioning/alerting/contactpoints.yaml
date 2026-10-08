@@ -12,3 +12,18 @@ contactPoints:
           use_embed_description: true
           title: '{{ template "homelab.discord.title" . }}'
           message: '{{ template "homelab.discord.message" . }}'
+      # Wakes the "Homelab alert triage" Claude routine, which investigates and
+      # reports in the project thread. Firing only; Discord still gets resolves.
+      - uid: claude-triage
+        type: webhook
+        disableResolveMessage: true
+        settings:
+          url: https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${CLAUDE_ROUTINE_TOKEN}
+          headers:
+            anthropic-version: "2023-06-01"
+            anthropic-beta: experimental-cc-routine-2026-04-01
+          payload:
+            template: '{{ template "homelab.claude.payload" . }}'

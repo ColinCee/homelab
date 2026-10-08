@@ -25,4 +25,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
         run: python3 scripts/deploy_watchdog.py
