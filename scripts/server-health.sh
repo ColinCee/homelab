@@ -21,7 +21,9 @@ row "Uptime" "$(uptime -p)"
 row "Root disk" "$(df -h / | awk 'NR==2 {print $3 " used of " $2 " (" $5 ")"}')"
 
 backup_log="$(docker logs --since 192h backup 2>&1 || true)"
-if docker logs --since 26h backup 2>&1 | grep -qx 'backup ok'; then
+# Not `docker logs | grep -q`: grep exits at the first match, docker logs gets
+# SIGPIPE and pipefail turns a found line into a failure.
+if grep -qx 'backup ok' <<<"$(docker logs --since 26h backup 2>&1)"; then
   row "Last backup" "ok within 26h"
 else
   bad "Last backup" "no 'backup ok' in the last 26h"
@@ -57,6 +59,29 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
     bad "$url" "${result:-no response}"
   fi
 done
+
+# Grafana alerts: anonymous Viewer access is enough to read state and history.
+grafana=http://100.100.146.119:3001
+firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
+  jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
+  firing="unknown (Grafana API unreachable)"
+if [[ -n "$firing" ]]; then
+  bad "Firing alerts" "$firing"
+else
+  row "Firing alerts" "none"
+fi
+# Log only: alert state changes in the last 7 days (Grafana stores them as annotations).
+echo "Alert state changes, last 7 days:"
+curl -sf -m 10 "$grafana/api/annotations?type=alert&limit=100&from=$(date -d '7 days ago' +%s000)" |
+  jq -r 'sort_by(.time)[] | "\(.time / 1000 | todate) \(.alertName // .text) \(.prevState) -> \(.newState)"' ||
+  echo "(history unavailable)"
+
+# Log only: why the flight tracker served stale data (upstream fetch failures).
+echo "Flight tracker upstream failures, last 24h (count, reason):"
+docker logs --since 24h flight-tracker-backend-1 2>&1 | grep 'fetch failed' |
+  sed -E 's/^.*fetch failed: //; s/[0-9]+(\.[0-9]+)?s/Ns/g' | sort | uniq -c | sort -rn | head -n 10 || true
+echo "Most recent:"
+docker logs --since 24h -t flight-tracker-backend-1 2>&1 | grep 'fetch failed' | tail -n 5 || true
 
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
