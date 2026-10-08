@@ -55,10 +55,12 @@ jobs:
             http://100.100.146.119:3001/api/v1/provisioning/contact-points |
             jq -r '.[] | select(.uid == "claude-triage") | "Grafana receiver: \(.name) / \(.type)"' ||
             echo "Grafana receiver: could not read (admin login failed?)"
-          curl -sS -o /dev/null -w 'Routine fire: HTTP %{http_code}\n' -X POST \
+          # Print the response body too: HTTP 200 alone didn't prove a wake landed.
+          curl -sS -w '\nRoutine fire: HTTP %{http_code}\n' -X POST \
             https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire \
             -H "Authorization: Bearer $CLAUDE_ROUTINE_TOKEN" \
             -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
             -d '{"text": "Test — Server health test_alert. Delivery check only; no resource alert fired."}'
 
       - name: Report health
