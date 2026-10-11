@@ -21,22 +21,18 @@ row "Uptime" "$(uptime -p)"
 row "Root disk" "$(df -h / | awk 'NR==2 {print $3 " used of " $2 " (" $5 ")"}')"
 
 backup_log="$(docker logs --since 192h backup 2>&1 || true)"
-# Not `docker logs | grep -q`: grep exits at the first match, docker logs gets
-# SIGPIPE and pipefail turns a found line into a failure.
-if grep -qx 'backup ok' <<<"$(docker logs --since 26h backup 2>&1)"; then
-  row "Last backup" "ok within 26h"
+# The metric Backup Missed alerts on, not the container log: recreating the
+# container on deploy wipes its log. See docs/runbooks/backups.md.
+metric_ts="$(awk '{print $2}' /var/lib/homelab-metrics/backup.prom 2>/dev/null || true)"
+if [[ -n "$metric_ts" ]] && (( $(date +%s) - ${metric_ts%.*} < 26 * 3600 )); then
+  row "Last backup" "ok at $(date -u -d "@$metric_ts" '+%Y-%m-%d %H:%M UTC')"
 else
-  bad "Last backup" "no 'backup ok' in the last 26h"
+  last="no metric file"
+  [[ -n "$metric_ts" ]] && last="last $(date -u -d "@$metric_ts" '+%Y-%m-%d %H:%M UTC')"
+  bad "Last backup" "none in the last 26h ($last)"
   # Log only, not the summary: the failed run's output says why.
   echo "Backup log, last 26h:"
   docker logs --since 26h backup 2>&1 | tail -n 40 || true
-fi
-# What the Backup Missed alert reads; see docs/runbooks/backups.md.
-metric_ts="$(awk '{print $2}' /var/lib/homelab-metrics/backup.prom 2>/dev/null || true)"
-if [[ -n "$metric_ts" ]]; then
-  row "Backup metric" "last success $(date -u -d "@$metric_ts" '+%Y-%m-%d %H:%M UTC')"
-else
-  bad "Backup metric" "/var/lib/homelab-metrics/backup.prom missing"
 fi
 size_line="$(grep '^repository size:' <<<"$backup_log" | tail -n 1 || true)"
 row "R2 repository" "${size_line:-no size logged in 8 days}"
