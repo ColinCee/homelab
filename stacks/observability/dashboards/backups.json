@@ -118,7 +118,7 @@
       ],
       "title": "Successful Backups (26h)",
       "type": "stat",
-      "description": "Zero means the nightly run was missed or failed; the Backup Missed alert uses the same query."
+      "description": "Zero means the nightly run was missed or failed. The Backup Missed alert uses the last-success metric instead."
     },
     {
       "datasource": {
