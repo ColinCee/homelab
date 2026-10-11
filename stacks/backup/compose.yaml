@@ -37,6 +37,8 @@ services:
     volumes:
       - ./backup.sh:/backup.sh:ro
       - restic-cache:/cache
+      # Read by Alloy's textfile collector (observability stack).
+      - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
       - ../mqtt/data:/data/mqtt:ro
       - grafana-data:/data/grafana:ro

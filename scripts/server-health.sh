@@ -31,6 +31,13 @@ else
   echo "Backup log, last 26h:"
   docker logs --since 26h backup 2>&1 | tail -n 40 || true
 fi
+# What the Backup Missed alert reads; see docs/runbooks/backups.md.
+metric_ts="$(awk '{print $2}' /var/lib/homelab-metrics/backup.prom 2>/dev/null || true)"
+if [[ -n "$metric_ts" ]]; then
+  row "Backup metric" "last success $(date -u -d "@$metric_ts" '+%Y-%m-%d %H:%M UTC')"
+else
+  bad "Backup metric" "/var/lib/homelab-metrics/backup.prom missing"
+fi
 size_line="$(grep '^repository size:' <<<"$backup_log" | tail -n 1 || true)"
 row "R2 repository" "${size_line:-no size logged in 8 days}"
 if grep -qx 'deep check ok' <<<"$backup_log"; then

@@ -37,9 +37,13 @@ it the snapshots cannot be decrypted, and GitHub will not show it again.
 
 ## Alerting
 
-Each successful run logs `backup ok`. The Grafana rule **Backup Missed** fires
-to Discord when Loki has seen no such line for 26 hours, which covers failed
-runs, a stopped container and a server that was down overnight.
+Each successful run logs `backup ok` and writes its time to
+`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to Prometheus as
+`homelab_backup_last_success_timestamp_seconds`. The Grafana rule **Backup
+Missed** fires to Discord when that is over 26 hours old, which covers failed
+runs, a stopped container and a server that was down overnight. It used to
+count `backup ok` lines in Loki, but on 2026-10-10 Loki missed the line and
+the alert fired while backups were succeeding.
 
 ## Size cap
 
@@ -64,8 +68,8 @@ docker exec backup restic snapshots          # List snapshots
 docker exec backup restic ls latest /data/home-assistant
 ```
 
-The redirect sends a manual run's output to the container log, so its
-`backup ok` line counts towards the alert like a scheduled run.
+The redirect sends a manual run's output to the container log. A manual run
+also updates the metric, so it clears **Backup Missed** like a scheduled run.
 
 Without SSH, run the **Server health** workflow with `backup_now` ticked: it
 runs the same command, then reports, printing the backup log if it failed.

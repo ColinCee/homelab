@@ -124,12 +124,12 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 93600
+              from: 600
               to: 0
-            datasourceUid: loki
+            datasourceUid: prometheus
             model:
-              expr: sum(count_over_time({container_name="backup"} |= "backup ok" [26h])) or vector(0)
-              queryType: instant
+              # Written by backup.sh after each successful run.
+              expr: (time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600
               instant: true
               refId: A
           - refId: C
@@ -142,15 +142,15 @@ groups:
               expression: A
               conditions:
                 - evaluator:
-                    type: lt
-                    params: [1]
+                    type: gt
+                    params: [26]
               refId: C
         noDataState: Alerting
         execErrState: Error
         for: 30m
         annotations:
           summary: "Beelink off-site backup"
-          value: "{{ with $values.A }}{{ .Value }}{{ end }} successful backups in 26 hours"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}{{ end }} hours since the last successful backup"
           description: "Threshold: no successful restic backup to R2 in the last 26 hours."
           action: "Check `docker logs backup`; see docs/runbooks/backups.md."
         labels:

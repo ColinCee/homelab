@@ -40,8 +40,8 @@ jobs:
 
       - name: Back up now
         if: inputs.backup_now
-        # Same as the runbook: output goes to the container log so the
-        # Backup Missed alert counts it. Failure shows in the report below.
+        # Same as the runbook: output goes to the container log, where the
+        # report below reads it. Success also clears Backup Missed.
         run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
 
       - name: Send test alert to Claude

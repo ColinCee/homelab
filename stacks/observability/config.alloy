@@ -6,6 +6,11 @@ prometheus.exporter.unix "host" {
   procfs_path = "/rootproc"
   sysfs_path  = "/sys"
   rootfs_path = "/rootfs"
+
+  // *.prom files written by other stacks, e.g. the backup success timestamp.
+  textfile {
+    directory = "/rootfs/var/lib/homelab-metrics"
+  }
 }
 
 prometheus.scrape "host" {

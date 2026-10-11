@@ -70,10 +70,30 @@ report() {
   if run_backup; then
     # The Grafana missed-backup alert counts this line; keep the text stable.
     echo "backup ok"
+    write_metric "$(date -u +%s)" || echo "could not write $METRICS_FILE" >&2
   else
     echo "backup FAILED" >&2
     return 1
   fi
+}
+
+# Alloy reads this file into Prometheus for the Backup Missed alert. A metric
+# instead of the "backup ok" log line: Loki missed that line once (2026-10-10)
+# and the alert fired with backups succeeding.
+METRICS_FILE=/metrics/backup.prom
+
+write_metric() {
+  printf 'homelab_backup_last_success_timestamp_seconds %s\n' "$1" >"$METRICS_FILE.tmp" &&
+    mv "$METRICS_FILE.tmp" "$METRICS_FILE"
+}
+
+# On a fresh host, start from the newest snapshot so the alert has a value
+# before the first nightly run.
+seed_metric() {
+  [ -f "$METRICS_FILE" ] && return
+  latest=$(restic snapshots --host beelink --latest 1 --json |
+    sed -n 's/.*"time":"\([0-9-]*\)T\([0-9:]*\).*/\1 \2/p' | head -n 1)
+  [ -n "$latest" ] && write_metric "$(date -u -d "$latest" +%s)"
 }
 
 seconds_until() {
@@ -93,6 +113,7 @@ once)
   report
   ;;
 loop)
+  seed_metric || echo "could not seed $METRICS_FILE" >&2
   touch /tmp/ready
   while true; do
     sleep "$(seconds_until "${BACKUP_TIME:-02:30}")"
