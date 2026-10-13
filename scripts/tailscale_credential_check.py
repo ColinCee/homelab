@@ -117,6 +117,10 @@ def main():
             f"Note: the secret does not start with tskey-client-{client_id}-; they may not match."
         )
     passed = check(client_id, secret, args.tailnet, args.write_test)
+    if passed:
+        # Remember only the non-secret ID, so the policy helper does not ask for it again.
+        saved.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        saved.write_text(client_id + "\n")
     print("\nThe credential works." if passed else "\nThe credential does not work yet.")
     return 0 if passed else 1
 
