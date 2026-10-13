@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import ssl
 import urllib.error
 from pathlib import Path
 from unittest.mock import Mock
@@ -96,6 +97,16 @@ def test_noop_does_not_write(monkeypatch, tmp_path):
     assert api.call_count == 2
 
 
+def test_with_no_argument_the_notes_policy_is_used(monkeypatch, tmp_path):
+    missing, present = tmp_path / "missing.json", tmp_path / "present.json"
+    present.write_bytes(CANDIDATE)
+    monkeypatch.setattr(policy, "POLICY_FILES", (missing, present))
+    assert policy.default_policy() == present
+    monkeypatch.setattr(policy, "POLICY_FILES", (missing,))
+    with pytest.raises(policy.PolicyError, match="No policy file found"):
+        policy.default_policy()
+
+
 def test_rejects_test_array_instead_of_policy():
     with pytest.raises(policy.PolicyError, match="JSON object"):
         policy.policy_bytes(b"[]")
@@ -132,10 +143,39 @@ def test_oauth_error_does_not_expose_secret(monkeypatch):
         {},
         io.BytesIO(b"secret-in-response"),
     )
-    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda _: opener)
+    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
     with pytest.raises(policy.PolicyError) as error:
         policy.request("oauth/token", data=b"client_secret=secret-in-response")
     assert "secret-in-response" not in str(error.value)
+
+
+def test_rejected_credentials_say_what_to_check(monkeypatch):
+    opener = Mock()
+    opener.open.side_effect = urllib.error.HTTPError("https://x", 401, "error", {}, io.BytesIO())
+    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
+    with pytest.raises(policy.PolicyError, match="rejected the client ID or secret"):
+        policy.request("oauth/token", data=b"client_secret=wrong")
+
+
+def test_requests_verify_certificates_and_hostnames():
+    context = policy.tls_context()
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+
+
+def test_pasted_secret_is_sent_without_surrounding_whitespace(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate_file.write_bytes(CANDIDATE)
+    args = ["tailscale_policy.py", str(candidate_file), "--client-id", "id"]
+    monkeypatch.setattr("sys.argv", args)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(policy.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(policy.getpass, "getpass", lambda _: "  tskey-client-id-abc \t")
+    api = Mock(return_value=(b'{"access_token":"token"}', ""))
+    monkeypatch.setattr(policy, "request", api)
+    monkeypatch.setattr(policy, "apply_policy", Mock())
+    policy.main()
+    assert api.call_args.kwargs["data"].endswith(b"client_secret=tskey-client-id-abc")
 
 
 def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch, tmp_path):
@@ -158,7 +198,7 @@ def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch,
     monkeypatch.setattr(policy.getpass, "getpass", lambda _: "client-secret")
 
     def answer(prompt):
-        if prompt.startswith("Tailscale OAuth client ID"):
+        if prompt == policy.ID_PROMPT:
             return "client-id"
         candidate_file.write_bytes(b'{"acls": []}')
         return "APPLY"
