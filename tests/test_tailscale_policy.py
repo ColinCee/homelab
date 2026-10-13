@@ -1,6 +1,7 @@
 import importlib.util
 import io
 import json
+import ssl
 import urllib.error
 from pathlib import Path
 from unittest.mock import Mock
@@ -132,10 +133,39 @@ def test_oauth_error_does_not_expose_secret(monkeypatch):
         {},
         io.BytesIO(b"secret-in-response"),
     )
-    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda _: opener)
+    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
     with pytest.raises(policy.PolicyError) as error:
         policy.request("oauth/token", data=b"client_secret=secret-in-response")
     assert "secret-in-response" not in str(error.value)
+
+
+def test_rejected_credentials_say_what_to_check(monkeypatch):
+    opener = Mock()
+    opener.open.side_effect = urllib.error.HTTPError("https://x", 401, "error", {}, io.BytesIO())
+    monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
+    with pytest.raises(policy.PolicyError, match="rejected the client ID or secret"):
+        policy.request("oauth/token", data=b"client_secret=wrong")
+
+
+def test_requests_verify_certificates_and_hostnames():
+    context = policy.tls_context()
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
+
+
+def test_pasted_secret_is_sent_without_surrounding_whitespace(monkeypatch, tmp_path):
+    candidate_file = tmp_path / "candidate.json"
+    candidate_file.write_bytes(CANDIDATE)
+    args = ["tailscale_policy.py", str(candidate_file), "--client-id", "id"]
+    monkeypatch.setattr("sys.argv", args)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(policy.Path, "home", lambda: tmp_path)
+    monkeypatch.setattr(policy.getpass, "getpass", lambda _: "  tskey-client-id-abc \t")
+    api = Mock(return_value=(b'{"access_token":"token"}', ""))
+    monkeypatch.setattr(policy, "request", api)
+    monkeypatch.setattr(policy, "apply_policy", Mock())
+    policy.main()
+    assert api.call_args.kwargs["data"].endswith(b"client_secret=tskey-client-id-abc")
 
 
 def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch, tmp_path):

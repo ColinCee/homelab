@@ -6,6 +6,7 @@ import difflib
 import getpass
 import json
 import os
+import ssl
 import sys
 import tempfile
 import urllib.error
@@ -24,6 +25,28 @@ class NoRedirects(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def tls_context():
+    """Certificate checking that also works on Windows.
+
+    Python's default there loads the Windows intermediate store too, and OpenSSL then prefers a
+    stale intermediate from it over the valid one the server sends: an expired ISRG Root X2
+    cross-sign made every request fail with "certificate has expired" (October 2026). Trust
+    only the Windows root store and take intermediates from the server, as other platforms do.
+    """
+    if sys.platform == "win32":
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        for der, encoding, trust in ssl.enum_certificates("ROOT"):
+            if encoding == "x509_asn" and (
+                trust is True or (trust and ssl.Purpose.SERVER_AUTH.oid in trust)
+            ):
+                try:
+                    context.load_verify_locations(cadata=der)
+                except ssl.SSLError:
+                    continue  # one unreadable root must not hide the rest
+        return context
+    return ssl.create_default_context()
+
+
 def request(path, *, data=None, token=None, etag=None, content_type="application/json"):
     headers = {"Accept": "application/json", "Content-Type": content_type}
     if token:
@@ -34,7 +57,9 @@ def request(path, *, data=None, token=None, etag=None, content_type="application
         f"https://api.tailscale.com/api/v2/{path}", data=data, headers=headers
     )
     # Never forward credentials to a redirect destination.
-    opener = urllib.request.build_opener(NoRedirects())
+    opener = urllib.request.build_opener(
+        NoRedirects(), urllib.request.HTTPSHandler(context=tls_context())
+    )
     try:
         with opener.open(req, timeout=20) as response:
             return response.read(), response.headers.get("ETag", "")
@@ -43,7 +68,14 @@ def request(path, *, data=None, token=None, etag=None, content_type="application
         if token:
             # Escape control characters and redact credentials from API diagnostics.
             detail = json.dumps(exc.read().decode(errors="replace").replace(token, "[REDACTED]"))
-        raise PolicyError(f"Tailscale {path}: HTTP {exc.code} {detail}") from None
+        hint = ""
+        if path == "oauth/token" and exc.code == 401:
+            hint = (
+                "Tailscale rejected the client ID or secret. The ID is the part of the secret "
+                "after 'tskey-client-'; check the client still exists under Settings > Trust "
+                "credentials, or create a new one."
+            )
+        raise PolicyError(f"Tailscale {path}: HTTP {exc.code} {detail}{hint}") from None
     except (urllib.error.URLError, TimeoutError) as exc:
         reason = exc.reason if isinstance(exc, urllib.error.URLError) else "timeout"
         raise PolicyError(f"Tailscale request failed: {reason}") from None
@@ -144,7 +176,8 @@ def main():
         raise PolicyError("Client ID is empty. Supply a valid ID with --client-id.")
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
-        secret = getpass.getpass("Tailscale OAuth client secret (hidden): ")
+        # A pasted secret often carries a trailing space or newline; a real one has none.
+        secret = getpass.getpass("Tailscale OAuth client secret (hidden): ").strip()
     if not secret:
         raise PolicyError("Client secret is required.")
     response, _ = request(
