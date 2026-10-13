@@ -97,6 +97,16 @@ def test_noop_does_not_write(monkeypatch, tmp_path):
     assert api.call_count == 2
 
 
+def test_with_no_argument_the_notes_policy_is_used(monkeypatch, tmp_path):
+    missing, present = tmp_path / "missing.json", tmp_path / "present.json"
+    present.write_bytes(CANDIDATE)
+    monkeypatch.setattr(policy, "POLICY_FILES", (missing, present))
+    assert policy.default_policy() == present
+    monkeypatch.setattr(policy, "POLICY_FILES", (missing,))
+    with pytest.raises(policy.PolicyError, match="No policy file found"):
+        policy.default_policy()
+
+
 def test_rejects_test_array_instead_of_policy():
     with pytest.raises(policy.PolicyError, match="JSON object"):
         policy.policy_bytes(b"[]")
@@ -188,7 +198,7 @@ def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch,
     monkeypatch.setattr(policy.getpass, "getpass", lambda _: "client-secret")
 
     def answer(prompt):
-        if prompt.startswith("Tailscale OAuth client ID"):
+        if prompt == policy.ID_PROMPT:
             return "client-id"
         candidate_file.write_bytes(b'{"acls": []}')
         return "APPLY"

@@ -106,10 +106,10 @@ def main():
     saved = Path.home() / ".config/tailscale-policy/client-id"
     client_id = (args.client_id or (saved.read_text() if saved.exists() else "")).strip()
     if not client_id:
-        client_id = input("Tailscale OAuth client ID (Bitwarden username): ").strip()
+        client_id = input(policy.ID_PROMPT).strip()
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
-        secret = getpass.getpass("Tailscale OAuth client secret (hidden): ").strip()
+        secret = getpass.getpass(policy.SECRET_PROMPT).strip()
     if not client_id or not secret:
         raise policy.PolicyError("Both the client ID and the secret are required.")
     if not secret.startswith(f"tskey-client-{client_id}-"):

@@ -15,9 +15,25 @@ import urllib.request
 import warnings
 from pathlib import Path
 
+# The policy lives in the private notes checkout beside this one; its folder was renamed once.
+NOTES = Path(__file__).resolve().parents[2] / "notes"
+POLICY_FILES = (
+    NOTES / "04-dev/homelab/tailscale-acl.jsonc",
+    NOTES / "areas/homelab/tailscale-acl.jsonc",
+)
+ID_PROMPT = "Client ID (the Bitwarden username, ends in CNTRL): "
+SECRET_PROMPT = "Client secret: paste it and press Enter (nothing shows as you paste): "
+
 
 class PolicyError(Exception):
     pass
+
+
+def default_policy():
+    for path in POLICY_FILES:
+        if path.exists():
+            return path
+    raise PolicyError(f"No policy file found at {POLICY_FILES[0]}. Give its path as an argument.")
 
 
 class NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -149,7 +165,12 @@ def apply_policy(candidate, token, tailnet, backup_dir, check_only):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("policy", type=Path, help="Candidate JSON policy (comments not supported)")
+    parser.add_argument(
+        "policy",
+        type=Path,
+        nargs="?",
+        help="Candidate JSON policy, no comments (default: the one in the notes checkout)",
+    )
     parser.add_argument(
         "--check", action="store_true", help="Back up, validate and show diff; no write"
     )
@@ -162,7 +183,10 @@ def main():
         parser.error(
             "Run this yourself in an interactive terminal; piped approvals are not supported."
         )
-    candidate = policy_bytes(args.policy.read_bytes())
+    source = args.policy or default_policy()
+    candidate = policy_bytes(source.read_bytes())
+    print(f"Policy file: {source}")
+    print("Nothing changes unless you type APPLY at the end." if not args.check else "Check only.")
     print(f"Target tailnet: {args.tailnet} (- means the OAuth credential's default tailnet)")
     client_id_file = Path.home() / ".config/tailscale-policy/client-id"
     if args.client_id is not None:
@@ -171,13 +195,13 @@ def main():
         client_id = client_id_file.read_text().strip()
         print("Using saved OAuth client ID. Use --client-id to replace it.")
     else:
-        client_id = input("Tailscale OAuth client ID (Bitwarden username): ").strip()
+        client_id = input(ID_PROMPT).strip()
     if not client_id:
         raise PolicyError("Client ID is empty. Supply a valid ID with --client-id.")
     with warnings.catch_warnings():
         warnings.simplefilter("error", getpass.GetPassWarning)
         # A pasted secret often carries a trailing space or newline; a real one has none.
-        secret = getpass.getpass("Tailscale OAuth client secret (hidden): ").strip()
+        secret = getpass.getpass(SECRET_PROMPT).strip()
     if not secret:
         raise PolicyError("Client secret is required.")
     response, _ = request(
