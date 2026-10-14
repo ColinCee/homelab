@@ -79,6 +79,7 @@ stuck deploys.
 
 - [Deploy and manage services](docs/runbooks/deploying-services.md): stack ownership and deployment contract, secrets, adding/removing stacks, startup recovery.
 - [Backups](docs/runbooks/backups.md): what is backed up off-site, alerting, and how to restore.
+- [Security audit](docs/runbooks/security-audit.md): checking Beelink for compromise.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
 - Private operational records live in the workspace's `notes/04-dev/homelab/`.
