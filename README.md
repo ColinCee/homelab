@@ -8,11 +8,14 @@ access; Cloudflare Tunnel exposes the flight tracker.
 
 ## What it does
 
-- Runs Home Assistant and a Mosquitto MQTT broker for home automation
+- Runs Home Assistant for home automation
 - Hosts the [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend behind Cloudflare Tunnel
 - Collects metrics and logs with Grafana, Prometheus, Loki, and Alloy; alerts go to Discord
 - Backs up nightly with encrypted restic snapshots to Cloudflare R2
-- Detects intrusions with CrowdSec, paired with the host firewall bouncer
+- Detects intrusions with CrowdSec, paired with the host firewall bouncer. It
+  sees little: admin logins arrive through Tailscale SSH, which it does not
+  parse, and the public API sits behind Cloudflare Tunnel, so filtering for that
+  belongs at Cloudflare
 
 ## Stack
 
@@ -61,7 +64,6 @@ automatically. Non-major versions can still break behavior, especially before
 | Stack | Purpose |
 |-------|---------|
 | `stacks/home-assistant/` | Home automation, with host networking for Bluetooth/mDNS |
-| `stacks/mqtt/` | Mosquitto broker for sensors |
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy |
 | `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |

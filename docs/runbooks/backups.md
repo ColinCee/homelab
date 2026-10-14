@@ -10,7 +10,6 @@ disposable.
 | Source | Why |
 |--------|-----|
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
-| `stacks/mqtt/data` | Retained messages and persistent sessions. |
 | Grafana volume | Users and UI-made changes (`grafana.db`). Dashboards are in Git. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | CrowdSec config volume | Bouncer registration and local settings. |
