@@ -9,13 +9,14 @@
   "automergeType": "pr",
   "platformAutomerge": false,
   "minimumReleaseAge": "3 days",
-  "docker": {
-    "pinDigests": true
-  },
   "vulnerabilityAlerts": {
     "minimumReleaseAge": "0 days"
   },
   "packageRules": [
+    {
+      "matchCategories": ["docker"],
+      "pinDigests": true
+    },
     {
       "matchUpdateTypes": ["major"],
       "automerge": false
@@ -23,6 +24,11 @@
     {
       "groupName": "python",
       "matchDepNames": ["python"]
+    },
+    {
+      "description": "Our own image: no wait needed. ghcr.io gives Renovate no release time, so the 3-day wait would hold it forever.",
+      "matchPackageNames": ["ghcr.io/colincee/**"],
+      "minimumReleaseAge": "0 days"
     },
     {
       "groupName": "uv",
