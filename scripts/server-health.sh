@@ -36,10 +36,17 @@ else
 fi
 size_line="$(grep '^repository size:' <<<"$backup_log" | tail -n 1 || true)"
 row "R2 repository" "${size_line:-no size logged in 8 days}"
-if grep -qx 'deep check ok' <<<"$backup_log"; then
+# The deep check's own metric for the same reason; the log is a fallback until
+# the first deep check after this metric was added has run.
+deep_ts="$(awk '{print $2}' /var/lib/homelab-metrics/backup-deep-check.prom 2>/dev/null || true)"
+if [[ -n "$deep_ts" ]] && (( $(date +%s) - ${deep_ts%.*} < 8 * 86400 )); then
+  row "Weekly deep check" "ok at $(date -u -d "@$deep_ts" '+%Y-%m-%d %H:%M UTC')"
+elif grep -qx 'deep check ok' <<<"$backup_log"; then
   row "Weekly deep check" "ok"
 else
-  bad "Weekly deep check" "no 'deep check ok' in 8 days"
+  last="no metric file"
+  [[ -n "$deep_ts" ]] && last="last $(date -u -d "@$deep_ts" '+%Y-%m-%d %H:%M UTC')"
+  bad "Weekly deep check" "none in 8 days ($last); the log does not survive a redeploy"
 fi
 
 # Filters on the same key are ORed but different keys are ANDed, so query twice.

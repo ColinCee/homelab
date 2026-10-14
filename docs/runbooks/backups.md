@@ -25,6 +25,9 @@ and verifies the repository. On Sundays the verification is a deep check that
 downloads and verifies every stored byte (`restic check --read-data`); a
 failure fails the run and so raises **Backup Missed**. Force one with
 `docker exec -e DEEP_CHECK=1 backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1'`.
+A passing deep check also writes
+`/var/lib/homelab-metrics/backup-deep-check.prom`, which the weekly server
+health report reads; the container log does not survive a redeploy.
 
 The Grafana **Backups** dashboard shows recent successes, failures, stored
 size against the cap, deep checks and the run log.

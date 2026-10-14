@@ -51,7 +51,10 @@ verify() {
   # A plain check only reads metadata. Once a week, download and verify every
   # stored byte so silent corruption in R2 is found before a restore needs it.
   if [ "$(date -u +%u)" = "${DEEP_CHECK_DAY:-7}" ] || [ "${DEEP_CHECK:-}" = 1 ]; then
-    restic check --read-data && echo "deep check ok"
+    restic check --read-data && echo "deep check ok" && {
+      write_metric "$DEEP_CHECK_FILE" homelab_backup_last_deep_check_timestamp_seconds "$(date -u +%s)" ||
+        echo "could not write $DEEP_CHECK_FILE" >&2
+    }
   else
     restic check
   fi
@@ -70,7 +73,8 @@ report() {
   if run_backup; then
     # The Grafana missed-backup alert counts this line; keep the text stable.
     echo "backup ok"
-    write_metric "$(date -u +%s)" || echo "could not write $METRICS_FILE" >&2
+    write_metric "$METRICS_FILE" homelab_backup_last_success_timestamp_seconds "$(date -u +%s)" ||
+      echo "could not write $METRICS_FILE" >&2
   else
     echo "backup FAILED" >&2
     return 1
@@ -81,10 +85,12 @@ report() {
 # instead of the "backup ok" log line: Loki missed that line once (2026-10-10)
 # and the alert fired with backups succeeding.
 METRICS_FILE=/metrics/backup.prom
+# The weekly report reads this, not the log, for the same reason.
+DEEP_CHECK_FILE=/metrics/backup-deep-check.prom
 
+# write_metric FILE NAME VALUE
 write_metric() {
-  printf 'homelab_backup_last_success_timestamp_seconds %s\n' "$1" >"$METRICS_FILE.tmp" &&
-    mv "$METRICS_FILE.tmp" "$METRICS_FILE"
+  printf '%s %s\n' "$2" "$3" >"$1.tmp" && mv "$1.tmp" "$1"
 }
 
 # On a fresh host, start from the newest snapshot so the alert has a value
@@ -93,7 +99,8 @@ seed_metric() {
   [ -f "$METRICS_FILE" ] && return
   latest=$(restic snapshots --host beelink --latest 1 --json |
     sed -n 's/.*"time":"\([0-9-]*\)T\([0-9:]*\).*/\1 \2/p' | head -n 1)
-  [ -n "$latest" ] && write_metric "$(date -u -d "$latest" +%s)"
+  [ -n "$latest" ] && write_metric "$METRICS_FILE" homelab_backup_last_success_timestamp_seconds \
+    "$(date -u -d "$latest" +%s)"
 }
 
 seconds_until() {
