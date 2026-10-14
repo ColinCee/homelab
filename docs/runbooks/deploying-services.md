@@ -80,6 +80,35 @@ This avoids giving hosted CI tailnet access or maintaining another deployment
 platform. Admin ports stay bound to Tailscale. Secrets are explicitly passed
 to Compose, never sourced as shell code.
 
+### Runner job guard
+
+The repository is public, so a fork pull request can bring its own workflow
+targeting `beelink`; fork runs need approval, and one wrong approval would run
+it as `colin`. The runner's job-started hook,
+[`runner_job_guard.py`](../../scripts/runner_job_guard.py), refuses every job
+except `deploy.yaml` and `server-health.yaml` from `main` on push, schedule, or
+manual dispatch. It runs before the job's first step and fails closed when a
+variable is missing.
+
+The installed copy is root-owned in `/usr/local/lib/homelab/` and deploys never
+update it, so a push to `main` cannot change the policy. Adding a workflow that
+runs on Beelink therefore takes two steps: change the allowlist in a pull
+request, then reinstall on the host from a checkout of `main`:
+
+```bash
+sudo scripts/install-runner-guard.sh enforce
+sudo systemctl restart actions.runner.ColinCee-homelab.beelink.service
+```
+
+Restart only when no deploy is running. Decisions go to the journal:
+`journalctl -t homelab-runner-guard`. `observe` mode logs without refusing and
+is for rollout only.
+
+Limits: the guard stops a disallowed job before it runs. It does not protect
+against a compromised action used by an allowed workflow (pin actions by SHA),
+and a job that has already run as `colin` could remove the hook, because the
+runner can control the host.
+
 ## Manual deployment
 
 On Beelink, select the intended checkout yourself, then:
