@@ -2,10 +2,16 @@
 Description=Configure the network and run this VM's one task
 After=local-fs.target
 DefaultDependencies=no
+# However the task ends (done, failed, killed for memory), the VM ends with it.
+# Firecracker exits on a guest reboot (reboot=k).
+SuccessAction=reboot-force
+FailureAction=reboot-force
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/ci-boot
+# A job that runs out of memory loses that process, not the task.
+OOMPolicy=continue
 StandardOutput=journal+console
 StandardError=journal+console
 

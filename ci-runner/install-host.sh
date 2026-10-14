@@ -37,13 +37,38 @@ for ((n = 0; n < SLOTS; n++)); do
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "fc-slot$n"
 done
 
+# Stop running VMs before touching the network: reloading the rules briefly
+# empties the blocked public address set.
+was_running=false
+if systemctl is-active --quiet homelab-ci-supervisor.service; then
+  echo "Stopping the supervisor; any running CI jobs will fail."
+  was_running=true
+  systemctl stop homelab-ci-supervisor.service
+fi
+if pgrep -x firecracker >/dev/null; then
+  echo "a VM is still running (started by hand?); wait for it to finish" >&2
+  exit 1
+fi
+
 install -d -o root -g root -m 0755 "$dest" "$dest/net"
 install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
 install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
 install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
+install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
+install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
 install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
+install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service
 systemctl daemon-reload
-systemctl enable homelab-ci-net.service
-systemctl restart homelab-ci-net.service
+systemctl enable --now homelab-ci-net.service
+# Apply rule changes in place; restarting the unit would remove the taps.
+"$dest/net/setup-net.sh" up
+
+# Host-side settings, never in the repo: which private repos to serve, and the
+# GitHub token (written by hand, see ci-runner.md).
+install -d -o root -g root -m 0700 /etc/homelab-ci
+[[ -f /etc/homelab-ci/repos ]] || install -o root -g root -m 0600 /dev/null /etc/homelab-ci/repos
+if $was_running; then
+  systemctl start homelab-ci-supervisor.service
+fi
 
 echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots, network up."

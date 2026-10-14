@@ -1,6 +1,6 @@
 #!/bin/bash
 # First and only task of a CI microVM. The host passes the network on the kernel
-# command line (ci.ip=, ci.gw=) and the task through MMDS, then the VM shuts down.
+# command line (ci.ip=, ci.gw=) and the task through MMDS; when it exits, the VM ends.
 # Whatever happens, the VM ends: it is never reused.
 set -uo pipefail
 
@@ -27,10 +27,17 @@ case "$task" in
     bash /run/probe.sh
     echo "=== probe end"
     ;;
+  runner)
+    # A just-in-time runner: registered for exactly one job, gone afterwards.
+    jit=$(mmds jitconfig | jq -r .)
+    echo "=== runner start"
+    sudo -u runner -H /opt/runner/run.sh --jitconfig "$jit"
+    echo "=== runner end (exit $?)"
+    unset jit
+    ;;
   *)
     echo "ci-boot: unknown task '${task}'"
     ;;
 esac
 
-# Firecracker exits on a guest reboot (reboot=k), not on poweroff.
-systemctl reboot --no-block
+# ci-boot.service reboots the VM when this exits, and Firecracker exits with it.
