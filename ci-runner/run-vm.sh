@@ -29,11 +29,7 @@ exec 9>"/run/homelab-ci/slot$slot.lock"
 flock -n 9 || { echo "slot $slot is busy" >&2; exit 75; }
 
 # Block the home's current public address; refuse to start without it.
-wan=$(curl -4 -sf -m 5 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
-[[ "$wan" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "cannot find the public address" >&2; exit 1; }
-# One transaction, so the set is never empty in between.
-nft -f - <<<"flush set inet homelab_ci wan4; add element inet homelab_ci wan4 { $wan }"
-nft list set inet homelab_ci wan4 | grep -qF "$wan" || { echo "public address not blocked" >&2; exit 1; }
+"$(dirname "$0")/net/setup-net.sh" wan || { echo "public address not blocked" >&2; exit 1; }
 
 # Kill anything left in the slot's cgroup (say, after this script was killed)
 # before deleting its files, so nothing of the slot user's survives.

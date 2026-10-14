@@ -23,7 +23,7 @@ table inet homelab_ci {
 
   # The home's public address. The router answers on it from inside (its admin
   # pages, and any port forwards), so it is as private as the LAN. It changes,
-  # so run-vm.sh refreshes it before every VM starts.
+  # so it is refreshed before every VM starts (setup-net.sh wan).
   set wan4 {
     type ipv4_addr
   }
@@ -39,7 +39,8 @@ table inet homelab_ci {
     type filter hook forward priority filter; policy accept;
     iifname "fc-tap*" meta nfproto ipv6 counter drop
     # A VM may only use its own address: no posing as the other slot or
-    # sending unNATed traffic with someone else's address.
+    # sending unNATed traffic with someone else's address. (rp_filter is loose
+    # on Beelink, so this rule is what enforces it.)
     iifname "fc-tap*" fib saddr . iif oif missing counter drop
     iifname "fc-tap*" ip daddr @private4 counter drop
     iifname "fc-tap*" ip daddr @wan4 counter drop

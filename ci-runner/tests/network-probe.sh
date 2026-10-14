@@ -13,13 +13,22 @@ expect() {
   if [[ $got == "$want" ]]; then echo "PASS $want $name"; else echo "FAIL $want $name (got $got)"; fi
 }
 reach() { [[ $(curl -s -o /dev/null -m 5 -w '%{http_code}' "$@") == 200 ]]; }
+# For must-be-blocked HTTP: only curl's timeout (28) counts as blocked.
+reach_or_error() {
+  curl -s -o /dev/null -m 5 "$@"
+  [[ $? -ne 28 ]]
+}
 # A dropped packet times out. "Connection refused" means the target answered,
 # so only a timeout counts as blocked.
 tcp() {
   timeout 4 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null
   [[ $? -ne 124 ]]
 }
-pings() { ping -c1 -W2 "$1" >/dev/null 2>&1; }
+# ping exits 1 when no reply came, 2 on any other error; only 1 is blocked.
+pings() {
+  ping -c1 -W2 "$1" >/dev/null 2>&1
+  [[ $? -ne 1 ]]
+}
 
 # Must work
 expect ok "github api" reach https://api.github.com/zen
@@ -48,8 +57,8 @@ done
 # Posing as another address: the other slot's, and a public one.
 ip addr add 10.200.1.2/32 dev eth0
 ip addr add 203.0.113.9/32 dev eth0
-expect blocked "spoof other slot" reach --interface 10.200.1.2 https://api.github.com/zen
-expect blocked "spoof public address" reach --interface 203.0.113.9 https://api.github.com/zen
+expect blocked "spoof other slot" reach_or_error --interface 10.200.1.2 https://api.github.com/zen
+expect blocked "spoof public address" reach_or_error --interface 203.0.113.9 https://api.github.com/zen
 ip addr del 10.200.1.2/32 dev eth0
 ip addr del 203.0.113.9/32 dev eth0
 
