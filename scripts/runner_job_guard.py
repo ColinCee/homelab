@@ -30,7 +30,8 @@ WORKFLOWS = frozenset(
     f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
 )
 # Who may start a job here: Colin, and Renovate merging its own pull requests.
-# IDs survive a username change; the triggering actor is who started a re-run.
+# The actor is checked by ID. The triggering actor (who started a re-run) is only
+# available by name, so renaming either account means updating this list.
 ACTOR_IDS = {"11246116": "ColinCee", "29139614": "renovate[bot]"}
 TRIGGERING_ACTORS = frozenset(ACTOR_IDS.values())
 # Present only if a workflow's env reached the hook; bash would have sourced them first.

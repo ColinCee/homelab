@@ -37,6 +37,12 @@ def _env(**overrides: str) -> dict[str, str]:
             GITHUB_ACTOR_ID="29139614",
             GITHUB_TRIGGERING_ACTOR="renovate[bot]",
         ),
+        # A Renovate deploy that Colin re-runs.
+        _env(
+            GITHUB_ACTOR="renovate[bot]",
+            GITHUB_ACTOR_ID="29139614",
+            GITHUB_TRIGGERING_ACTOR="ColinCee",
+        ),
     ],
 )
 def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
