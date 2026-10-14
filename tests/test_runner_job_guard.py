@@ -6,6 +6,12 @@ DEPLOY = "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main"
 HEALTH = "ColinCee/homelab/.github/workflows/server-health.yaml@refs/heads/main"
 
 
+@pytest.fixture(autouse=True)
+def _no_journal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep test runs out of the host journal the guard writes to."""
+    monkeypatch.setattr(guard, "_journal", lambda line: None)
+
+
 def _env(**overrides: str) -> dict[str, str]:
     env = {
         "GITHUB_REPOSITORY": "ColinCee/homelab",
