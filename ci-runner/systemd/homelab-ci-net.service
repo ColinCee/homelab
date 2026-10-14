@@ -1,0 +1,16 @@
+[Unit]
+Description=Network for the CI microVMs
+# Docker must have created DOCKER-USER. Wants, not Requires: Docker keeps
+# DOCKER-USER across its restarts, and restarting this unit would pull the taps
+# out from under running VMs.
+After=docker.service ufw.service network-online.target
+Wants=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh up
+ExecStop=/usr/local/lib/homelab-ci/net/setup-net.sh down
+
+[Install]
+WantedBy=multi-user.target

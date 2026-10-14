@@ -39,6 +39,20 @@
     {
       "groupName": "uv",
       "matchPackageNames": ["uv", "ghcr.io/astral-sh/uv"]
+    },
+    {
+      "description": "The release hash in versions.env must be updated by hand in the PR.",
+      "matchFileNames": ["ci-runner/versions.env"],
+      "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^ci-runner/versions\\.env$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=(?<currentValue>\\S+)"
+      ]
     }
   ]
 }
