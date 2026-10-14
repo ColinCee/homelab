@@ -55,8 +55,8 @@ hash in `versions.env` by hand), re-run `install-host.sh` and the network test.
 The network test boots a VM that must reach GitHub, PyPI and npm, must time out
 on every private address and the public address, and must not get out with
 another address. It then connects to the VM from a container and from Beelink
-and checks that the drop rule counted it. Every check must pass. Run it after any change to the rules,
-Docker or UFW.
+and checks that the drop rule counted it. Every check must pass. Run it after
+any change to the rules, Docker or UFW.
 
 ## Review
 
