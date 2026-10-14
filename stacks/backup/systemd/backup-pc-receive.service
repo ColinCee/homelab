@@ -1,0 +1,12 @@
+[Unit]
+Description=Collect files other machines sent with Taildrop, for the nightly backup
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/runbooks/backups.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Needs `sudo tailscale set --operator=colin` once, so this user may receive files.
+ExecStartPre=/usr/bin/mkdir -p %h/pc-backups
+ExecStart=/usr/bin/tailscale file get --conflict=overwrite %h/pc-backups
+# The newest file's age, for the Backup Missed rule (the observability stack reads this folder).
+ExecStartPost=/bin/sh -c 'newest=$(find %h/pc-backups -type f -printf "%%T@\n" | sort -n | tail -n 1); [ -n "$newest" ] && printf "homelab_pc_backup_newest_timestamp_seconds %%s\n" "${newest%%.*}" > /var/lib/homelab-metrics/pc-backup.prom.tmp && mv /var/lib/homelab-metrics/pc-backup.prom.tmp /var/lib/homelab-metrics/pc-backup.prom || true'

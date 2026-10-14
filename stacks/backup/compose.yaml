@@ -44,6 +44,8 @@ services:
       - grafana-data:/data/grafana:ro
       - heatmap-data:/data/flight-tracker:ro
       - crowdsec-config:/data/crowdsec:ro
+      # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
+      - /home/colin/pc-backups:/data/pc-backups:ro
 
 volumes:
   restic-cache:

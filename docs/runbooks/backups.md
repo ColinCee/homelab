@@ -14,6 +14,7 @@ disposable.
 | Grafana volume | Users and UI-made changes (`grafana.db`). Dashboards are in Git. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | CrowdSec config volume | Bouncer registration and local settings. |
+| `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
 Left out on purpose: the Home Assistant recorder database (sensor history; a
 live copy would be inconsistent), logs, Grafana plugins, Prometheus metrics and
@@ -27,6 +28,27 @@ failure fails the run and so raises **Backup Missed**. Force one with
 
 The Grafana **Backups** dashboard shows recent successes, failures, stored
 size against the cap, deep checks and the run log.
+
+## From the PC
+
+Any project folder on the Windows PC (`D:\Claude Projects\*`) can opt in with a `backup.toml`
+listing its data that is not in Git:
+
+```toml
+paths = ["~/.servo/servo.db", "~/.servo/bench"]  # files or folders
+exclude = ["shots"]                               # names left out below a folder
+```
+
+[`scripts/pc_backup.py`](../../scripts/pc_backup.py) runs nightly on the PC (Task Scheduler,
+"Homelab PC backup"): one uncompressed tar per project, SQLite databases copied whole with SQLite's
+own backup, sent with Taildrop. No SSH key or extra sign-in. On Beelink the
+`backup-pc-receive` timer collects them every 15 minutes into `~/pc-backups`, which the nightly
+restic run backs up with everything else, and writes the newest file's time to
+`homelab_pc_backup_newest_timestamp_seconds`.
+
+One-time setup on Beelink: `sudo tailscale set --operator=colin`, so the user timer may receive
+files. On the PC, `python scripts\pc_backup.py --dry-run` packs without sending; the last run is in
+`~/.pc-backup.json`.
 
 ## Credentials
 
