@@ -18,6 +18,9 @@ def _env(**overrides: str) -> dict[str, str]:
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_WORKFLOW_REF": DEPLOY,
+        "GITHUB_ACTOR": "ColinCee",
+        "GITHUB_ACTOR_ID": "11246116",
+        "GITHUB_TRIGGERING_ACTOR": "ColinCee",
     }
     env.update(overrides)
     return env
@@ -29,6 +32,11 @@ def _env(**overrides: str) -> dict[str, str]:
         _env(),
         _env(GITHUB_EVENT_NAME="schedule", GITHUB_WORKFLOW_REF=HEALTH),
         _env(GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_WORKFLOW_REF=HEALTH),
+        _env(
+            GITHUB_ACTOR="renovate[bot]",
+            GITHUB_ACTOR_ID="29139614",
+            GITHUB_TRIGGERING_ACTOR="renovate[bot]",
+        ),
     ],
 )
 def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
@@ -53,6 +61,9 @@ def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
             "workflow",
         ),
         (_env(GITHUB_REPOSITORY="someone/homelab"), "repository"),
+        (_env(GITHUB_ACTOR="mallory", GITHUB_ACTOR_ID="999"), "actor mallory"),
+        (_env(GITHUB_ACTOR="ColinCee", GITHUB_ACTOR_ID="999"), "actor ColinCee (999)"),
+        (_env(GITHUB_TRIGGERING_ACTOR="mallory"), "triggering actor"),
         (_env(BASH_ENV="/tmp/x"), "BASH_ENV"),
         (_env(ENV="/tmp/x"), "ENV"),
     ],
@@ -65,7 +76,15 @@ def test_refuses_everything_else(env: dict[str, str], reason: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "missing", ["GITHUB_REPOSITORY", "GITHUB_EVENT_NAME", "GITHUB_REF", "GITHUB_WORKFLOW_REF"]
+    "missing",
+    [
+        "GITHUB_REPOSITORY",
+        "GITHUB_EVENT_NAME",
+        "GITHUB_REF",
+        "GITHUB_WORKFLOW_REF",
+        "GITHUB_ACTOR_ID",
+        "GITHUB_TRIGGERING_ACTOR",
+    ],
 )
 def test_a_missing_variable_is_a_refusal(missing: str) -> None:
     env = _env()

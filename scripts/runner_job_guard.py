@@ -29,6 +29,10 @@ EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
     f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
 )
+# Who may start a job here: Colin, and Renovate merging its own pull requests.
+# IDs survive a username change; the triggering actor is who started a re-run.
+ACTOR_IDS = {"11246116": "ColinCee", "29139614": "renovate[bot]"}
+TRIGGERING_ACTORS = frozenset(ACTOR_IDS.values())
 # Present only if a workflow's env reached the hook; bash would have sourced them first.
 INJECTION_VARIABLES = ("BASH_ENV", "ENV")
 # Values safe to log; everything else is logged by name only.
@@ -38,6 +42,8 @@ LOGGED_VALUES = (
     "GITHUB_REF",
     "GITHUB_WORKFLOW_REF",
     "GITHUB_ACTOR",
+    "GITHUB_ACTOR_ID",
+    "GITHUB_TRIGGERING_ACTOR",
     "GITHUB_RUN_ID",
 )
 
@@ -72,7 +78,14 @@ def decide(env: Mapping[str, str]) -> Decision:
         return Decision(
             False, f"workflow {workflow or '(missing)'} is not an allowed deploy workflow"
         )
-    return Decision(True, f"{event} of {workflow}")
+    actor_id = env.get("GITHUB_ACTOR_ID", "")
+    if actor_id not in ACTOR_IDS:
+        actor = env.get("GITHUB_ACTOR", "") or "(missing)"
+        return Decision(False, f"actor {actor} ({actor_id or 'no id'}) is not allowed")
+    triggering = env.get("GITHUB_TRIGGERING_ACTOR", "")
+    if triggering not in TRIGGERING_ACTORS:
+        return Decision(False, f"triggering actor {triggering or '(missing)'} is not allowed")
+    return Decision(True, f"{event} of {workflow} by {ACTOR_IDS[actor_id]}")
 
 
 def audit_line(env: Mapping[str, str], decision: Decision, mode: str) -> str:
