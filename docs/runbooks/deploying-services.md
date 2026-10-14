@@ -90,6 +90,12 @@ except `deploy.yaml` and `server-health.yaml` from `main` on push, schedule, or
 manual dispatch. It runs before the job's first step and fails closed when a
 variable is missing.
 
+A failing hook alone only marks the job failed: the runner still runs later
+steps whose condition allows it, such as `if: always()`, which was confirmed on
+this runner. On refusal the guard therefore also kills the job's
+`Runner.Worker`, so nothing after the hook runs; GitHub marks the job failed
+within seconds and the runner stays online.
+
 The installed copy is root-owned in `/usr/local/lib/homelab/` and deploys never
 update it, so a push to `main` cannot change the policy. Adding a workflow that
 runs on Beelink therefore takes two steps: change the allowlist in a pull
@@ -104,7 +110,7 @@ Restart only when no deploy is running. Decisions go to the journal:
 `journalctl -t homelab-runner-guard`. `observe` mode logs without refusing and
 is for rollout only.
 
-Limits: the guard stops a disallowed job before it runs. It does not protect
+Limits: the guard stops a disallowed job before any of its steps run. It does not protect
 against a compromised action used by an allowed workflow (pin actions by SHA),
 and a job that has already run as `colin` could remove the hook, because the
 runner can control the host.
