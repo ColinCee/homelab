@@ -41,9 +41,21 @@ install -d -o root -g root -m 0755 "$dest" "$dest/net"
 install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
 install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
 install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
+install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
 install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
+install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service
 systemctl daemon-reload
-systemctl enable homelab-ci-net.service
-systemctl restart homelab-ci-net.service
+systemctl enable --now homelab-ci-net.service
+# Apply rule changes in place; restarting the unit would remove the taps.
+"$dest/net/setup-net.sh" up
+
+# Host-side settings, never in the repo: which private repos to serve, and the
+# GitHub token (written by hand, see ci-runner.md).
+install -d -o root -g root -m 0700 /etc/homelab-ci
+[[ -f /etc/homelab-ci/repos ]] || install -o root -g root -m 0600 /dev/null /etc/homelab-ci/repos
+if systemctl is-active --quiet homelab-ci-supervisor.service; then
+  echo "Restarting the supervisor; any running CI jobs will fail."
+  systemctl restart homelab-ci-supervisor.service
+fi
 
 echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots, network up."

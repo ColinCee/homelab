@@ -8,7 +8,10 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 images=/var/lib/homelab-ci/images
-size=${ROOTFS_SIZE:-2G}
+# Sparse: room for a job's checkout and tools, using only what is written.
+size=${ROOTFS_SIZE:-8G}
+# shellcheck source=/dev/null
+source "$here/versions.env"
 
 tmp=$(mktemp -d)
 cid=""
@@ -18,7 +21,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker build -q -t homelab-ci-rootfs "$here/rootfs" >/dev/null
+docker build -q -t homelab-ci-rootfs \
+  --build-arg "RUNNER_VERSION=$RUNNER_VERSION" --build-arg "RUNNER_SHA256=$RUNNER_SHA256" \
+  "$here/rootfs" >/dev/null
 cid=$(docker create homelab-ci-rootfs)
 mkdir "$tmp/root"
 docker export "$cid" | tar -x -C "$tmp/root" --numeric-owner

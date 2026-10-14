@@ -1,0 +1,16 @@
+[Unit]
+Description=Start a Firecracker VM for each queued CI job on the allowed private repos
+After=homelab-ci-net.service network-online.target
+Requires=homelab-ci-net.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py
+Restart=always
+RestartSec=30
+# Stopping the supervisor stops its VMs too; their jobs fail and GitHub shows it.
+KillMode=control-group
+Nice=5
+
+[Install]
+WantedBy=multi-user.target
