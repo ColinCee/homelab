@@ -21,20 +21,38 @@ user="fc-slot$slot"
 uid=$(id -u "$user")
 gid=$(id -g "$user")
 chroot="$base/firecracker/$id/root"
+cgroup="/sys/fs/cgroup/firecracker/$id"
 
+# One VM per slot at a time.
+install -d -m 0700 /run/homelab-ci
+exec 9>"/run/homelab-ci/slot$slot.lock"
+flock -n 9 || { echo "slot $slot is busy" >&2; exit 75; }
+
+# Block the home's current public address; refuse to start without it.
+wan=$(curl -4 -sf -m 5 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
+[[ "$wan" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "cannot find the public address" >&2; exit 1; }
+# One transaction, so the set is never empty in between.
+nft -f - <<<"flush set inet homelab_ci wan4; add element inet homelab_ci wan4 { $wan }"
+nft list set inet homelab_ci wan4 | grep -qF "$wan" || { echo "public address not blocked" >&2; exit 1; }
+
+# Kill anything left in the slot's cgroup (say, after this script was killed)
+# before deleting its files, so nothing of the slot user's survives.
 cleanup() {
+  if [[ -d "$cgroup" ]]; then
+    echo 1 > "$cgroup/cgroup.kill" 2>/dev/null || true
+    for _ in $(seq 1 50); do rmdir "$cgroup" 2>/dev/null && break; sleep 0.1; done
+  fi
   rm -rf "${base:?}/firecracker/$id"
-  rmdir "/sys/fs/cgroup/firecracker/$id" 2>/dev/null || true
 }
 cleanup
 trap cleanup EXIT
 
-install -d -o "$uid" -g "$gid" -m 0700 "$chroot"
+# Fill the chroot as root, then hand it over, so the slot user cannot plant
+# links for root to follow.
+install -d -o root -g root -m 0700 "$chroot"
 cp --sparse=always "$images/rootfs.ext4" "$chroot/rootfs.ext4"
 cp "$images/vmlinuz" "$chroot/vmlinuz"
-install -o "$uid" -g "$gid" -m 0600 "$metadata" "$chroot/metadata.json"
-chown "$uid:$gid" "$chroot/rootfs.ext4" "$chroot/vmlinuz"
-chmod 0600 "$chroot/rootfs.ext4" "$chroot/vmlinuz"
+install -m 0600 "$metadata" "$chroot/metadata.json"
 
 mac=$(printf '06:00:0a:c8:%02x:02' "$slot")
 cat > "$chroot/vm.json" <<EOF
@@ -53,11 +71,13 @@ cat > "$chroot/vm.json" <<EOF
   "mmds-config": {"version": "V2", "network_interfaces": ["eth0"]}
 }
 EOF
-chown "$uid:$gid" "$chroot/vm.json"
+chmod 0600 "$chroot/rootfs.ext4" "$chroot/vmlinuz" "$chroot/vm.json"
+chown -h "$uid:$gid" "$chroot/rootfs.ext4" "$chroot/vmlinuz" "$chroot/metadata.json" "$chroot/vm.json" "$chroot"
 
 # Below the services in CPU priority; memory capped a little above the guest's.
+# The lock stays with this script: if it dies, the next run kills the orphan.
 timeout --kill-after=10 "$timeout" /usr/local/bin/jailer \
   --id "$id" --exec-file /usr/local/bin/firecracker \
   --uid "$uid" --gid "$gid" --chroot-base-dir "$base" \
   --cgroup-version 2 --cgroup "cpu.weight=20" --cgroup "memory.max=$(((MEM_MIB + 256) * 1024 * 1024))" \
-  -- --config-file vm.json --no-api --metadata metadata.json --level Warning
+  -- --config-file vm.json --no-api --metadata metadata.json --level Warning </dev/null 9>&-

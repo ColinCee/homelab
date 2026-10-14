@@ -11,11 +11,16 @@ the deploy runner is separate (see [Deploying services](deploying-services.md)).
 - **One VM per job, never reused.** Each job boots a private copy of the root
   filesystem; the copy and everything the job wrote are deleted afterwards.
 - **Jobs have the internet, not the home network.** VMs reach the internet
-  through NAT. Beelink itself, the LAN, the tailnet, Docker networks and the
-  other slots are dropped, and nothing can open a connection to a VM.
+  through NAT. Beelink itself, the LAN, the tailnet, Docker networks, the
+  other slots and the home's public address (the router answers on it from
+  inside) are dropped. A VM may only use its own address, and nothing, Beelink
+  included, can open a connection to a VM. The iptables accept is limited to
+  the uplink, so it opens nothing private even without the nftables table.
 - **Firecracker is jailed.** The jailer runs it as the slot's own user
   (`fc-slotN`), chrooted, with Firecracker's syscall filter, at a lower CPU
   weight than the services and with a memory cap.
+- **One VM per slot.** A lock stops two runs sharing a slot; if a run dies,
+  the next one kills whatever it left behind.
 - **No credentials in the VM.** A VM learns its task from Firecracker's metadata
   service (MMDS); the host keeps the GitHub credential.
 - **Installed by hand.** Everything lives root-owned under
@@ -47,9 +52,10 @@ Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel. After upgrading Firecracker (Renovate opens the PR; put the new release
 hash in `versions.env` by hand), re-run `install-host.sh` and the network test.
 
-The network test boots a VM that must reach GitHub, PyPI and npm and must fail
-to reach every private address, then connects to the VM from a container and
-checks that the drop rule counted it. Run it after any change to the rules,
+The network test boots a VM that must reach GitHub, PyPI and npm, must time out
+on every private address and the public address, and must not get out with
+another address. It then connects to the VM from a container and from Beelink
+and checks that the drop rule counted it. Every check must pass. Run it after any change to the rules,
 Docker or UFW.
 
 ## Review

@@ -14,7 +14,7 @@ tailnet=$(ip -4 -br addr show tailscale0 | awk '{print $3}' | cut -d/ -f1)
 
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-sed -e "s/@HOST_LAN@/$host_lan/g" -e "s/@TAILNET@/$tailnet/g" -e "s/@OTHER_SLOT@/10.200.1.2/g" \
+sed -e "s/@HOST_LAN@/$host_lan/g" -e "s/@TAILNET@/$tailnet/g" \
   "$here/network-probe.sh" > "$tmp/probe.sh"
 jq -n --rawfile probe "$tmp/probe.sh" '{task: "probe", probe: $probe}' > "$tmp/metadata.json"
 
@@ -33,6 +33,8 @@ if docker run --rm --network bridge busybox:1.37 nc -w 3 10.200.0.2 8080 </dev/n
   inbound=reached
 fi
 [[ $(inbound_drops) -gt $before ]] || inbound="not dropped by our rule"
+# And from Beelink's own network namespace.
+if timeout 4 bash -c 'exec 3<>/dev/tcp/10.200.0.2/8080' 2>/dev/null; then inbound="reached from host"; fi
 wait "$vm" || true
 
 results=$(grep -oE '(PASS|FAIL) .*' "$tmp/console.log" || true)
@@ -42,8 +44,9 @@ grep -q INBOUND_CONNECTED "$tmp/console.log" && inbound=reached
 
 passes=$(grep -c '^PASS' <<<"$results" || true)
 fails=$(grep -c '^FAIL' <<<"$results" || true)
-if [[ $passes -lt 20 || $fails -gt 0 || $inbound != blocked ]]; then
-  echo "NETWORK TEST FAILED ($passes passed, $fails failed, inbound $inbound)"
+total=$(grep -oE 'TOTAL [0-9]+' "$tmp/console.log" | awk '{print $2}')
+if [[ -z "$total" || $passes -ne $total || $fails -gt 0 || $inbound != blocked ]]; then
+  echo "NETWORK TEST FAILED ($passes of ${total:-?} passed, $fails failed, inbound $inbound)"
   tail -n 30 "$tmp/console.log"
   exit 1
 fi

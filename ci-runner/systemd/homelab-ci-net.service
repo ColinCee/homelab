@@ -6,7 +6,8 @@ Requires=docker.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh
+ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh up
+ExecStop=/usr/local/lib/homelab-ci/net/setup-net.sh down
 
 [Install]
 WantedBy=multi-user.target
