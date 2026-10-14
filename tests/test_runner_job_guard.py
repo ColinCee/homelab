@@ -74,14 +74,22 @@ def test_a_missing_variable_is_a_refusal(missing: str) -> None:
     assert not guard.decide(env).allowed
 
 
-def test_enforce_fails_the_job_and_observe_lets_it_run(capsys: pytest.CaptureFixture[str]) -> None:
+def test_enforce_stops_the_job_and_observe_lets_it_run(capsys: pytest.CaptureFixture[str]) -> None:
     bad = _env(GITHUB_EVENT_NAME="pull_request")
 
-    assert guard.main(["--mode", "enforce"], bad) == 1
+    stopped: list[int] = []
+
+    def stop(pid: int) -> str:
+        stopped.append(pid)
+        return "killed Runner.Worker 42"
+
+    assert guard.main(["--mode", "enforce"], bad, stop) == 1
     assert "::error::Runner guard refused" in capsys.readouterr().out
-    assert guard.main(["--mode", "observe"], bad) == 0
+    assert len(stopped) == 1
+    assert guard.main(["--mode", "observe"], bad, stop) == 0
     assert "::warning::" in capsys.readouterr().out
-    assert guard.main([], _env()) == 0
+    assert guard.main([], _env(), stop) == 0
+    assert len(stopped) == 1  # neither observe mode nor an allowed job stops anything
 
 
 def test_audit_line_logs_other_variables_by_name_only() -> None:
@@ -92,3 +100,53 @@ def test_audit_line_logs_other_variables_by_name_only() -> None:
     assert "ACTIONS_RUNTIME_TOKEN" in line
     assert "secret-value" not in line
     assert "verdict=allow" in line
+
+
+# A process tree as the runner builds it: Runner.Listener -> Runner.Worker -> hook.
+TREE = {300: ("python3", 200), 200: ("Runner.Worker", 100), 100: ("Runner.Listener", 1)}
+
+
+def test_finds_the_worker_above_the_hook() -> None:
+    assert guard.find_worker(300, TREE.__getitem__) == 200
+
+
+def test_no_worker_above_the_hook_is_none() -> None:
+    tree = {300: ("python3", 100), 100: ("bash", 1)}
+
+    assert guard.find_worker(300, tree.__getitem__) is None
+
+
+def test_a_vanished_process_is_none() -> None:
+    def gone(pid: int) -> tuple[str, int]:
+        raise FileNotFoundError(pid)
+
+    assert guard.find_worker(300, gone) is None
+
+
+def test_stop_job_kills_only_the_worker() -> None:
+    killed: list[int] = []
+
+    outcome = guard.stop_job(300, TREE.__getitem__, killed.append)
+
+    assert killed == [200]
+    assert outcome == "killed Runner.Worker 200"
+
+
+def test_stop_job_reports_a_failed_kill() -> None:
+    def refuse(pid: int) -> None:
+        raise PermissionError("not permitted")
+
+    assert "could not kill" in guard.stop_job(300, TREE.__getitem__, refuse)
+
+
+def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    nl = chr(10)
+    crafted = f"ColinCee/homelab/.github/workflows/x{nl}::add-mask::y%.yaml@refs/heads/main"
+
+    guard.main(["--mode", "enforce"], _env(GITHUB_WORKFLOW_REF=crafted), lambda pid: "stub")
+
+    out = capsys.readouterr().out
+    assert f"{nl}::add-mask::" not in out
+    assert "%0A::add-mask::y%25" in out
