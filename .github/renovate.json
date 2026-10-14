@@ -22,6 +22,12 @@
       "automerge": false
     },
     {
+      "description": "Home Assistant's major version is the year, so its January release is a routine update.",
+      "matchPackageNames": ["homeassistant/home-assistant"],
+      "matchUpdateTypes": ["major"],
+      "automerge": true
+    },
+    {
       "groupName": "python",
       "matchDepNames": ["python"]
     },
