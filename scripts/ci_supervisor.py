@@ -37,6 +37,9 @@ SLOTS = 2
 POLL_SECONDS = 10
 # A VM that has not picked up a job by now counts as idle demand again.
 BOOT_GRACE_SECONDS = 120
+# After this, a VM that has not picked up a job is stopped (checked once a minute).
+IDLE_AFTER_SECONDS = 180
+IDLE_CHECK_SECONDS = 60
 VM_TIMEOUT_SECONDS = 3600
 PRIVACY_RECHECK_SECONDS = 300
 RUNNER_PREFIX = "fc-"
@@ -59,6 +62,7 @@ class Launch:
     started: float
     process: subprocess.Popen[bytes]
     metadata: Path
+    idle_checked: float = 0.0
 
 
 @dataclass
@@ -128,21 +132,56 @@ def is_private(repo_data: Mapping[str, Any], repo: str) -> bool:
     )
 
 
+class RateLimited(Exception):
+    def __init__(self, until: float) -> None:
+        super().__init__(f"rate limited until {time.strftime('%H:%M:%S', time.localtime(until))}")
+        self.until = until
+
+
 class GitHub:
     def __init__(self, token: str) -> None:
         self._token = token
+        # Conditional GETs: a 304 reply does not count against the rate limit.
+        self._cache: dict[str, tuple[str, Any]] = {}
 
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(f"{API}{path}", data=data, method=method)
-        req.add_header("Authorization", f"Bearer {self._token}")
+        # Not carried to another host if GitHub ever redirects.
+        req.add_unredirected_header("Authorization", f"Bearer {self._token}")
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("X-GitHub-Api-Version", "2022-11-28")
         if data is not None:
             req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=20) as response:
-            raw = response.read()
-        return json.loads(raw) if raw else None
+        cached = self._cache.get(path) if method == "GET" else None
+        if cached:
+            req.add_header("If-None-Match", cached[0])
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read()
+                etag = response.headers.get("ETag")
+        except urllib.error.HTTPError as e:
+            if e.code == 304 and cached:
+                return cached[1]
+            if e.code in (403, 429) and (
+                e.headers.get("Retry-After") or e.headers.get("X-RateLimit-Remaining") == "0"
+            ):
+                until = rate_limit_until(
+                    e.headers.get("Retry-After"), e.headers.get("X-RateLimit-Reset"), time.time()
+                )
+                raise RateLimited(until) from None
+            raise
+        result = json.loads(raw) if raw else None
+        if method == "GET" and etag:
+            self._cache[path] = (etag, result)
+        return result
+
+
+def rate_limit_until(retry_after: str | None, reset: str | None, now: float) -> float:
+    """When to try again: Retry-After seconds, else the reset time, else a minute."""
+    if retry_after:
+        return now + int(retry_after)
+    return float(reset) if reset else now + 60
 
 
 def check_private(gh: GitHub, state: State, repo: str, now: float) -> bool:
@@ -171,6 +210,14 @@ def find_queued(gh: GitHub, repo: str) -> list[Job]:
     return queued_jobs(repo, runs, get_jobs)
 
 
+def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> None:
+    try:
+        gh.request("DELETE", f"/repos/{repo}/actions/runners/{runner_id}")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:  # 404: the runner removed itself after its job
+            log(f"could not remove runner {name} from {repo}: HTTP {e.code}")
+
+
 def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
     registration = gh.request(
@@ -178,32 +225,51 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
         f"/repos/{repo}/actions/runners/generate-jitconfig",
         {"name": name, "runner_group_id": 1, "labels": list(RUNNER_LABELS), "work_folder": "_work"},
     )
-    metadata = STATE_DIR / f"metadata-slot{slot}.json"
-    fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump({"task": "runner", "jitconfig": registration["encoded_jit_config"]}, f)
-    process = subprocess.Popen(
-        [str(RUN_VM), str(slot), str(metadata), str(VM_TIMEOUT_SECONDS)],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
     runner_id = int(registration["runner"]["id"])
+    metadata = STATE_DIR / f"metadata-slot{slot}.json"
+    try:
+        fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump({"task": "runner", "jitconfig": registration["encoded_jit_config"]}, f)
+        process = subprocess.Popen(
+            [str(RUN_VM), str(slot), str(metadata), str(VM_TIMEOUT_SECONDS)],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except BaseException:
+        metadata.unlink(missing_ok=True)
+        delete_runner(gh, repo, runner_id, name)
+        raise
     state.launches[slot] = Launch(slot, repo, runner_id, name, now, process, metadata)
     log(f"slot {slot}: started {name} for {repo}")
 
 
-def reap(gh: GitHub, state: State) -> None:
+def stop_idle(gh: GitHub, run: Launch, now: float) -> None:
+    """A VM whose job was cancelled or taken by another runner would wait out its
+    timeout; stop it once it has had time to boot and is still not busy."""
+    if now - run.started < IDLE_AFTER_SECONDS or now - run.idle_checked < IDLE_CHECK_SECONDS:
+        return
+    run.idle_checked = now
+    try:
+        runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:  # finished and removed itself; the VM is ending
+            return
+        raise
+    if runner.get("busy") is False:
+        log(f"slot {run.slot}: {run.runner_name} has no job, stopping it")
+        run.process.terminate()
+
+
+def reap(gh: GitHub, state: State, now: float) -> None:
     for slot, run in list(state.launches.items()):
         code = run.process.poll()
         if code is None:
+            stop_idle(gh, run, now)
             continue
         run.metadata.unlink(missing_ok=True)
-        try:
-            gh.request("DELETE", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
-        except urllib.error.HTTPError as e:
-            if e.code != 404:  # 404: the runner removed itself after its job
-                log(f"slot {slot}: could not remove runner {run.runner_name}: {e.code}")
+        delete_runner(gh, run.repo, run.runner_id, run.runner_name)
         log(f"slot {slot}: {run.runner_name} finished (exit {code})")
         del state.launches[slot]
 
@@ -213,13 +279,14 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
     for repo in repos:
         page = gh.request("GET", f"/repos/{repo}/actions/runners?per_page=100")
         for runner in page.get("runners", []):
-            if str(runner.get("name", "")).startswith(RUNNER_PREFIX):
-                gh.request("DELETE", f"/repos/{repo}/actions/runners/{runner['id']}")
-                log(f"removed stale runner {runner['name']} from {repo}")
+            name = str(runner.get("name", ""))
+            if name.startswith(RUNNER_PREFIX):
+                delete_runner(gh, repo, int(runner["id"]), name)
+                log(f"removed stale runner {name} from {repo}")
 
 
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
-    reap(gh, state)
+    reap(gh, state, now)
     queued: dict[str, int] = {}
     for repo in repos:
         if check_private(gh, state, repo, now):
@@ -243,19 +310,27 @@ def main(argv: list[str] | None = None) -> int:
     gh = GitHub(TOKEN_FILE.read_text().strip())
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     state = State()
-    remove_stale_runners(gh, repos)
+    cleaned = False
     log(f"watching {len(repos)} repositories, {SLOTS} slots")
     while True:
+        wait: float = POLL_SECONDS
+        # Any failure is logged and retried; exiting would kill the running jobs.
         try:
+            if not cleaned:
+                remove_stale_runners(gh, repos)
+                cleaned = True
             tick(gh, state, repos, time.time())
-        except (urllib.error.URLError, TimeoutError, KeyError, ValueError) as e:
-            log(f"poll failed: {e}")
+        except RateLimited as e:
+            log(str(e))
+            wait = max(POLL_SECONDS, e.until - time.time() + 1)
+        except Exception as e:
+            log(f"poll failed: {type(e).__name__}: {e}")
         if args.once:
             while state.launches:
                 time.sleep(POLL_SECONDS)
-                reap(gh, state)
+                reap(gh, state, time.time())
             return 0
-        time.sleep(POLL_SECONDS)
+        time.sleep(wait)
 
 
 if __name__ == "__main__":

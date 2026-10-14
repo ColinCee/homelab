@@ -10,6 +10,7 @@ Restart=always
 RestartSec=30
 # Stopping the supervisor stops its VMs too; their jobs fail and GitHub shows it.
 KillMode=control-group
+ExecStopPost=/usr/local/lib/homelab-ci/stop-vms.sh
 Nice=5
 
 [Install]

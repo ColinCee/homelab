@@ -7,27 +7,47 @@
 set -uo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
+# Its live-VM checks must inspect its own VM, not one running a job.
+if systemctl is-active --quiet homelab-ci-supervisor.service || pgrep -x firecracker >/dev/null; then
+  echo "stop the supervisor and wait for running VMs first" >&2
+  exit 1
+fi
 here=$(cd "$(dirname "$0")" && pwd)
 run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
+lib=/usr/local/lib/homelab-ci
 images=/var/lib/homelab-ci/images
 failures=0
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; failures=$((failures + 1)); }
 check() { local name=$1; shift; if "$@"; then pass "$name"; else fail "$name"; fi; }
-mode_is() { [[ $(stat -c '%U:%G %a' "$1") == "$2" ]]; }
+mode_is() { [[ $(stat -c '%U:%G %a' "$1" 2>/dev/null) == "$2" ]]; }
+# Root-owned and writable by root alone.
+root_only_writes() { [[ $(stat -c '%U:%G' "$1") == root:root ]] && ! find "$1" -perm /022 | grep -q .; }
 
 # Host settings
 check "KSM off" [ "$(cat /sys/kernel/mm/ksm/run)" = 0 ]
 check "token root-only" mode_is /etc/homelab-ci/github-token "root:root 600"
 check "repo list root-only" mode_is /etc/homelab-ci/repos "root:root 600"
 check "settings dir root-only" mode_is /etc/homelab-ci "root:root 700"
+state_dir_ok() { [[ ! -e /run/homelab-ci ]] || mode_is /run/homelab-ci "root:root 700"; }
+check "supervisor state dir root-only" state_dir_ok
+check "no leftover job registrations" bash -c "! ls /run/homelab-ci/metadata-slot*.json >/dev/null 2>&1"
 check "image root-owned, read-only to others" mode_is "$images/rootfs.ext4" "root:root 644"
-check "installed code root-owned" mode_is /usr/local/lib/homelab-ci/run-vm.sh "root:root 755"
+for file in "$lib/run-vm.sh" "$lib/stop-vms.sh" "$lib/ci_supervisor.py" "$lib/net/setup-net.sh" \
+  "$lib/net/homelab-ci.nft" /etc/systemd/system/homelab-ci-net.service \
+  /etc/systemd/system/homelab-ci-supervisor.service /usr/local/bin/firecracker /usr/local/bin/jailer; do
+  check "only root can change $file" root_only_writes "$file"
+done
 
 # What a slot user (Firecracker after a VM escape) can reach
 for user in fc-slot0 fc-slot1; do
-  for path in /etc/homelab-ci/github-token /etc/homelab-ci/repos /var/run/docker.sock \
-    /home/colin /home/colin/actions-runner /etc/shadow /root; do
+  if ! id "$user" >/dev/null 2>&1; then
+    fail "$user exists"
+    continue
+  fi
+  other=fc-slot$((1 - ${user#fc-slot}))
+  for path in /etc/homelab-ci/github-token /etc/homelab-ci/repos /run/homelab-ci /var/run/docker.sock \
+    /home/colin /home/colin/actions-runner /etc/shadow /root "/srv/jailer/firecracker/ci-${other#fc-}"; do
     check "$user cannot read $path" bash -c "! sudo -u $user test -r '$path'"
   done
   check "$user cannot write the image" bash -c "! sudo -u $user test -w '$images/rootfs.ext4'"
@@ -37,14 +57,18 @@ done
 
 # Nothing secret in the image
 scan=$(mktemp -d)
-mount -o ro,loop "$images/rootfs.ext4" "$scan"
-check "no SSH host keys in image" bash -c "! ls '$scan'/etc/ssh/ssh_host_* >/dev/null 2>&1"
-check "no SSH server in image" [ ! -e "$scan/usr/sbin/sshd" ]
-# A real key is a PEM line of its own; npm's docs only quote one inside strings.
-secrets='github_pat_|ghp_[A-Za-z0-9]{30}|^-----BEGIN ([A-Z]+ )?PRIVATE KEY-----[[:space:]]*$'
-no_secrets() { ! grep -rlIE "$secrets" "$scan/etc" "$scan/home" "$scan/root" "$scan/opt" 2>/dev/null | grep -q .; }
-check "no tokens or private keys in image" no_secrets
-umount "$scan" && rmdir "$scan"
+if mount -o ro,loop "$images/rootfs.ext4" "$scan"; then
+  check "no SSH host keys in image" bash -c "! ls '$scan'/etc/ssh/ssh_host_* >/dev/null 2>&1"
+  check "no SSH server in image" [ ! -e "$scan/usr/sbin/sshd" ]
+  # A real key is a PEM line of its own; npm's docs only quote one inside strings.
+  secrets='github_pat_|ghp_[A-Za-z0-9]{30}|^-----BEGIN ([A-Z]+ )?PRIVATE KEY-----[[:space:]]*$'
+  no_secrets() { ! grep -rlIE "$secrets" "$scan/etc" "$scan/home" "$scan/root" "$scan/opt" 2>/dev/null | grep -q .; }
+  check "no tokens or private keys in image" no_secrets
+  umount "$scan"
+else
+  fail "image could not be mounted for the secrets scan"
+fi
+rmdir "$scan"
 
 # A live VM: how Firecracker is confined, and what the guest is told
 tmp=$(mktemp -d)

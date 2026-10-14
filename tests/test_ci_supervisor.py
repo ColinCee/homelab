@@ -76,3 +76,13 @@ def test_plans_one_vm_per_uncovered_job_within_free_slots(
 )
 def test_serves_only_a_repo_that_is_still_private(data: dict[str, object], private: bool) -> None:
     assert sup.is_private(data, "ColinCee/cortex") is private
+
+
+@pytest.mark.parametrize(
+    ("retry_after", "reset", "until"),
+    [("30", "5000", 1030.0), (None, "5000", 5000.0), (None, None, 1060.0)],
+)
+def test_backs_off_until_github_says(
+    retry_after: str | None, reset: str | None, until: float
+) -> None:
+    assert sup.rate_limit_until(retry_after, reset, 1000.0) == until
