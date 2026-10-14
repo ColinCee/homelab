@@ -1,0 +1,12 @@
+[Unit]
+Description=Network for the CI microVMs
+After=docker.service ufw.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,44 @@
+#!/usr/sbin/nft -f
+# Network for the CI microVMs. Each slot has its own tap (fc-tapN, 10.200.N.0/30).
+# VMs reach the internet through NAT; everything private is dropped: the LAN, the
+# tailnet, Docker networks, Beelink itself and the other slots. Nothing outside may
+# open a connection to a VM. A drop here is final whatever other tables accept.
+#
+# Traffic still needs an accept in iptables' FORWARD chain, whose policy is DROP
+# (Docker and UFW); setup-net.sh adds that in DOCKER-USER.
+
+table inet homelab_ci
+delete table inet homelab_ci
+
+table inet homelab_ci {
+  set private4 {
+    type ipv4_addr
+    flags interval
+    elements = {
+      0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16,
+      172.16.0.0/12, 192.0.0.0/24, 192.168.0.0/16, 198.18.0.0/15,
+      224.0.0.0/4, 240.0.0.0/4
+    }
+  }
+
+  chain input {
+    type filter hook input priority filter; policy accept;
+    # A VM may not talk to Beelink at all. MMDS is answered by Firecracker
+    # itself and never reaches the host.
+    iifname "fc-tap*" counter drop
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy accept;
+    iifname "fc-tap*" meta nfproto ipv6 counter drop
+    iifname "fc-tap*" ip daddr @private4 counter drop
+    # Into a VM: replies only.
+    oifname "fc-tap*" ct state established,related accept
+    oifname "fc-tap*" counter drop
+  }
+
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    ip saddr 10.200.0.0/16 oifname != "fc-tap*" masquerade
+  }
+}

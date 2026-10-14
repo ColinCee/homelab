@@ -48,6 +48,12 @@ docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}'
 # Runner
 journalctl -t homelab-runner-guard --since -30d | grep verdict=refuse   # each one explained?
 ls -d ~/actions-runner*
+
+# Firecracker CI runner (see ci-runner.md)
+cat /sys/kernel/mm/ksm/run                      # 0
+pgrep -a firecracker                            # only while a job runs
+sudo nft list table inet homelab_ci | head -3   # present
+sudo ci-runner/tests/test-network.sh            # passes
 ```
 
 From any machine with `gh`:

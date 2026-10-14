@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure the network and run this VM's one task
+After=local-fs.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ci-boot
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target
