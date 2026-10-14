@@ -40,7 +40,6 @@ services:
       # Read by Alloy's textfile collector (observability stack).
       - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
-      - ../mqtt/data:/data/mqtt:ro
       - grafana-data:/data/grafana:ro
       - heatmap-data:/data/flight-tracker:ro
       - crowdsec-config:/data/crowdsec:ro
