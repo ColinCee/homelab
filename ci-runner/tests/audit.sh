@@ -33,8 +33,8 @@ state_dir_ok() { [[ ! -e /run/homelab-ci ]] || mode_is /run/homelab-ci "root:roo
 check "supervisor state dir root-only" state_dir_ok
 check "no leftover job registrations" bash -c "! ls /run/homelab-ci/metadata-slot*.json >/dev/null 2>&1"
 check "image root-owned, read-only to others" mode_is "$images/rootfs.ext4" "root:root 644"
-for file in "$lib/run-vm.sh" "$lib/stop-vms.sh" "$lib/ci_supervisor.py" "$lib/net/setup-net.sh" \
-  "$lib/net/homelab-ci.nft" /etc/systemd/system/homelab-ci-net.service \
+# The folder too: find walks into it, so a writable folder or file fails.
+for file in "$lib" /etc/systemd/system/homelab-ci-net.service \
   /etc/systemd/system/homelab-ci-supervisor.service /usr/local/bin/firecracker /usr/local/bin/jailer; do
   check "only root can change $file" root_only_writes "$file"
 done

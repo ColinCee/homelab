@@ -32,6 +32,7 @@ REPOS_FILE = Path("/etc/homelab-ci/repos")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
+CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API = "https://api.github.com"
 SLOTS = 2
 POLL_SECONDS = 10
@@ -176,6 +177,10 @@ class GitHub:
             self._cache[path] = (etag, result)
         return result
 
+    def forget(self, drop: Callable[[str], bool]) -> None:
+        for path in [path for path in self._cache if drop(path)]:
+            del self._cache[path]
+
 
 def rate_limit_until(retry_after: str | None, reset: str | None, now: float) -> float:
     """When to try again: Retry-After seconds, else the reset time, else a minute."""
@@ -201,21 +206,29 @@ def find_queued(gh: GitHub, repo: str) -> list[Job]:
         page = gh.request("GET", f"/repos/{repo}/actions/runs?status={status}&per_page=50")
         runs.extend(page.get("workflow_runs", []))
 
-    def get_jobs(run_id: int) -> Any:
-        page = gh.request(
-            "GET", f"/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
-        )
-        return page.get("jobs", [])
+    def jobs_path(run_id: int) -> str:
+        return f"/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
 
+    def get_jobs(run_id: int) -> Any:
+        return gh.request("GET", jobs_path(run_id)).get("jobs", [])
+
+    # Forget finished runs, so the cache only holds what is still polled.
+    live = {jobs_path(int(run["id"])) for run in runs}
+    gh.forget(lambda path: path.startswith(f"/repos/{repo}/actions/runs/") and path not in live)
     return queued_jobs(repo, runs, get_jobs)
 
 
-def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> None:
+def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> bool:
+    """True if the registration is gone (removed now, or it removed itself)."""
+    gh.forget(lambda path: path == f"/repos/{repo}/actions/runners/{runner_id}")
     try:
         gh.request("DELETE", f"/repos/{repo}/actions/runners/{runner_id}")
     except urllib.error.HTTPError as e:
-        if e.code != 404:  # 404: the runner removed itself after its job
-            log(f"could not remove runner {name} from {repo}: HTTP {e.code}")
+        if e.code == 404:  # the runner removed itself after its job
+            return True
+        log(f"could not remove runner {name} from {repo}: HTTP {e.code}")
+        return False
+    return True
 
 
 def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
@@ -251,15 +264,27 @@ def stop_idle(gh: GitHub, run: Launch, now: float) -> None:
     if now - run.started < IDLE_AFTER_SECONDS or now - run.idle_checked < IDLE_CHECK_SECONDS:
         return
     run.idle_checked = now
-    try:
-        runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
-    except urllib.error.HTTPError as e:
-        if e.code == 404:  # finished and removed itself; the VM is ending
-            return
-        raise
-    if runner.get("busy") is False:
+
+    def idle() -> bool:
+        try:
+            runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
+        except urllib.error.HTTPError as e:
+            if e.code == 404:  # finished and removed itself; the VM is ending
+                return False
+            raise
+        return runner.get("busy") is False
+
+    # Asked twice, so a job assigned between the two answers is not killed.
+    if not idle():
+        return
+    time.sleep(2)
+    if idle():
         log(f"slot {run.slot}: {run.runner_name} has no job, stopping it")
         run.process.terminate()
+        # Do not rely on run-vm.sh's trap alone: the VM lives in its own cgroup.
+        kill = CGROUP_ROOT / f"ci-slot{run.slot}" / "cgroup.kill"
+        if kill.exists():
+            kill.write_text("1")
 
 
 def reap(gh: GitHub, state: State, now: float) -> None:
@@ -280,8 +305,7 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
         page = gh.request("GET", f"/repos/{repo}/actions/runners?per_page=100")
         for runner in page.get("runners", []):
             name = str(runner.get("name", ""))
-            if name.startswith(RUNNER_PREFIX):
-                delete_runner(gh, repo, int(runner["id"]), name)
+            if name.startswith(RUNNER_PREFIX) and delete_runner(gh, repo, int(runner["id"]), name):
                 log(f"removed stale runner {name} from {repo}")
 
 

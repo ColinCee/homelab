@@ -45,6 +45,10 @@ if systemctl is-active --quiet homelab-ci-supervisor.service; then
   was_running=true
   systemctl stop homelab-ci-supervisor.service
 fi
+if pgrep -x firecracker >/dev/null; then
+  echo "a VM is still running (started by hand?); wait for it to finish" >&2
+  exit 1
+fi
 
 install -d -o root -g root -m 0755 "$dest" "$dest/net"
 install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
