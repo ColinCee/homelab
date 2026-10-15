@@ -29,6 +29,30 @@ RUN v=${RUNNER_VERSION#v} \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && chown -R runner:runner /opt/runner
 
+# Tools jobs would otherwise download every time. Node goes where setup-node
+# looks first (the runner's tool cache); Python where uv looks for it.
+ARG NODE_VERSION
+ARG NODE_SHA256
+ARG UV_VERSION
+ARG UV_SHA256
+ARG PYTHON_VERSION
+RUN v=${NODE_VERSION#v} \
+ && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
+ && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c --quiet \
+ && mkdir -p "/opt/hostedtoolcache/node/$v/x64" \
+ && tar -xJf /tmp/node.tar.xz --strip-components 1 -C "/opt/hostedtoolcache/node/$v/x64" \
+ && touch "/opt/hostedtoolcache/node/$v/x64.complete" && rm /tmp/node.tar.xz \
+ && curl -fsSL -o /tmp/uv.tgz \
+      "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+ && echo "${UV_SHA256}  /tmp/uv.tgz" | sha256sum -c --quiet \
+ && tar -xzf /tmp/uv.tgz --strip-components 1 -C /usr/local/bin && rm /tmp/uv.tgz \
+ && mkdir -p "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64" \
+ && cp /usr/local/bin/uv /usr/local/bin/uvx "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64/" \
+ && touch "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64.complete" \
+ && UV_PYTHON_INSTALL_DIR=/opt/uv-python uv python install "${PYTHON_VERSION}" \
+ && chown -R runner:runner /opt/hostedtoolcache \
+ && printf 'RUNNER_TOOL_CACHE=/opt/hostedtoolcache\nUV_PYTHON_INSTALL_DIR=/opt/uv-python\n' >> /opt/runner/.env
+
 COPY ci-boot /usr/local/sbin/ci-boot
 COPY ci-boot.service /etc/systemd/system/ci-boot.service
 RUN chmod 0755 /usr/local/sbin/ci-boot && systemctl enable ci-boot.service
