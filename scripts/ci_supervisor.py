@@ -72,6 +72,8 @@ class Launch:
     metadata: Path
     # Booted ahead of any job; becomes an ordinary job VM once GitHub gives it one.
     standby: bool = False
+    # A standby that just took a job still covers it until GitHub's job list catches up.
+    covers_until: float = 0.0
 
 
 @dataclass
@@ -330,6 +332,7 @@ def check_standby(gh: GitHub, run: Launch, now: float, private: bool) -> None:
     elif not is_idle(gh, run):
         if now - run.started >= IDLE_AFTER_SECONDS:  # connected, so not idle means busy
             run.standby = False
+            run.covers_until = now + 10
             log(f"slot {run.slot}: standby {run.runner_name} took a job")
     elif now - run.started >= STANDBY_RECYCLE_SECONDS:
         stop_if_still_idle(gh, run, "is an old standby")
@@ -385,13 +388,20 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job.
     booting: dict[str, int] = {}
     for run in state.launches.values():
-        if run.standby or now - run.started < BOOT_GRACE_SECONDS:
+        if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS:
             booting[run.repo] = booting.get(run.repo, 0) + 1
     free = [slot for slot in range(SLOTS) if slot not in state.launches]
     starts = plan(queued, booting, len(free))
     for slot, repo in zip(free, starts, strict=False):
         launch(gh, state, repo, slot, now)
     free = free[len(starts) :]
+    # A job still waiting for a slot gets the standby's, if the standby serves another repo.
+    waiting = {repo: n - booting.get(repo, 0) for repo, n in queued.items()}
+    for repo in starts:
+        waiting[repo] -= 1
+    for run in list(state.launches.values()):
+        if run.standby and any(n > 0 and repo != run.repo for repo, n in waiting.items()):
+            stop_if_still_idle(gh, run, "is in the way of a queued job")
     if wants_standby(repos, private, [r.standby for r in state.launches.values()], len(free)):
         launch(gh, state, repos[0], free[0], now, standby=True)
 
@@ -410,6 +420,7 @@ def main(argv: list[str] | None = None) -> int:
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     state = State()
     cleaned = False
+    failures = 0
     log(f"watching {len(repos)} repositories, {SLOTS} slots")
     while True:
         wait: float = POLL_SECONDS
@@ -419,11 +430,17 @@ def main(argv: list[str] | None = None) -> int:
                 remove_stale_runners(gh, repos)
                 cleaned = True
             tick(gh, state, repos, time.time())
+            failures = 0
         except RateLimited as e:
             log(str(e))
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
+            failures += 1
+            # Without GitHub nothing re-checks privacy, so no VM is left waiting meanwhile.
+            if failures == 5:
+                for run in [r for r in state.launches.values() if r.standby]:
+                    stop(run, "cannot be checked while GitHub fails")
         if args.once:
             while state.launches:
                 time.sleep(POLL_SECONDS)
