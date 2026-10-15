@@ -167,3 +167,13 @@ def test_the_cache_unpacker_refuses_paths_outside_its_folder(tmp_path) -> None:
 
     with pytest.raises(tarfile.FilterError):
         sup.safe_member(member, str(tmp_path))
+
+
+def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) -> None:
+    check = sup.size_capped(100)
+    small, big = tarfile.TarInfo("cache/a"), tarfile.TarInfo("cache/b")
+    small.size, big.size = 60, 60
+
+    check(small, str(tmp_path))
+    with pytest.raises(tarfile.FilterError):
+        check(big, str(tmp_path))

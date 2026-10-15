@@ -49,12 +49,12 @@ install -d -o root -g root -m 0700 "$chroot"
 cp --sparse=always "$images/rootfs.ext4" "$chroot/rootfs.ext4"
 cp "$images/vmlinuz" "$chroot/vmlinuz"
 install -m 0600 "$metadata" "$chroot/metadata.json"
-# The repo's cache disk, if the supervisor names one: shared read-only, so linked,
-# not copied, and left root-owned (the slot user can read it, never write it).
+# The repo's cache disk, if the supervisor names one: a private copy, like the root
+# disk, so the job can write to it and nothing it writes reaches the next job.
 cache_drive=""
 if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
-  ln "$CACHE_IMAGE" "$chroot/cache.ext4"
-  cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": true}'
+  cp --sparse=always "$CACHE_IMAGE" "$chroot/cache.ext4"
+  cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": false}'
 fi
 
 mac=$(printf '06:00:0a:c8:%02x:02' "$slot")
@@ -76,6 +76,10 @@ cat > "$chroot/vm.json" <<EOF
 EOF
 chmod 0600 "$chroot/rootfs.ext4" "$chroot/vmlinuz" "$chroot/vm.json"
 chown -h "$uid:$gid" "$chroot/rootfs.ext4" "$chroot/vmlinuz" "$chroot/metadata.json" "$chroot/vm.json" "$chroot"
+if [[ -n "$cache_drive" ]]; then
+  chmod 0600 "$chroot/cache.ext4"
+  chown -h "$uid:$gid" "$chroot/cache.ext4"
+fi
 
 # Below the services in CPU priority; memory capped a little above the guest's.
 # The lock stays with this script: if it dies, the next run kills the orphan.

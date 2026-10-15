@@ -28,9 +28,9 @@ uv finds Python, so neither downloads.
 
 Each VM gets its repo's **cache disk** at `/cache`: uv's and npm's caches and
 the Python environment from the repo's last green push to its default branch.
-It is read-only, with a throwaway layer on top, so a job can install into it
-but nothing it writes outlives the VM, and a branch can never change what the
-next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
+Each VM gets its own copy (about 0.5 s, before boot, like the root disk), so a
+job can install into it but nothing it writes outlives the VM, and a branch can
+never change what the next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
 `npm_config_cache` (`/cache/npm`) and `UV_PROJECT_ENVIRONMENT` (`/cache/venv`)
 at it, so `uv sync` and `npm ci` find almost everything in place.
 

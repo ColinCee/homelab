@@ -61,6 +61,8 @@ CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 CACHE_ARTIFACT = "homelab-fc-cache"
 CACHE_CHECK_SECONDS = 60
 CACHE_MAX_BYTES = 2 * 1024**3
+# Unpacked: a zip can expand far beyond its own size, and / is shared with everything.
+CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 RUNNER_UID = 1001  # the runner user inside the VM image
 
 
@@ -213,6 +215,9 @@ class GitHub:
                 if got > limit:
                     raise ValueError(f"download over {limit} bytes")
                 f.write(chunk)
+
+    def clone(self) -> GitHub:
+        return GitHub(self._token)
 
     def forget(self, drop: Callable[[str], bool]) -> None:
         for path in [path for path in self._cache if drop(path)]:
@@ -426,10 +431,27 @@ def pick_cache_artifact(
 
 def safe_member(member: tarfile.TarInfo, dest: str) -> tarfile.TarInfo | None:
     """Plain files, folders and links only, nothing outside the folder (tar filter),
-    and no device files: the host only unpacks this into a disk image."""
-    if not (member.isfile() or member.isdir() or member.issym() or member.islnk()):
-        raise tarfile.FilterError(f"not a file, folder or link: {member.name}")
+    and no device or sparse files: the host only unpacks this into a disk image."""
+    if (
+        not (member.isfile() or member.isdir() or member.issym() or member.islnk())
+        or member.issparse()
+    ):
+        raise tarfile.FilterError(f"not a plain file, folder or link: {member.name}")
     return tarfile.tar_filter(member, dest)
+
+
+def size_capped(limit: int) -> Callable[[tarfile.TarInfo, str], tarfile.TarInfo | None]:
+    """safe_member, refusing the archive once its files add up to more than limit."""
+    total = 0
+
+    def check(member: tarfile.TarInfo, dest: str) -> tarfile.TarInfo | None:
+        nonlocal total
+        total += member.size
+        if total > limit:
+            raise tarfile.FilterError(f"unpacks to more than {limit} bytes")
+        return safe_member(member, dest)
+
+    return check
 
 
 def build_cache_image(zip_path: Path, image: Path) -> None:
@@ -443,7 +465,7 @@ def build_cache_image(zip_path: Path, image: Path) -> None:
             z.open("cache.tar") as raw,
             tarfile.open(fileobj=raw, mode="r|") as tar,
         ):
-            tar.extractall(root, filter=safe_member)
+            tar.extractall(root, filter=size_capped(CACHE_MAX_UNPACKED_BYTES))
         # Owned by the VM's runner user, so the job can write through its throwaway layer.
         # The folder is in a root-only temporary directory, so no host user reaches it.
         subprocess.run(["chown", "-R", f"{RUNNER_UID}:{RUNNER_UID}", str(root)], check=True)
@@ -484,6 +506,8 @@ def refresh_cache(gh: GitHub, repo: str, branch: str) -> None:
     if known.get("artifact") == artifact["id"]:
         return
     run = gh.request("GET", f"/repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
+    if run.get("status") != "completed":
+        return  # uploaded before its run finished: judge it on a later check
     if not (
         run.get("event") == "push"
         and run.get("conclusion") == "success"
@@ -516,10 +540,14 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
     for repo in due:
         state.cache_checked[repo] = now
 
+    # Its own client: the request cache is not shared between threads.
+    own = gh.clone()
+    branches = {repo: state.privacy[repo].default_branch for repo in due}
+
     def work() -> None:
         try:
             for repo in due:
-                refresh_cache(gh, repo, state.privacy[repo].default_branch)
+                refresh_cache(own, repo, branches[repo])
         except Exception as e:
             log(f"cache refresh failed: {type(e).__name__}: {e}")
         finally:
@@ -575,6 +603,9 @@ def main(argv: list[str] | None = None) -> int:
     gh = GitHub(TOKEN_FILE.read_text().strip())
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     CACHE_DIR.mkdir(mode=0o755, exist_ok=True)
+    # Half-built caches from a supervisor that was killed mid-build.
+    for leftover in CACHE_DIR.glob("tmp*"):
+        subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
     state = State()
     cleaned = False
     failures = 0
