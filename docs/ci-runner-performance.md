@@ -115,11 +115,52 @@ Windows check on GitHub takes about a minute and a half.
   restoring the same snapshot for every job is unsafe (Firecracker's own
   documentation says so).
 
+## Snapshots against a warm cache disk
+
+Firecracker can snapshot a running VM and restore it in milliseconds, so the
+obvious idea is to snapshot a VM right after a build of main and restore it
+for every job. I measured that against the alternatives on the same workload
+(`uv sync`, `npm ci`, the test suite), three runs each, medians, in a VM with 2
+vCPUs. "Work" is the time inside the VM; "start" is boot or restore.
+
+| Setup | Start | `uv sync` | `npm ci` | Tests | Work |
+|---|---|---|---|---|---|
+| Fresh VM, empty caches | ~3.5 s boot | 1.9 s | 4.7 s | 15.0 s | 21.5 s |
+| Fresh VM, warm package caches | ~3.5 s boot | 0.4 s | 3.6 s | 15.0 s | 19.3 s |
+| Fresh VM, warm caches and main's installs | ~3 s boot | 0.1 s | 3.6 s | 13.4 s | 17.2 s |
+| Snapshot of main, installs wiped | 0.02 to 0.1 s restore | 1.4 s | 4.0 s | 14.2 s | 19.9 s |
+| Snapshot of main, installs kept | 0.02 to 0.1 s restore | 0.1 s | 3.5 s | 13.0 s | 16.9 s |
+
+- **The restore really is fast:** 13 to 113 ms. But boot was never the
+  problem: the standby VM already hides it, along with the GitHub runner's
+  start-up, which a snapshot cannot include (the runner's one-job registration
+  only exists once a job is queued).
+- **The snapshot's memory is worth about 0.3 s.** A plain disk holding main's
+  installs and caches gets 17.2 s; the full snapshot 16.9 s. Almost all of the
+  gain is files on disk, not memory.
+- **Warm memory is not free on first touch.** Restored memory is read from the
+  snapshot file as it is used, so with the installs wiped the snapshot was
+  slower than a cache disk.
+- **`npm ci` stays at about 3.5 s whatever is warm,** because it deletes
+  `node_modules` before installing, by design.
+- **What a snapshot costs:** 30 s to take, a 1.2 GB memory file per slot (the
+  network address is baked in), and every restored VM resumes with identical
+  memory, random-number state included, which Firecracker's documentation
+  warns against.
+
+So the speed-up worth having is a read-only disk of main's caches and installs,
+built in a VM from main only, which takes a job from about 21.5 s of work to
+about 17 s. Snapshots would add 0.3 s.
+
 ## Things that surprised me
 
 - **A job that ran out of memory hung its VM for an hour.** systemd stopped the
   task that was meant to end the VM. The fix: the VM reboots, which ends
   Firecracker, whenever its task ends, however it ends.
+- **My first snapshot benchmark looked 20 times faster, and was wrong.** I had
+  copied a VM's disk while it was still mounted, every run after it failed in
+  under a second, and the timings looked brilliant. Only checking each step's
+  exit code caught it.
 - **GitHub only saves a cache when the job passes,** so the package caches did
   nothing until the suite was green on Linux.
 - **The VM ran Python 3.15, the PC 3.13.** One test faked "today" by replacing
