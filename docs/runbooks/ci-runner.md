@@ -43,6 +43,12 @@ GitHub-hosted runners and take it off the list and the token.
   job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
+- **One VM waits ready.** A standby VM is kept booted and registered for the
+  first repo in `/etc/homelab-ci/repos`, so a job there starts in about a
+  second instead of waiting for a VM to boot and its runner to start (about 8
+  seconds). It costs about 200 MB of RAM while idle. Once it takes a job it is
+  an ordinary job VM and a new standby boots in the free slot; an idle standby
+  is replaced every 45 minutes, and stopped if its repo stops being private.
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves Beelink.

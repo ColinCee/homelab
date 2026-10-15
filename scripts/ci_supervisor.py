@@ -43,6 +43,11 @@ BOOT_GRACE_SECONDS = 120
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30
 VM_TIMEOUT_SECONDS = 3600
+# One VM is kept booted and registered for the first repo on the list, so a job
+# starts in seconds instead of waiting for a VM. It is replaced every 45 minutes
+# while idle; its timeout leaves a job that starts just before then time to finish.
+STANDBY_RECYCLE_SECONDS = 45 * 60
+STANDBY_TIMEOUT_SECONDS = 2 * 3600
 # Checked every poll: conditional requests make an unchanged answer free.
 PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
@@ -65,6 +70,8 @@ class Launch:
     started: float
     process: subprocess.Popen[bytes]
     metadata: Path
+    # Booted ahead of any job; becomes an ordinary job VM once GitHub gives it one.
+    standby: bool = False
 
 
 @dataclass
@@ -232,7 +239,9 @@ def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> bool:
     return True
 
 
-def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
+def launch(
+    gh: GitHub, state: State, repo: str, slot: int, now: float, standby: bool = False
+) -> None:
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
     registration = gh.request(
         "POST",
@@ -247,7 +256,12 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
         with os.fdopen(fd, "w") as f:
             json.dump({"task": "runner", "jitconfig": registration["encoded_jit_config"]}, f)
         process = subprocess.Popen(
-            [str(RUN_VM), str(slot), str(metadata), str(VM_TIMEOUT_SECONDS)],
+            [
+                str(RUN_VM),
+                str(slot),
+                str(metadata),
+                str(STANDBY_TIMEOUT_SECONDS if standby else VM_TIMEOUT_SECONDS),
+            ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -257,8 +271,9 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
         metadata.unlink(missing_ok=True)
         delete_runner(gh, repo, runner_id, name)
         raise
-    state.launches[slot] = Launch(slot, repo, runner_id, name, now, process, metadata)
-    log(f"slot {slot}: started {name} for {repo} ({vcpus} vCPUs, {mem_mib} MiB)")
+    state.launches[slot] = Launch(slot, repo, runner_id, name, now, process, metadata, standby)
+    kind = "standby" if standby else "VM"
+    log(f"slot {slot}: started {kind} {name} for {repo} ({vcpus} vCPUs, {mem_mib} MiB)")
 
 
 def vm_size(running: int) -> tuple[int, int]:
@@ -272,40 +287,70 @@ def may_be_idle(age: float, queued_for_repo: int) -> bool:
     return age >= IDLE_AFTER_SECONDS and queued_for_repo == 0
 
 
+def is_idle(gh: GitHub, run: Launch) -> bool:
+    """GitHub says the VM's runner is connected and has no job."""
+    try:
+        runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:  # finished and removed itself; the VM is ending
+            return False
+        raise
+    return runner.get("busy") is False
+
+
+def stop(run: Launch, why: str) -> None:
+    log(f"slot {run.slot}: {run.runner_name} {why}, stopping it")
+    run.process.terminate()
+    # Do not rely on run-vm.sh's trap alone: the VM lives in its own cgroup.
+    kill = CGROUP_ROOT / f"ci-slot{run.slot}" / "cgroup.kill"
+    if kill.exists():
+        kill.write_text("1")
+
+
+def stop_if_still_idle(gh: GitHub, run: Launch, why: str) -> None:
+    """Asked twice, so a job assigned between the two answers is not killed."""
+    if is_idle(gh, run):
+        time.sleep(2)
+        if is_idle(gh, run):
+            stop(run, why)
+
+
 def stop_idle(gh: GitHub, run: Launch, now: float, queued_for_repo: int) -> None:
     """A VM whose job was cancelled or taken by another runner would wait out its
     timeout; stop it as soon as it is clearly not going to get one."""
-    if not may_be_idle(now - run.started, queued_for_repo):
-        return
-
-    def idle() -> bool:
-        try:
-            runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
-        except urllib.error.HTTPError as e:
-            if e.code == 404:  # finished and removed itself; the VM is ending
-                return False
-            raise
-        return runner.get("busy") is False
-
-    # Asked twice, so a job assigned between the two answers is not killed.
-    if not idle():
-        return
-    time.sleep(2)
-    if idle():
-        log(f"slot {run.slot}: {run.runner_name} has no job, stopping it")
-        run.process.terminate()
-        # Do not rely on run-vm.sh's trap alone: the VM lives in its own cgroup.
-        kill = CGROUP_ROOT / f"ci-slot{run.slot}" / "cgroup.kill"
-        if kill.exists():
-            kill.write_text("1")
+    if may_be_idle(now - run.started, queued_for_repo):
+        stop_if_still_idle(gh, run, "has no job")
 
 
-def reap(gh: GitHub, state: State, now: float, queued: Mapping[str, int] | None = None) -> None:
+def check_standby(gh: GitHub, run: Launch, now: float, private: bool) -> None:
+    """A standby that got a job becomes an ordinary VM; an old idle one is replaced."""
+    if not private:
+        stop(run, "serves a repo that is no longer private")
+    elif not is_idle(gh, run):
+        if now - run.started >= IDLE_AFTER_SECONDS:  # connected, so not idle means busy
+            run.standby = False
+            log(f"slot {run.slot}: standby {run.runner_name} took a job")
+    elif now - run.started >= STANDBY_RECYCLE_SECONDS:
+        stop_if_still_idle(gh, run, "is an old standby")
+
+
+def reap(
+    gh: GitHub,
+    state: State,
+    now: float,
+    queued: Mapping[str, int] | None = None,
+    private: Iterable[str] = (),
+) -> None:
     """Clear finished VMs. With this poll's queue, also stop VMs left without a job."""
+    private = set(private)
     for slot, run in list(state.launches.items()):
         code = run.process.poll()
         if code is None:
-            if queued is not None:
+            if queued is None:
+                continue
+            if run.standby:
+                check_standby(gh, run, now, run.repo in private)
+            else:
                 stop_idle(gh, run, now, queued.get(run.repo, 0))
             continue
         run.metadata.unlink(missing_ok=True)
@@ -326,21 +371,33 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
 
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     queued: dict[str, int] = {}
+    private: list[str] = []
     for repo in repos:
         # A repo that is no longer private has nothing queued as far as we are
         # concerned, so its idle VMs are stopped below and no new ones start.
         if check_private(gh, state, repo, now):
+            private.append(repo)
             count = len(find_queued(gh, repo))
             if count:
                 queued[repo] = count
-    reap(gh, state, now, queued)
+    reap(gh, state, now, queued, private)
+    # A VM still on its way to a job, or a standby waiting for one, covers a queued job.
     booting: dict[str, int] = {}
     for run in state.launches.values():
-        if now - run.started < BOOT_GRACE_SECONDS:
+        if run.standby or now - run.started < BOOT_GRACE_SECONDS:
             booting[run.repo] = booting.get(run.repo, 0) + 1
     free = [slot for slot in range(SLOTS) if slot not in state.launches]
-    for slot, repo in zip(free, plan(queued, booting, len(free)), strict=False):
+    starts = plan(queued, booting, len(free))
+    for slot, repo in zip(free, starts, strict=False):
         launch(gh, state, repo, slot, now)
+    free = free[len(starts) :]
+    if wants_standby(repos, private, [r.standby for r in state.launches.values()], len(free)):
+        launch(gh, state, repos[0], free[0], now, standby=True)
+
+
+def wants_standby(repos: list[str], private: list[str], standbys: list[bool], free: int) -> bool:
+    """One standby VM, for the first repo listed, while it is private and a slot is free."""
+    return bool(repos) and repos[0] in private and not any(standbys) and free > 0
 
 
 def main(argv: list[str] | None = None) -> int:

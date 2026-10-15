@@ -105,3 +105,20 @@ def test_asks_about_an_idle_vm_only_once_booted_with_nothing_queued(
 @pytest.mark.parametrize(("running", "size"), [(0, (4, 4096)), (1, (2, 2048))])
 def test_a_job_alone_gets_all_four_cores(running: int, size: tuple[int, int]) -> None:
     assert sup.vm_size(running) == size
+
+
+@pytest.mark.parametrize(
+    ("repos", "private", "standbys", "free", "wanted"),
+    [
+        (["a/x", "b/y"], ["a/x", "b/y"], [], 2, True),
+        (["a/x"], ["a/x"], [False], 1, True),  # a job VM running: still keep one waiting
+        (["a/x"], ["a/x"], [True], 1, False),  # one is already waiting
+        (["a/x"], ["a/x"], [False, False], 0, False),  # no free slot
+        (["a/x"], [], [], 2, False),  # no longer private: nothing kept for it
+        ([], [], [], 2, False),
+    ],
+)
+def test_keeps_one_standby_vm_for_the_first_private_repo(
+    repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: bool
+) -> None:
+    assert sup.wants_standby(repos, private, standbys, free) is wanted
