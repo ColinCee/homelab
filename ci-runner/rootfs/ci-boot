@@ -28,6 +28,13 @@ case "$task" in
     echo "=== probe end"
     ;;
   runner)
+    # Package caches and main's installs: this VM's own copy of the repo's cache
+    # disk (built from main only), thrown away with the VM. Without it, an empty
+    # /cache. (OverlayFS is a module in Ubuntu's kernel, and the image has none.)
+    mkdir -p /cache
+    [[ -b /dev/vdb ]] && mount /dev/vdb /cache
+    chown runner:runner /cache
+    printf 'UV_CACHE_DIR=/cache/uv\nnpm_config_cache=/cache/npm\nUV_PROJECT_ENVIRONMENT=/cache/venv\n' >> /opt/runner/.env
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"

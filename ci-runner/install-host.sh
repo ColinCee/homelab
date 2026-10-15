@@ -66,6 +66,8 @@ systemctl enable --now homelab-ci-net.service
 # Host-side settings, never in the repo: which private repos to serve, and the
 # GitHub token (written by hand, see ci-runner.md).
 install -d -o root -g root -m 0700 /etc/homelab-ci
+# Cache disks the supervisor builds from main-only artifacts; VMs read them, never write.
+install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 [[ -f /etc/homelab-ci/repos ]] || install -o root -g root -m 0600 /dev/null /etc/homelab-ci/repos
 if $was_running; then
   systemctl start homelab-ci-supervisor.service

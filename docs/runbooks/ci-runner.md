@@ -22,10 +22,33 @@ jobs:
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
 `sudo`, with Node 22, uv and Python 3.15 already installed (pinned in
 `versions.env`): `actions/setup-node` finds Node in the runner's tool cache and
-uv finds Python, so neither downloads. Package caches go through GitHub's
-cache, which keeps a branch from writing the entries `main` reads; turn it on
-with `enable-cache: true` on `astral-sh/setup-uv` (it is off by default on
-self-hosted runners) and `cache: npm` on `actions/setup-node`.
+uv finds Python, so neither downloads.
+
+### Cache disk
+
+Each VM gets its repo's **cache disk** at `/cache`: uv's and npm's caches and
+the Python environment from the repo's last green push to its default branch.
+Each VM gets its own copy (about 0.5 s, before boot, like the root disk), so a
+job can install into it but nothing it writes outlives the VM, and a branch can
+never change what the next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
+`npm_config_cache` (`/cache/npm`) and `UV_PROJECT_ENVIRONMENT` (`/cache/venv`)
+at it, so `uv sync` and `npm ci` find almost everything in place.
+
+How it is made, without the host running any of the repo's code:
+
+1. A green push to the default branch tars `/cache` and uploads it as the
+   artifact `homelab-fc-cache` (the job's last two steps; see cortex's
+   `.github/workflows/linux.yml`).
+2. The supervisor checks for a newer one every minute, takes it only if its run
+   was a successful push to the default branch, unpacks it (plain files,
+   folders and links only, nothing outside the folder) and builds
+   `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
+   to others. VMs started after that use it.
+
+A job should not restore GitHub's caches as well: set `enable-cache: false`
+and `cache-local-path: /cache/uv` on `astral-sh/setup-uv`, and no `cache:` on
+`actions/setup-node`. Without a cache disk yet, `/cache` starts empty and the
+job downloads as usual.
 
 A job running alone gets 4 vCPUs and 4 GiB; when both slots are busy, the
 second gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
