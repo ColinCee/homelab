@@ -14,6 +14,8 @@ that also runs ruff, ty and tsc). How the runner is built is in
 - **Firecracker costs about 4 seconds per job against no sandbox at all** (14.3 s
   against 10.5 s for the same job, offline, warm caches): about 0.8 s to boot
   and the rest from running on virtual CPUs.
+- **As fast as GitHub's own runner.** The same job, Python 3.15 on both, five
+  runs each: 36 s here against 34 s on `ubuntu-latest` (medians).
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
 - **Home Assistant and Grafana did not notice.** With two VMs flat out on CPU
@@ -78,10 +80,24 @@ Where the 33 seconds of a job now go:
 | `uv sync`, `npm ci` | 4 to 5 s |
 | Tests | 13 s |
 
-For comparison, the same steps up to the tests took about the same time on
-GitHub's own `ubuntu-latest` runner (it picked the job up in about 3 seconds
-too). The repository's nightly Windows check on GitHub takes about a minute
-and a half.
+## Against GitHub's own runner
+
+The cortex check on `ubuntu-latest` (2 vCPUs, 7 GB) and on this runner, five
+runs each, one job at a time, Python 3.15 on both (GitHub's image has 3.12, so
+uv downloads 3.15 there). Medians, in seconds:
+
+| Step | GitHub | Here |
+|---|---|---|
+| Set up job, checkout, setup-uv | 5 | 6 |
+| setup-node | 3 | 4 |
+| `uv sync`, `npm ci` | 5 | 4 |
+| Tests | 15 | 16 |
+| **Whole job** | **34** (26 to 37) | **36** (36 to 42) |
+
+Level, within the spread. Two vCPUs of a server CPU keep up with the N100's
+four cores, and the Firecracker overhead (about 4 s, above) is roughly the gap.
+GitHub picks a job up in about 3 seconds too. The repository's nightly
+Windows check on GitHub takes about a minute and a half.
 
 ## What made a difference, and what did not
 
@@ -110,3 +126,8 @@ and a half.
   `time.time`, which `date.today()` stopped reading in 3.15. CI on a second
   platform found a bug that would have appeared on the PC at the next Python
   upgrade.
+- **On GitHub's runner the suite hung for 11 minutes.** Tests that step a loop
+  by replacing `time.sleep` also replaced the sleep that `Popen.wait` polls
+  with on Linux before Python 3.15, so one test lost its steps and the next
+  spun for ever. Python 3.15 waits on the process instead, so the VM never saw
+  it.
