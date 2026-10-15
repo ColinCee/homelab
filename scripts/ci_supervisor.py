@@ -51,6 +51,9 @@ VM_TIMEOUT_SECONDS = 3600
 # starts in seconds instead of waiting for a VM. It is replaced every 45 minutes
 # while idle; its timeout leaves a job that starts just before then time to finish.
 STANDBY_RECYCLE_SECONDS = 45 * 60
+# How many VMs wait ready at once (each about 450 MB while idle). Read from
+# /etc/homelab-ci/standbys if present, so trying 2 needs no code change.
+STANDBY_COUNT_FILE = Path("/etc/homelab-ci/standbys")
 STANDBY_TIMEOUT_SECONDS = 2 * 3600
 # Checked every poll: conditional requests make an unchanged answer free.
 PRIVACY_RECHECK_SECONDS = 0
@@ -586,13 +589,24 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     for run in list(state.launches.values()):
         if run.standby and any(n > 0 and repo != run.repo for repo, n in waiting.items()):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
-    if wants_standby(repos, private, [r.standby for r in state.launches.values()], len(free)):
+    if wants_standby(
+        repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
+    ):
         launch(gh, state, repos[0], free[0], now, standby=True)
 
 
-def wants_standby(repos: list[str], private: list[str], standbys: list[bool], free: int) -> bool:
-    """One standby VM, for the first repo listed, while it is private and a slot is free."""
-    return bool(repos) and repos[0] in private and not any(standbys) and free > 0
+def wants_standby(
+    repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: int = 1
+) -> bool:
+    """Up to `wanted` standby VMs for the first repo listed, while it is private and slots are free."""
+    return bool(repos) and repos[0] in private and sum(standbys) < wanted and free > 0
+
+
+def standby_count() -> int:
+    try:
+        return max(0, int(STANDBY_COUNT_FILE.read_text().strip()))
+    except (OSError, ValueError):
+        return 1
 
 
 def main(argv: list[str] | None = None) -> int:
