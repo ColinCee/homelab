@@ -3,6 +3,8 @@
 Live since 2026-10-14, serving cortex. A push reached a running job in about
 14 seconds; the first cortex job took 38 seconds.
 
+How fast it is, against other sandboxes and GitHub's runners: [CI runner performance](../ci-runner-performance.md).
+
 CI for private repositories runs on Beelink, each job in its own throwaway
 Firecracker microVM. Public repositories keep using GitHub-hosted runners, and
 the deploy runner is separate (see [Deploying services](deploying-services.md)).
