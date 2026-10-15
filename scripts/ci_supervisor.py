@@ -250,7 +250,8 @@ def launch(
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
-    vcpus, mem_mib = vm_size(len(state.launches))
+    # A standby outlives the jobs around it, so it is sized for running alone.
+    vcpus, mem_mib = vm_size(0 if standby else len(state.launches))
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
