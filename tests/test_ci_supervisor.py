@@ -86,3 +86,17 @@ def test_backs_off_until_github_says(
     retry_after: str | None, reset: str | None, until: float
 ) -> None:
     assert sup.rate_limit_until(retry_after, reset, 1000.0) == until
+
+
+@pytest.mark.parametrize(
+    ("age", "queued", "check"),
+    [
+        (5, 0, False),  # still booting
+        (30, 0, True),  # booted, and no job left for it: ask GitHub
+        (300, 1, False),  # a job is queued and may still be assigned to it
+    ],
+)
+def test_asks_about_an_idle_vm_only_once_booted_with_nothing_queued(
+    age: float, queued: int, check: bool
+) -> None:
+    assert sup.may_be_idle(age, queued) is check
