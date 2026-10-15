@@ -33,6 +33,9 @@ state_dir_ok() { [[ ! -e /run/homelab-ci ]] || mode_is /run/homelab-ci "root:roo
 check "supervisor state dir root-only" state_dir_ok
 check "no leftover job registrations" bash -c "! ls /run/homelab-ci/metadata-slot*.json >/dev/null 2>&1"
 check "image root-owned, read-only to others" mode_is "$images/rootfs.ext4" "root:root 644"
+check "cache folder root-owned" mode_is /var/lib/homelab-ci/caches "root:root 755"
+caches_ok() { ! find /var/lib/homelab-ci/caches -maxdepth 1 -name "*.ext4" \( ! -user root -o -perm /022 \) | grep -q .; }
+check "cache disks root-owned, read-only to others" caches_ok
 # The folder too: find walks into it, so a writable folder or file fails.
 for file in "$lib" /etc/systemd/system/homelab-ci-net.service \
   /etc/systemd/system/homelab-ci-supervisor.service /usr/local/bin/firecracker /usr/local/bin/jailer; do
@@ -51,6 +54,9 @@ for user in fc-slot0 fc-slot1; do
     check "$user cannot read $path" bash -c "! sudo -u $user test -r '$path'"
   done
   check "$user cannot write the image" bash -c "! sudo -u $user test -w '$images/rootfs.ext4'"
+  for cache in /var/lib/homelab-ci/caches/*.ext4; do
+    [[ -e "$cache" ]] && check "$user cannot write $(basename "$cache")" bash -c "! sudo -u $user test -w '$cache'"
+  done
   check "$user has no login shell" [ "$(getent passwd "$user" | cut -d: -f7)" = /usr/sbin/nologin ]
   check "$user not in docker, sudo or kvm groups" bash -c "! id -nG $user | grep -qwE 'docker|sudo|kvm|adm|lxd'"
 done

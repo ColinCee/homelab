@@ -49,6 +49,13 @@ install -d -o root -g root -m 0700 "$chroot"
 cp --sparse=always "$images/rootfs.ext4" "$chroot/rootfs.ext4"
 cp "$images/vmlinuz" "$chroot/vmlinuz"
 install -m 0600 "$metadata" "$chroot/metadata.json"
+# The repo's cache disk, if the supervisor names one: shared read-only, so linked,
+# not copied, and left root-owned (the slot user can read it, never write it).
+cache_drive=""
+if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
+  ln "$CACHE_IMAGE" "$chroot/cache.ext4"
+  cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": true}'
+fi
 
 mac=$(printf '06:00:0a:c8:%02x:02' "$slot")
 cat > "$chroot/vm.json" <<EOF
@@ -58,7 +65,7 @@ cat > "$chroot/vm.json" <<EOF
     "boot_args": "console=ttyS0 reboot=k panic=1 quiet loglevel=3 ci.ip=10.200.$slot.2/30 ci.gw=10.200.$slot.1"
   },
   "drives": [
-    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}
+    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive
   ],
   "network-interfaces": [
     {"iface_id": "eth0", "guest_mac": "$mac", "host_dev_name": "fc-tap$slot"}

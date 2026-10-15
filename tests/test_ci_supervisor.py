@@ -1,3 +1,5 @@
+import tarfile
+
 import pytest
 
 from scripts import ci_supervisor as sup
@@ -122,3 +124,46 @@ def test_keeps_one_standby_vm_for_the_first_private_repo(
     repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: bool
 ) -> None:
     assert sup.wants_standby(repos, private, standbys, free) is wanted
+
+
+def _artifact(
+    id: int, branch: str, created: str, name: str = "homelab-fc-cache", expired: bool = False
+) -> dict:
+    return {
+        "id": id,
+        "name": name,
+        "expired": expired,
+        "created_at": created,
+        "workflow_run": {"id": id * 10, "head_branch": branch},
+    }
+
+
+def test_takes_the_newest_cache_artifact_from_the_default_branch_only() -> None:
+    artifacts = [
+        _artifact(1, "master", "2026-10-15T10:00:00Z"),
+        _artifact(2, "master", "2026-10-15T12:00:00Z"),
+        _artifact(3, "evil-branch", "2026-10-15T13:00:00Z"),  # a branch cannot replace the cache
+        _artifact(4, "master", "2026-10-15T14:00:00Z", expired=True),
+        _artifact(5, "master", "2026-10-15T15:00:00Z", name="something-else"),
+    ]
+
+    picked = sup.pick_cache_artifact(artifacts, "master")
+
+    assert picked is not None and picked["id"] == 2
+    assert sup.pick_cache_artifact(artifacts, "main") is None
+
+
+@pytest.mark.parametrize("kind", [tarfile.CHRTYPE, tarfile.BLKTYPE, tarfile.FIFOTYPE])
+def test_the_cache_unpacker_refuses_device_files(kind: bytes, tmp_path) -> None:
+    member = tarfile.TarInfo("cache/dev")
+    member.type = kind
+
+    with pytest.raises(tarfile.FilterError):
+        sup.safe_member(member, str(tmp_path))
+
+
+def test_the_cache_unpacker_refuses_paths_outside_its_folder(tmp_path) -> None:
+    member = tarfile.TarInfo("../../etc/cron.d/x")
+
+    with pytest.raises(tarfile.FilterError):
+        sup.safe_member(member, str(tmp_path))

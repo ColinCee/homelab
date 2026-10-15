@@ -28,6 +28,19 @@ case "$task" in
     echo "=== probe end"
     ;;
   runner)
+    # Package caches and main's installs: a read-only disk from the host (built
+    # from main only), with a throwaway layer on top so the job can write but
+    # nothing it writes outlives the VM. Without the disk, an empty /cache.
+    mkdir -p /cache /run/cache-lower /run/cache-rw
+    mount -t tmpfs -o mode=0755 tmpfs /run/cache-rw
+    mkdir -p /run/cache-rw/upper /run/cache-rw/work
+    if [[ -b /dev/vdb ]] && mount -o ro,noload /dev/vdb /run/cache-lower; then
+      mount -t overlay overlay -o lowerdir=/run/cache-lower,upperdir=/run/cache-rw/upper,workdir=/run/cache-rw/work /cache
+    else
+      mount --bind /run/cache-rw/upper /cache
+    fi
+    chown runner:runner /cache
+    printf 'UV_CACHE_DIR=/cache/uv\nnpm_config_cache=/cache/npm\nUV_PROJECT_ENVIRONMENT=/cache/venv\n' >> /opt/runner/.env
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
