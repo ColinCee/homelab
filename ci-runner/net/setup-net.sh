@@ -19,7 +19,8 @@ accept_rules() {
 
 refresh_wan() {
   local wan
-  wan=$(curl -4 -sf -m 5 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
+  # A few tries: one slow answer should not cost a VM (run-vm.sh refuses to start without it).
+  wan=$(curl -4 -sf -m 3 --retry 3 --retry-all-errors --retry-delay 1 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
   [[ "$wan" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "cannot find the public address" >&2; return 1; }
   # One transaction, so the set is never empty in between.
   nft -f - <<<"flush set inet homelab_ci wan4; add element inet homelab_ci wan4 { $wan }"
