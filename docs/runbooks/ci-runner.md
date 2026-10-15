@@ -24,14 +24,19 @@ from writing the entries `main` reads. Each VM has 2 vCPUs and 2 GiB; a job
 that needs more memory loses the greedy process, not the VM.
 
 Only repositories listed on Beelink in `/etc/homelab-ci/repos` (root-only,
-`owner/name` per line) are served, and only while they are private.
+`owner/name` per line) are served, and only while they are private: privacy is
+checked on every poll, and once a repo is public no new VM starts for it and its
+idle ones are stopped. Before making a repo public, move its workflows to
+GitHub-hosted runners and take it off the list and the token.
 
 ## Design
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 10
   seconds for queued jobs with the label and boots a VM for each, up to two at
   once. The VM's root filesystem is a private copy, deleted with everything the
-  job wrote. However the job ends, the VM ends.
+  job wrote. However the job ends, the VM ends, within seconds. A VM left
+  without a job (cancelled before it started, or taken by another runner) is
+  stopped about 30 to 40 seconds after it boots.
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves Beelink.

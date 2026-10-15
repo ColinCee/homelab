@@ -38,11 +38,12 @@ SLOTS = 2
 POLL_SECONDS = 10
 # A VM that has not picked up a job by now counts as idle demand again.
 BOOT_GRACE_SECONDS = 120
-# After this, a VM that has not picked up a job is stopped (checked once a minute).
-IDLE_AFTER_SECONDS = 180
-IDLE_CHECK_SECONDS = 60
+# Time for a VM to boot and connect. After it, a VM with no job while nothing is
+# queued for its repo (the job was cancelled, or another runner took it) is stopped.
+IDLE_AFTER_SECONDS = 30
 VM_TIMEOUT_SECONDS = 3600
-PRIVACY_RECHECK_SECONDS = 300
+# Checked every poll: conditional requests make an unchanged answer free.
+PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
 
 
@@ -63,7 +64,6 @@ class Launch:
     started: float
     process: subprocess.Popen[bytes]
     metadata: Path
-    idle_checked: float = 0.0
 
 
 @dataclass
@@ -258,12 +258,17 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
     log(f"slot {slot}: started {name} for {repo}")
 
 
-def stop_idle(gh: GitHub, run: Launch, now: float) -> None:
+def may_be_idle(age: float, queued_for_repo: int) -> bool:
+    """Worth asking GitHub whether the VM has a job: it has had time to connect,
+    and no queued job in its repo could still be on its way to it."""
+    return age >= IDLE_AFTER_SECONDS and queued_for_repo == 0
+
+
+def stop_idle(gh: GitHub, run: Launch, now: float, queued_for_repo: int) -> None:
     """A VM whose job was cancelled or taken by another runner would wait out its
-    timeout; stop it once it has had time to boot and is still not busy."""
-    if now - run.started < IDLE_AFTER_SECONDS or now - run.idle_checked < IDLE_CHECK_SECONDS:
+    timeout; stop it as soon as it is clearly not going to get one."""
+    if not may_be_idle(now - run.started, queued_for_repo):
         return
-    run.idle_checked = now
 
     def idle() -> bool:
         try:
@@ -287,11 +292,13 @@ def stop_idle(gh: GitHub, run: Launch, now: float) -> None:
             kill.write_text("1")
 
 
-def reap(gh: GitHub, state: State, now: float) -> None:
+def reap(gh: GitHub, state: State, now: float, queued: Mapping[str, int] | None = None) -> None:
+    """Clear finished VMs. With this poll's queue, also stop VMs left without a job."""
     for slot, run in list(state.launches.items()):
         code = run.process.poll()
         if code is None:
-            stop_idle(gh, run, now)
+            if queued is not None:
+                stop_idle(gh, run, now, queued.get(run.repo, 0))
             continue
         run.metadata.unlink(missing_ok=True)
         delete_runner(gh, run.repo, run.runner_id, run.runner_name)
@@ -310,13 +317,15 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
 
 
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
-    reap(gh, state, now)
     queued: dict[str, int] = {}
     for repo in repos:
+        # A repo that is no longer private has nothing queued as far as we are
+        # concerned, so its idle VMs are stopped below and no new ones start.
         if check_private(gh, state, repo, now):
             count = len(find_queued(gh, repo))
             if count:
                 queued[repo] = count
+    reap(gh, state, now, queued)
     booting: dict[str, int] = {}
     for run in state.launches.values():
         if now - run.started < BOOT_GRACE_SECONDS:
