@@ -598,7 +598,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
 def wants_standby(
     repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: int = 1
 ) -> bool:
-    """Up to `wanted` standby VMs for the first repo listed, while it is private and slots are free."""
+    """Up to `wanted` standby VMs for the first repo listed, while private and slots are free."""
     return bool(repos) and repos[0] in private and sum(standbys) < wanted and free > 0
 
 
