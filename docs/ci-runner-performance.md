@@ -69,6 +69,7 @@ From GitHub creating the run to the job finishing, as the setup improved:
 | First working version (poll every 10 s, tools downloaded each job) | 12 s | 52 s |
 | Node, uv and Python built into the VM image, poll every 2 s | 12 s | 44 s |
 | One VM kept booted and waiting | 3 to 4 s | 37 s |
+| Plus a warm cache disk from main | 3 s | 33 s |
 
 Where the 33 seconds of a job now go:
 
@@ -148,15 +149,45 @@ vCPUs. "Work" is the time inside the VM; "start" is boot or restore.
   memory, random-number state included, which Firecracker's documentation
   warns against.
 
-So the speed-up worth having is a read-only disk of main's caches and installs,
-built in a VM from main only, which takes a job from about 21.5 s of work to
-about 17 s. Snapshots would add 0.3 s.
+So the speed-up worth having is a disk of main's caches and installs, built in
+a VM from main only. Snapshots would add 0.3 s.
+
+## The cache disk, measured as whole jobs
+
+Built and running since 15 October 2026 (see the runbook's "Cache disk"). Five
+real cortex jobs each, alternating, one at a time, GitHub's step timestamps
+(whole seconds), medians with ranges:
+
+| | Today's setup (GitHub's cache) | Warm cache disk |
+|---|---|---|
+| Run created → job running | 3 s (3 to 4) | 3 s (3 to 5) |
+| Job | 34 s (33 to 34) | **30 s (30 to 30)** |
+| Run created → done | 37 s (36 to 38) | **33 s (33 to 35)** |
+| Set up job, checkout | 4 s | 5 s |
+| `setup-uv` + `setup-node` (cache restore) | 6 s | 1 s |
+| `uv sync` | 1 s | 2 s |
+| `npm ci` | 3 s | 3 s |
+| Tests | 13 s | 13 s |
+
+It saves 4 seconds a job, about half what the in-VM experiment suggested.
+Almost all of it is not restoring GitHub's caches. `uv sync` is a little
+slower, because it rebuilds the project itself into the environment on every
+job (a fresh checkout looks like new source); `npm ci` reinstalls
+`node_modules` whatever is cached, by design; and the tests are the same CPU
+work either way. A green push to main pays about 20 seconds more, to upload
+the new cache.
 
 ## Things that surprised me
 
 - **A job that ran out of memory hung its VM for an hour.** systemd stopped the
   task that was meant to end the VM. The fix: the VM reboots, which ends
   Firecracker, whenever its task ends, however it ends.
+- **The first cache disk was attached and never used.** Its throwaway write
+  layer needed OverlayFS, which Ubuntu's kernel builds as a module, and the VM
+  has no modules, so every "warm" job started from an empty cache while the
+  timings looked normal. Only reading the job's own log (`uv` downloading
+  packages it should have had) showed it. Each VM now gets a private copy of
+  the disk instead.
 - **My first snapshot benchmark looked 20 times faster, and was wrong.** I had
   copied a VM's disk while it was still mounted, every run after it failed in
   under a second, and the timings looked brilliant. Only checking each step's
