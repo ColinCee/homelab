@@ -100,3 +100,8 @@ def test_asks_about_an_idle_vm_only_once_booted_with_nothing_queued(
     age: float, queued: int, check: bool
 ) -> None:
     assert sup.may_be_idle(age, queued) is check
+
+
+@pytest.mark.parametrize(("running", "size"), [(0, (4, 4096)), (1, (2, 2048))])
+def test_a_job_alone_gets_all_four_cores(running: int, size: tuple[int, int]) -> None:
+    assert sup.vm_size(running) == size

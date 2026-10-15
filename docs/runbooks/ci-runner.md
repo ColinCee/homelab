@@ -18,10 +18,16 @@ jobs:
 ```
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
-`sudo`. Workflows install their own tools (`astral-sh/setup-uv`,
-`actions/setup-node`) and cache through GitHub's cache, which keeps a branch
-from writing the entries `main` reads. Each VM has 2 vCPUs and 2 GiB; a job
-that needs more memory loses the greedy process, not the VM.
+`sudo`, with Node 22, uv and Python 3.15 already installed (pinned in
+`versions.env`): `actions/setup-node` finds Node in the runner's tool cache and
+uv finds Python, so neither downloads. Package caches go through GitHub's
+cache, which keeps a branch from writing the entries `main` reads; turn it on
+with `enable-cache: true` on `astral-sh/setup-uv` (it is off by default on
+self-hosted runners) and `cache: npm` on `actions/setup-node`.
+
+A job running alone gets 4 vCPUs and 4 GiB; when both slots are busy, the
+second gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
+process, not the VM.
 
 Only repositories listed on Beelink in `/etc/homelab-ci/repos` (root-only,
 `owner/name` per line) are served, and only while they are private: privacy is
@@ -31,8 +37,8 @@ GitHub-hosted runners and take it off the list and the token.
 
 ## Design
 
-- **One VM per job, never reused.** The supervisor polls GitHub every 10
-  seconds for queued jobs with the label and boots a VM for each, up to two at
+- **One VM per job, never reused.** The supervisor polls GitHub every 2
+  seconds (unchanged answers are free) for queued jobs with the label and boots a VM for each, up to two at
   once. The VM's root filesystem is a private copy, deleted with everything the
   job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is

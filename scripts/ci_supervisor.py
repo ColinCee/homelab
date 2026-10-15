@@ -35,7 +35,8 @@ STATE_DIR = Path("/run/homelab-ci")
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API = "https://api.github.com"
 SLOTS = 2
-POLL_SECONDS = 10
+# Unchanged answers are free conditional requests, so polling often costs nothing.
+POLL_SECONDS = 2
 # A VM that has not picked up a job by now counts as idle demand again.
 BOOT_GRACE_SECONDS = 120
 # Time for a VM to boot and connect. After it, a VM with no job while nothing is
@@ -240,6 +241,7 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
+    vcpus, mem_mib = vm_size(len(state.launches))
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -249,13 +251,19 @@ def launch(gh: GitHub, state: State, repo: str, slot: int, now: float) -> None:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env={**os.environ, "VCPUS": str(vcpus), "MEM_MIB": str(mem_mib)},
         )
     except BaseException:
         metadata.unlink(missing_ok=True)
         delete_runner(gh, repo, runner_id, name)
         raise
     state.launches[slot] = Launch(slot, repo, runner_id, name, now, process, metadata)
-    log(f"slot {slot}: started {name} for {repo}")
+    log(f"slot {slot}: started {name} for {repo} ({vcpus} vCPUs, {mem_mib} MiB)")
+
+
+def vm_size(running: int) -> tuple[int, int]:
+    """A job alone gets the whole machine's cores; two at once get half each."""
+    return (4, 4096) if running == 0 else (2, 2048)
 
 
 def may_be_idle(age: float, queued_for_repo: int) -> bool:
