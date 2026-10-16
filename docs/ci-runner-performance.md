@@ -8,18 +8,16 @@ that also runs ruff, ty and tsc). How the runner is built is in
 
 ## The short answer
 
-- **From GitHub creating the run to done in 20 seconds; the job itself 16.**
+- **From GitHub creating the run to done in 20 seconds; the job itself 17.**
   It is running about 3 seconds after the run is created: GitHub takes most of
-  that, and a VM kept booted and waiting takes the job straight away. (Medians
-  of 5, same session as the GitHub comparison below.)
+  that, and a VM kept booted and waiting takes the job straight away.
 - **Firecracker costs about 4 seconds per job against no sandbox at all** (14.3 s
   against 10.5 s for the same job, offline, warm caches): about 0.8 s to boot
   and the rest from running on virtual CPUs.
-- **Faster than GitHub's own runner.** The same job, Python 3.15 on both, five
-  runs each, interleaved: 21 s here against 35 s on `ubuntu-latest` from run
-  created to done, and 18 s against 30 s for the job (medians); TypeScript 7
-  later took the home runner to 20 s and 16 s. See "Squeezing
-  it" below for how.
+- **Faster than GitHub's own runner, like for like.** The same cortex commit
+  (671f421), Python 3.15 on both, five runs each, interleaved: 20 s here against
+  31 s on `ubuntu-latest` from run created to done, and 17 s against 26 s for
+  the job (medians). See "Like for like" and "Squeezing it" below.
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
 - **Home Assistant and Grafana did not notice.** With two VMs flat out on CPU
@@ -181,6 +179,27 @@ job (a fresh checkout looks like new source); `npm ci` reinstalls
 work either way. A green push to main pays about 20 seconds more, to upload
 the new cache.
 
+## Like for like with GitHub's runner
+
+Both on cortex commit 671f421 (TypeScript 7, slow checks first), Python 3.15,
+one job at a time, 5 runs each, interleaved, 16 October 2026. GitHub's side
+uses its own tool setup and caches (`setup-uv` with its cache, `setup-node`
+with `cache: npm`, `uv sync --no-install-project --python 3.15`, `npm ci`),
+warmed by a first run before measuring.
+
+| | Beelink | GitHub `ubuntu-latest` |
+|---|---|---|
+| Run created → job running | 3 s (3–4) | 5 s (4–5) |
+| Job | **17 s (17–17)** | **26 s (22–36)** |
+| Run created → done | **20 s (20–21)** | **31 s (26–41)** |
+| Set up job, checkout | 2 s | 2 s |
+| Tool setup and installs | 2 s | 9 s (`setup-uv` 2, `setup-node` 3, `uv sync` 1, `npm ci` 3) |
+| Tests | 8 s (8–8) | 9 s (9–15) |
+
+The earlier comparison in the next section (21 s against 35 s) ran an older
+cortex commit on GitHub, without slow checks first or TypeScript 7, so it is not
+like for like; both changes speed GitHub up too.
+
 ## Squeezing it, measured against GitHub's runner
 
 Same session, early on 16 October 2026: cortex's Linux check, Python 3.15, one
@@ -239,6 +258,35 @@ bookkeeping between steps. Going lower means faster tests, which is cortex's
 work, or a faster CPU: GitHub's runner spends 10 to 15 s on the same tests.
 
 From the morning to now, run created → done went 52 s → 37 s → 33 s → 21 s.
+
+## Cores and CPU power settings
+
+More cores help, with sharply diminishing returns. The suite in one 4-vCPU VM,
+by number of test workers (two runs each, after a first warm-up run):
+
+| Workers | 1 | 2 | 3 | 4 | 6 |
+|---|---|---|---|---|---|
+| Suite | 10.5 s | 7.4 s | 7.0 s | **6.7 s** | 7.4 s |
+
+About 5 seconds can't be split up (Python starting, collecting the tests, and
+the single TypeScript check), so a CPU with more cores would barely help;
+faster cores would.
+
+The host CPU's energy preference (intel_pstate, turbo on), with the package's
+own energy counter (RAPL: the CPU package, not the whole box at the wall). Per
+job is the energy from dispatch to done, everything on the host included; idle
+is over 90 seconds.
+
+| Setting | Job | Run created → done | CPU energy per job | Idle CPU power |
+|---|---|---|---|---|
+| `performance` | 17 s | 21 s | 246 J (+9%) | 2.29 W |
+| **`balance_performance` (default, kept)** | **17 s** | **20–21 s** | 225–227 J | **0.77 W** |
+| `balance_power` | 20.5 s | 24 s | 167 J (−26%) | 0.71 W |
+| `power` | 32 s | 35.5 s | 132 J (−42%) | 0.68 W |
+
+The default is already the best: `performance` is no faster and triples idle
+power, and the saving modes save under 0.1 W at idle, where the box spends
+almost all its time, while a job's saving is about 0.02 Wh.
 
 ## Things that surprised me
 
