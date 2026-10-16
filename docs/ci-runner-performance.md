@@ -8,7 +8,7 @@ that also runs ruff, ty and tsc). How the runner is built is in
 
 ## The short answer
 
-- **From GitHub creating the run to done in 21 seconds; the job itself 18.**
+- **From GitHub creating the run to done in 20 seconds; the job itself 16.**
   It is running about 3 seconds after the run is created: GitHub takes most of
   that, and a VM kept booted and waiting takes the job straight away. (Medians
   of 5, same session as the GitHub comparison below.)
@@ -17,7 +17,8 @@ that also runs ruff, ty and tsc). How the runner is built is in
   and the rest from running on virtual CPUs.
 - **Faster than GitHub's own runner.** The same job, Python 3.15 on both, five
   runs each, interleaved: 21 s here against 35 s on `ubuntu-latest` from run
-  created to done, and 18 s against 30 s for the job (medians). See "Squeezing
+  created to done, and 18 s against 30 s for the job (medians); TypeScript 7
+  later took the home runner to 20 s and 16 s. See "Squeezing
   it" below for how.
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
@@ -211,6 +212,19 @@ Everything tried, in order, with what it changed:
 | Full Firecracker snapshot as the waiting VM | ~1 s, all of it `uv sync`, which `--no-install-project` gets without one | no |
 | Two waiting VMs instead of one | a burst of two pushes: last job done 33 s → 29 s, average per job unchanged (27.5 s → 28 s), 440 MB more held | no |
 | 4 vCPUs instead of 2 for a lone job | no change (earlier) | kept, harmless |
+
+A second round, the same morning (5 runs each, interleaved with a control):
+
+| Idea | Before → after | Kept |
+|---|---|---|
+| TypeScript 7 (the native compiler) for the type check, in cortex | the check 3.6 s → 1.3 s in the VM (0.4 s on the PC); job 18 s → 16 s, run created → done 21 s → 20 s | yes |
+| `node_modules` bind-mounted from the cache disk instead of copied | install 2 s → 1 s, tests 8 s → 9 s: copying also loaded the files into memory, and the tests then paid for it; net 20 s → 19–20 s | no, not worth needing root in the job |
+| `mitigations=off` in the guest kernel only | 19 s → 19 s (about 0.5 s on the job, within noise) | no |
+| Reading the environment and `node_modules` into memory while the VM waits | tests 8 s → 10–11 s: the reading competed with the job | no |
+| pytest options: 3 workers, `--dist worksteal`, no cache provider | all 6.7–6.9 s after the first run, the default included | no |
+| `persist-credentials: false` on checkout (no post-step clean-up) | 20 s → 20 s | no |
+
+Run created → done now: **20 s**, job 16 s.
 
 Not tried, because the most each could save is under a second: checking out
 from a clone on the cache disk (checkout is 1–2 s, mostly the network), and
