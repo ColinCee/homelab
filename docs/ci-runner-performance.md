@@ -52,7 +52,8 @@ Per step (seconds):
 | Today | 0 | 2 | – | – | 2 (one install step) | | 9 |
 
 - **The waiting VM is the biggest single step (11 s):** without it a job waits
-  for the next poll, a boot and the GitHub runner starting inside the VM.
+  for the next poll, a boot and the GitHub runner starting inside the VM. It
+  holds about 450 MB of RAM while it waits.
 - **Tools in the image save the downloads** (`setup-node` 11 s → 5 s), but the
   setup actions still cost 4–5 s each while they restore GitHub's caches.
 - **The cache disk removes those restores** (9 s). It is built by a green push
@@ -86,13 +87,16 @@ the slow checks first, so they overlap the rest of the suite.
 
 ## Why snapshots did not help
 
-Firecracker restores a snapshot in 11 to 113 ms, but boot was never the
+Firecracker restores a snapshot in milliseconds (13 to 113 ms for a 2 GiB VM in
+the VM-level comparison; 11 to 15 ms for the 4 GiB waiting VM in the whole-job
+round), but boot was never the
 problem: the waiting VM already hides it, along with the GitHub runner's
 start-up, which a snapshot cannot include (the one-job registration only
 exists once a job is queued). In a VM-level comparison, a plain disk of main's
 installs and caches got 17.2 s of work and a full snapshot 16.9 s: almost all of
 the gain is files on disk, not memory. A snapshot also costs 30 s to take, a
-memory file the size of the VM per slot, and every restored VM resumes with
+memory file the size of the VM per slot (1.2 GB for the 2 GiB VM, 4.1 GB for
+the 4 GiB one), and every restored VM resumes with
 identical memory, random-number state included, which Firecracker's
 documentation warns against.
 
