@@ -15,8 +15,8 @@ that also runs ruff, ty and tsc). How the runner is built is in
   against 10.5 s for the same job, offline, warm caches): about 0.8 s to boot
   and the rest from running on virtual CPUs.
 - **Faster than GitHub's own runner, like for like.** The same cortex commit
-  (671f421), Python 3.15 on both, five runs each, interleaved: 20 s here against
-  31 s on `ubuntu-latest` from run created to done, and 17 s against 26 s for
+  (e016c52), Python 3.15 on both, five runs each, interleaved: 20 s here against
+  29 s on `ubuntu-latest` from run created to done, and 17 s against 24 s for
   the job (medians). See "Like for like" and "Squeezing it" below.
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
@@ -181,24 +181,27 @@ the new cache.
 
 ## Like for like with GitHub's runner
 
-Both on cortex commit 671f421 (TypeScript 7, slow checks first), Python 3.15,
-one job at a time, 5 runs each, interleaved, 16 October 2026. GitHub's side
-uses its own tool setup and caches (`setup-uv` with its cache, `setup-node`
-with `cache: npm`, `uv sync --no-install-project --python 3.15`, `npm ci`),
-warmed by a first run before measuring.
+Both on cortex commit e016c52 (Python 3.15 only, TypeScript 7, Vite 8, slow
+checks first, the v7 actions), one job at a time, 5 runs each, interleaved,
+16 October 2026. GitHub's side uses its own tool setup and caches, at the
+versions cortex's Windows workflow uses (`setup-uv` v10.3.0 with its cache,
+`setup-node` v7 with Node 24 and `cache: npm`, `uv sync --no-install-project`,
+`npm ci`), warmed by a first run before measuring.
 
 | | Beelink | GitHub `ubuntu-latest` |
 |---|---|---|
-| Run created → job running | 3 s (3–4) | 5 s (4–5) |
-| Job | **17 s (17–17)** | **26 s (22–36)** |
-| Run created → done | **20 s (20–21)** | **31 s (26–41)** |
-| Set up job, checkout | 2 s | 2 s |
-| Tool setup and installs | 2 s | 9 s (`setup-uv` 2, `setup-node` 3, `uv sync` 1, `npm ci` 3) |
-| Tests | 8 s (8–8) | 9 s (9–15) |
+| Run created → job running | 3 s (3–4) | 4 s (4–5) |
+| Job | **17 s (16–17)** | **24 s (22–32)** |
+| Run created → done | **20 s (20–21)** | **29 s (26–36)** |
+| Set up job, checkout | 2 s | 3 s |
+| Tool setup and installs | 2 s | 8 s (`setup-uv` 2, `setup-node` 2, `uv sync` 1, `npm ci` 3) |
+| Tests | 8 s (8–9) | 9 s (9–12) |
 
-The earlier comparison in the next section (21 s against 35 s) ran an older
-cortex commit on GitHub, without slow checks first or TypeScript 7, so it is not
-like for like; both changes speed GitHub up too.
+Earlier runs on older commits: on 671f421 (TypeScript 7, the v4 actions, Node
+22 on GitHub) it was 20 s against 31 s, and job 17 s against 26 s; the first
+comparison in the next section (21 s against 35 s) ran a commit on GitHub
+without slow checks first or TypeScript 7, so it is not like for like. Each
+round of cortex changes sped GitHub up too.
 
 ## Squeezing it, measured against GitHub's runner
 
