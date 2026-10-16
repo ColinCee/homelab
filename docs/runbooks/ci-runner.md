@@ -1,7 +1,7 @@
 # CI runner (Firecracker)
 
-Live since 2026-10-14, serving cortex. A push reached a running job in about
-14 seconds; the first cortex job took 38 seconds.
+Live since 2026-10-14, serving cortex. A cortex run goes from created to done
+in about 20 seconds, against 26 to 29 on GitHub's runner for the same commit.
 
 How fast it is, against other sandboxes and GitHub's runners: [CI runner performance](../ci-runner-performance.md).
 
@@ -79,8 +79,8 @@ GitHub-hosted runners and take it off the list and the token.
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
   first repo in that list, so a job there starts in about a
-  second instead of waiting for a VM to boot and its runner to start (about 8
-  seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
+  second instead of waiting for the next poll, a VM to boot and its runner to start
+  (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
   free slot; an idle standby is replaced every 45 minutes, and stopped if its
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
