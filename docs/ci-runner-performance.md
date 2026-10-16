@@ -1,6 +1,6 @@
 # How fast is personal CI in Firecracker microVMs?
 
-Measured in October 2026 on Beelink, a Beelink EQ mini PC (Intel N100: 4 cores,
+Measured in October 2026 on the homelab's mini PC (Intel N100: 4 cores,
 4 threads, 16 GB RAM, NVMe), running CI for one private Python and TypeScript
 repository (cortex: `uv sync`, `npm ci`, and a pytest suite of about 280 tests
 that also runs ruff, ty and tsc). How the runner is built is in
@@ -12,7 +12,7 @@ that also runs ruff, ty and tsc). How the runner is built is in
   It is running about 3 seconds after the run is created: GitHub takes most of
   that, and a VM kept booted and waiting takes the job straight away.
 - **Firecracker costs about 4 seconds per job against no sandbox at all** (14.3 s
-  against 10.5 s for the same job, offline, warm caches): about 0.8 s to boot
+  against 10.7 s for the same job, offline, warm caches): about 0.8 s to boot
   and the rest from running on virtual CPUs.
 - **Faster than GitHub's own runner, like for like.** The same cortex commit
   (e016c52), Python 3.15 on both, five runs each, interleaved: 20 s here against
@@ -134,7 +134,8 @@ vCPUs. "Work" is the time inside the VM; "start" is boot or restore.
 | Snapshot of main, installs wiped | 0.02 to 0.1 s restore | 1.4 s | 4.0 s | 14.2 s | 19.9 s |
 | Snapshot of main, installs kept | 0.02 to 0.1 s restore | 0.1 s | 3.5 s | 13.0 s | 16.9 s |
 
-- **The restore really is fast:** 13 to 113 ms. But boot was never the
+- **The restore really is fast:** 13 to 113 ms here, with a 2 GiB VM; restoring
+  a 4 GiB VM as the waiting VM in the later whole-job round took 11 to 15 ms. But boot was never the
   problem: the standby VM already hides it, along with the GitHub runner's
   start-up, which a snapshot cannot include (the runner's one-job registration
   only exists once a job is queued).
@@ -146,13 +147,19 @@ vCPUs. "Work" is the time inside the VM; "start" is boot or restore.
   slower than a cache disk.
 - **`npm ci` stays at about 3.5 s whatever is warm,** because it deletes
   `node_modules` before installing, by design.
-- **What a snapshot costs:** 30 s to take, a 1.2 GB memory file per slot (the
+- **What a snapshot costs:** 30 s to take, a 1.2 GB memory file per slot for a
+  2 GiB VM (4.1 GB for the 4 GiB VM of the whole-job round) (the
   network address is baked in), and every restored VM resumes with identical
   memory, random-number state included, which Firecracker's documentation
   warns against.
 
 So the speed-up worth having is a disk of main's caches and installs, built in
 a VM from main only. Snapshots would add 0.3 s.
+
+The later whole-job round ("Squeezing it" below) supersedes that figure: a
+snapshot restored as the waiting VM saved about 1 s against the cache disk of
+the time, all of it `uv sync`, and `uv sync --no-install-project` gets the same
+without a snapshot.
 
 ## The cache disk, measured as whole jobs
 
@@ -188,7 +195,7 @@ versions cortex's Windows workflow uses (`setup-uv` v10.3.0 with its cache,
 `setup-node` v7 with Node 24 and `cache: npm`, `uv sync --no-install-project`,
 `npm ci`), warmed by a first run before measuring.
 
-| | Beelink | GitHub `ubuntu-latest` |
+| | Home runner | GitHub `ubuntu-latest` |
 |---|---|---|
 | Run created → job running | 3 s (3–4) | 4 s (4–5) |
 | Job | **17 s (16–17)** | **24 s (22–32)** |
@@ -213,9 +220,9 @@ job at a time, 5 runs of each setup interleaved, GitHub's step timestamps
 | Setup | Run created → job running | Job | Run created → done |
 |---|---|---|---|
 | GitHub `ubuntu-latest` | 5 s (4–5) | 30 s (25–32) | **35 s (30–37)** |
-| Beelink, cache disk (previous workflow) | 3 s (3–4) | 28 s (28–28) | 31 s (31–32) |
-| Beelink, full snapshot of a VM after a main build | 3 s (3–4) | 28 s (28–29) | 32 s (31–32) |
-| **Beelink, final workflow** | 3 s (3–4) | **18 s (18–19)** | **21 s (21–23)** |
+| Home runner, cache disk (previous workflow) | 3 s (3–4) | 28 s (28–28) | 31 s (31–32) |
+| Home runner, full snapshot of a VM after a main build | 3 s (3–4) | 28 s (28–29) | 32 s (31–32) |
+| **Home runner, final workflow** | 3 s (3–4) | **18 s (18–19)** | **21 s (21–23)** |
 
 (The snapshot row is from an earlier round of the same session, against a cache
 disk control of 33 s.)

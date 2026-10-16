@@ -1,12 +1,12 @@
 # Security audit
 
-How to check Beelink for compromise. Run it read-only: an audit that changes
+How to check the server for compromise. Run it read-only: an audit that changes
 the host destroys the evidence it is looking for. The expected results, past
 findings and accepted risks are kept privately; compare against those.
 
 ## Checklist
 
-On Beelink, with `sudo` where needed.
+On the server, with `sudo` where needed.
 
 ```bash
 # Accounts, keys, logins
@@ -67,7 +67,7 @@ gh api "users/ColinCee/repos?per_page=100" --jq '.[].name' |
   xargs -I{} gh api repos/ColinCee/{}/actions/runners --jq '.runners[] | "{} \(.name)"'
 ```
 
-The last command must print only `homelab beelink`. A runner on any other
+The last command must print only the homelab repo's deploy runner. A runner on any other
 repo has the same power over the host without the
 [runner job guard](deploying-services.md#runner-job-guard).
 

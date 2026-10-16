@@ -5,7 +5,7 @@ Live since 2026-10-14, serving cortex. A push reached a running job in about
 
 How fast it is, against other sandboxes and GitHub's runners: [CI runner performance](../ci-runner-performance.md).
 
-CI for private repositories runs on Beelink, each job in its own throwaway
+CI for private repositories runs on the homelab's server, each job in its own throwaway
 Firecracker microVM. Public repositories keep using GitHub-hosted runners, and
 the deploy runner is separate (see [Deploying services](deploying-services.md)).
 
@@ -63,7 +63,7 @@ A job running alone gets 4 vCPUs and 4 GiB; when both slots are busy, the
 second gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
-Only repositories listed on Beelink in `/etc/homelab-ci/repos` (root-only,
+Only repositories listed in the host's root-only repo list (`REPOS_FILE` in the supervisor,
 `owner/name` per line) are served, and only while they are private: privacy is
 checked on every poll, and once a repo is public no new VM starts for it and its
 idle ones are stopped. Before making a repo public, move its workflows to
@@ -78,7 +78,7 @@ GitHub-hosted runners and take it off the list and the token.
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  first repo in `/etc/homelab-ci/repos`, so a job there starts in about a
+  first repo in that list, so a job there starts in about a
   second instead of waiting for a VM to boot and its runner to start (about 8
   seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
@@ -87,11 +87,11 @@ GitHub-hosted runners and take it off the list and the token.
   default); 2 was measured and not worth its RAM (see the performance doc).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
-  the VM. The GitHub token never leaves Beelink.
+  the VM. The GitHub token never leaves the host.
 - **Jobs have the internet, not the home network.** VMs reach the internet
-  through NAT. Beelink itself, the LAN, the tailnet, Docker networks, the
+  through NAT. The host itself, the LAN, the tailnet, Docker networks, the
   other slots and the home's public address (the router answers on it from
-  inside) are dropped. A VM may only use its own address, and nothing, Beelink
+  inside) are dropped. A VM may only use its own address, and nothing, the host
   included, can open a connection to a VM. The iptables accept is limited to
   the uplink, so it opens nothing private even without the nftables table.
 - **Firecracker is jailed.** The jailer runs it as the slot's own user
@@ -113,11 +113,11 @@ GitHub-hosted runners and take it off the list and the token.
 | Supervisor | [`scripts/ci_supervisor.py`](../../scripts/ci_supervisor.py), `homelab-ci-supervisor.service` |
 | Checks | [`ci-runner/tests/`](../../ci-runner/tests/): `audit.sh`, `test-network.sh`, `test-load.sh` |
 
-Each slot `N` has tap `fc-tapN`, host `10.200.N.1`, guest `10.200.N.2`.
+Each slot has its own tap device and a private address pair of its own.
 
 ## Operating
 
-From a checkout of `main` on Beelink:
+From a checkout of `main` on the host:
 
 ```bash
 sudo ci-runner/install-host.sh   # Firecracker, slot users, network, supervisor files
@@ -132,10 +132,10 @@ with Administration read and write (to create one-job registrations) and Actions
 read. Store it without it reaching the screen or shell history:
 
 ```bash
-bash -c 'read -rsp "Token: " t; echo; printf "%s" "$t" | sudo tee /etc/homelab-ci/github-token >/dev/null; sudo chmod 600 /etc/homelab-ci/github-token'
+bash -c 'read -rsp "Token: " t; echo; printf "%s" "$t" | sudo tee "$TOKEN_FILE" >/dev/null; sudo chmod 600 "$TOKEN_FILE"'  # TOKEN_FILE: see the supervisor
 ```
 
-To serve another repository, add it to `/etc/homelab-ci/repos` and to the
+To serve another repository, add it to the repo list and to the
 token's repository access, then restart the supervisor.
 
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
@@ -152,7 +152,7 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 - **`test-network.sh`** boots a VM that must reach GitHub, PyPI and npm, must
   time out on every private address and the public address, and must not get
   out with another address. It then connects to the VM from a container and
-  from Beelink and checks that the drop rule counted it. Every check must pass.
+  from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-load.sh`** runs a VM in every slot at full CPU and most of its memory
   while timing Home Assistant and Grafana. In October 2026 their worst response
   went from 1 ms to 4 ms.
