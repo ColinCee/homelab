@@ -20,7 +20,7 @@ jobs:
 ```
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
-`sudo`, with Node 22, uv and Python 3.15 already installed (pinned in
+`sudo`, with Node 24 LTS, uv and Python 3.15 already installed (pinned in
 `versions.env`) and on the job's `PATH`, so a job needs no setup actions. The
 actions the CI repos use (`CACHED_ACTIONS` in `versions.env`) are unpacked in
 the image, so "Set up job" does not download them; a tag that has moved on is
