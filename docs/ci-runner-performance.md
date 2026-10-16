@@ -6,208 +6,43 @@ repository (cortex: `uv sync`, `npm ci`, and a pytest suite of about 280 tests
 that also runs ruff, ty and tsc). How the runner is built is in
 [`runbooks/ci-runner.md`](runbooks/ci-runner.md).
 
+Unless a section says otherwise: one job at a time, 5 runs of each setup
+interleaved with the others, GitHub's step timestamps (whole seconds), medians
+with ranges.
+
 ## The short answer
 
-- **From GitHub creating the run to done in 20 seconds; the job itself 17.**
-  It is running about 3 seconds after the run is created: GitHub takes most of
+- **20 seconds from GitHub creating the run to done, against 26 to 29 on
+  GitHub's `ubuntu-latest`**, the same cortex commit (e016c52) on both. The job
+  is running about 3 seconds after the run is created: GitHub takes most of
   that, and a VM kept booted and waiting takes the job straight away.
-- **Firecracker costs about 4 seconds per job against no sandbox at all** (14.3 s
-  against 10.7 s for the same job, offline, warm caches): about 0.8 s to boot
-  and the rest from running on virtual CPUs.
-- **Faster than GitHub's own runner, like for like.** The same cortex commit
-  (e016c52), Python 3.15 on both, five runs each, interleaved: 20 s here against
-  29 s on `ubuntu-latest` from run created to done, and 17 s against 24 s for
-  the job (medians). See "Like for like" and "Squeezing it" below.
+- **Firecracker costs about 4 seconds per job against no sandbox at all**
+  (14.3 s against 10.7 s for the same job, offline, warm caches): about 0.8 s
+  to boot and the rest from running on virtual CPUs.
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
 - **Home Assistant and Grafana did not notice.** With two VMs flat out on CPU
   and memory, their worst response time went from 1 ms to 4 ms.
 
-## Sandboxes compared
-
-The same job (the cortex check, offline, dependencies already cached) under
-each kind of isolation on the same machine. "Start" is what each adds before
-the job runs.
-
-| Isolation | Job | Start | Peak RAM | Kernel shared with the host |
-|---|---|---|---|---|
-| None (a dedicated user) | 10.7 s | 0.1 s | 0.5 GB | yes |
-| systemd hardening | 10.6 s | 0.1 s | 0.5 GB | yes |
-| firejail | 10.3 s | 0.1 s | 0.5 GB | yes |
-| systemd-nspawn | 10.4 s | 0.5 s | 0.9 GB | yes |
-| Docker | 11.3 s | 0.3 s | 0.5 GB | yes |
-| Rootless Podman | 10.7 s | 0.3 s | 0.4 GB | yes |
-| Incus system container | 19.0 s | 5.0 s | 0.6 GB | yes |
-| Incus (QEMU) VM | 39.5 s | 9.8 s | 1.5 GB | no |
-| **Firecracker microVM** | **14.3 s** | **0.8 s** | 1.1 GB | **no** |
-
-Firecracker is the only option with its own kernel that stays close to bare
-speed: a full QEMU VM under Incus was almost three times slower, mostly in
-boot and disk. The containers are faster but share the host's kernel, and most
-of them could reach other services on the network unless a firewall was added
-as well.
-
-## Throughput
-
-Four jobs back to back, offline:
-
-| Shape | Jobs/hour | Per job under load | Peak RAM |
-|---|---|---|---|
-| No sandbox, 1 at a time | 340 | 10.5 s | 0.3 GB |
-| No sandbox, 2 at once | 469 | 14.8 s | 0.9 GB |
-| Firecracker 4 vCPU, 1 at a time | 258 | 13.9 s | 0.6 GB |
-| Firecracker 2 vCPU, 2 at once | 378 | 18.9 s | 1.5 GB |
-| Firecracker 2 vCPU, 4 at once | 415 | 34.6 s | 3.5 GB |
-
-Two VMs at once is the sweet spot on four cores: 378 jobs an hour, or roughly
-what 2,000 GitHub minutes buy in a month, every 5 hours.
-
-## A real push, step by step
-
-From GitHub creating the run to the job finishing, as the setup improved:
-
-| Version | Run created → job running | Run created → done |
-|---|---|---|
-| First working version (poll every 10 s, tools downloaded each job) | 12 s | 52 s |
-| Node, uv and Python built into the VM image, poll every 2 s | 12 s | 44 s |
-| One VM kept booted and waiting | 3 to 4 s | 37 s |
-| Plus a warm cache disk from main | 3 s | 33 s |
-
-Where the 33 seconds of a job now go:
-
-| Step | Time |
-|---|---|
-| Set up job (the runner downloads the actions) | 2 to 3 s |
-| Checkout | 1 s |
-| setup-uv, setup-node (restoring GitHub's package cache) | 5 to 6 s |
-| `uv sync`, `npm ci` | 4 to 5 s |
-| Tests | 13 s |
-
-## Against GitHub's own runner
-
-The cortex check on `ubuntu-latest` (2 vCPUs, 7 GB) and on this runner, five
-runs each, one job at a time, Python 3.15 on both (GitHub's image has 3.12, so
-uv downloads 3.15 there). Medians, in seconds:
-
-| Step | GitHub | Here |
-|---|---|---|
-| Set up job, checkout, setup-uv | 5 | 6 |
-| setup-node | 3 | 4 |
-| `uv sync`, `npm ci` | 5 | 4 |
-| Tests | 15 | 16 |
-| **Whole job** | **34** (26 to 37) | **36** (36 to 42) |
-
-Level, within the spread. Two vCPUs of a server CPU keep up with the N100's
-four cores, and the Firecracker overhead (about 4 s, above) is roughly the gap.
-GitHub picks a job up in about 3 seconds too. The repository's nightly
-Windows check on GitHub takes about a minute and a half.
-
-## What made a difference, and what did not
-
-- **Building the tools into the image:** `setup-node` went from 7 s to 1 s and
-  `uv sync` from 3 s to 1 s, because nothing is downloaded per job.
-- **Keeping one VM booted:** saves about 8 seconds, almost all of it the
-  GitHub runner starting up inside the VM, not the VM booting. It costs about
-  450 MB of RAM while it waits.
-- **Polling every 2 seconds instead of 10:** free, because GitHub does not
-  count a conditional request whose answer has not changed.
-- **4 vCPUs instead of 2 for a job running alone:** did nothing for this
-  suite. Half the tests finish in under 2 seconds and a few slow ones decide
-  the time.
-- **Firecracker snapshots:** not used. Boot is already under a second, and
-  restoring the same snapshot for every job is unsafe (Firecracker's own
-  documentation says so).
-
-## Snapshots against a warm cache disk
-
-Firecracker can snapshot a running VM and restore it in milliseconds, so the
-obvious idea is to snapshot a VM right after a build of main and restore it
-for every job. I measured that against the alternatives on the same workload
-(`uv sync`, `npm ci`, the test suite), three runs each, medians, in a VM with 2
-vCPUs. "Work" is the time inside the VM; "start" is boot or restore.
-
-| Setup | Start | `uv sync` | `npm ci` | Tests | Work |
-|---|---|---|---|---|---|
-| Fresh VM, empty caches | ~3.5 s boot | 1.9 s | 4.7 s | 15.0 s | 21.5 s |
-| Fresh VM, warm package caches | ~3.5 s boot | 0.4 s | 3.6 s | 15.0 s | 19.3 s |
-| Fresh VM, warm caches and main's installs | ~3 s boot | 0.1 s | 3.6 s | 13.4 s | 17.2 s |
-| Snapshot of main, installs wiped | 0.02 to 0.1 s restore | 1.4 s | 4.0 s | 14.2 s | 19.9 s |
-| Snapshot of main, installs kept | 0.02 to 0.1 s restore | 0.1 s | 3.5 s | 13.0 s | 16.9 s |
-
-- **The restore really is fast:** 13 to 113 ms here, with a 2 GiB VM; restoring
-  a 4 GiB VM as the waiting VM in the later whole-job round took 11 to 15 ms. But boot was never the
-  problem: the standby VM already hides it, along with the GitHub runner's
-  start-up, which a snapshot cannot include (the runner's one-job registration
-  only exists once a job is queued).
-- **The snapshot's memory is worth about 0.3 s.** A plain disk holding main's
-  installs and caches gets 17.2 s; the full snapshot 16.9 s. Almost all of the
-  gain is files on disk, not memory.
-- **Warm memory is not free on first touch.** Restored memory is read from the
-  snapshot file as it is used, so with the installs wiped the snapshot was
-  slower than a cache disk.
-- **`npm ci` stays at about 3.5 s whatever is warm,** because it deletes
-  `node_modules` before installing, by design.
-- **What a snapshot costs:** 30 s to take, a 1.2 GB memory file per slot for a
-  2 GiB VM (4.1 GB for the 4 GiB VM of the whole-job round) (the
-  network address is baked in), and every restored VM resumes with identical
-  memory, random-number state included, which Firecracker's documentation
-  warns against.
-
-So the speed-up worth having is a disk of main's caches and installs, built in
-a VM from main only. Snapshots would add 0.3 s.
-
-The later whole-job round ("Squeezing it" below) supersedes that figure: a
-snapshot restored as the waiting VM saved about 1 s against the cache disk of
-the time, all of it `uv sync`, and `uv sync --no-install-project` gets the same
-without a snapshot.
-
-## The cache disk, measured as whole jobs
-
-Built and running since 15 October 2026 (see the runbook's "Cache disk"). Five
-real cortex jobs each, alternating, one at a time, GitHub's step timestamps
-(whole seconds), medians with ranges:
-
-| | Today's setup (GitHub's cache) | Warm cache disk |
-|---|---|---|
-| Run created → job running | 3 s (3 to 4) | 3 s (3 to 5) |
-| Job | 34 s (33 to 34) | **30 s (30 to 30)** |
-| Run created → done | 37 s (36 to 38) | **33 s (33 to 35)** |
-| Set up job, checkout | 4 s | 5 s |
-| `setup-uv` + `setup-node` (cache restore) | 6 s | 1 s |
-| `uv sync` | 1 s | 2 s |
-| `npm ci` | 3 s | 3 s |
-| Tests | 13 s | 13 s |
-
-It saves 4 seconds a job, about half what the in-VM experiment suggested.
-Almost all of it is not restoring GitHub's caches. `uv sync` is a little
-slower, because it rebuilds the project itself into the environment on every
-job (a fresh checkout looks like new source); `npm ci` reinstalls
-`node_modules` whatever is cached, by design; and the tests are the same CPU
-work either way. A green push to main pays about 20 seconds more, to upload
-the new cache.
-
 ## Each change, measured on one commit
 
-Every stage of the runner rebuilt and measured in one session on cortex commit
-e016c52, Python 3.15, one job at a time, 5 runs of each stage interleaved with
-the others and with GitHub's runner, GitHub's step timestamps, medians with
-ranges. Isolation is the same in every stage: one throwaway Firecracker VM per
-job, a one-job registration, the token on the host, the same network rules. Only
-the speed changes differ, rebuilt with temporary switches and image variants and
-put back afterwards.
+Every stage of the runner rebuilt and measured in one session on cortex
+e016c52, Python 3.15, interleaved with GitHub's runner. Isolation is the same
+in every stage (one throwaway VM per job, a one-job registration, the token on
+the host, the same network rules); only the speed changes differ.
 
 | Stage | Run created → running | Job | Run created → done |
 |---|---|---|---|
-| GitHub `ubuntu-latest` | 4 s (4–4) | 22 s (20–28) | 26 s (24–32) |
+| GitHub `ubuntu-latest`, its own caches | 4 s (4–4) | 22 s (20–28) | 26 s (24–32) |
 | First version: polls every 10 s, boots a VM per job, nothing in the image, GitHub's caches | 14 s (13–14) | 37 s (37–39) | **51 s (50–52)** |
 | + Node, uv and Python in the image, polling every 2 s | 15 s (12–16) | 32 s (32–33) | **48 s (44–48)** |
 | + one VM kept booted and waiting | 3 s (3–4) | 34 s (32–35) | **37 s (35–38)** |
-| + the cache disk instead of GitHub's caches | 3 s (3–4) | 25 s (24–26) | **28 s (27–29)** |
+| + a disk of main's caches instead of GitHub's caches | 3 s (3–4) | 25 s (24–26) | **28 s (27–29)** |
 | + everything else front-loaded (today) | 3 s (3–4) | 17 s (17–19) | **20 s (20–22)** |
 
 Per step (seconds):
 
-| Stage | Set up job | Checkout | setup-uv | setup-node | `uv sync` | `npm ci` / install | Tests |
+| Stage | Set up job | Checkout | setup-uv | setup-node | `uv sync` | `npm ci` | Tests |
 |---|---|---|---|---|---|---|---|
 | GitHub | 2 | 1 | 2 | 2 | 1 | 2 | 8 |
 | First version | 3 | 2 | 4 | 11 | 2 | 3 | 7 |
@@ -217,156 +52,127 @@ Per step (seconds):
 | Today | 0 | 2 | – | – | 2 (one install step) | | 9 |
 
 - **The waiting VM is the biggest single step (11 s):** without it a job waits
-  12–16 s for the next poll, a boot and the runner starting.
+  for the next poll, a boot and the GitHub runner starting inside the VM.
 - **Tools in the image save the downloads** (`setup-node` 11 s → 5 s), but the
   setup actions still cost 4–5 s each while they restore GitHub's caches.
-- **The cache disk removes those restores** (9 s); the last stage removes the
-  setup actions, the action downloads and the reinstalls (8 s).
-- The tests are 7–9 s throughout; they are the same code on the same CPU.
+- **The cache disk removes those restores** (9 s). It is built by a green push
+  to main, which pays about 20 s more to upload it.
+- **The last stage** (8 s) is the actions unpacked in the image, no setup
+  actions, `node_modules` copied from the cache disk when the lockfile matches
+  main's, and `uv sync --no-install-project`.
+- The tests are 7–9 s throughout: the same code on the same CPU.
 
-GitHub's 26 s here and 29 s in the next section are the same setup on the same
-commit, an hour apart; the ranges overlap, and GitHub's runner varies more than
-the home one.
+A second like-for-like round an hour later, also on e016c52, gave GitHub 29 s
+(26–36) and the home runner 20 s (20–21). GitHub's runner varies more.
 
-## Like for like with GitHub's runner
+## What was tried and not kept
 
-Both on cortex commit e016c52 (Python 3.15 only, TypeScript 7, Vite 8, slow
-checks first, the v7 actions), one job at a time, 5 runs each, interleaved,
-16 October 2026. GitHub's side uses its own tool setup and caches, at the
-versions cortex's Windows workflow uses (`setup-uv` v10.3.0 with its cache,
-`setup-node` v7 with Node 24 and `cache: npm`, `uv sync --no-install-project`,
-`npm ci`), warmed by a first run before measuring.
+Each against a control in the same session:
 
-| | Home runner | GitHub `ubuntu-latest` |
-|---|---|---|
-| Run created → job running | 3 s (3–4) | 4 s (4–5) |
-| Job | **17 s (16–17)** | **24 s (22–32)** |
-| Run created → done | **20 s (20–21)** | **29 s (26–36)** |
-| Set up job, checkout | 2 s | 3 s |
-| Tool setup and installs | 2 s | 8 s (`setup-uv` 2, `setup-node` 2, `uv sync` 1, `npm ci` 3) |
-| Tests | 8 s (8–9) | 9 s (9–12) |
+| Idea | Result |
+|---|---|
+| Full Firecracker snapshot of a VM after a main build, restored as the waiting VM | ~1 s, all of it `uv sync`, which `--no-install-project` gets without one |
+| Two waiting VMs instead of one | a burst of two pushes finishes 4 s sooner, average per job unchanged, 440 MB more held |
+| 4 vCPUs instead of 2 for a lone job | no change (kept, harmless) |
+| `node_modules` linked instead of copied | the TypeScript check 3.6 s → 8.4 s: its incremental build info is relative to where it lives |
+| `node_modules` bind-mounted | install 1 s faster, tests 1 s slower; needs root in the job |
+| `mitigations=off` in the guest kernel | within noise |
+| Reading the environment into memory while the VM waits | tests 2–3 s slower: the reading competed with the job |
+| Compiling cortex's bytecode before the tests | install +1 s, tests unchanged |
+| pytest worker counts and options, `persist-credentials: false` | no change |
 
-Earlier runs on older commits: on 671f421 (TypeScript 7, the v4 actions, Node
-22 on GitHub) it was 20 s against 31 s, and job 17 s against 26 s; the first
-comparison in the next section (21 s against 35 s) ran a commit on GitHub
-without slow checks first or TypeScript 7, so it is not like for like. Each
-round of cortex changes sped GitHub up too.
+Kept in cortex itself: TypeScript 7 (the type check 3.6 s → 1.3 s) and running
+the slow checks first, so they overlap the rest of the suite.
 
-## Squeezing it, measured against GitHub's runner
+## Why snapshots did not help
 
-Same session, early on 16 October 2026: cortex's Linux check, Python 3.15, one
-job at a time, 5 runs of each setup interleaved, GitHub's step timestamps
-(whole seconds), medians with ranges. "GitHub" is the same job on GitHub's
-`ubuntu-latest` runner with its own caches; uv fetches Python 3.15 there.
+Firecracker restores a snapshot in 11 to 113 ms, but boot was never the
+problem: the waiting VM already hides it, along with the GitHub runner's
+start-up, which a snapshot cannot include (the one-job registration only
+exists once a job is queued). In a VM-level comparison, a plain disk of main's
+installs and caches got 17.2 s of work and a full snapshot 16.9 s: almost all of
+the gain is files on disk, not memory. A snapshot also costs 30 s to take, a
+memory file the size of the VM per slot, and every restored VM resumes with
+identical memory, random-number state included, which Firecracker's
+documentation warns against.
 
-| Setup | Run created → job running | Job | Run created → done |
-|---|---|---|---|
-| GitHub `ubuntu-latest` | 5 s (4–5) | 30 s (25–32) | **35 s (30–37)** |
-| Home runner, cache disk (previous workflow) | 3 s (3–4) | 28 s (28–28) | 31 s (31–32) |
-| Home runner, full snapshot of a VM after a main build | 3 s (3–4) | 28 s (28–29) | 32 s (31–32) |
-| **Home runner, final workflow** | 3 s (3–4) | **18 s (18–19)** | **21 s (21–23)** |
+## Sandboxes compared
 
-(The snapshot row is from an earlier round of the same session, against a cache
-disk control of 33 s.)
+The same job (offline, dependencies already cached) under each kind of
+isolation on the same machine. "Start" is what each adds before the job runs.
 
-Everything tried, in order, with what it changed:
-
-| Idea | Before → after | Kept |
-|---|---|---|
-| Actions unpacked in the VM image (`ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE`) | "Set up job" 3 s → 1 s | yes |
-| No `setup-uv` / `setup-node` (tools on the job's `PATH` in the image) | ~1 s of steps and post-steps → 0 | yes |
-| `node_modules` copied from the cache disk when the lockfile matches main's | `npm ci` 3–4 s → part of a 1–2 s install step | yes |
-| `uv sync --no-install-project` (cortex is not rebuilt into the environment) | `uv sync` 2 s → part of the same step | yes |
-| `node_modules` linked instead of copied | the TypeScript check went from 3.6 s to 8.4 s: its incremental build info is relative to where it lives, and a link moves it | no |
-| Slow checks first (`tsc`, `ty`, `ruff` start before the rest, so they overlap it) | tests 9.0 s → 7.9 s | yes |
-| Compiling cortex's bytecode once before the tests | install +1 s, tests unchanged | no |
-| Full Firecracker snapshot as the waiting VM | ~1 s, all of it `uv sync`, which `--no-install-project` gets without one | no |
-| Two waiting VMs instead of one | a burst of two pushes: last job done 33 s → 29 s, average per job unchanged (27.5 s → 28 s), 440 MB more held | no |
-| 4 vCPUs instead of 2 for a lone job | no change (earlier) | kept, harmless |
-
-A second round, the same morning (5 runs each, interleaved with a control):
-
-| Idea | Before → after | Kept |
-|---|---|---|
-| TypeScript 7 (the native compiler) for the type check, in cortex | the check 3.6 s → 1.3 s in the VM (0.4 s on the PC); job 18 s → 16 s, run created → done 21 s → 20 s | yes |
-| `node_modules` bind-mounted from the cache disk instead of copied | install 2 s → 1 s, tests 8 s → 9 s: copying also loaded the files into memory, and the tests then paid for it; net 20 s → 19–20 s | no, not worth needing root in the job |
-| `mitigations=off` in the guest kernel only | 19 s → 19 s (about 0.5 s on the job, within noise) | no |
-| Reading the environment and `node_modules` into memory while the VM waits | tests 8 s → 10–11 s: the reading competed with the job | no |
-| pytest options: 3 workers, `--dist worksteal`, no cache provider | all 6.7–6.9 s after the first run, the default included | no |
-| `persist-credentials: false` on checkout (no post-step clean-up) | 20 s → 20 s | no |
-
-Run created → done now: **20 s**, job 16 s.
-
-Not tried, because the most each could save is under a second: checking out
-from a clone on the cache disk (checkout is 1–2 s, mostly the network), and
-polling more often than every 2 seconds (the 3 s to start is mostly GitHub
-creating the run).
-
-Where the 18-second job goes now: about 1 s setting up, 1 s checkout, 2 s
-install, and 9–10 s of tests, of which the TypeScript check is 3.6 s (most of it
-the compiler starting), pytest's start-up and collection about 2.5 s, and the
-other 280 tests run alongside on the other cores. The rest is GitHub's own
-bookkeeping between steps. Going lower means faster tests, which is cortex's
-work, or a faster CPU: GitHub's runner spends 10 to 15 s on the same tests.
-
-From the morning to now, run created → done went 52 s → 37 s → 33 s → 21 s.
-
-## Cores and CPU power settings
-
-More cores help, with sharply diminishing returns. The suite in one 4-vCPU VM,
-by number of test workers (two runs each, after a first warm-up run):
-
-| Workers | 1 | 2 | 3 | 4 | 6 |
-|---|---|---|---|---|---|
-| Suite | 10.5 s | 7.4 s | 7.0 s | **6.7 s** | 7.4 s |
-
-About 5 seconds can't be split up (Python starting, collecting the tests, and
-the single TypeScript check), so a CPU with more cores would barely help;
-faster cores would.
-
-The host CPU's energy preference (intel_pstate, turbo on), with the package's
-own energy counter (RAPL: the CPU package, not the whole box at the wall). Per
-job is the energy from dispatch to done, everything on the host included; idle
-is over 90 seconds.
-
-| Setting | Job | Run created → done | CPU energy per job | Idle CPU power |
+| Isolation | Job | Start | Peak RAM | Own kernel |
 |---|---|---|---|---|
-| `performance` | 17 s | 21 s | 246 J (+9%) | 2.29 W |
-| **`balance_performance` (default, kept)** | **17 s** | **20–21 s** | 225–227 J | **0.77 W** |
-| `balance_power` | 20.5 s | 24 s | 167 J (−26%) | 0.71 W |
-| `power` | 32 s | 35.5 s | 132 J (−42%) | 0.68 W |
+| None (a dedicated user) | 10.7 s | 0.1 s | 0.5 GB | no |
+| systemd hardening | 10.6 s | 0.1 s | 0.5 GB | no |
+| firejail | 10.3 s | 0.1 s | 0.5 GB | no |
+| systemd-nspawn | 10.4 s | 0.5 s | 0.9 GB | no |
+| Docker | 11.3 s | 0.3 s | 0.5 GB | no |
+| Rootless Podman | 10.7 s | 0.3 s | 0.4 GB | no |
+| Incus system container | 19.0 s | 5.0 s | 0.6 GB | no |
+| Incus (QEMU) VM | 39.5 s | 9.8 s | 1.5 GB | yes |
+| **Firecracker microVM** | **14.3 s** | **0.8 s** | 1.1 GB | **yes** |
 
-The default is already the best: `performance` is no faster and triples idle
-power, and the saving modes save under 0.1 W at idle, where the box spends
-almost all its time, while a job's saving is about 0.02 Wh.
+Firecracker is the only option with its own kernel that stays close to bare
+speed. The containers are faster but share the host's kernel, and most could
+reach other services on the network without a firewall added as well.
+
+## Throughput, cores and power
+
+Four jobs back to back, offline:
+
+| Shape | Jobs/hour | Per job under load | Peak RAM |
+|---|---|---|---|
+| No sandbox, 1 at a time | 340 | 10.5 s | 0.3 GB |
+| Firecracker 4 vCPU, 1 at a time | 258 | 13.9 s | 0.6 GB |
+| Firecracker 2 vCPU, 2 at once | 378 | 18.9 s | 1.5 GB |
+| Firecracker 2 vCPU, 4 at once | 415 | 34.6 s | 3.5 GB |
+
+The suite in one 4-vCPU VM by number of test workers: 1: 10.5 s, 2: 7.4 s,
+3: 7.0 s, 4: 6.7 s, 6: 7.4 s. About 5 s cannot be split up (Python starting,
+collecting the tests, the single TypeScript check), so more cores would barely
+help; faster cores would.
+
+The host CPU's energy preference (intel_pstate, turbo on), measured with the
+CPU package's own energy counter (RAPL, not the whole box at the wall):
+
+| Setting | Run created → done | CPU energy per job | Idle CPU power |
+|---|---|---|---|
+| `performance` | 21 s | 246 J | 2.29 W |
+| **`balance_performance` (default, kept)** | **20–21 s** | 226 J | **0.77 W** |
+| `balance_power` | 24 s | 167 J | 0.71 W |
+| `power` | 35.5 s | 132 J | 0.68 W |
+
+The default is the best fit: `performance` is no faster and triples idle power,
+and the saving modes save under 0.1 W at idle, where the box spends almost all
+its time.
+
+## Lessons
+
+- **Measure on one commit, in one session, against GitHub's runner.** Earlier
+  rounds on different commits gave GitHub anywhere from 26 s to 35 s, because
+  every cortex change sped GitHub up too.
+- **When the comparison changes, re-run all of it**, not just the new row.
+- **Check that a speed-up is really in use.** The first cache disk needed
+  OverlayFS, which the VM's kernel did not have, so every "warm" job ran cold
+  while the timings looked normal; only the job's own log showed it. A first
+  snapshot benchmark looked 20 times faster because every run after the first
+  failed in under a second; only checking each exit code caught it.
+- **Take the per-job fixed costs out first** (waiting, booting, downloading,
+  restoring). What is left is the tests, which only faster tests or faster
+  cores can shorten.
 
 ## Things that surprised me
 
 - **A job that ran out of memory hung its VM for an hour.** systemd stopped the
-  task that was meant to end the VM. The fix: the VM reboots, which ends
-  Firecracker, whenever its task ends, however it ends.
-- **`sudo` hid Node from the jobs.** The VM starts the runner with
-  `sudo -u runner`, which resets `PATH` to its own default, so the runner's
-  `.path` file never applied and the TypeScript test failed with "node is not
-  on PATH". The runner is now started with that `PATH` explicitly.
-- **The first cache disk was attached and never used.** Its throwaway write
-  layer needed OverlayFS, which Ubuntu's kernel builds as a module, and the VM
-  has no modules, so every "warm" job started from an empty cache while the
-  timings looked normal. Only reading the job's own log (`uv` downloading
-  packages it should have had) showed it. Each VM now gets a private copy of
-  the disk instead.
-- **My first snapshot benchmark looked 20 times faster, and was wrong.** I had
-  copied a VM's disk while it was still mounted, every run after it failed in
-  under a second, and the timings looked brilliant. Only checking each step's
-  exit code caught it.
+  task meant to end the VM. The VM now reboots, which ends Firecracker,
+  whenever its task ends, however it ends.
+- **`sudo` hid Node from the jobs.** `sudo -u runner` resets `PATH`, so the
+  runner's `.path` file never applied. The runner is now started with that
+  `PATH` explicitly.
 - **GitHub only saves a cache when the job passes,** so the package caches did
   nothing until the suite was green on Linux.
-- **The VM ran Python 3.15, the PC 3.13.** One test faked "today" by replacing
-  `time.time`, which `date.today()` stopped reading in 3.15. CI on a second
-  platform found a bug that would have appeared on the PC at the next Python
-  upgrade.
-- **On GitHub's runner the suite hung for 11 minutes.** Tests that step a loop
-  by replacing `time.sleep` also replaced the sleep that `Popen.wait` polls
-  with on Linux before Python 3.15, so one test lost its steps and the next
-  spun for ever. Python 3.15 waits on the process instead, so the VM never saw
-  it.
+- **CI on a second Python found a real bug.** One test faked "today" by
+  replacing `time.time`, which `date.today()` no longer reads in Python 3.15.
+  Another, replacing `time.sleep`, hung for 11 minutes on GitHub's runner,
+  because `Popen.wait` polls with it on Linux before 3.15.
