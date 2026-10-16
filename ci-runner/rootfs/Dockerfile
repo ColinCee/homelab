@@ -53,6 +53,17 @@ RUN v=${NODE_VERSION#v} \
  && chown -R runner:runner /opt/hostedtoolcache \
  && printf 'RUNNER_TOOL_CACHE=/opt/hostedtoolcache\nUV_PYTHON_INSTALL_DIR=/opt/uv-python\n' >> /opt/runner/.env
 
+# Actions the CI repos use, unpacked where the runner looks before downloading
+# (<owner>_<repo>/<commit>/<the archive's own folder>), and Node on the jobs' PATH.
+ARG CACHED_ACTIONS
+RUN for a in ${CACHED_ACTIONS}; do \
+      repo=${a%@*}; sha=${a#*@}; dir="/opt/actions-cache/$(echo "$repo" | tr / _)/$sha"; \
+      mkdir -p "$dir" && curl -fsSL "https://api.github.com/repos/$repo/tarball/$sha" | tar -xz -C "$dir"; \
+    done \
+ && printf 'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actions-cache\nACTIONS_RUNNER_SYMLINK_CACHED_ACTIONS=true\n' >> /opt/runner/.env \
+ && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
+ && chown runner:runner /opt/runner/.path
+
 COPY ci-boot /usr/local/sbin/ci-boot
 COPY ci-boot.service /etc/systemd/system/ci-boot.service
 RUN chmod 0755 /usr/local/sbin/ci-boot && systemctl enable ci-boot.service

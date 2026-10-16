@@ -177,3 +177,9 @@ def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) ->
     check(small, str(tmp_path))
     with pytest.raises(tarfile.FilterError):
         check(big, str(tmp_path))
+
+
+def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
+    assert sup.wants_standby(["a/x"], ["a/x"], [True], 1, wanted=2) is True
+    assert sup.wants_standby(["a/x"], ["a/x"], [True, True], 0, wanted=2) is False
+    assert sup.wants_standby(["a/x"], ["a/x"], [], 2, wanted=0) is False

@@ -38,7 +38,8 @@ case "$task" in
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
-    sudo -u runner -H /opt/runner/run.sh --jitconfig "$jit"
+    # sudo resets PATH to its own; the runner's .path puts the image's Node on it.
+    sudo -u runner -H env "PATH=$(cat /opt/runner/.path)" /opt/runner/run.sh --jitconfig "$jit"
     echo "=== runner end (exit $?)"
     unset jit
     ;;

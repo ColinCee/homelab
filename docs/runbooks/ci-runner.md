@@ -21,8 +21,16 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
 `sudo`, with Node 22, uv and Python 3.15 already installed (pinned in
-`versions.env`): `actions/setup-node` finds Node in the runner's tool cache and
-uv finds Python, so neither downloads.
+`versions.env`) and on the job's `PATH`, so a job needs no setup actions. The
+actions the CI repos use (`CACHED_ACTIONS` in `versions.env`) are unpacked in
+the image, so "Set up job" does not download them; a tag that has moved on is
+downloaded as usual until the list is refreshed and the image rebuilt.
+
+The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
+checkout, then one step that runs `uv sync --locked --no-install-project` and
+copies `node_modules` from the cache disk when `package-lock.json` matches the
+one beside it (falling back to `npm ci`), then the tests. Measured results are
+in [CI runner performance](../ci-runner-performance.md).
 
 ### Cache disk
 
@@ -45,10 +53,11 @@ How it is made, without the host running any of the repo's code:
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
    to others. VMs started after that use it.
 
-A job should not restore GitHub's caches as well: set `enable-cache: false`
-and `cache-local-path: /cache/uv` on `astral-sh/setup-uv`, and no `cache:` on
-`actions/setup-node`. Without a cache disk yet, `/cache` starts empty and the
-job downloads as usual.
+A job should not restore GitHub's caches as well. Without a cache disk yet,
+`/cache` starts empty and the job downloads as usual. The default branch's job
+also puts `node_modules` and its `package-lock.json` on the disk (the tar step
+names them), copied rather than linked so TypeScript's incremental build info
+stays valid.
 
 A job running alone gets 4 vCPUs and 4 GiB; when both slots are busy, the
 second gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
@@ -63,17 +72,19 @@ GitHub-hosted runners and take it off the list and the token.
 ## Design
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 2
-  seconds (unchanged answers are free) for queued jobs with the label and boots a VM for each, up to two at
-  once. The VM's root filesystem is a private copy, deleted with everything the
+  seconds (unchanged answers are free) for queued jobs with the label and boots
+  a VM for each, up to two at once. The VM's root filesystem is a private copy, deleted with everything the
   job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
   first repo in `/etc/homelab-ci/repos`, so a job there starts in about a
   second instead of waiting for a VM to boot and its runner to start (about 8
-  seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs. Once it takes a job it is
-  an ordinary job VM and a new standby boots in the free slot; an idle standby
-  is replaced every 45 minutes, and stopped if its repo stops being private.
+  seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
+  Once it takes a job it is an ordinary job VM and a new standby boots in the
+  free slot; an idle standby is replaced every 45 minutes, and stopped if its
+  repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
+  default); 2 was measured and not worth its RAM (see the performance doc).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves Beelink.

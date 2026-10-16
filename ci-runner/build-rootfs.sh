@@ -25,7 +25,7 @@ docker build -q -t homelab-ci-rootfs \
   --build-arg "RUNNER_VERSION=$RUNNER_VERSION" --build-arg "RUNNER_SHA256=$RUNNER_SHA256" \
   --build-arg "NODE_VERSION=$NODE_VERSION" --build-arg "NODE_SHA256=$NODE_SHA256" \
   --build-arg "UV_VERSION=$UV_VERSION" --build-arg "UV_SHA256=$UV_SHA256" \
-  --build-arg "PYTHON_VERSION=$PYTHON_VERSION" \
+  --build-arg "PYTHON_VERSION=$PYTHON_VERSION" --build-arg "CACHED_ACTIONS=$CACHED_ACTIONS" \
   "$here/rootfs" >/dev/null
 cid=$(docker create homelab-ci-rootfs)
 mkdir "$tmp/root"
