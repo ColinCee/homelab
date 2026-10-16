@@ -33,6 +33,7 @@ docker export "$cid" | tar -x -C "$tmp/root" --numeric-owner
 # Docker bind-mounts these during the build, so set them here.
 printf 'nameserver 1.1.1.1\nnameserver 9.9.9.9\n' > "$tmp/root/etc/resolv.conf"
 echo ci-vm > "$tmp/root/etc/hostname"
+printf '127.0.0.1 localhost\n127.0.1.1 ci-vm\n' > "$tmp/root/etc/hosts"  # or sudo complains it cannot resolve it
 rm -f "$tmp/root/.dockerenv"
 
 install -d -o root -g root -m 0755 /var/lib/homelab-ci "$images"

@@ -57,12 +57,20 @@ if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
   cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": false}'
 fi
 
+# Extra guest kernel arguments, for experiments: root-only file, plain words only.
+guest_args=""
+if [[ -f /etc/homelab-ci/guest-args ]]; then
+  extra=$(tr '\n' ' ' < /etc/homelab-ci/guest-args)
+  [[ "$extra" =~ ^[a-z0-9=_,.\ -]*$ ]] || { echo "bad guest-args" >&2; exit 2; }
+  guest_args=" ${extra% }"
+fi
+
 mac=$(printf '06:00:0a:c8:%02x:02' "$slot")
 cat > "$chroot/vm.json" <<EOF
 {
   "boot-source": {
     "kernel_image_path": "vmlinuz",
-    "boot_args": "console=ttyS0 reboot=k panic=1 quiet loglevel=3 ci.ip=10.200.$slot.2/30 ci.gw=10.200.$slot.1"
+    "boot_args": "console=ttyS0 reboot=k panic=1 quiet loglevel=3 ci.ip=10.200.$slot.2/30 ci.gw=10.200.$slot.1$guest_args"
   },
   "drives": [
     {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive
