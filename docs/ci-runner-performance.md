@@ -8,14 +8,17 @@ that also runs ruff, ty and tsc). How the runner is built is in
 
 ## The short answer
 
-- **A push is a running job in about 4 seconds and a finished one in about 37.**
-  GitHub takes about 3 of those seconds to create the run; a VM kept booted
-  and waiting takes the job about a second later.
+- **From GitHub creating the run to done in 21 seconds; the job itself 18.**
+  It is running about 3 seconds after the run is created: GitHub takes most of
+  that, and a VM kept booted and waiting takes the job straight away. (Medians
+  of 5, same session as the GitHub comparison below.)
 - **Firecracker costs about 4 seconds per job against no sandbox at all** (14.3 s
   against 10.5 s for the same job, offline, warm caches): about 0.8 s to boot
   and the rest from running on virtual CPUs.
-- **As fast as GitHub's own runner.** The same job, Python 3.15 on both, five
-  runs each: 36 s here against 34 s on `ubuntu-latest` (medians).
+- **Faster than GitHub's own runner.** The same job, Python 3.15 on both, five
+  runs each, interleaved: 21 s here against 35 s on `ubuntu-latest` from run
+  created to done, and 18 s against 30 s for the job (medians). See "Squeezing
+  it" below for how.
 - **No GitHub minutes.** Private repositories get 2,000 free minutes a month on
   GitHub's runners; these jobs use none.
 - **Home Assistant and Grafana did not notice.** With two VMs flat out on CPU
