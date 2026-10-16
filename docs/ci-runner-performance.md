@@ -177,11 +177,61 @@ job (a fresh checkout looks like new source); `npm ci` reinstalls
 work either way. A green push to main pays about 20 seconds more, to upload
 the new cache.
 
+## Squeezing it, measured against GitHub's runner
+
+Same session, early on 16 October 2026: cortex's Linux check, Python 3.15, one
+job at a time, 5 runs of each setup interleaved, GitHub's step timestamps
+(whole seconds), medians with ranges. "GitHub" is the same job on GitHub's
+`ubuntu-latest` runner with its own caches; uv fetches Python 3.15 there.
+
+| Setup | Run created → job running | Job | Run created → done |
+|---|---|---|---|
+| GitHub `ubuntu-latest` | 5 s (4–5) | 30 s (25–32) | **35 s (30–37)** |
+| Beelink, cache disk (previous workflow) | 3 s (3–4) | 28 s (28–28) | 31 s (31–32) |
+| Beelink, full snapshot of a VM after a main build | 3 s (3–4) | 28 s (28–29) | 32 s (31–32) |
+| **Beelink, final workflow** | 3 s (3–4) | **18 s (18–19)** | **21 s (21–23)** |
+
+(The snapshot row is from an earlier round of the same session, against a cache
+disk control of 33 s.)
+
+Everything tried, in order, with what it changed:
+
+| Idea | Before → after | Kept |
+|---|---|---|
+| Actions unpacked in the VM image (`ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE`) | "Set up job" 3 s → 1 s | yes |
+| No `setup-uv` / `setup-node` (tools on the job's `PATH` in the image) | ~1 s of steps and post-steps → 0 | yes |
+| `node_modules` copied from the cache disk when the lockfile matches main's | `npm ci` 3–4 s → part of a 1–2 s install step | yes |
+| `uv sync --no-install-project` (cortex is not rebuilt into the environment) | `uv sync` 2 s → part of the same step | yes |
+| `node_modules` linked instead of copied | the TypeScript check went from 3.6 s to 8.4 s: its incremental build info is relative to where it lives, and a link moves it | no |
+| Slow checks first (`tsc`, `ty`, `ruff` start before the rest, so they overlap it) | tests 9.0 s → 7.9 s | yes |
+| Compiling cortex's bytecode once before the tests | install +1 s, tests unchanged | no |
+| Full Firecracker snapshot as the waiting VM | ~1 s, all of it `uv sync`, which `--no-install-project` gets without one | no |
+| Two waiting VMs instead of one | a burst of two pushes: last job done 33 s → 29 s, average per job unchanged (27.5 s → 28 s), 440 MB more held | no |
+| 4 vCPUs instead of 2 for a lone job | no change (earlier) | kept, harmless |
+
+Not tried, because the most each could save is under a second: checking out
+from a clone on the cache disk (checkout is 1–2 s, mostly the network), and
+polling more often than every 2 seconds (the 3 s to start is mostly GitHub
+creating the run).
+
+Where the 18-second job goes now: about 1 s setting up, 1 s checkout, 2 s
+install, and 9–10 s of tests, of which the TypeScript check is 3.6 s (most of it
+the compiler starting), pytest's start-up and collection about 2.5 s, and the
+other 280 tests run alongside on the other cores. The rest is GitHub's own
+bookkeeping between steps. Going lower means faster tests, which is cortex's
+work, or a faster CPU: GitHub's runner spends 10 to 15 s on the same tests.
+
+From the morning to now, run created → done went 52 s → 37 s → 33 s → 21 s.
+
 ## Things that surprised me
 
 - **A job that ran out of memory hung its VM for an hour.** systemd stopped the
   task that was meant to end the VM. The fix: the VM reboots, which ends
   Firecracker, whenever its task ends, however it ends.
+- **`sudo` hid Node from the jobs.** The VM starts the runner with
+  `sudo -u runner`, which resets `PATH` to its own default, so the runner's
+  `.path` file never applied and the TypeScript test failed with "node is not
+  on PATH". The runner is now started with that `PATH` explicitly.
 - **The first cache disk was attached and never used.** Its throwaway write
   layer needed OverlayFS, which Ubuntu's kernel builds as a module, and the VM
   has no modules, so every "warm" job started from an empty cache while the
