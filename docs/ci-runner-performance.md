@@ -186,6 +186,48 @@ job (a fresh checkout looks like new source); `npm ci` reinstalls
 work either way. A green push to main pays about 20 seconds more, to upload
 the new cache.
 
+## Each change, measured on one commit
+
+Every stage of the runner rebuilt and measured in one session on cortex commit
+e016c52, Python 3.15, one job at a time, 5 runs of each stage interleaved with
+the others and with GitHub's runner, GitHub's step timestamps, medians with
+ranges. Isolation is the same in every stage: one throwaway Firecracker VM per
+job, a one-job registration, the token on the host, the same network rules. Only
+the speed changes differ, rebuilt with temporary switches and image variants and
+put back afterwards.
+
+| Stage | Run created → running | Job | Run created → done |
+|---|---|---|---|
+| GitHub `ubuntu-latest` | 4 s (4–4) | 22 s (20–28) | 26 s (24–32) |
+| First version: polls every 10 s, boots a VM per job, nothing in the image, GitHub's caches | 14 s (13–14) | 37 s (37–39) | **51 s (50–52)** |
+| + Node, uv and Python in the image, polling every 2 s | 15 s (12–16) | 32 s (32–33) | **48 s (44–48)** |
+| + one VM kept booted and waiting | 3 s (3–4) | 34 s (32–35) | **37 s (35–38)** |
+| + the cache disk instead of GitHub's caches | 3 s (3–4) | 25 s (24–26) | **28 s (27–29)** |
+| + everything else front-loaded (today) | 3 s (3–4) | 17 s (17–19) | **20 s (20–22)** |
+
+Per step (seconds):
+
+| Stage | Set up job | Checkout | setup-uv | setup-node | `uv sync` | `npm ci` / install | Tests |
+|---|---|---|---|---|---|---|---|
+| GitHub | 2 | 1 | 2 | 2 | 1 | 2 | 8 |
+| First version | 3 | 2 | 4 | 11 | 2 | 3 | 7 |
+| + tools | 2 | 2 | 4 | 5 | 1 | 3 | 9 |
+| + waiting VM | 3 | 2 | 5 | 5 | 2 | 3 | 8 |
+| + cache disk | 3 | 1 | 1 | 1 | 2 | 3 | 8 |
+| Today | 0 | 2 | – | – | 2 (one install step) | | 9 |
+
+- **The waiting VM is the biggest single step (11 s):** without it a job waits
+  12–16 s for the next poll, a boot and the runner starting.
+- **Tools in the image save the downloads** (`setup-node` 11 s → 5 s), but the
+  setup actions still cost 4–5 s each while they restore GitHub's caches.
+- **The cache disk removes those restores** (9 s); the last stage removes the
+  setup actions, the action downloads and the reinstalls (8 s).
+- The tests are 7–9 s throughout; they are the same code on the same CPU.
+
+GitHub's 26 s here and 29 s in the next section are the same setup on the same
+commit, an hour apart; the ranges overlap, and GitHub's runner varies more than
+the home one.
+
 ## Like for like with GitHub's runner
 
 Both on cortex commit e016c52 (Python 3.15 only, TypeScript 7, Vite 8, slow
