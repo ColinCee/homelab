@@ -35,12 +35,6 @@ case "$task" in
     [[ -b /dev/vdb ]] && mount /dev/vdb /cache
     chown runner:runner /cache
     printf 'UV_CACHE_DIR=/cache/uv\nnpm_config_cache=/cache/npm\nUV_PROJECT_ENVIRONMENT=/cache/venv\n' >> /opt/runner/.env
-    # A waiting VM is idle until its job comes: spend that reading what jobs will
-    # read anyway, so the first test run does not wait on the disk.
-    if [[ "$(arg ci.warm)" == 1 ]]; then
-      nice -n 19 find /cache/venv /cache/node_modules /opt/uv-python /opt/hostedtoolcache /opt/actions-cache \
-        -type f -exec cat {} + > /dev/null 2>&1 &
-    fi
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
