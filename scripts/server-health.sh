@@ -94,9 +94,10 @@ echo "Most recent:"
 docker logs --since 24h -t flight-tracker-backend-1 2>&1 | grep 'fetch failed' | tail -n 5 || true
 
 # What Flight Tracker Down alerts on: the /aircraft probe must report live data.
-aircraft="$(curl -4 -s -m 15 -w '\n%{http_code} in %{time_total}s' https://api.colincheung.dev/aircraft || true)"
+aircraft="$(curl -4 -sf -m 15 -w '\n%{http_code} in %{time_total}s' https://api.colincheung.dev/aircraft)" ||
+  aircraft=$'\nrequest failed'
 health="$(head -n -1 <<<"$aircraft" | grep -o '"apiHealth": *"[a-z]*"' | grep -o '[a-z]*"$' | tr -d '"' || true)"
-if [[ "$health" == live ]]; then
+if [[ "$health" == live && "$(tail -n 1 <<<"$aircraft")" == 200* ]]; then
   row "Flight tracker data" "live, $(tail -n 1 <<<"$aircraft")"
 else
   bad "Flight tracker data" "${health:-no apiHealth}, $(tail -n 1 <<<"$aircraft")"
