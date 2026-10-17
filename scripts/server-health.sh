@@ -93,6 +93,27 @@ docker logs --since 24h flight-tracker-backend-1 2>&1 | grep 'fetch failed' |
 echo "Most recent:"
 docker logs --since 24h -t flight-tracker-backend-1 2>&1 | grep 'fetch failed' | tail -n 5 || true
 
+# What Flight Tracker Down alerts on: the /aircraft probe must report live data.
+aircraft="$(curl -4 -sf -m 15 -w '\n%{http_code} in %{time_total}s' https://api.colincheung.dev/aircraft)" ||
+  aircraft=$'\nrequest failed'
+health="$(head -n -1 <<<"$aircraft" | grep -o '"apiHealth": *"[a-z]*"' | grep -o '[a-z]*"$' | tr -d '"' || true)"
+if [[ "$health" == live && "$(tail -n 1 <<<"$aircraft")" == 200* ]]; then
+  row "Flight tracker data" "live, $(tail -n 1 <<<"$aircraft")"
+else
+  bad "Flight tracker data" "${health:-no apiHealth}, $(tail -n 1 <<<"$aircraft")"
+fi
+# Log only: how the alert's probe has behaved. Gaps in samples mean failed scrapes,
+# which the alert counts as down (no data).
+echo "Flight tracker probe, last 24h (expect 1440 samples at one a minute):"
+for expr in 'avg_over_time(probe_success{job="integrations/blackbox/flight-tracker"}[24h])' \
+  'count_over_time(probe_success{job="integrations/blackbox/flight-tracker"}[24h])' \
+  'max_over_time(probe_duration_seconds{job="integrations/blackbox/flight-tracker"}[24h])' \
+  'avg_over_time(up{job="integrations/blackbox/flight-tracker"}[24h])'; do
+  value="$(curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
+    --data-urlencode "query=$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
+  echo "  ${expr%%(*}: $value"
+done
+
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
 if [[ -f /var/run/reboot-required ]]; then
