@@ -3,7 +3,7 @@
 # no host keys, no credentials: each VM learns its job from Firecracker's MMDS.
 # Workflows install their own tools (setup-uv, setup-node) and use GitHub's
 # cache, which keeps branches from writing main's entries.
-FROM ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
