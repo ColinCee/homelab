@@ -116,6 +116,9 @@ done
 
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
+# Log only: which packages are waiting, and whether Ubuntu is still phasing them in.
+echo "Pending apt upgrades:"
+apt-get -s upgrade 2>/dev/null | sed -n '/^The following/,/^[0-9]* upgraded/p' || true
 if [[ -f /var/run/reboot-required ]]; then
   row "Reboot required" "yes (unattended-upgrades reboots at 04:00 UTC)"
 else
