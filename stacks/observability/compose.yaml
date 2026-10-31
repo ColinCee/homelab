@@ -129,7 +129,8 @@ services:
       test: ["CMD-SHELL", "find /tmp/ready -mmin -15 | grep -q ."]
       interval: 60s
       timeout: 5s
-      start_period: 60s
+      start_period: 90s
+      start_interval: 5s
     tmpfs:
       - /tmp
     volumes:

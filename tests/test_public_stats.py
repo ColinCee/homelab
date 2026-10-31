@@ -53,3 +53,32 @@ def test_stale_flight_data_and_old_backup_are_not_shown_as_live() -> None:
     old["backup_at"] = [{"metric": {}, "value": [NOW, str(NOW - 30 * 3600)]}]
     body = build_body(old, {**KPIS, "apiHealth": "stale"}, NOW)
     assert (body["tracking"], body["londonHour"], body["backupOk"]) == (None, None, False)
+
+
+@pytest.mark.parametrize(
+    "kpis",
+    [
+        None,
+        {"apiHealth": "live"},
+        {**KPIS, "trackedAircraft": None},
+        {**KPIS, "throughputLast60Min": "x"},
+    ],
+)
+def test_odd_flight_data_leaves_the_flight_numbers_empty(kpis: dict | None) -> None:
+    body = build_body(results(), kpis, NOW)
+    assert body["blocked"] == 1212
+    assert body["tracking"] in (None, 237)
+
+
+def test_a_future_start_time_is_zero_days_not_negative() -> None:
+    odd = results()
+    odd["ha_started"] = [{"metric": {}, "value": [NOW, str(NOW + 60)]}]
+    assert build_body(odd, KPIS, NOW)["haDays"] == 0
+
+
+@pytest.mark.parametrize("value", [[], [{"metric": {}, "value": [NOW, "+Inf"]}]])
+def test_no_crowdsec_count_skips_the_push(value: list) -> None:
+    odd = results()
+    odd["blocked"] = value
+    with pytest.raises(StatsError):
+        build_body(odd, KPIS, NOW)

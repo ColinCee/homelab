@@ -20,6 +20,9 @@ from typing import Any
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
 STACKS = ("backup", "crowdsec", "flight-tracker", "home-assistant", "observability")
 EVERY_S = 300
+# After a failure, sooner: the first push decides whether a deploy's
+# readiness wait sees the container healthy.
+RETRY_S = 15
 TIMEOUT_S = 15
 # Cloudflare refuses the default Python-urllib user agent.
 USER_AGENT = "homelab-public-stats/1"
@@ -57,6 +60,13 @@ def scalar(result: list[dict[str, Any]]) -> float | None:
     return float(result[0]["value"][1]) if result else None
 
 
+def whole(value: object) -> int | None:
+    """A count the blog accepts, or None for anything else (null, NaN, +Inf)."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return int(value) if math.isfinite(value) and value >= 0 else None
+
+
 def build_body(
     results: dict[str, list[dict[str, Any]]], kpis: dict[str, Any] | None, now: float
 ) -> dict[str, Any]:
@@ -70,15 +80,20 @@ def build_body(
         raise StatsError("no running containers reported")
     ha_started = scalar(results["ha_started"])
     backup_at = scalar(results["backup_at"])
-    blocked = scalar(results["blocked"])
-    live = kpis is not None and kpis.get("apiHealth") == "live"
+    blocked = whole(scalar(results["blocked"]))
+    if blocked is None:
+        # A blank count would single out CrowdSec; let the last numbers age.
+        raise StatsError("no CrowdSec decisions reported")
+    if not isinstance(kpis, dict) or kpis.get("apiHealth") != "live":
+        kpis = {}
     return {
         "at": int(now),
         "allUp": all(stack in running for stack in STACKS),
-        "blocked": None if blocked is None else int(blocked),
-        "tracking": int(kpis["trackedAircraft"]) if live and kpis else None,
-        "londonHour": int(kpis["throughputLast60Min"]) if live and kpis else None,
-        "haDays": None if ha_started is None else math.floor((now - ha_started) / 86400),
+        "blocked": blocked,
+        "tracking": whole(kpis.get("trackedAircraft")),
+        "londonHour": whole(kpis.get("throughputLast60Min")),
+        # Clock skew could make it negative, which the blog refuses.
+        "haDays": None if ha_started is None else whole(max(0, (now - ha_started) // 86400)),
         "backupOk": backup_at is not None and now - backup_at < 26 * 3600,
     }
 
@@ -86,8 +101,8 @@ def build_body(
 def gather(prometheus: str, flights: str) -> dict[str, Any]:
     results = {name: query(prometheus, promql) for name, promql in QUERIES.items()}
     try:
-        kpis = get_json(flights)["kpis"]
-    except (OSError, ValueError, KeyError) as error:
+        kpis = get_json(flights).get("kpis")
+    except (OSError, ValueError, AttributeError) as error:
         print(f"flight tracker: {error}", file=sys.stderr)
         kpis = None
     return build_body(results, kpis, time.time())
@@ -118,10 +133,13 @@ def main() -> None:
             push(url, token, gather(prometheus, flights))
             # The healthcheck: fresh while pushes succeed.
             HEARTBEAT.touch()
-        except (OSError, ValueError, KeyError, StatsError) as error:
-            # HTTPError is an OSError; its message says why the Worker refused.
-            print(f"push failed: {error}", file=sys.stderr)
-        time.sleep(EVERY_S)
+            wait = EVERY_S
+        except Exception as error:
+            # Anything odd in a response skips one push, not the process.
+            # HTTPError's message says why the Worker refused.
+            print(f"push failed: {error!r}", file=sys.stderr)
+            wait = RETRY_S
+        time.sleep(wait)
 
 
 if __name__ == "__main__":

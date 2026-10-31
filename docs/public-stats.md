@@ -41,11 +41,13 @@ They are coarse on purpose. One flag for all stacks, not one each, so a stopped
 CrowdSec is not announced; uptime in days, so restart times are not; backup as
 yes or no. No hostnames, addresses, container IDs or versions leave the host:
 the body is built from named numbers, never by forwarding a Prometheus response.
-When Prometheus reports no containers at all, the script skips the push rather
-than publish "all down". The flight numbers are `null` unless the tracker's data
+When Prometheus reports no containers at all, or no CrowdSec count, the script
+skips the push rather than publish "all down" or a blank that singles out
+CrowdSec; the last numbers age instead. After a failed push it tries again in
+15 seconds, so a deploy's readiness wait sees the container healthy. The flight numbers are `null` unless the tracker's data
 is live.
 
-The Worker accepts `at` up to 10 minutes old and not in the future, so a
+The Worker accepts `at` up to 10 minutes old and a minute ahead, so a
 drifting clock shows as refused pushes in the container's log (`docker logs
 observability-public-stats-1`) and an unhealthy container.
 
