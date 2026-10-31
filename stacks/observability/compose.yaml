@@ -106,6 +106,37 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
+  # Pushes a few numbers to the blog's home page; nothing connects in. See
+  # docs/public-stats.md for what it publishes.
+  public-stats:
+    image: python:3.15.2-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211
+    restart: unless-stopped
+    command: ["python", "-I", "/public_stats.py"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    environment:
+      FLIGHTS_URL: https://api.colincheung.dev/aircraft
+      PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
+      PUBLIC_STATS_TOKEN: ${PUBLIC_STATS_TOKEN:?}
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    healthcheck:
+      # Healthy while pushes succeed: the heartbeat is under 15 minutes old.
+      test: ["CMD-SHELL", "find /tmp/ready -mmin -15 | grep -q ."]
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./public_stats.py:/public_stats.py:ro
+    depends_on:
+      - prometheus
+
 volumes:
   grafana-data:
   prometheus-data:

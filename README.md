@@ -64,7 +64,7 @@ automatically. Non-major versions can still break behavior, especially before
 | Stack | Purpose |
 |-------|---------|
 | `stacks/home-assistant/` | Home automation, with host networking for Bluetooth/mDNS |
-| `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy |
+| `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
 | `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
@@ -82,6 +82,7 @@ stuck deploys.
 - [CI runner](docs/runbooks/ci-runner.md): private-repo CI in Firecracker microVMs on Beelink.
 - [Security audit](docs/runbooks/security-audit.md): checking Beelink for compromise.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
+- [Public stats](docs/public-stats.md): the few numbers pushed to colincheung.dev's home page, and what they expose.
 - [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
 - Private operational records live in the workspace's `notes/04-dev/homelab/`.
 
