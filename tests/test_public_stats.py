@@ -63,6 +63,7 @@ def test_stale_flight_data_and_old_backup_are_not_shown_as_live() -> None:
         {"apiHealth": "live"},
         {**KPIS, "trackedAircraft": None},
         {**KPIS, "throughputLast60Min": "x"},
+        {**KPIS, "trackedAircraft": 10_000_000},
     ],
 )
 def test_odd_flight_data_leaves_the_flight_numbers_empty(kpis: dict | None) -> None:
