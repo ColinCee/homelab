@@ -58,9 +58,10 @@ observability-public-stats-1`) and an unhealthy container.
   `HOMELAB_PUBLIC_KEY` in the blog's `wrangler.json`, not a secret. A stolen
   private key could only post these numbers; a leaked blog repo or Worker gives
   nothing. The Worker takes only numbers newer than the ones it has, so an old
-  signed body cannot be replayed. To rotate, run the generation command in
-  ColinCee/homelab#470's description again, commit the public key it prints to
-  the blog's `wrangler.json`, then redeploy both.
+  signed body cannot be replayed. To set it up or rotate it, run
+  `uv run python scripts/public_stats_key.py` yourself (it stores the private
+  key as the secret and prints the public one), commit the public key to the
+  blog's `wrangler.json`, then redeploy both.
 - The container's image is built on the host from
   [`public-stats.Dockerfile`](../stacks/observability/public-stats.Dockerfile)
   (Python plus `cryptography`, since the standard library has no Ed25519).
