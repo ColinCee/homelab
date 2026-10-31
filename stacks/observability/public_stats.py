@@ -17,6 +17,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
 STACKS = ("backup", "crowdsec", "flight-tracker", "home-assistant", "observability")
 EVERY_S = 300
@@ -108,13 +110,21 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
     return build_body(results, kpis, time.time())
 
 
-def push(url: str, token: str, body: dict[str, Any]) -> None:
+def signed(key: Ed25519PrivateKey, body: dict[str, Any]) -> tuple[bytes, str]:
+    """The body as sent, and its signature, which the blog's Worker checks
+    against the public half of this key."""
+    data = json.dumps(body).encode()
+    return data, key.sign(data).hex()
+
+
+def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
+    data, signature = signed(key, body)
     request = urllib.request.Request(
         url,
-        data=json.dumps(body).encode(),
+        data=data,
         method="PUT",
         headers={
-            "Authorization": f"Bearer {token}",
+            "Signature": signature,
             "Content-Type": "application/json",
             "User-Agent": USER_AGENT,
         },
@@ -127,10 +137,11 @@ def main() -> None:
     prometheus = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090")
     flights = os.environ["FLIGHTS_URL"]
     url = os.environ["PUBLIC_STATS_URL"]
-    token = os.environ["PUBLIC_STATS_TOKEN"]
+    # The only copy of the private key is the PUBLIC_STATS_KEY GitHub secret.
+    key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(os.environ["PUBLIC_STATS_KEY"]))
     while True:
         try:
-            push(url, token, gather(prometheus, flights))
+            push(url, key, gather(prometheus, flights))
             # The healthcheck: fresh while pushes succeed.
             HEARTBEAT.touch()
             wait = EVERY_S

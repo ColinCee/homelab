@@ -1,8 +1,9 @@
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from stacks.observability.public_stats import STACKS, StatsError, build_body
+from stacks.observability.public_stats import STACKS, StatsError, build_body, signed
 
 NOW = 1_800_000_000.0
 
@@ -82,3 +83,9 @@ def test_no_crowdsec_count_skips_the_push(value: list) -> None:
     odd["blocked"] = value
     with pytest.raises(StatsError):
         build_body(odd, KPIS, NOW)
+
+
+def test_the_signature_covers_exactly_the_bytes_sent() -> None:
+    key = Ed25519PrivateKey.generate()
+    data, signature = signed(key, build_body(results(), KPIS, NOW))
+    key.public_key().verify(bytes.fromhex(signature), data)

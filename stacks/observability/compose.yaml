@@ -109,7 +109,10 @@ services:
   # Pushes a few numbers to the blog's home page; nothing connects in. See
   # docs/public-stats.md for what it publishes.
   public-stats:
-    image: python:3.15.2-alpine@sha256:20a82dbc2783112ddb91d1534603f802d222a3e63e593cd002eb2ac534e70211
+    build:
+      context: .
+      dockerfile: public-stats.Dockerfile
+    image: homelab/public-stats
     restart: unless-stopped
     command: ["python", "-I", "/public_stats.py"]
     read_only: true
@@ -121,7 +124,7 @@ services:
     environment:
       FLIGHTS_URL: https://api.colincheung.dev/aircraft
       PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
-      PUBLIC_STATS_TOKEN: ${PUBLIC_STATS_TOKEN:?}
+      PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:

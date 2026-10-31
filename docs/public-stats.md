@@ -10,10 +10,10 @@ ran. This page says how they get there and what that exposes.
 ```
 Beelink: public-stats container (observability stack)
   │  every 5 min: Prometheus on the stack network, the public flight-tracker API
-  │  PUT, bearer token, outbound HTTPS
+  │  PUT, signed with the server's private key, outbound HTTPS
   ▼
 colincheung.dev/homelab.json   (the blog's Worker, in the blog repo)
-  │  checks the token and the shape, stores it in Workers KV
+  │  checks the signature, the shape and that it is newer; stores it in KV
   ▼
 GET /homelab.json   (the home page fetches it)
 ```
@@ -53,11 +53,19 @@ observability-public-stats-1`) and an unhealthy container.
 
 ## Limits
 
-- The token can only replace these numbers. A leaked token lets someone show
-  wrong numbers on the home page, nothing more. Rotate it by generating a new
-  one and setting it in both places, then redeploying this repo:
-  `wrangler secret put HOMELAB_TOKEN` in the blog repo and
-  `gh secret set PUBLIC_STATS_TOKEN -R ColinCee/homelab`.
+- Auth is one Ed25519 key pair. The private key's only copy is this repo's
+  `PUBLIC_STATS_KEY` secret (32 bytes as hex); the public half is
+  `HOMELAB_PUBLIC_KEY` in the blog's `wrangler.json`, not a secret. A stolen
+  private key could only post these numbers; a leaked blog repo or Worker gives
+  nothing. The Worker takes only numbers newer than the ones it has, so an old
+  signed body cannot be replayed. To rotate, run the generation command in
+  ColinCee/homelab#470's description again, commit the public key it prints to
+  the blog's `wrangler.json`, then redeploy both.
+- The container's image is built on the host from
+  [`public-stats.Dockerfile`](../stacks/observability/public-stats.Dockerfile)
+  (Python plus `cryptography`, since the standard library has no Ed25519).
+  Renovate updates the base image; keep the `cryptography` pin in step with
+  the dev dependency in `pyproject.toml`.
 - Every GET runs the Worker (KV is read with a 60 s cache, and browsers cache
   the response for 60 s), so a flood of requests could use up the free plan's
   100,000 Worker requests a day. Then only `/homelab.json` fails until midnight
