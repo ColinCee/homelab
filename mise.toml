@@ -8,7 +8,7 @@ trivy = "0.76.1"
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
-  "uv run ruff check scripts/ tests/ && uv run ruff format --check scripts/ tests/",
+  "uv run ruff check scripts/ stacks/ tests/ && uv run ruff format --check scripts/ stacks/ tests/",
   "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/",
   "actionlint",
@@ -16,11 +16,11 @@ run = [
 
 [tasks.format]
 description = "Format Python"
-run = "uv run ruff format scripts/ tests/"
+run = "uv run ruff format scripts/ stacks/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/deploy_watchdog.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py"
+run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/deploy_watchdog.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/public_stats_key.py stacks/observability/public_stats.py"
 
 [tasks.test]
 description = "Run unit tests"

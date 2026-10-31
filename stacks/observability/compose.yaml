@@ -38,6 +38,9 @@ services:
       - --storage.tsdb.retention.size=2GB
     volumes:
       - prometheus-data:/prometheus
+    networks:
+      - default
+      - public-stats
 
   loki:
     image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
@@ -105,6 +108,51 @@ services:
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  # Pushes a few numbers to the blog's home page; nothing connects in. See
+  # docs/public-stats.md for what it publishes.
+  public-stats:
+    build:
+      context: .
+      dockerfile: public-stats.Dockerfile
+    image: homelab/public-stats
+    # Built here only: never pulled, since a registry image of that name
+    # would run with the signing key.
+    pull_policy: build
+    restart: unless-stopped
+    command: ["python", "-I", "/public_stats.py"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    environment:
+      FLIGHTS_URL: https://api.colincheung.dev/aircraft
+      PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
+      PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    healthcheck:
+      # Healthy while pushes succeed: the heartbeat is under 15 minutes old.
+      test: ["CMD-SHELL", "find /tmp/ready -mmin -15 | grep -q ."]
+      interval: 60s
+      timeout: 5s
+      start_period: 90s
+      start_interval: 5s
+    tmpfs:
+      - /tmp
+    volumes:
+      - ./public_stats.py:/public_stats.py:ro
+    # Its own network, shared with Prometheus only: it reaches Prometheus and,
+    # outbound, the internet, but not Grafana, Loki or Alloy.
+    networks:
+      - public-stats
+    depends_on:
+      - prometheus
+
+networks:
+  public-stats:
 
 volumes:
   grafana-data:
