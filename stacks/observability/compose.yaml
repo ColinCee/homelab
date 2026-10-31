@@ -113,6 +113,9 @@ services:
       context: .
       dockerfile: public-stats.Dockerfile
     image: homelab/public-stats
+    # Built here only: never pulled, since a registry image of that name
+    # would run with the signing key.
+    pull_policy: build
     restart: unless-stopped
     command: ["python", "-I", "/public_stats.py"]
     read_only: true

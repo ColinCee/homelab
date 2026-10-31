@@ -66,7 +66,8 @@ def whole(value: object) -> int | None:
     """A count the blog accepts, or None for anything else (null, NaN, +Inf)."""
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    return int(value) if math.isfinite(value) and value >= 0 else None
+    # The blog's Worker takes 0 to 9,999,999; outside that the push is refused.
+    return int(value) if math.isfinite(value) and 0 <= value < 10_000_000 else None
 
 
 def build_body(
