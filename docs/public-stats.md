@@ -2,8 +2,7 @@
 
 The home page of colincheung.dev shows a few live numbers about this server:
 whether its stacks are up, how many addresses CrowdSec blocks, how many aircraft
-the flight tracker follows, Home Assistant's uptime and whether the last backup
-ran. This page says how they get there and what that exposes.
+the flight tracker follows. This page says how they get there and what that exposes.
 
 ## How it works
 
@@ -34,12 +33,12 @@ Only these fields; the Worker rejects a body with any other key or type:
 | `blocked` | addresses on CrowdSec's blocklist | `cs_active_decisions` |
 | `tracking` | aircraft in the tracker's London box now | `/aircraft` KPIs |
 | `londonHour` | aircraft headed for London seen in the past hour | the same KPIs |
-| `haDays` | whole days since Home Assistant's container started | `container_start_time_seconds` |
-| `backupOk` | a backup succeeded in the last 26 hours | `homelab_backup_last_success_timestamp_seconds` |
 
-They are coarse on purpose. One flag for all stacks, not one each, so a stopped
-CrowdSec is not announced; uptime in days, so restart times are not; backup as
-yes or no. No hostnames, addresses, container IDs or versions leave the host:
+They are coarse on purpose: one flag for all stacks, not one each, so a stopped
+CrowdSec is not announced. Anyone can poll the endpoint and keep a history, so
+Home Assistant's uptime and whether the last backup ran are left out: over time
+they would show restart and failed-backup windows. What still shows is when
+pushes stop (`at` ages), as during a power or internet outage. No hostnames, addresses, container IDs or versions leave the host:
 the body is built from named numbers, never by forwarding a Prometheus response.
 When Prometheus reports no containers at all, or no CrowdSec count, the script
 skips the push rather than publish "all down" or a blank that singles out
@@ -63,10 +62,12 @@ observability-public-stats-1`) and an unhealthy container.
   key as the secret and prints the public one), commit the public key to the
   blog's `wrangler.json`, then redeploy both.
 - The container's image is built on the host from
-  [`public-stats.Dockerfile`](../stacks/observability/public-stats.Dockerfile)
-  (Python plus `cryptography`, since the standard library has no Ed25519).
-  Renovate updates the base image; keep the `cryptography` pin in step with
-  the dev dependency in `pyproject.toml`.
+  [`public-stats.Dockerfile`](../stacks/observability/public-stats.Dockerfile):
+  the pinned Python image plus `cryptography`, since the standard library has
+  no Ed25519. Every package is pinned by hash in
+  `public-stats-requirements.txt`, which Renovate updates. The container sits
+  on its own network with Prometheus only, so a bad dependency could not reach
+  Grafana, Loki or Alloy.
 - Every GET runs the Worker (KV is read with a 60 s cache, and browsers cache
   the response for 60 s), so a flood of requests could use up the free plan's
   100,000 Worker requests a day. Then only `/homelab.json` fails until midnight

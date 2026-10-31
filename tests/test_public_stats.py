@@ -15,8 +15,6 @@ def results(running: tuple[str, ...] = STACKS) -> dict:
             for s in running
         ],
         "blocked": [{"metric": {}, "value": [NOW, "1212"]}],
-        "ha_started": [{"metric": {}, "value": [NOW, str(NOW - 3.5 * 86400)]}],
-        "backup_at": [{"metric": {}, "value": [NOW, str(NOW - 10 * 3600)]}],
     }
 
 
@@ -35,8 +33,6 @@ def test_body_holds_only_named_numbers() -> None:
         "blocked": 1212,
         "tracking": 237,
         "londonHour": 107,
-        "haDays": 3,
-        "backupOk": True,
     }
 
 
@@ -49,11 +45,10 @@ def test_nothing_reported_is_not_published_as_down() -> None:
         build_body(results(()), KPIS, NOW)
 
 
-def test_stale_flight_data_and_old_backup_are_not_shown_as_live() -> None:
+def test_stale_flight_data_is_not_shown_as_live() -> None:
     old = results()
-    old["backup_at"] = [{"metric": {}, "value": [NOW, str(NOW - 30 * 3600)]}]
     body = build_body(old, {**KPIS, "apiHealth": "stale"}, NOW)
-    assert (body["tracking"], body["londonHour"], body["backupOk"]) == (None, None, False)
+    assert (body["tracking"], body["londonHour"]) == (None, None)
 
 
 @pytest.mark.parametrize(
@@ -70,12 +65,6 @@ def test_odd_flight_data_leaves_the_flight_numbers_empty(kpis: dict | None) -> N
     body = build_body(results(), kpis, NOW)
     assert body["blocked"] == 1212
     assert body["tracking"] in (None, 237)
-
-
-def test_a_future_start_time_is_zero_days_not_negative() -> None:
-    odd = results()
-    odd["ha_started"] = [{"metric": {}, "value": [NOW, str(NOW + 60)]}]
-    assert build_body(odd, KPIS, NOW)["haDays"] == 0
 
 
 @pytest.mark.parametrize("value", [[], [{"metric": {}, "value": [NOW, "+Inf"]}]])

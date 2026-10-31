@@ -35,8 +35,6 @@ QUERIES = {
     "running": "count by (container_label_com_docker_compose_project) "
     '(time() - container_last_seen{container_label_com_docker_compose_project!=""} < 60)',
     "blocked": "sum(cs_active_decisions)",
-    "ha_started": 'max(container_start_time_seconds{name="homeassistant"})',
-    "backup_at": "max(homelab_backup_last_success_timestamp_seconds)",
 }
 
 
@@ -74,15 +72,14 @@ def build_body(
     results: dict[str, list[dict[str, Any]]], kpis: dict[str, Any] | None, now: float
 ) -> dict[str, Any]:
     """The published numbers. Coarse on purpose: one up flag for all stacks,
-    uptime in days and backup as ok or not, so restarts and failures of one
-    service are not announced to the second."""
+    so a failure of one service is not announced. Uptime and backup state
+    were left out: polled over time they would show restart and failed-backup
+    windows."""
     project = "container_label_com_docker_compose_project"
     running = {r["metric"].get(project) for r in results["running"]}
     if not running:
         # cAdvisor or Prometheus is not reporting; publishing "all down" would be a lie.
         raise StatsError("no running containers reported")
-    ha_started = scalar(results["ha_started"])
-    backup_at = scalar(results["backup_at"])
     blocked = whole(scalar(results["blocked"]))
     if blocked is None:
         # A blank count would single out CrowdSec; let the last numbers age.
@@ -95,9 +92,6 @@ def build_body(
         "blocked": blocked,
         "tracking": whole(kpis.get("trackedAircraft")),
         "londonHour": whole(kpis.get("throughputLast60Min")),
-        # Clock skew could make it negative, which the blog refuses.
-        "haDays": None if ha_started is None else whole(max(0, (now - ha_started) // 86400)),
-        "backupOk": backup_at is not None and now - backup_at < 26 * 3600,
     }
 
 
