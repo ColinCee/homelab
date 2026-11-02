@@ -247,8 +247,9 @@ def check_private(gh: GitHub, state: State, repo: str, now: float) -> bool:
 
 def find_queued(gh: GitHub, repo: str) -> list[Job]:
     runs: list[Mapping[str, Any]] = []
-    # A multi-job run is in_progress while its later jobs wait for a runner.
-    for status in ("queued", "in_progress"):
+    # A multi-job run is in_progress while its later jobs wait for a runner. A run that
+    # waited on a concurrency group can stay pending after its job is queued.
+    for status in ("queued", "pending", "in_progress"):
         page = gh.request("GET", f"/repos/{repo}/actions/runs?status={status}&per_page=50")
         runs.extend(page.get("workflow_runs", []))
 
