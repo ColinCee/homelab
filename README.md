@@ -45,6 +45,8 @@ creating another runner or Git hook.
 
 ## How it works
 
+[Architecture](docs/architecture.md) shows how changes reach the host and who can reach what runs on it.
+
 Each `stacks/<name>/` directory is a self-contained Compose stack. Pushes to
 `main` that touch stacks, scripts, or the deploy workflow run the deploy
 workflow on the host, which renders `.env` files from allowed secrets and
