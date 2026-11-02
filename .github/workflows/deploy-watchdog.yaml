@@ -35,7 +35,7 @@ jobs:
           app-id: ${{ vars.KAIZEN_APP_ID }}
           private-key: ${{ secrets.KAIZEN_APP_KEY }}
           owner: ColinCee
-          repositories: kaizen
+          repositories: auto-kaizen
           permission-contents: write
           permission-issues: read
 
@@ -46,7 +46,7 @@ jobs:
         run: |
           last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json status,conclusion,url --jq '.[0]')
           [ "$(jq -r .status <<< "$last")" = completed ] && [ "$(jq -r .conclusion <<< "$last")" = failure ] || exit 0
-          [ -z "$(gh issue list -R ColinCee/kaizen --label andon --state open --json number --jq '.[0].number // empty')" ] || exit 0
+          [ -z "$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --json number --jq '.[0].number // empty')" ] || exit 0
           jq -n --arg r "The homelab deploy failed or was blocked: $(jq -r .url <<< "$last")" \
             '{event_type: "andon-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
-            | gh api repos/ColinCee/kaizen/dispatches --input -
+            | gh api repos/ColinCee/auto-kaizen/dispatches --input -

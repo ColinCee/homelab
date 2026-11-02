@@ -183,8 +183,8 @@ def test_kaizen_may_deploy() -> None:
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_REF": "refs/heads/main",
         "GITHUB_WORKFLOW_REF": "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main",
-        "GITHUB_ACTOR": "kaizen-builder[bot]",
+        "GITHUB_ACTOR": "auto-kaizen[bot]",
         "GITHUB_ACTOR_ID": "351551650",
-        "GITHUB_TRIGGERING_ACTOR": "kaizen-builder[bot]",
+        "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
     }
     assert guard.decide(env).allowed
