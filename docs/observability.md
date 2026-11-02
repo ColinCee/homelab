@@ -9,10 +9,12 @@ Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
 do not treat an on-host dashboard as proof of availability.
 
-The [deploy watchdog](../.github/workflows/deploy-watchdog.yaml) runs every 15
-minutes on GitHub-hosted runners and posts to Discord when a `deploy.yaml` run
-has been queued for over 15 minutes, which usually means the `beelink` runner
-is down. It posts once when a problem starts and once when it clears, using its
+The [deploy watchdog](../.github/workflows/deploy-watchdog.yaml) runs on
+GitHub-hosted runners when a deploy finishes, 16 minutes after one is queued,
+and every 15 minutes as a backup (GitHub delays schedules on quiet repos). It
+posts to Discord when a `deploy.yaml` run has been queued for over 15 minutes,
+which usually means the `beelink` runner is down, and pulls Auto Kaizen's Andon
+when the last deploy failed or was blocked by the runner guard. It posts once when a problem starts and once when it clears, using its
 previous run's conclusion as state. Healthchecks.io remains the external
 heartbeat for full host outages.
 
