@@ -40,6 +40,6 @@ jobs:
             behind=$(gh api "repos/$GH_REPO/compare/main...$sha" --jq .behind_by)
             if [ "$behind" -gt 0 ]; then
               echo "#$number is $behind commit(s) behind main; updating"
-              gh pr update-branch "$number"
+              gh pr update-branch "$number" || echo "::warning::#$number could not be updated"
             fi
           done <<< "$prs"

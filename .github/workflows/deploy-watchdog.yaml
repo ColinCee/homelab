@@ -45,6 +45,7 @@ jobs:
 
       # A deploy that failed, or that the runner guard killed before its first step, cannot tell Kaizen itself.
       - id: kaizen-key
+        continue-on-error: true
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.KAIZEN_APP_ID }}
@@ -55,13 +56,15 @@ jobs:
           permission-issues: read
 
       - name: Pull Kaizen's Andon after a failed deploy
+        if: steps.kaizen-key.outputs.token
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
           HOMELAB_TOKEN: ${{ github.token }}
         run: |
           last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json status,conclusion,url --jq '.[0]')
           [ "$(jq -r .status <<< "$last")" = completed ] && [ "$(jq -r .conclusion <<< "$last")" = failure ] || exit 0
-          [ -z "$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --json number --jq '.[0].number // empty')" ] || exit 0
+          [ -z "$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --search '"Repo: ColinCee/homelab" in:body' --json number --jq '.[0].number // empty')" ] || exit 0
           jq -n --arg r "The homelab deploy failed or was blocked: $(jq -r .url <<< "$last")" \
             '{event_type: "andon-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -

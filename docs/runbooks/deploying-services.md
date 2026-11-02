@@ -87,7 +87,7 @@ targeting `beelink`; fork runs need approval, and one wrong approval would run
 it as `colin`. The runner's job-started hook,
 [`runner_job_guard.py`](../../scripts/runner_job_guard.py), refuses every job
 except `deploy.yaml` and `server-health.yaml` from `main` on push, schedule, or
-manual dispatch, started by `ColinCee` or `renovate[bot]` (checked by user ID,
+manual dispatch, started by `ColinCee`, `renovate[bot]` or `auto-kaizen[bot]` (checked by user ID,
 and the re-run's triggering actor by name). It runs before the job's first step
 and fails closed when a variable is missing.
 
