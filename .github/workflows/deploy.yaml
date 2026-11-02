@@ -76,7 +76,7 @@ jobs:
           app-id: ${{ vars.KAIZEN_APP_ID }}
           private-key: ${{ secrets.KAIZEN_APP_KEY }}
           owner: ColinCee
-          repositories: kaizen
+          repositories: auto-kaizen
           permission-contents: write
 
       - name: Tell Kaizen
@@ -88,4 +88,4 @@ jobs:
         run: |
           reason=$([ "$EVENT" = andon-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
           jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
-            | gh api repos/ColinCee/kaizen/dispatches --input -
+            | gh api repos/ColinCee/auto-kaizen/dispatches --input -

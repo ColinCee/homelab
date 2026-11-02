@@ -29,10 +29,16 @@ EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
     f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
 )
-# Who may start a job here: Colin, and Renovate merging its own pull requests.
+# Who may start a job here: Colin; Renovate merging its own pull requests; and Auto Kaizen,
+# Colin's agents, merging changes that passed CI, its Reviewer and its red-line checks
+# (changes to scripts/, ci-runner/ and .github/ wait for Colin).
 # The actor is checked by ID. The triggering actor (who started a re-run) is only
-# available by name, so renaming either account means updating this list.
-ACTOR_IDS = {"11246116": "ColinCee", "29139614": "renovate[bot]"}
+# available by name, so renaming any account means updating this list.
+ACTOR_IDS = {
+    "11246116": "ColinCee",
+    "29139614": "renovate[bot]",
+    "351551650": "auto-kaizen[bot]",
+}
 TRIGGERING_ACTORS = frozenset(ACTOR_IDS.values())
 # Present only if a workflow's env reached the hook; bash would have sourced them first.
 INJECTION_VARIABLES = ("BASH_ENV", "ENV")

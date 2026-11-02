@@ -175,3 +175,16 @@ def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
     out = capsys.readouterr().out
     assert f"{nl}::add-mask::" not in out
     assert "%0A::add-mask::y%25" in out
+
+
+def test_kaizen_may_deploy() -> None:
+    env = {
+        "GITHUB_REPOSITORY": "ColinCee/homelab",
+        "GITHUB_EVENT_NAME": "push",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_WORKFLOW_REF": "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main",
+        "GITHUB_ACTOR": "auto-kaizen[bot]",
+        "GITHUB_ACTOR_ID": "351551650",
+        "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
+    }
+    assert guard.decide(env).allowed
