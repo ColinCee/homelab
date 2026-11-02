@@ -55,7 +55,8 @@ jobs:
           permission-contents: write
           permission-issues: read
 
-      - name: Pull Kaizen's Andon after a failed deploy
+      - id: pull-andon
+        name: Pull Kaizen's Andon after a failed deploy
         if: steps.kaizen-key.outputs.token
         continue-on-error: true
         env:
@@ -68,3 +69,12 @@ jobs:
           jq -n --arg r "The homelab deploy failed or was blocked: $(jq -r .url <<< "$last")" \
             '{event_type: "andon-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -
+
+      # The watchdog is the backstop: if it cannot reach Auto Kaizen, Colin hears about it.
+      - name: Say so if Auto Kaizen could not be told
+        if: steps.kaizen-key.outcome == 'failure' || steps.pull-andon.outcome == 'failure'
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          jq -n --arg c "Deploy watchdog could not reach Auto Kaizen, so a failed deploy may not have stopped it: $RUN_URL"             '{content: $c, allowed_mentions: {parse: []}}' | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL"
