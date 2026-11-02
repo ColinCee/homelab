@@ -67,6 +67,7 @@ automatically. Non-major versions can still break behavior, especially before
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
 | `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
+| `stacks/kaizen-board/` | Kaizen Board: a live view of Kaizen's work, on Tailscale only |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 
 The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,

@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:e4b4a5565775949e077f6cd84c6b45f5003fed0d7d4655cd776407c5f6d99f98
+    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:e84a7ee65fed75e0d198599722ec5e99b9af8025f26ab2e416228db3ba8b4756
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -14,7 +14,7 @@ services:
       - HEATMAP_DB_PATH=/app/data/historical_heatmap.parquet
 
   cloudflared:
-    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

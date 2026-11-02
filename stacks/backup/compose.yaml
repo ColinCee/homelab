@@ -43,6 +43,7 @@ services:
       - grafana-data:/data/grafana:ro
       - heatmap-data:/data/flight-tracker:ro
       - crowdsec-config:/data/crowdsec:ro
+      - board-data:/data/kaizen-board:ro
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
       - /home/colin/pc-backups:/data/pc-backups:ro
 
@@ -58,3 +59,6 @@ volumes:
   crowdsec-config:
     external: true
     name: crowdsec_crowdsec-config
+  board-data:
+    external: true
+    name: kaizen-board_board-data
