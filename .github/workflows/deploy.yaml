@@ -67,3 +67,25 @@ jobs:
         run: |
           cd /home/colin/code/homelab
           scripts/deploy.sh
+
+      # Kaizen's Andon: a failed deploy stops all automated work until it is fixed, and a good one restarts it.
+      - id: kaizen-key
+        if: always()
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.KAIZEN_APP_ID }}
+          private-key: ${{ secrets.KAIZEN_APP_KEY }}
+          owner: ColinCee
+          repositories: kaizen
+          permission-contents: write
+
+      - name: Tell Kaizen
+        if: always() && steps.kaizen-key.outputs.token
+        env:
+          GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
+          EVENT: ${{ job.status == 'success' && 'andon-close' || 'andon-open' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          reason=$([ "$EVENT" = andon-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
+          jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
+            | gh api repos/ColinCee/kaizen/dispatches --input -
