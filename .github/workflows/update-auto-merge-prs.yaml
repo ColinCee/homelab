@@ -1,0 +1,45 @@
+name: Update auto-merge pull requests
+
+# main requires pull requests to be up to date, so one with auto-merge on
+# waits forever once something else merges first. This brings it up to date;
+# its CI then reruns and it merges itself only if that passes.
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: update-auto-merge-prs
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # An app token, not GITHUB_TOKEN, so the update triggers CI.
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.KAIZEN_APP_ID }}
+          private-key: ${{ secrets.KAIZEN_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Update pull requests that are behind main
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          prs=$(gh pr list --base main --state open --limit 100 \
+            --json number,headRefOid,isCrossRepository,autoMergeRequest \
+            --jq '.[] | select(.isCrossRepository | not) | select(.autoMergeRequest != null) | "\(.number) \(.headRefOid)"')
+          while read -r number sha; do
+            [ -n "$number" ] || continue
+            behind=$(gh api "repos/$GH_REPO/compare/main...$sha" --jq .behind_by)
+            if [ "$behind" -gt 0 ]; then
+              echo "#$number is $behind commit(s) behind main; updating"
+              gh pr update-branch "$number"
+            fi
+          done <<< "$prs"
