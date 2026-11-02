@@ -4,6 +4,11 @@ name: Deploy watchdog
 on:
   schedule:
     - cron: "*/15 * * * *"
+  # GitHub delays and skips schedules on quiet repos; every finished deploy, including one the runner
+  # guard killed before its first step, also checks at once.
+  workflow_run:
+    workflows: [Deploy]
+    types: [completed]
   workflow_dispatch:
 
 concurrency:
