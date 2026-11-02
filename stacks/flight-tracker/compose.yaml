@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:e4b4a5565775949e077f6cd84c6b45f5003fed0d7d4655cd776407c5f6d99f98
+    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:e84a7ee65fed75e0d198599722ec5e99b9af8025f26ab2e416228db3ba8b4756
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
