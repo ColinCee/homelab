@@ -4,23 +4,33 @@ name: Deploy watchdog
 on:
   schedule:
     - cron: "*/15 * * * *"
-  # GitHub delays and skips schedules on quiet repos; every finished deploy, including one the runner
-  # guard killed before its first step, also checks at once.
+  # GitHub delays and skips schedules on quiet repos, so deploys drive it too: a finished deploy (including
+  # one the runner guard killed before its first step) is checked at once, and a queued one 16 minutes
+  # later, which catches a dead runner without waiting for the schedule.
   workflow_run:
     workflows: [Deploy]
-    types: [completed]
+    types: [requested, completed]
   workflow_dispatch:
-
-concurrency:
-  group: deploy-watchdog
-  cancel-in-progress: false
 
 permissions:
   actions: read
   contents: read
 
 jobs:
+  # Gives a newly queued deploy the 15 minutes the check allows before calling it stuck.
+  wait:
+    if: github.event.action == 'requested'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - run: sleep 960
+
   check:
+    needs: wait
+    if: ${{ !cancelled() && needs.wait.result != 'failure' }}
+    concurrency:
+      group: deploy-watchdog
+      cancel-in-progress: false
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
