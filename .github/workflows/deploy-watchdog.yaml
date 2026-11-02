@@ -65,7 +65,10 @@ jobs:
         run: |
           last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json status,conclusion,url --jq '.[0]')
           [ "$(jq -r .status <<< "$last")" = completed ] && [ "$(jq -r .conclusion <<< "$last")" = failure ] || exit 0
-          [ -z "$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --search '"Repo: ColinCee/homelab" in:body' --json number --jq '.[0].number // empty')" ] || exit 0
+          search='"Repo: ColinCee/homelab" in:body'
+          open=$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --search "$search" \
+            --json number --jq '.[0].number // empty')
+          [ -z "$open" ] || exit 0
           jq -n --arg r "The homelab deploy failed or was blocked: $(jq -r .url <<< "$last")" \
             '{event_type: "andon-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -
@@ -77,4 +80,6 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          jq -n --arg c "Deploy watchdog could not reach Auto Kaizen, so a failed deploy may not have stopped it: $RUN_URL"             '{content: $c, allowed_mentions: {parse: []}}' | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL"
+          msg="Deploy watchdog could not reach Auto Kaizen, so a failed deploy may not have stopped it: $RUN_URL"
+          jq -n --arg c "$msg" '{content: $c, allowed_mentions: {parse: []}}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL"
