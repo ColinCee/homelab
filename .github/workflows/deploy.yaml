@@ -19,6 +19,9 @@ jobs:
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: beelink
+    permissions:
+      contents: read
+      packages: read # Pull private GHCR images
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -37,6 +40,8 @@ jobs:
           CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN || 'unset' }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          KAIZEN_APP_ID: ${{ vars.KAIZEN_APP_ID }}
+          KAIZEN_APP_KEY: ${{ secrets.KAIZEN_APP_KEY }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -45,6 +50,18 @@ jobs:
         run: |
           cd /home/colin/code/homelab
           scripts/generate-env.sh
+
+      # The login lives in the job's temp directory, which the runner deletes
+      # after the job, so no registry credential stays on the host.
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/docker"
+          printf '%s' "$GHCR_TOKEN" \
+            | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
       - name: Deploy discovered stacks
         run: |

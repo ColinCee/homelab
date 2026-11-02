@@ -20,7 +20,14 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
-STACKS = ("backup", "crowdsec", "flight-tracker", "home-assistant", "observability")
+STACKS = (
+    "backup",
+    "crowdsec",
+    "flight-tracker",
+    "home-assistant",
+    "kaizen-board",
+    "observability",
+)
 EVERY_S = 300
 # After a failure, sooner: the first push decides whether a deploy's
 # readiness wait sees the container healthy.
