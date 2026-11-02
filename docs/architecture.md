@@ -7,7 +7,7 @@ flowchart TB
   subgraph GitHub
     pr[Pull request] --> ci[CI, on GitHub's runners]
     ci --> main[Merge to main]
-    watchdog[Deploy watchdog, every 15 min]
+    watchdog[Deploy watchdog, after each deploy]
   end
   subgraph Beelink["Beelink (Ubuntu, Docker)"]
     guard{Runner guard}
@@ -19,7 +19,9 @@ flowchart TB
   renovate[Renovate] -->|merges version bumps| main
   kaizen[Auto Kaizen] -->|merges what passed its checks| main
   main --> guard -->|Colin, Renovate, Auto Kaizen| deploy --> stacks
+  main -.-> watchdog
   watchdog -.->|failed or blocked deploy| kaizen
+  watchdog -.->|stuck deploy| discord
   privaterepos[Private repos' CI] --> cirunner
   you[Colin, via Tailscale] --> stacks
   public[Public, via Cloudflare Tunnel] --> stacks
