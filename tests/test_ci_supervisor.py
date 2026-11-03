@@ -256,3 +256,78 @@ def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(
 ) -> None:
     assert sup.cache_for("octo/agent", "fc-cache-octo--widgets", private) is None
     assert sup.cache_for("octo/agent", "fc-cache-octo--nodisk", private) is None
+
+
+class OneRepoBroken:
+    """GitHub as seen by a token that cannot see `broken`."""
+
+    def __init__(self, broken: str) -> None:
+        self.broken = broken
+
+    def request(self, method: str, path: str, body: object = None) -> dict:
+        if path.startswith(f"/repos/{self.broken}"):
+            raise OSError("HTTP Error 404: Not Found")
+        if path.endswith("/runners?per_page=100"):
+            return {"runners": [{"id": 7, "name": f"{sup.RUNNER_PREFIX}0-1"}]}
+        return {}
+
+
+def test_stale_runners_are_cleared_where_github_answers_and_retried_where_not(monkeypatch) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        sup, "delete_runner", lambda gh, repo, rid, name: deleted.append(repo) or True
+    )
+    assert sup.remove_stale_runners(OneRepoBroken("o/gone"), ["o/gone", "o/ok"]) == ["o/gone"]
+    assert deleted == ["o/ok"]
+
+
+@pytest.mark.parametrize("fails", ["check_private", "find_queued"])
+def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: str) -> None:
+    def broken(repo: str, value):
+        if repo == "o/gone":
+            raise OSError("HTTP Error 404: Not Found")
+        return value
+
+    monkeypatch.setattr(
+        sup,
+        "check_private",
+        lambda gh, state, repo, now: broken(repo, True) if fails == "check_private" else True,
+    )
+    job = sup.Job("o/ok", 1, "check", tuple(sup.RUNNER_LABELS))
+    monkeypatch.setattr(
+        sup,
+        "find_queued",
+        lambda gh, repo: (
+            broken(repo, [job] if repo == "o/ok" else [])
+            if fails == "find_queued"
+            else ([job] if repo == "o/ok" else [])
+        ),
+    )
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    launched: list[str] = []
+    monkeypatch.setattr(
+        sup, "launch", lambda gh, state, repo, slot, now, **k: launched.append(repo)
+    )
+    sup.tick(OneRepoBroken("o/gone"), sup.State(), ["o/gone", "o/ok"], 0.0)
+    assert launched == ["o/ok"]
+
+
+def test_a_rate_limit_still_ends_the_poll(monkeypatch) -> None:
+    def limited(gh, state, repo, now):
+        raise sup.RateLimited(0.0)
+
+    monkeypatch.setattr(sup, "check_private", limited)
+    with pytest.raises(sup.RateLimited):
+        sup.tick(OneRepoBroken("o/gone"), sup.State(), ["o/ok"], 0.0)
+
+
+def test_a_lasting_failure_logs_once(monkeypatch) -> None:
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    monkeypatch.setattr(sup, "SKIPPED", {})
+    for _ in range(3):
+        sup.skipped("o/gone", OSError("404"))
+    sup.skipped("o/gone", None)
+    assert len(lines) == 2 and lines[1] == "o/gone is back"
