@@ -1,0 +1,31 @@
+name: Diagnose network
+
+# For when Beelink is up (deploys still run) but nothing can reach it: prints the
+# firewall, listening ports and service states, changing nothing. The repo is
+# public, so it prints no addresses, device names or log lines. The
+# runner reaches the host's view through Docker, which it already uses to deploy.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: beelink
+    timeout-minutes: 5
+    steps:
+      - name: Host network state
+        run: |
+          docker run --rm --net=host --pid=host --privileged -v /:/host ubuntu:24.04 chroot /host sh -c '
+            echo "== ufw"; ufw status verbose 2>&1 | head -40
+            echo "== iptables INPUT"; iptables -S INPUT 2>&1 | head -30
+            echo "== nft tables"; nft list tables 2>&1
+            echo "== listening"; ss -ltn 2>&1 | grep -E ":(22|8090|80|443)"
+            echo "== interfaces (no addresses)"; ip -br link | sed "s/[0-9a-f:]\{17\}//g"
+            echo "== tailscale"; tailscale status --json 2>&1 | grep -m1 BackendState
+            echo "== services"; for u in tailscaled ufw docker ssh; do echo "$u $(systemctl is-active $u)"; done
+            echo "== conntrack"; cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>&1
+            echo "== kernel"; echo "ufw blocks: $(dmesg | grep -c "UFW BLOCK")"
+            dmesg -T | grep -iE "out of memory|oom-kill|link is down|table full" | sed "s/[0-9a-f:]\{17\}//g" | tail -5
+          '
