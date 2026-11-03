@@ -32,14 +32,18 @@ Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
 updates. UI edits are disabled so Git remains the source of truth.
 
-Grafana opens on **Home** for everyone (`GF_USERS_HOME_PAGE`); every
-dashboard links to Home and the others; Home and Kaizen also link to the Kaizen Board.
+There is one dashboard, [Home](../stacks/observability/dashboards/home.json),
+at the top level, and Grafana opens on it for everyone (`GF_USERS_HOME_PAGE`).
+Add panels to it rather than adding dashboards. From the top:
 
-- [Home](../stacks/observability/dashboards/home.json) — the Beelink's CPU and memory split into containers, CI VMs and the rest; Kaizen's flow; flight tracker, last backup, bans and any alert not OK
-- [Kaizen](../stacks/observability/dashboards/kaizen.json) — Auto Kaizen's tasks by state, longest wait for a machine, merges and agent cost
-- [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends (containers only; Home adds the CI VMs)
-- [Security](../stacks/observability/dashboards/security.json) — CrowdSec detections and firewall decisions
-- [Backups](../stacks/observability/dashboards/backups.json) — off-site backup successes, failures, stored size and run log
+- **Status:** any alert not OK, flight tracker, last backup, bans, disk, containers, uptime
+- **Beelink:** CPU and memory, split into Docker containers, Firecracker CI VMs and the rest
+- **Kaizen:** Auto Kaizen's tasks by state and the longest wait for a machine
+- **Collapsed sections**, which load only when opened: each container's CPU,
+  memory and network; Kaizen's merges, cost and VMs over time; CrowdSec
+  detections and bans; backup runs, failures and stored size
+
+The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
 
 Grafana allows anonymous read-only (Viewer) access so dashboards open without
 a login, including for agents checking a change. Editing, Explore and

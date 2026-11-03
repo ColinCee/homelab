@@ -2,7 +2,8 @@ apiVersion: 1
 groups:
   - orgId: 1
     name: Infrastructure
-    folder: Homelab
+    # Grafana keeps alert rules in a folder; this one holds no dashboards.
+    folder: Alert rules
     interval: 1m
     rules:
       - uid: high-cpu
@@ -38,7 +39,7 @@ groups:
           summary: "Beelink CPU usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 5 minutes (5-minute CPU average)."
-          action: "Check CPU use on Home (containers, CI VMs and the rest), then Container Overview."
+          action: "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
         labels:
           severity: warning
 
@@ -75,7 +76,7 @@ groups:
           summary: "Beelink RAM usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 90% for 5 minutes."
-          action: "Check memory use on Home (containers, CI VMs and the rest), then Container Overview."
+          action: "Check the memory chart on Home (containers, CI VMs and the rest), then its Containers section."
         labels:
           severity: warning
 
@@ -235,7 +236,8 @@ groups:
 
   - orgId: 1
     name: Kaizen
-    folder: Homelab
+    # Grafana keeps alert rules in a folder; this one holds no dashboards.
+    folder: Alert rules
     interval: 1m
     rules:
       - uid: kaizen-machine-wait
@@ -317,6 +319,6 @@ groups:
           summary: "Time since Kaizen last merged, with tasks queued"
           value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
           description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
-          action: "Open the Kaizen Board (http://100.100.146.119:8090) and the Kaizen dashboard; look for a failing step or a held change."
+          action: "Open the Kaizen Board (http://100.100.146.119:8090) and the Kaizen section on Grafana's Home; look for a failing step or a held change."
         labels:
           severity: warning
