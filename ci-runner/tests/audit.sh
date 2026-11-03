@@ -27,7 +27,6 @@ root_only_writes() { [[ $(stat -c '%U:%G' "$1") == root:root ]] && ! find "$1" -
 # Host settings
 check "KSM off" [ "$(cat /sys/kernel/mm/ksm/run)" = 0 ]
 check "token root-only" mode_is /etc/homelab-ci/github-token "root:root 600"
-check "repo list root-only" mode_is /etc/homelab-ci/repos "root:root 600"
 check "settings dir root-only" mode_is /etc/homelab-ci "root:root 700"
 state_dir_ok() { [[ ! -e /run/homelab-ci ]] || mode_is /run/homelab-ci "root:root 700"; }
 check "supervisor state dir root-only" state_dir_ok
@@ -49,7 +48,7 @@ for user in fc-slot0 fc-slot1; do
     continue
   fi
   other=fc-slot$((1 - ${user#fc-slot}))
-  for path in /etc/homelab-ci/github-token /etc/homelab-ci/repos /run/homelab-ci /var/run/docker.sock \
+  for path in /etc/homelab-ci/github-token /run/homelab-ci /var/run/docker.sock \
     /home/colin /home/colin/actions-runner /etc/shadow /root "/srv/jailer/firecracker/ci-${other#fc-}"; do
     check "$user cannot read $path" bash -c "! sudo -u $user test -r '$path'"
   done

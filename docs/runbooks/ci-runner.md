@@ -76,8 +76,8 @@ one extra label, `fc-cache-<owner>--<name>` in lowercase:
 ```
 
 Its VM registers with that label too, and a VM without it never counts as
-covering the job. The VM gets the named repo's disk only if that repo is on the
-repo list, private and has a disk; otherwise it gets no cache disk and the job
+covering the job. The VM gets the named repo's disk only if that repo is
+served, private and has a disk; otherwise it gets no cache disk and the job
 still runs. Labels cannot stop GitHub handing a job without the label to such
 a VM when both are queued in the same repo; that job then starts with the named
 repo's disk, and the supervisor boots another VM for the labelled job.
@@ -92,11 +92,11 @@ There are three slots. A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
-Only repositories listed in the host's root-only repo list (`REPOS_FILE` in the supervisor,
-`owner/name` per line) are served, and only while they are private: privacy is
+Only Colin's private repositories the token can see are served (its repository
+access is the list; `served_repos` in the supervisor), and only while private: privacy is
 checked on every poll, and once a repo is public no new VM starts for it and its
 idle ones are stopped. Before making a repo public, move its workflows to
-GitHub-hosted runners and take it off the list and the token.
+GitHub-hosted runners and take it off the token's repository access.
 
 ## Design
 
@@ -107,7 +107,7 @@ GitHub-hosted runners and take it off the list and the token.
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  first repo in that list, so a job there starts in about a
+  repo of the last job, so the next job there starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
@@ -157,16 +157,18 @@ sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f
 ```
 
-The GitHub token is a fine-grained token limited to the served repositories,
-with Administration read and write (to create one-job registrations) and Actions
-read. Store it without it reaching the screen or shell history:
+The GitHub token is a fine-grained token with Administration read and write (to
+create one-job registrations) and Actions read. Its repository access is the list
+of served repositories: the supervisor serves every private repository of Colin's
+the token can see, checked every minute, and nothing else. Store it without it reaching the screen or shell history:
 
 ```bash
 bash -c 'read -rsp "Token: " t; echo; printf "%s" "$t" | sudo tee "$TOKEN_FILE" >/dev/null; sudo chmod 600 "$TOKEN_FILE"'  # TOKEN_FILE: see the supervisor
 ```
 
-To serve another repository, add it to the repo list and to the
-token's repository access, then restart the supervisor.
+To serve another repository (sign it up), add it to the token's repository access
+in GitHub (Settings, Developer settings, Fine-grained tokens): within a minute its
+jobs asking for `homelab-fc` get VMs. Nothing changes on the host.
 
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
