@@ -23,7 +23,7 @@
     {
       "title": "Kaizen Board",
       "type": "link",
-      "url": "http://beelink.tail4f465e.ts.net:8090",
+      "url": "http://100.100.146.119:8090",
       "icon": "external link",
       "tooltip": "The live board",
       "targetBlank": true,
@@ -103,7 +103,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://beelink.tail4f465e.ts.net:8090"
+                    "url": "http://100.100.146.119:8090"
                   }
                 ]
               }
@@ -144,7 +144,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://beelink.tail4f465e.ts.net:8090"
+                    "url": "http://100.100.146.119:8090"
                   }
                 ]
               }
@@ -158,7 +158,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Backup age"
+                "value": "Backup"
               },
               {
                 "id": "unit",
@@ -415,7 +415,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://beelink.tail4f465e.ts.net:8090"
+                    "url": "http://100.100.146.119:8090"
                   }
                 ]
               }
@@ -452,7 +452,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://beelink.tail4f465e.ts.net:8090"
+                    "url": "http://100.100.146.119:8090"
                   }
                 ]
               }
@@ -493,7 +493,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://beelink.tail4f465e.ts.net:8090"
+                    "url": "http://100.100.146.119:8090"
                   }
                 ]
               }
@@ -550,7 +550,7 @@
             "uid": "prometheus"
           },
           "expr": "time() - max(homelab_backup_last_success_timestamp_seconds)",
-          "legendFormat": "Backup age",
+          "legendFormat": "Backup",
           "refId": "C",
           "instant": true,
           "range": false
@@ -1310,10 +1310,9 @@
       "options": {
         "legend": {
           "calcs": [
-            "mean",
-            "max"
+            "lastNotNull"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
