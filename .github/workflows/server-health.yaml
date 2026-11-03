@@ -20,14 +20,6 @@ on:
         description: "Send a test alert to the Claude triage routine"
         type: boolean
         default: false
-      network:
-        description: "Also print the firewall, listening ports and service states"
-        type: boolean
-        default: false
-      unban_tailnet:
-        description: "Lift CrowdSec bans on Colin's own tailnet and LAN addresses"
-        type: boolean
-        default: false
 
 # Own group: sharing "deploy" would let a queued health run cancel a pending
 # deploy. Pruning only removes images older than a week, so it is safe
@@ -73,40 +65,6 @@ jobs:
             -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
             -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
             -d '{"text": "Test — Server health test_alert. Delivery check only; no resource alert fired."}'
-
-      # For when Beelink is up but nothing can reach it. The repo is public, so this
-      # prints only rules, ports and service states: no addresses, names or log lines.
-      - name: Network state
-        if: inputs.network
-        run: |
-          docker run --rm --net=host --pid=host --privileged -v /:/host ubuntu:24.04 chroot /host sh -c '
-            echo "== ufw"; ufw status verbose 2>&1 | head -40
-            echo "== iptables INPUT"; iptables -S INPUT 2>&1 | head -30
-            echo "== nft tables"; nft list tables 2>&1
-            echo "== listening"; ss -ltn 2>&1 | grep -E ":(22|8090|80|443)"
-            echo "== interfaces (no addresses)"; ip -br link | sed "s/[0-9a-f:]\{17\}//g"
-            echo "== tailscale"; tailscale status --json 2>&1 | grep -m1 BackendState
-            echo "== services"; for u in tailscaled ufw docker ssh; do echo "$u $(systemctl is-active $u)"; done
-            echo "== conntrack"; cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>&1
-            echo "== kernel"; echo "ufw blocks: $(dmesg | grep -c "UFW BLOCK")"
-            dmesg -T | grep -iE "out of memory|oom-kill|link is down|table full" | sed "s/[0-9a-f:]\{17\}//g" | tail -5
-          '
-
-      # CrowdSec's own allow list covers LAN ranges but not the tailnet's 100.64.0.0/10, so it can ban Colin's
-      # devices. Only private addresses are shown (the log is public), with the scenario that banned them.
-      - name: CrowdSec bans on our own addresses
-        if: inputs.network || inputs.unban_tailnet
-        run: |
-          export OURS='^Ip:(100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|192\.168\.|10\.)'
-          docker exec crowdsec cscli decisions list --limit 0 -o raw 2>&1 \
-            | awk -F, 'NR == 1 || $3 ~ ENVIRON["OURS"] {print $2","$3","$4","$5","$9}' | head -20
-          echo "bans in all: $(docker exec crowdsec cscli decisions list --limit 0 -o raw 2>/dev/null | tail -n +2 | wc -l)"
-
-      - name: Lift bans on our own addresses
-        if: inputs.unban_tailnet
-        run: |
-          docker exec crowdsec cscli decisions delete --contained --range 100.64.0.0/10
-          docker exec crowdsec cscli decisions delete --contained --range 192.168.0.0/16
 
       - name: Report health
         env:
