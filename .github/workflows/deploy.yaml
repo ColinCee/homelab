@@ -82,7 +82,7 @@ jobs:
             if printf 'user = "admin:%s"\n' "$pw" |
               curl -sf -m 10 -K - -X POST -H "Content-Type: application/json" \
                 -d '{"items":[{"role":"Viewer","permission":1}]}' \
-                http://100.100.146.119:3001/api/dashboards/uid/home/permissions >/dev/null; then
+                http://beelink.tail4f465e.ts.net:3001/api/dashboards/uid/home/permissions >/dev/null; then
               exit 0
             fi
             sleep 2

@@ -104,7 +104,7 @@ Prometheus receives metrics from:
   included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`.
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
-- **Kaizen Board:** direct scrape of `http://100.100.146.119:8090/metrics`
+- **Kaizen Board:** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
   `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`, and
@@ -121,8 +121,8 @@ Prometheus receives metrics from:
 Useful checks:
 
 ```bash
-curl -sf http://100.100.146.119:3001/api/health
-curl -sf http://100.100.146.119:6060/metrics >/dev/null
+curl -sf http://beelink.tail4f465e.ts.net:3001/api/health
+curl -sf http://beelink.tail4f465e.ts.net:6060/metrics >/dev/null
 ```
 
 Useful PromQL:

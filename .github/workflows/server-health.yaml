@@ -55,7 +55,7 @@ jobs:
           pw=${GRAFANA_ADMIN_PASSWORD//\\/\\\\}
           pw=${pw//\"/\\\"}
           printf 'user = "admin:%s"\n' "$pw" |
-            curl -sf -K - http://100.100.146.119:3001/api/v1/provisioning/contact-points |
+            curl -sf -K - http://beelink.tail4f465e.ts.net:3001/api/v1/provisioning/contact-points |
             jq -r '.[] | select(.uid == "claude-triage") | "Grafana receiver: \(.name) / \(.type)"' ||
             echo "Grafana receiver: could not read (admin login failed?)"
           # Print the response body too: HTTP 200 alone didn't prove a wake landed.

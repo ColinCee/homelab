@@ -71,7 +71,7 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
 done
 
 # Grafana alerts: anonymous Viewer access is enough to read state and history.
-grafana=http://100.100.146.119:3001
+grafana=http://beelink.tail4f465e.ts.net:3001
 firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
   jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
   firing="unknown (Grafana API unreachable)"

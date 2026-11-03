@@ -23,7 +23,7 @@
     {
       "title": "Kaizen Board",
       "type": "link",
-      "url": "http://100.100.146.119:8090",
+      "url": "http://beelink.tail4f465e.ts.net:8090",
       "icon": "external link",
       "tooltip": "The live board",
       "targetBlank": true,
@@ -103,7 +103,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://100.100.146.119:8090"
+                    "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
               }
@@ -144,7 +144,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://100.100.146.119:8090"
+                    "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
               }
@@ -415,7 +415,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://100.100.146.119:8090"
+                    "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
               }
@@ -452,7 +452,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://100.100.146.119:8090"
+                    "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
               }
@@ -493,7 +493,7 @@
                 "value": [
                   {
                     "title": "Kaizen Board",
-                    "url": "http://100.100.146.119:8090"
+                    "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
               }
