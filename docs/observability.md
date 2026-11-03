@@ -44,6 +44,8 @@ Add panels to it rather than adding dashboards. From the top:
   detections and bans; backup runs, failures and stored size
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
+Grafana gives a top-level provisioned dashboard no viewer access, so the
+deploy workflow grants the Viewer role view access to Home after each deploy.
 
 Grafana allows anonymous read-only (Viewer) access so dashboards open without
 a login, including for agents checking a change. Editing, Explore and
