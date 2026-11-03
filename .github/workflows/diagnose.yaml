@@ -26,5 +26,6 @@ jobs:
             echo "== tailscale"; tailscale status --json 2>&1 | grep -m1 BackendState
             echo "== services"; for u in tailscaled ufw docker ssh; do echo "$u $(systemctl is-active $u)"; done
             echo "== conntrack"; cat /proc/sys/net/netfilter/nf_conntrack_count /proc/sys/net/netfilter/nf_conntrack_max 2>&1
-            echo "== kernel"; echo "ufw blocks: $(dmesg | grep -c "UFW BLOCK")"; dmesg -T | grep -iE "out of memory|oom-kill|link is down|table full" | sed "s/[0-9a-f:]\{17\}//g" | tail -5
+            echo "== kernel"; echo "ufw blocks: $(dmesg | grep -c "UFW BLOCK")"
+            dmesg -T | grep -iE "out of memory|oom-kill|link is down|table full" | sed "s/[0-9a-f:]\{17\}//g" | tail -5
           '
