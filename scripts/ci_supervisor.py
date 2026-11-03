@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Start a throwaway Firecracker VM for each queued CI job on Colin's private repos.
 
-Polls GitHub for queued jobs asking for the `homelab-fc` label, on the repositories
-listed in /etc/homelab-ci/repos. For each one it asks GitHub for a just-in-time runner
-registration (good for exactly one job) and boots a VM with run-vm.sh, which receives
-that registration through Firecracker's metadata service. The GitHub token stays on
+Polls GitHub for queued jobs asking for the `homelab-fc` label, on every private
+repository of Colin's that its token can see: a repository signs up by being added to
+the token's repository access in GitHub, nothing on the host. For each job it asks
+GitHub for a just-in-time runner registration (good for exactly one job) and boots a
+VM with run-vm.sh, which receives that registration through Firecracker's metadata
+service. The GitHub token stays on
 the host; a VM only ever sees its one-job registration. A repository that is not
-private, or not on the list, is never served. See docs/runbooks/ci-runner.md.
+private, or not Colin's, is never served. See docs/runbooks/ci-runner.md.
 
 Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervisor.service.
 """
@@ -36,7 +38,10 @@ RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 # One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
 # (a job working on that repo's code). GitHub owner names cannot hold `--`.
 CACHE_LABEL_PREFIX = "fc-cache-"
-REPOS_FILE = Path("/etc/homelab-ci/repos")
+# Only Colin's own repositories are served, whatever else the token can see.
+OWNER = "ColinCee"
+# How often to ask GitHub which repositories the token can see.
+REPOS_EVERY = 60
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
@@ -125,24 +130,12 @@ class State:
     privacy: dict[str, Privacy] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
     cache_busy: threading.Lock = field(default_factory=threading.Lock)
+    # The repository of the last job a VM started for: the standby goes to it.
+    last_repo: str = ""
 
 
 def log(message: str) -> None:
     print(message, flush=True)
-
-
-def read_repos(text: str) -> list[str]:
-    """owner/name per line; blank lines and # comments ignored."""
-    repos: list[str] = []
-    for line in text.splitlines():
-        line = line.split("#", 1)[0].strip()
-        if not line:
-            continue
-        owner, sep, name = line.partition("/")
-        if not sep or not owner or not name or "/" in name:
-            raise ValueError(f"not owner/name: {line!r}")
-        repos.append(line)
-    return repos
 
 
 def cache_label_repo(label: str) -> str | None:
@@ -365,6 +358,8 @@ def launch(
     state.launches[slot] = Launch(
         slot, repo, runner_id, name, now, process, metadata, standby, label=label
     )
+    if not standby:
+        state.last_repo = repo
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
@@ -690,7 +685,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
 def wants_standby(
     repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: int = 1
 ) -> bool:
-    """Up to `wanted` standby VMs for the first repo listed, while private and slots are free."""
+    """Up to `wanted` standby VMs for the first repo (the last job's), while private and free."""
     return bool(repos) and repos[0] in private and sum(standbys) < wanted and free > 0
 
 
@@ -701,12 +696,28 @@ def standby_count() -> int:
         return 1
 
 
+def served_repos(gh: GitHub) -> list[str]:
+    """Colin's private repositories the token can see, the ones that signed up."""
+    page = gh.request("GET", "/user/repos?visibility=private&affiliation=owner&per_page=100")
+    return sorted(
+        str(r["full_name"])
+        for r in page
+        if r.get("private") is True and (r.get("owner") or {}).get("login") == OWNER
+    )
+
+
+def standby_first(repos: list[str], last: str) -> list[str]:
+    """The repo of the last job first, so the standby VM waits where work just was."""
+    return [last, *(r for r in repos if r != last)] if last in repos else repos
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="one poll, for testing")
     args = parser.parse_args(argv)
-    repos = read_repos(REPOS_FILE.read_text())
     gh = GitHub(TOKEN_FILE.read_text().strip())
+    repos: list[str] = []
+    listed = 0.0
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     CACHE_DIR.mkdir(mode=0o755, exist_ok=True)
     # Half-built caches from a supervisor that was killed mid-build.
@@ -714,16 +725,23 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
     state = State()
     # Repos whose stale registrations are not cleared yet.
-    unclean = list(repos)
+    unclean: list[str] = []
     failures = 0
-    log(f"watching {len(repos)} repositories, {SLOTS} slots")
+    log(f"{SLOTS} slots; serving private repos the token can see")
     while True:
         wait: float = POLL_SECONDS
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
+            if time.time() - listed >= REPOS_EVERY:
+                found = served_repos(gh)
+                listed = time.time()
+                if found != repos:
+                    log(f"serving {len(found)} repositories: {', '.join(found)}")
+                    unclean += [r for r in found if r not in repos]
+                    repos = found
             if unclean:
                 unclean = remove_stale_runners(gh, unclean)
-            tick(gh, state, repos, time.time())
+            tick(gh, state, standby_first(repos, state.last_repo), time.time())
             failures = 0
         except RateLimited as e:
             log(str(e))
