@@ -514,34 +514,6 @@
                 }
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "E"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Uptime"
-              },
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    }
-                  ]
-                }
-              }
-            ]
           }
         ]
       },
@@ -607,17 +579,6 @@
           "expr": "count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot.+\"}) or vector(0)",
           "legendFormat": "CI VMs",
           "refId": "D",
-          "instant": true,
-          "range": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(time() - node_boot_time_seconds{job=\"integrations/unix\"})",
-          "legendFormat": "Uptime",
-          "refId": "E",
           "instant": true,
           "range": false
         }
@@ -706,6 +667,14 @@
                   "fixedColor": "text",
                   "mode": "fixed"
                 }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
               }
             ]
           },
@@ -759,7 +728,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull"
+            "last"
           ],
           "displayMode": "list",
           "placement": "bottom",
@@ -900,6 +869,14 @@
                   "fixedColor": "text",
                   "mode": "fixed"
                 }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
               }
             ]
           },
@@ -953,7 +930,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull"
+            "last"
           ],
           "displayMode": "list",
           "placement": "bottom",
@@ -1380,7 +1357,7 @@
       "options": {
         "legend": {
           "calcs": [
-            "lastNotNull"
+            "last"
           ],
           "displayMode": "list",
           "placement": "bottom",
@@ -1497,10 +1474,9 @@
       "options": {
         "legend": {
           "calcs": [
-            "mean",
-            "max"
+            "last"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
@@ -1976,7 +1952,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "clamp_max(sum(rate(cs_lapi_bouncer_requests_total{job=\"crowdsec\"}[5m])), 1)",
+          "expr": "sum(rate(cs_lapi_bouncer_requests_total{job=\"crowdsec\"}[5m])) > bool 0",
           "legendFormat": "Bouncer",
           "refId": "C",
           "instant": true,
@@ -2325,7 +2301,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2428,7 +2404,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2538,7 +2514,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2649,7 +2625,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2743,7 +2719,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2847,7 +2823,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -2977,7 +2953,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
@@ -3129,7 +3105,7 @@
           "options": {
             "legend": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "displayMode": "list",
               "placement": "bottom",
