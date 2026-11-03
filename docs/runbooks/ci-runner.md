@@ -107,7 +107,7 @@ GitHub-hosted runners and take it off the token's repository access.
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  first repo in that list, so a job there starts in about a
+  repo of the last job, so the next job there starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the

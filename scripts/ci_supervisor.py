@@ -698,10 +698,17 @@ def standby_count() -> int:
 
 def served_repos(gh: GitHub) -> list[str]:
     """Colin's private repositories the token can see, the ones that signed up."""
-    page = gh.request("GET", "/user/repos?visibility=private&affiliation=owner&per_page=100")
+    repos: list[dict] = []
+    for n in range(1, 11):
+        page = gh.request(
+            "GET", f"/user/repos?visibility=private&affiliation=owner&per_page=100&page={n}"
+        )
+        repos += page
+        if len(page) < 100:
+            break
     return sorted(
         str(r["full_name"])
-        for r in page
+        for r in repos
         if r.get("private") is True and (r.get("owner") or {}).get("login") == OWNER
     )
 
@@ -733,11 +740,21 @@ def main(argv: list[str] | None = None) -> int:
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
             if time.time() - listed >= REPOS_EVERY:
-                found = served_repos(gh)
                 listed = time.time()
+                # A failed listing keeps the last list (none at start), never ending the poll.
+                try:
+                    found = served_repos(gh)
+                    skipped("the repo list", None)
+                except RateLimited:
+                    raise
+                except Exception as e:
+                    skipped("the repo list", e)
+                    found = repos
                 if found != repos:
                     log(f"serving {len(found)} repositories: {', '.join(found)}")
-                    unclean += [r for r in found if r not in repos]
+                    unclean = [r for r in unclean if r in found] + [
+                        r for r in found if r not in repos
+                    ]
                     repos = found
             if unclean:
                 unclean = remove_stale_runners(gh, unclean)
