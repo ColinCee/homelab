@@ -454,21 +454,38 @@ def reap(
         del state.launches[slot]
 
 
-def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
-    """Registrations left by a previous supervisor; their VMs died with it. A repo
-    GitHub will not show (say, the token cannot see it) is skipped, not fatal."""
+# Each repo GitHub would not show on the last try, with why; logged only when it changes.
+SKIPPED: dict[str, str] = {}
+
+
+def skipped(repo: str, error: Exception | None) -> None:
+    """Notes one repo failing (or working again), so a lasting failure logs once, not every poll."""
+    why = f"{type(error).__name__}: {error}" if error else None
+    if why and SKIPPED.get(repo) != why:
+        log(f"skipping {repo} until GitHub shows it: {why}")
+        SKIPPED[repo] = why
+    elif not why and SKIPPED.pop(repo, None):
+        log(f"{repo} is back")
+
+
+def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> list[str]:
+    """Registrations left by a previous supervisor; their VMs died with it. Returns the
+    repos GitHub would not show (say, the token cannot see them), to try again later."""
+    failed: list[str] = []
     for repo in repos:
         try:
             page = gh.request("GET", f"/repos/{repo}/actions/runners?per_page=100")
         except RateLimited:
             raise
         except Exception as e:
-            log(f"skipping {repo}: {type(e).__name__}: {e}")
+            skipped(repo, e)
+            failed.append(repo)
             continue
         for runner in page.get("runners", []):
             name = str(runner.get("name", ""))
             if name.startswith(RUNNER_PREFIX) and delete_runner(gh, repo, int(runner["id"]), name):
                 log(f"removed stale runner {name} from {repo}")
+    return failed
 
 
 def cache_image(repo: str) -> Path:
@@ -639,10 +656,11 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
             if check_private(gh, state, repo, now):
                 private.append(repo)
                 queued.update(job.want for job in find_queued(gh, repo))
+            skipped(repo, None)
         except RateLimited:
             raise
         except Exception as e:
-            log(f"skipping {repo} this poll: {type(e).__name__}: {e}")
+            skipped(repo, e)
     reap(gh, state, now, queued, private)
     maybe_refresh_caches(gh, state, private, now)
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
@@ -695,16 +713,16 @@ def main(argv: list[str] | None = None) -> int:
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
     state = State()
-    cleaned = False
+    # Repos whose stale registrations are not cleared yet.
+    unclean = list(repos)
     failures = 0
     log(f"watching {len(repos)} repositories, {SLOTS} slots")
     while True:
         wait: float = POLL_SECONDS
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
-            if not cleaned:
-                remove_stale_runners(gh, repos)
-                cleaned = True
+            if unclean:
+                unclean = remove_stale_runners(gh, unclean)
             tick(gh, state, repos, time.time())
             failures = 0
         except RateLimited as e:
