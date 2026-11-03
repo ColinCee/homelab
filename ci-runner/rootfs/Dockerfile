@@ -29,6 +29,20 @@ RUN v=${RUNNER_VERSION#v} \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && chown -R runner:runner /opt/runner
 
+# The system libraries Playwright's Chromium needs on Ubuntu 24.04 (the tools and
+# chromium lists `playwright install-deps chromium` installs), so a job only runs
+# `playwright install chromium` to get the browser itself.
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      xvfb fonts-noto-color-emoji fonts-unifont libfontconfig1 libfreetype6 \
+      xfonts-cyrillic xfonts-scalable fonts-liberation fonts-ipafont-gothic \
+      fonts-wqy-zenhei fonts-tlwg-loma-otf fonts-freefont-ttf \
+      libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 libcairo2 \
+      libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 libnspr4 libnss3 \
+      libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 libxdamage1 libxext6 libxfixes3 \
+      libxkbcommon0 libxrandr2 \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # Tools jobs would otherwise download every time. Node goes where setup-node
 # looks first (the runner's tool cache); Python where uv looks for it.
 ARG NODE_VERSION
@@ -53,15 +67,26 @@ RUN v=${NODE_VERSION#v} \
  && chown -R runner:runner /opt/hostedtoolcache /opt/uv-python \
  && printf 'RUNNER_TOOL_CACHE=/opt/hostedtoolcache\nUV_PYTHON_INSTALL_DIR=/opt/uv-python\n' >> /opt/runner/.env
 
+# A JDK (Eclipse Temurin) for Java and Gradle jobs, at JAVA_HOME=/opt/jdk.
+ARG JDK_VERSION
+ARG JDK_SHA256
+RUN v=${JDK_VERSION} \
+ && curl -fsSL -o /tmp/jdk.tgz \
+      "https://github.com/adoptium/temurin${v%%[.+]*}-binaries/releases/download/jdk-$(echo "$v" | sed 's/+/%2B/')/OpenJDK${v%%[.+]*}U-jdk_x64_linux_hotspot_$(echo "$v" | tr + _).tar.gz" \
+ && echo "${JDK_SHA256}  /tmp/jdk.tgz" | sha256sum -c --quiet \
+ && mkdir /opt/jdk && tar -xzf /tmp/jdk.tgz --strip-components 1 -C /opt/jdk && rm /tmp/jdk.tgz \
+ && echo 'JAVA_HOME=/opt/jdk' >> /opt/runner/.env
+
 # Actions the CI repos use, unpacked where the runner looks before downloading
-# (<owner>_<repo>/<commit>/<the archive's own folder>), and Node on the jobs' PATH.
+# (<owner>_<repo>/<commit>/<the archive's own folder>), and Node and the JDK on the
+# jobs' PATH.
 ARG CACHED_ACTIONS
 RUN for a in ${CACHED_ACTIONS}; do \
       repo=${a%@*}; sha=${a#*@}; dir="/opt/actions-cache/$(echo "$repo" | tr / _)/$sha"; \
       mkdir -p "$dir" && curl -fsSL "https://api.github.com/repos/$repo/tarball/$sha" | tar -xz -C "$dir"; \
     done \
  && printf 'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actions-cache\nACTIONS_RUNNER_SYMLINK_CACHED_ACTIONS=true\n' >> /opt/runner/.env \
- && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
+ && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/opt/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
  && chown runner:runner /opt/runner/.path
 
 COPY ci-boot /usr/local/sbin/ci-boot

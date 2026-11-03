@@ -20,11 +20,14 @@ jobs:
 ```
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
-`sudo`, with Node 24 LTS, uv and Python 3.15 already installed (pinned in
-`versions.env`) and on the job's `PATH`, so a job needs no setup actions. The
-actions the CI repos use (`CACHED_ACTIONS` in `versions.env`) are unpacked in
-the image, so "Set up job" does not download them; a tag that has moved on is
-downloaded as usual until the list is refreshed and the image rebuilt.
+`sudo`, with Node 24 LTS, uv, Python 3.15 and a JDK 25 (Temurin, at
+`JAVA_HOME=/opt/jdk`) already installed (pinned in `versions.env`) and on the
+job's `PATH`, so a job needs no setup actions. The libraries Playwright's
+Chromium needs are installed too, so a job runs `playwright install chromium`
+and needs no `install-deps` step. The actions the CI repos use
+(`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
+does not download them; a tag that has moved on is downloaded as usual until
+the list is refreshed and the image rebuilt.
 
 The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
 checkout, then one step that runs `uv sync --locked --no-install-project` and
