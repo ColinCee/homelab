@@ -21,7 +21,7 @@ jobs:
             echo "== ufw"; ufw status verbose 2>&1 | head -40
             echo "== iptables INPUT"; iptables -S INPUT 2>&1 | head -30
             echo "== nft tables"; nft list tables 2>&1
-            echo "== listening"; ss -ltn 2>&1 | grep -E ":(22|8090|80|443)"
+            echo "== listening"; ss -ltn 2>&1 | grep -E ":(22|8090|80|443)"
             echo "== interfaces (no addresses)"; ip -br link | sed "s/[0-9a-f:]\{17\}//g"
             echo "== tailscale"; tailscale status --json 2>&1 | grep -m1 BackendState
             echo "== services"; for u in tailscaled ufw docker ssh; do echo "$u $(systemctl is-active $u)"; done
