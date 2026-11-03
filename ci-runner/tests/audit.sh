@@ -70,6 +70,14 @@ if mount -o ro,loop "$images/rootfs.ext4" "$scan"; then
   secrets='github_pat_|ghp_[A-Za-z0-9]{30}|^-----BEGIN ([A-Z]+ )?PRIVATE KEY-----[[:space:]]*$'
   no_secrets() { ! grep -rlIE "$secrets" "$scan/etc" "$scan/home" "$scan/root" "$scan/opt" 2>/dev/null | grep -q .; }
   check "no tokens or private keys in image" no_secrets
+  # Jobs install the Python versions a repo asks for next to the baked-in one.
+  # -quit stops at the first stray file, so no early-exit pipe can hide one.
+  runner_uid=$(awk -F: '$1 == "runner" {print $3}' "$scan/etc/passwd")
+  runner_owns_python() {
+    [[ -n "$runner_uid" && -d "$scan/opt/uv-python" ]] &&
+      [[ -z $(find "$scan/opt/uv-python" ! -uid "$runner_uid" -print -quit) ]]
+  }
+  check "runner user owns uv's Python folder" runner_owns_python
   umount "$scan"
 else
   fail "image could not be mounted for the secrets scan"
