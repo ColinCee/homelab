@@ -319,6 +319,6 @@ groups:
           summary: "Time since Kaizen last merged, with tasks queued"
           value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
           description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
-          action: "Open the Kaizen Board (http://beelink.tail4f465e.ts.net:8090) and Kaizen on Home; look for a failing step or held change."
+          action: "Open the Kaizen Board (http://beelink.tail4f465e.ts.net:8090) and Grafana Home; look for a failing step or held change."
         labels:
           severity: warning
