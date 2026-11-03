@@ -36,12 +36,17 @@ There is one dashboard, [Home](../stacks/observability/dashboards/home.json),
 at the top level, and Grafana opens on it for everyone (`GF_USERS_HOME_PAGE`).
 Add panels to it rather than adding dashboards. From the top:
 
-- **Status:** any alert not OK, flight tracker, last backup, bans, disk, containers, uptime
-- **Beelink:** CPU and memory, split into Docker containers, Firecracker CI VMs and the rest
-- **Kaizen:** Auto Kaizen's tasks by state and the longest wait for a machine
-- **Collapsed sections**, which load only when opened: each container's CPU,
-  memory and network; Kaizen's merges, cost and VMs over time; CrowdSec
-  detections and bans; backup runs, failures and stored size
+- **Top strip:** any alert not OK; what needs you (stuck Kaizen tasks, held
+  changes, backup age, flight tracker); the Beelink's CPU, memory, disk, CI VMs
+  and uptime
+- **Beelink:** CPU and memory over time, split into Docker containers,
+  Firecracker CI VMs and the rest
+- **Kaizen:** working, waiting, merged and cost, tasks by state, and the
+  longest wait for a machine
+- **Containers:** a bar per container for CPU and for memory
+- **Security and backups:** one line of numbers each
+- **Collapsed sections**, which load only when opened: containers, CI VMs,
+  CrowdSec and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
