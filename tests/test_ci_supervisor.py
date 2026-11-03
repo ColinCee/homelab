@@ -183,3 +183,76 @@ def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
     assert sup.wants_standby(["a/x"], ["a/x"], [True], 1, wanted=2) is True
     assert sup.wants_standby(["a/x"], ["a/x"], [True, True], 0, wanted=2) is False
     assert sup.wants_standby(["a/x"], ["a/x"], [], 2, wanted=0) is False
+
+
+@pytest.mark.parametrize(
+    ("label", "repo"),
+    [
+        ("fc-cache-octo--widgets", "octo/widgets"),
+        ("FC-Cache-Octo--Widgets", "octo/widgets"),  # GitHub matches labels in any case
+        ("fc-cache-octo--my--app", "octo/my--app"),  # an owner name cannot hold "--"
+        ("fc-cache-octo-widgets", None),
+        ("fc-cache---widgets", None),
+        ("fc-cache-octo--", None),
+        ("homelab-fc", None),
+    ],
+)
+def test_reads_the_repo_a_cache_label_names(label: str, repo: str | None) -> None:
+    assert sup.cache_label_repo(label) == repo
+
+
+@pytest.mark.parametrize(
+    ("labels", "ours"),
+    [
+        (["homelab-fc", "fc-cache-octo--widgets"], True),
+        (["self-hosted", "homelab-fc", "fc-cache-octo--unserved"], True),  # served, no disk
+        (["homelab-fc", "fc-cache-octo--a", "fc-cache-octo--b"], False),  # one VM, one disk
+        (["homelab-fc", "fc-cache-octo--widgets", "gpu"], False),
+        (["fc-cache-octo--widgets"], False),
+    ],
+)
+def test_takes_jobs_with_one_cache_label(labels: list[str], ours: bool) -> None:
+    assert sup.wants_us(labels) is ours
+
+
+def test_keeps_jobs_with_different_cache_labels_apart() -> None:
+    plain = sup.Job("octo/agent", 1, "check", ("homelab-fc",))
+    labelled = sup.Job("octo/agent", 2, "build", ("homelab-fc", "FC-CACHE-octo--widgets"))
+    assert plain.want == ("octo/agent", "")
+    assert labelled.want == ("octo/agent", "fc-cache-octo--widgets")
+
+    # A standby (or booting VM) without the label does not cover the labelled job.
+    starts = sup.plan({plain.want: 1, labelled.want: 1}, {plain.want: 1}, 2)
+
+    assert starts == [labelled.want]
+
+
+@pytest.fixture
+def caches(tmp_path, monkeypatch):
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    (tmp_path / "octo__widgets.ext4").touch()
+    return tmp_path
+
+
+def test_a_job_without_a_cache_label_gets_its_own_repos_disk(caches) -> None:
+    assert sup.cache_for("octo/agent", "", ["octo/agent"]) == caches / "octo__agent.ext4"
+
+
+def test_a_cache_label_naming_a_served_private_repo_gets_its_disk(caches) -> None:
+    disk = sup.cache_for("octo/agent", "FC-CACHE-octo--widgets", ["octo/agent", "octo/widgets"])
+
+    assert disk == caches / "octo__widgets.ext4"
+
+
+@pytest.mark.parametrize(
+    "private",
+    [
+        ["octo/agent"],  # not served, or served but public: not in this poll's private list
+        ["octo/agent", "octo/nodisk"],
+    ],
+)
+def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(
+    caches, private: list[str]
+) -> None:
+    assert sup.cache_for("octo/agent", "fc-cache-octo--widgets", private) is None
+    assert sup.cache_for("octo/agent", "fc-cache-octo--nodisk", private) is None
