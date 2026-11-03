@@ -68,6 +68,20 @@ How it is made, without the host running any of the repo's code:
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
    to others. VMs started after that use it.
 
+A job working on another served repo's code can ask for that repo's disk with
+one extra label, `fc-cache-<owner>--<name>` in lowercase:
+
+```yaml
+    runs-on: [self-hosted, linux, x64, homelab-fc, fc-cache-octo--widgets]
+```
+
+Its VM registers with that label too, and a VM without it never counts as
+covering the job. The VM gets the named repo's disk only if that repo is on the
+repo list, private and has a disk; otherwise it gets no cache disk and the job
+still runs. Labels cannot stop GitHub handing a job without the label to such
+a VM when both are queued in the same repo; that job then starts with the named
+repo's disk, and the supervisor boots another VM for the labelled job.
+
 A job should not restore GitHub's caches as well. Without a cache disk yet,
 `/cache` starts empty and the job downloads as usual. The default branch's job
 also puts `node_modules` and its `package-lock.json` on the disk (the action's
