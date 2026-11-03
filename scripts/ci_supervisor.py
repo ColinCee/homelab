@@ -455,9 +455,16 @@ def reap(
 
 
 def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
-    """Registrations left by a previous supervisor; their VMs died with it."""
+    """Registrations left by a previous supervisor; their VMs died with it. A repo
+    GitHub will not show (say, the token cannot see it) is skipped, not fatal."""
     for repo in repos:
-        page = gh.request("GET", f"/repos/{repo}/actions/runners?per_page=100")
+        try:
+            page = gh.request("GET", f"/repos/{repo}/actions/runners?per_page=100")
+        except RateLimited:
+            raise
+        except Exception as e:
+            log(f"skipping {repo}: {type(e).__name__}: {e}")
+            continue
         for runner in page.get("runners", []):
             name = str(runner.get("name", ""))
             if name.startswith(RUNNER_PREFIX) and delete_runner(gh, repo, int(runner["id"]), name):
@@ -625,10 +632,17 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     private: list[str] = []
     for repo in repos:
         # A repo that is no longer private has nothing queued as far as we are
-        # concerned, so its idle VMs are stopped below and no new ones start.
-        if check_private(gh, state, repo, now):
-            private.append(repo)
-            queued.update(job.want for job in find_queued(gh, repo))
+        # concerned, so its idle VMs are stopped below and no new ones start. One
+        # repo GitHub will not show is skipped this poll; it never stops the others
+        # (3 Nov: a repo the token could not see stopped all CI).
+        try:
+            if check_private(gh, state, repo, now):
+                private.append(repo)
+                queued.update(job.want for job in find_queued(gh, repo))
+        except RateLimited:
+            raise
+        except Exception as e:
+            log(f"skipping {repo} this poll: {type(e).__name__}: {e}")
     reap(gh, state, now, queued, private)
     maybe_refresh_caches(gh, state, private, now)
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job

@@ -256,3 +256,41 @@ def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(
 ) -> None:
     assert sup.cache_for("octo/agent", "fc-cache-octo--widgets", private) is None
     assert sup.cache_for("octo/agent", "fc-cache-octo--nodisk", private) is None
+
+
+class OneRepoBroken:
+    """GitHub as seen by a token that cannot see `broken`."""
+
+    def __init__(self, broken: str) -> None:
+        self.broken = broken
+
+    def request(self, method: str, path: str, body: object = None) -> dict:
+        if path.startswith(f"/repos/{self.broken}"):
+            raise OSError("HTTP Error 404: Not Found")
+        if path.endswith("/runners?per_page=100"):
+            return {"runners": [{"id": 7, "name": f"{sup.RUNNER_PREFIX}0-1"}]}
+        return {}
+
+
+def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch) -> None:
+    deleted: list[str] = []
+    monkeypatch.setattr(
+        sup, "delete_runner", lambda gh, repo, rid, name: deleted.append(repo) or True
+    )
+    sup.remove_stale_runners(OneRepoBroken("o/gone"), ["o/gone", "o/ok"])
+    assert deleted == ["o/ok"]
+
+    seen: list[str] = []
+    monkeypatch.setattr(
+        sup, "check_private", lambda gh, state, repo, now: seen.append(repo) or True
+    )
+    monkeypatch.setattr(
+        sup,
+        "find_queued",
+        lambda gh, repo: (_ for _ in ()).throw(OSError("404")) if repo == "o/gone" else [],
+    )
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    sup.tick(OneRepoBroken("o/gone"), sup.State(), ["o/gone", "o/ok"], 0.0)
+    assert seen == ["o/gone", "o/ok"]
