@@ -46,10 +46,10 @@
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 7,
+        "w": 6,
         "h": 3
       },
-      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions on the Kaizen Board. Backup: since the last off-site backup (alerts at 26 hours). Flight tracker: the public API serving live aircraft.",
+      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions on the Kaizen Board. Flight tracker: the public API serving live aircraft.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -158,38 +158,6 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Backup"
-              },
-              {
-                "id": "unit",
-                "value": "dtdurations"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 93600
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "D"
-            },
-            "properties": [
-              {
-                "id": "displayName",
                 "value": "Flight tracker"
               },
               {
@@ -247,7 +215,7 @@
           "values": false
         },
         "textMode": "value_and_name",
-        "wideLayout": true,
+        "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 11,
@@ -282,20 +250,9 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "time() - max(homelab_backup_last_success_timestamp_seconds)",
-          "legendFormat": "Backup",
-          "refId": "C",
-          "instant": true,
-          "range": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "max(probe_success{job=\"integrations/blackbox/flight-tracker\"})",
           "legendFormat": "Flight tracker",
-          "refId": "D",
+          "refId": "C",
           "instant": true,
           "range": false
         }
@@ -310,7 +267,7 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 7,
+        "x": 6,
         "y": 0,
         "w": 6,
         "h": 3
@@ -501,7 +458,7 @@
           "values": false
         },
         "textMode": "value_and_name",
-        "wideLayout": true,
+        "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 11,
@@ -557,6 +514,1008 @@
     },
     {
       "id": 3,
+      "title": "Security",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 4,
+        "h": 3
+      },
+      "description": "CrowdSec: addresses blocked now, and whether its engine and firewall bouncer are working. Bans by reason are under Security detail.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Bans"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Engine"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Down",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Up",
+                        "color": "green"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Bouncer"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "Down",
+                        "color": "red"
+                      },
+                      "1": {
+                        "text": "Up",
+                        "color": "green"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": false,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 20
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(cs_active_decisions{job=\"crowdsec\"}) or vector(0)",
+          "legendFormat": "Bans",
+          "refId": "A",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(up{job=\"crowdsec\"})",
+          "legendFormat": "Engine",
+          "refId": "B",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(cs_lapi_bouncer_requests_total{job=\"crowdsec\"}[5m])) > bool 0",
+          "legendFormat": "Bouncer",
+          "refId": "C",
+          "instant": true,
+          "range": false
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Backups",
+      "type": "stat",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 5,
+        "h": 3
+      },
+      "description": "Off-site restic backups to R2: successful runs in 26 hours (no run alerts at 26 hours), failed or skipped in 7 days, size stored. Deep checks are under Backups detail.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "OK (26h)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "green",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "B"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failed (7d)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "red",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "C"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "In R2"
+              },
+              {
+                "id": "unit",
+                "value": "decbytes"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 5000000000.0
+                    },
+                    {
+                      "color": "red",
+                      "value": 8000000000.0
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": false,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 11,
+          "valueSize": 20
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container_name=\"backup\"} |= \"backup ok\" [26h])) or vector(0)",
+          "legendFormat": "OK (26h)",
+          "refId": "A",
+          "queryType": "instant"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum(count_over_time({container_name=\"backup\"} |~ \"backup FAILED|backup SKIPPED\" [7d])) or vector(0)",
+          "legendFormat": "Failed (7d)",
+          "refId": "B",
+          "queryType": "instant"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "max(max_over_time({container_name=\"backup\"} |= \"repository size:\" | regexp \"repository size: (?P<bytes>[0-9]+) bytes\" | unwrap bytes [26h])) or vector(0)",
+          "legendFormat": "In R2",
+          "refId": "C",
+          "queryType": "instant"
+        }
+      ]
+    },
+    {
+      "title": "Alerts",
+      "type": "alertlist",
+      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and the Claude triage routine.",
+      "options": {
+        "alertInstanceLabelFilter": "",
+        "alertName": "",
+        "dashboardAlerts": false,
+        "groupBy": [],
+        "groupMode": "default",
+        "maxItems": 20,
+        "sortOrder": 1,
+        "stateFilter": {
+          "error": true,
+          "firing": true,
+          "noData": true,
+          "normal": false,
+          "pending": true
+        },
+        "viewMode": "stat"
+      },
+      "id": 5,
+      "gridPos": {
+        "x": 21,
+        "y": 0,
+        "w": 3,
+        "h": 3
+      }
+    },
+    {
+      "id": 6,
+      "title": "CPU, cores in use",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 6,
+        "h": 12
+      },
+      "description": "Stacked, in cores: Docker containers, the Firecracker CI VMs, and the rest of the machine (system, Tailscale, the CI supervisor). The dashed line is all 4 cores.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": 60,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0,
+            "axisWidth": 40,
+            "axisLabel": ""
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cores"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "total",
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Containers"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI VMs"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Everything else"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[$__rate_interval])))",
+          "legendFormat": "Containers",
+          "instant": false,
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/.+\"}[$__rate_interval])) or vector(0)",
+          "legendFormat": "CI VMs",
+          "instant": false,
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[$__rate_interval]))) - (sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[$__rate_interval])))) - (sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/.+\"}[$__rate_interval])) or vector(0)), 0)",
+          "legendFormat": "Everything else",
+          "instant": false,
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(count by (instance) (node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}))",
+          "legendFormat": "Cores",
+          "instant": false,
+          "range": true,
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Container CPU",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 3,
+        "w": 6,
+        "h": 12
+      },
+      "description": "Each Docker container's CPU, % of one core, 5-minute average.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "left",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "maxVizHeight": 300,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sort_desc(100 * max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))",
+          "legendFormat": "{{name}}",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "(.+)-1$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Memory in use",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 12
+      },
+      "description": "Stacked: Docker containers, the Firecracker CI VMs, and the rest of the machine. Page cache the system can free is not counted. The dashed line is all memory.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "gradientMode": "opacity",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": 60,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0,
+            "axisWidth": 40,
+            "axisLabel": ""
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Total"
+            },
+            "properties": [
+              {
+                "id": "custom.stacking",
+                "value": {
+                  "group": "total",
+                  "mode": "none"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    10,
+                    10
+                  ],
+                  "fill": "dash"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "text",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.hideFrom",
+                "value": {
+                  "legend": true,
+                  "tooltip": false,
+                  "viz": false
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Containers"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CI VMs"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Everything else"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "purple",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
+          "legendFormat": "Containers",
+          "instant": false,
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/.+\"}) or vector(0)",
+          "legendFormat": "CI VMs",
+          "instant": false,
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "clamp_min(max(node_memory_MemTotal_bytes{job=\"integrations/unix\"} - node_memory_MemAvailable_bytes{job=\"integrations/unix\"}) - (sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))) - (sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/.+\"}) or vector(0)), 0)",
+          "legendFormat": "Everything else",
+          "instant": false,
+          "range": true,
+          "refId": "C"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(node_memory_MemTotal_bytes{job=\"integrations/unix\"})",
+          "legendFormat": "Total",
+          "instant": false,
+          "range": true,
+          "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Container memory",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 12
+      },
+      "description": "Each Docker container's memory in use.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "bytes",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "namePlacement": "left",
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "maxVizHeight": 300,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "legend": {
+          "showLegend": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sort_desc(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
+          "legendFormat": "{{name}}",
+          "instant": true,
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "(.+)-1$",
+            "renamePattern": "$1"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
       "title": "Kaizen",
       "type": "stat",
       "datasource": {
@@ -564,10 +1523,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 13,
-        "y": 0,
-        "w": 7,
-        "h": 3
+        "x": 0,
+        "y": 15,
+        "w": 6,
+        "h": 10
       },
       "description": "Working: tasks an agent or CI is on. Waiting: queued for a machine (homelab or GitHub's). Merged and cost count since midnight UTC.",
       "fieldConfig": {
@@ -755,11 +1714,11 @@
           "values": false
         },
         "textMode": "value_and_name",
-        "wideLayout": true,
+        "wideLayout": false,
         "showPercentChange": false,
         "text": {
-          "titleSize": 11,
-          "valueSize": 20
+          "titleSize": 12,
+          "valueSize": 28
         }
       },
       "targets": [
@@ -816,239 +1775,20 @@
       ]
     },
     {
-      "id": 4,
-      "title": "Security",
-      "type": "stat",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 20,
-        "y": 0,
-        "w": 4,
-        "h": 3
-      },
-      "description": "CrowdSec: addresses blocked now, and whether its engine and firewall bouncer are working. Bans by reason are under Security detail.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Bans"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "text",
-                      "value": null
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Engine"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": 1
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "Down",
-                        "color": "red"
-                      },
-                      "1": {
-                        "text": "Up",
-                        "color": "green"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Bouncer"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": 1
-                    }
-                  ]
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "type": "value",
-                    "options": {
-                      "0": {
-                        "text": "Down",
-                        "color": "red"
-                      },
-                      "1": {
-                        "text": "Up",
-                        "color": "green"
-                      }
-                    }
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 11,
-          "valueSize": 20
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(cs_active_decisions{job=\"crowdsec\"}) or vector(0)",
-          "legendFormat": "Bans",
-          "refId": "A",
-          "instant": true,
-          "range": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(up{job=\"crowdsec\"})",
-          "legendFormat": "Engine",
-          "refId": "B",
-          "instant": true,
-          "range": false
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(cs_lapi_bouncer_requests_total{job=\"crowdsec\"}[5m])) > bool 0",
-          "legendFormat": "Bouncer",
-          "refId": "C",
-          "instant": true,
-          "range": false
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "CPU, cores in use",
+      "id": 11,
+      "title": "Kaizen wait for a machine",
       "type": "timeseries",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
-        "y": 3,
+        "x": 6,
+        "y": 15,
         "w": 9,
-        "h": 7
+        "h": 10
       },
-      "description": "Stacked, in cores: Docker containers, the Firecracker CI VMs, and the rest of the machine (system, Tailscale, the CI supervisor). The dashed line is all 4 cores.",
+      "description": "The longest any running Kaizen task has waited for a Firecracker CI machine. Over 20 minutes alerts (the red dashed line).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1056,7 +1796,7 @@
           },
           "custom": {
             "drawStyle": "line",
-            "fillOpacity": 30,
+            "fillOpacity": 10,
             "gradientMode": "opacity",
             "lineInterpolation": "smooth",
             "lineWidth": 1,
@@ -1064,116 +1804,33 @@
             "spanNulls": 60,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "off"
+              "mode": "dashed"
             },
-            "axisSoftMin": 0
+            "axisSoftMin": 0,
+            "axisSoftMax": 1500,
+            "axisWidth": 40,
+            "axisLabel": ""
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "transparent",
                 "value": null
+              },
+              {
+                "color": "red",
+                "value": 1200
               }
             ]
           },
-          "unit": "none"
+          "unit": "s"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Cores"
-            },
-            "properties": [
-              {
-                "id": "custom.stacking",
-                "value": {
-                  "group": "total",
-                  "mode": "none"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "text",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": false,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Containers"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CI VMs"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Everything else"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "options": {
         "legend": {
@@ -1182,7 +1839,7 @@
           ],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "mode": "multi",
@@ -1195,468 +1852,16 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[$__rate_interval])))",
-          "legendFormat": "Containers",
+          "expr": "max(kaizen_machine_wait_seconds_max{job=\"kaizen\"})",
+          "legendFormat": "Longest wait",
           "instant": false,
           "range": true,
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/.+\"}[$__rate_interval])) or vector(0)",
-          "legendFormat": "CI VMs",
-          "instant": false,
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[$__rate_interval]))) - (sum(max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[$__rate_interval])))) - (sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/.+\"}[$__rate_interval])) or vector(0)), 0)",
-          "legendFormat": "Everything else",
-          "instant": false,
-          "range": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(count by (instance) (node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}))",
-          "legendFormat": "Cores",
-          "instant": false,
-          "range": true,
-          "refId": "D"
         }
       ]
     },
     {
-      "id": 6,
-      "title": "Memory in use",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 9,
-        "y": 3,
-        "w": 9,
-        "h": 7
-      },
-      "description": "Stacked: Docker containers, the Firecracker CI VMs, and the rest of the machine. Page cache the system can free is not counted. The dashed line is all memory.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 30,
-            "gradientMode": "opacity",
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": 60,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            },
-            "axisSoftMin": 0
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "bytes"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Total"
-            },
-            "properties": [
-              {
-                "id": "custom.stacking",
-                "value": {
-                  "group": "total",
-                  "mode": "none"
-                }
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 0
-              },
-              {
-                "id": "custom.lineStyle",
-                "value": {
-                  "dash": [
-                    10,
-                    10
-                  ],
-                  "fill": "dash"
-                }
-              },
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "text",
-                  "mode": "fixed"
-                }
-              },
-              {
-                "id": "custom.hideFrom",
-                "value": {
-                  "legend": true,
-                  "tooltip": false,
-                  "viz": false
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Containers"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CI VMs"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Everything else"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "purple",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
-          "legendFormat": "Containers",
-          "instant": false,
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/.+\"}) or vector(0)",
-          "legendFormat": "CI VMs",
-          "instant": false,
-          "range": true,
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "clamp_min(max(node_memory_MemTotal_bytes{job=\"integrations/unix\"} - node_memory_MemAvailable_bytes{job=\"integrations/unix\"}) - (sum(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))) - (sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/.+\"}) or vector(0)), 0)",
-          "legendFormat": "Everything else",
-          "instant": false,
-          "range": true,
-          "refId": "C"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(node_memory_MemTotal_bytes{job=\"integrations/unix\"})",
-          "legendFormat": "Total",
-          "instant": false,
-          "range": true,
-          "refId": "D"
-        }
-      ]
-    },
-    {
-      "title": "Alerts",
-      "type": "alertlist",
-      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and the Claude triage routine.",
-      "options": {
-        "alertInstanceLabelFilter": "",
-        "alertName": "",
-        "dashboardAlerts": false,
-        "groupBy": [],
-        "groupMode": "default",
-        "maxItems": 10,
-        "sortOrder": 1,
-        "stateFilter": {
-          "error": true,
-          "firing": true,
-          "noData": true,
-          "normal": false,
-          "pending": true
-        },
-        "viewMode": "list"
-      },
-      "id": 7,
-      "gridPos": {
-        "x": 18,
-        "y": 3,
-        "w": 6,
-        "h": 4
-      }
-    },
-    {
-      "id": 8,
-      "title": "Backups",
-      "type": "stat",
-      "datasource": {
-        "type": "loki",
-        "uid": "loki"
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 7,
-        "w": 6,
-        "h": 3
-      },
-      "description": "Off-site restic backups to R2: successful runs in 26 hours, failed or skipped in 7 days, size stored. Deep checks are under Backups detail.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "A"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "OK (26h)"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "red",
-                      "value": null
-                    },
-                    {
-                      "color": "green",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "B"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Failed (7d)"
-              },
-              {
-                "id": "unit",
-                "value": "none"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "red",
-                      "value": 1
-                    }
-                  ]
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byFrameRefID",
-              "options": "C"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "In R2"
-              },
-              {
-                "id": "unit",
-                "value": "decbytes"
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 5000000000.0
-                    },
-                    {
-                      "color": "red",
-                      "value": 8000000000.0
-                    }
-                  ]
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 11,
-          "valueSize": 20
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(count_over_time({container_name=\"backup\"} |= \"backup ok\" [26h])) or vector(0)",
-          "legendFormat": "OK (26h)",
-          "refId": "A",
-          "queryType": "instant"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "sum(count_over_time({container_name=\"backup\"} |~ \"backup FAILED|backup SKIPPED\" [7d])) or vector(0)",
-          "legendFormat": "Failed (7d)",
-          "refId": "B",
-          "queryType": "instant"
-        },
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "loki"
-          },
-          "expr": "max(max_over_time({container_name=\"backup\"} |= \"repository size:\" | regexp \"repository size: (?P<bytes>[0-9]+) bytes\" | unwrap bytes [26h])) or vector(0)",
-          "legendFormat": "In R2",
-          "refId": "C",
-          "queryType": "instant"
-        }
-      ]
-    },
-    {
-      "id": 9,
+      "id": 12,
       "title": "Kaizen tasks by state",
       "type": "timeseries",
       "datasource": {
@@ -1664,10 +1869,10 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 0,
-        "y": 10,
-        "w": 12,
-        "h": 6
+        "x": 15,
+        "y": 15,
+        "w": 9,
+        "h": 10
       },
       "description": "Counts on the Kaizen Board, every 30 seconds.",
       "fieldConfig": {
@@ -1690,7 +1895,9 @@
             "thresholdsStyle": {
               "mode": "off"
             },
-            "axisSoftMin": 0
+            "axisSoftMin": 0,
+            "axisWidth": 40,
+            "axisLabel": ""
           },
           "mappings": [],
           "thresholds": {
@@ -1829,249 +2036,50 @@
       ]
     },
     {
-      "id": 10,
-      "title": "Kaizen wait for a machine",
-      "type": "timeseries",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 10,
-        "w": 12,
-        "h": 6
-      },
-      "description": "The longest any running Kaizen task has waited for a Firecracker CI machine. Over 20 minutes alerts (the red dashed line).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "opacity",
-            "lineInterpolation": "smooth",
-            "lineWidth": 1,
-            "showPoints": "never",
-            "spanNulls": 60,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "dashed"
-            },
-            "axisSoftMin": 0,
-            "axisSoftMax": 1500
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "transparent",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 1200
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "max(kaizen_machine_wait_seconds_max{job=\"kaizen\"})",
-          "legendFormat": "Longest wait",
-          "instant": false,
-          "range": true,
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 11,
-      "title": "Container CPU",
-      "type": "bargauge",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 0,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      },
-      "description": "Each Docker container's CPU, % of one core, 5-minute average.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-BlPu"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "percent",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "namePlacement": "left",
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color",
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "maxVizHeight": 300,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sort_desc(100 * max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))",
-          "legendFormat": "{{name}}",
-          "instant": true,
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "(.+)-1$",
-            "renamePattern": "$1"
-          }
-        }
-      ]
-    },
-    {
-      "id": 12,
-      "title": "Container memory",
-      "type": "bargauge",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 16,
-        "w": 12,
-        "h": 8
-      },
-      "description": "Each Docker container's memory in use.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-BlPu"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "bytes",
-          "min": 0
-        },
-        "overrides": []
-      },
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "namePlacement": "left",
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color",
-        "minVizHeight": 10,
-        "minVizWidth": 0,
-        "maxVizHeight": 300,
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "legend": {
-          "showLegend": false
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sort_desc(max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
-          "legendFormat": "{{name}}",
-          "instant": true,
-          "range": false,
-          "refId": "A"
-        }
-      ],
-      "transformations": [
-        {
-          "id": "renameByRegex",
-          "options": {
-            "regex": "(.+)-1$",
-            "renamePattern": "$1"
-          }
-        }
-      ]
-    },
-    {
       "id": 13,
+      "type": "row",
+      "title": "Alerts detail",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": [
+        {
+          "title": "Alerts",
+          "type": "alertlist",
+          "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and the Claude triage routine.",
+          "options": {
+            "alertInstanceLabelFilter": "",
+            "alertName": "",
+            "dashboardAlerts": false,
+            "groupBy": [],
+            "groupMode": "default",
+            "maxItems": 20,
+            "sortOrder": 1,
+            "stateFilter": {
+              "error": true,
+              "firing": true,
+              "noData": true,
+              "normal": false,
+              "pending": true
+            },
+            "viewMode": "list"
+          },
+          "id": 14,
+          "gridPos": {
+            "x": 0,
+            "y": 26,
+            "w": 24,
+            "h": 8
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
       "type": "row",
       "title": "Containers over time",
       "collapsed": true,
@@ -2079,7 +2087,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 26
       },
       "panels": [
         {
@@ -2140,11 +2148,11 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 25,
+            "y": 27,
             "w": 12,
             "h": 8
           },
-          "id": 14,
+          "id": 16,
           "options": {
             "legend": {
               "calcs": [
@@ -2243,11 +2251,11 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 25,
+            "y": 27,
             "w": 12,
             "h": 8
           },
-          "id": 15,
+          "id": 17,
           "options": {
             "legend": {
               "calcs": [
@@ -2291,7 +2299,7 @@
       ]
     },
     {
-      "id": 16,
+      "id": 18,
       "type": "row",
       "title": "CI VMs over time",
       "collapsed": true,
@@ -2299,11 +2307,11 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 25
+        "y": 27
       },
       "panels": [
         {
-          "id": 17,
+          "id": 19,
           "title": "CI VMs running",
           "type": "timeseries",
           "datasource": {
@@ -2312,7 +2320,7 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 26,
+            "y": 28,
             "w": 24,
             "h": 6
           },
@@ -2389,7 +2397,7 @@
       ]
     },
     {
-      "id": 18,
+      "id": 20,
       "type": "row",
       "title": "Security detail",
       "collapsed": true,
@@ -2397,7 +2405,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 26
+        "y": 28
       },
       "panels": [
         {
@@ -2464,11 +2472,11 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 27,
+            "y": 29,
             "w": 8,
             "h": 7
           },
-          "id": 19,
+          "id": 21,
           "options": {
             "legend": {
               "calcs": [
@@ -2558,11 +2566,11 @@
           },
           "gridPos": {
             "x": 8,
-            "y": 27,
+            "y": 29,
             "w": 8,
             "h": 7
           },
-          "id": 20,
+          "id": 22,
           "options": {
             "legend": {
               "calcs": [
@@ -2662,11 +2670,11 @@
           },
           "gridPos": {
             "x": 16,
-            "y": 27,
+            "y": 29,
             "w": 8,
             "h": 7
           },
-          "id": 21,
+          "id": 23,
           "options": {
             "legend": {
               "calcs": [
@@ -2792,11 +2800,11 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 34,
+            "y": 36,
             "w": 12,
             "h": 7
           },
-          "id": 22,
+          "id": 24,
           "options": {
             "legend": {
               "calcs": [
@@ -2838,11 +2846,11 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 34,
+            "y": 36,
             "w": 12,
             "h": 7
           },
-          "id": 23,
+          "id": 25,
           "options": {
             "dedupStrategy": "none",
             "enableInfiniteScrolling": false,
@@ -2900,11 +2908,11 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 41,
+            "y": 43,
             "w": 8,
             "h": 3
           },
-          "id": 24,
+          "id": 26,
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -2964,11 +2972,11 @@
           },
           "gridPos": {
             "x": 8,
-            "y": 41,
+            "y": 43,
             "w": 8,
             "h": 3
           },
-          "id": 25,
+          "id": 27,
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -3028,11 +3036,11 @@
           },
           "gridPos": {
             "x": 16,
-            "y": 41,
+            "y": 43,
             "w": 8,
             "h": 3
           },
-          "id": 26,
+          "id": 28,
           "options": {
             "colorMode": "value",
             "graphMode": "none",
@@ -3065,7 +3073,7 @@
       ]
     },
     {
-      "id": 27,
+      "id": 29,
       "type": "row",
       "title": "Backups detail",
       "collapsed": true,
@@ -3073,7 +3081,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 27
+        "y": 29
       },
       "panels": [
         {
@@ -3106,11 +3114,11 @@
           },
           "gridPos": {
             "x": 0,
-            "y": 28,
+            "y": 30,
             "w": 4,
             "h": 7
           },
-          "id": 28,
+          "id": 30,
           "options": {
             "colorMode": "background",
             "graphMode": "none",
@@ -3204,11 +3212,11 @@
           },
           "gridPos": {
             "x": 4,
-            "y": 28,
+            "y": 30,
             "w": 8,
             "h": 7
           },
-          "id": 29,
+          "id": 31,
           "options": {
             "legend": {
               "calcs": [
@@ -3250,11 +3258,11 @@
           },
           "gridPos": {
             "x": 12,
-            "y": 28,
+            "y": 30,
             "w": 12,
             "h": 7
           },
-          "id": 30,
+          "id": 32,
           "options": {
             "dedupStrategy": "none",
             "enableInfiniteScrolling": false,
