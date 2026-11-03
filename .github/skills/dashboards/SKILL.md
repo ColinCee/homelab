@@ -15,3 +15,7 @@ description: Edit homelab Grafana dashboards. Use when changing dashboard JSON o
    deployment. Grafana polls the mounted JSON files; no API upload is needed.
 
 Edit source JSON, not dashboard copies in the Grafana UI.
+
+There is one dashboard, `home.json`, at the top level with no folder (Colin,
+3 Nov 2026): put new panels in its sections, and detail in a collapsed row,
+rather than adding a dashboard.
