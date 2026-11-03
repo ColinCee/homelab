@@ -21,7 +21,7 @@ def test_serves_only_colins_private_repos_the_token_can_see() -> None:
         {"full_name": "ColinCee/blog", "private": False, "owner": {"login": "ColinCee"}},
         {"full_name": "someone/theirs", "private": True, "owner": {"login": "someone"}},
     ]
-    assert sup.served_repos(Repos(page)) == ["ColinCee/cortex", "ColinCee/servo"]
+    assert list(sup.served_repos(Repos(page))) == ["ColinCee/cortex", "ColinCee/servo"]
 
 
 class Pages:
@@ -363,3 +363,15 @@ def test_a_lasting_failure_logs_once(monkeypatch) -> None:
         sup.skipped("o/gone", OSError("404"))
     sup.skipped("o/gone", None)
     assert len(lines) == 2 and lines[1] == "o/gone is back"
+
+
+def test_quiet_repos_are_polled_once_a_minute_used_ones_every_poll(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    state = sup.State(used={"a/busy"}, polled={"a/quiet": 100.0, "a/busy": 100.0})
+    assert sup.due(["a/busy", "a/quiet", "a/new"], state, 130.0) == ["a/busy", "a/new"]
+    assert sup.due(["a/busy", "a/quiet"], state, 161.0) == ["a/busy", "a/quiet"]
+
+
+def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
+    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 100.0, "main")})
+    assert sup.check_private(Repos([]), state, "a/quiet", 130.0) is True
