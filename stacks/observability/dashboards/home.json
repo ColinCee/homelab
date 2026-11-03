@@ -158,7 +158,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "Backup age"
+                "value": "Backup"
               },
               {
                 "id": "unit",
@@ -550,7 +550,7 @@
             "uid": "prometheus"
           },
           "expr": "time() - max(homelab_backup_last_success_timestamp_seconds)",
-          "legendFormat": "Backup age",
+          "legendFormat": "Backup",
           "refId": "C",
           "instant": true,
           "range": false
@@ -1310,10 +1310,9 @@
       "options": {
         "legend": {
           "calcs": [
-            "mean",
-            "max"
+            "lastNotNull"
           ],
-          "displayMode": "table",
+          "displayMode": "list",
           "placement": "bottom",
           "showLegend": true
         },
