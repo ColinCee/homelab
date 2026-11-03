@@ -9,7 +9,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
-SLOTS=${SLOTS:-2}
+SLOTS=${SLOTS:-3}
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between

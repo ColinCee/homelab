@@ -7,7 +7,7 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 seconds=${1:-60}
-slots=${SLOTS:-2}
+slots=${SLOTS:-3}
 run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
 tailnet=$(ip -4 -br addr show tailscale0 | awk '{print $3}' | cut -d/ -f1)
 urls=("http://$tailnet:8123/" "http://$tailnet:3001/api/health")

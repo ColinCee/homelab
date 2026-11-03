@@ -6,7 +6,7 @@
 # "wan" refreshes the blocked public address; run-vm.sh calls it before each VM.
 set -euo pipefail
 
-SLOTS=${SLOTS:-2}
+SLOTS=${SLOTS:-3}
 dir=$(cd "$(dirname "$0")" && pwd)
 # The accept is limited to the uplink, so it opens nothing private even if the
 # nftables table were missing.
