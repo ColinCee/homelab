@@ -21,7 +21,7 @@ def test_serves_only_colins_private_repos_the_token_can_see() -> None:
         {"full_name": "ColinCee/blog", "private": False, "owner": {"login": "ColinCee"}},
         {"full_name": "someone/theirs", "private": True, "owner": {"login": "someone"}},
     ]
-    assert sup.served_repos(Repos(page)) == ["ColinCee/cortex", "ColinCee/servo"]
+    assert list(sup.served_repos(Repos(page))) == ["ColinCee/cortex", "ColinCee/servo"]
 
 
 class Pages:
@@ -323,7 +323,9 @@ def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: 
     monkeypatch.setattr(
         sup,
         "check_private",
-        lambda gh, state, repo, now: broken(repo, True) if fails == "check_private" else True,
+        lambda gh, state, repo, now, fresh=False: (
+            broken(repo, True) if fails == "check_private" else True
+        ),
     )
     job = sup.Job("o/ok", 1, "check", tuple(sup.RUNNER_LABELS))
     monkeypatch.setattr(
@@ -363,3 +365,49 @@ def test_a_lasting_failure_logs_once(monkeypatch) -> None:
         sup.skipped("o/gone", OSError("404"))
     sup.skipped("o/gone", None)
     assert len(lines) == 2 and lines[1] == "o/gone is back"
+
+
+def test_quiet_repos_are_polled_once_a_minute_used_ones_every_poll(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    state = sup.State(used={"a/busy"}, polled={"a/quiet": 100.0, "a/busy": 100.0})
+    assert sup.due(["a/busy", "a/quiet", "a/new"], state, 130.0) == ["a/busy", "a/new"]
+    assert sup.due(["a/busy", "a/quiet"], state, 161.0) == ["a/busy", "a/quiet"]
+
+
+def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
+    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 100.0, "main")})
+    assert sup.check_private(Repos([]), state, "a/quiet", 130.0) is True
+
+
+class People:
+    def __init__(self, logins: list[str], keys: list[dict] | None = None) -> None:
+        self.logins, self.keys = logins, keys or []
+
+    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+        if "/keys" in path:
+            return self.keys
+        return [{"login": login} for login in self.logins]
+
+
+def test_a_repo_anyone_else_can_push_to_is_never_served() -> None:
+    assert sup.only_colin(People(["ColinCee"]), "a/mine") is True
+    assert sup.only_colin(People(["ColinCee", "friend"]), "a/shared") is False
+    assert sup.only_colin(People(["ColinCee"], [{"read_only": True}]), "a/key") is True
+    assert sup.only_colin(People(["ColinCee"], [{"read_only": False}]), "a/key") is False
+
+
+def test_doubt_about_collaborators_is_a_no() -> None:
+    assert sup.only_colin(OneRepoBroken("a/x"), "a/x") is False
+
+
+def test_a_listing_too_old_to_trust_means_asking_github() -> None:
+    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 0.0, "main")})
+    asked = []
+
+    class Public:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            asked.append(path)
+            return {"private": False, "visibility": "public", "default_branch": "main"}
+
+    assert sup.check_private(Public(), state, "a/quiet", 3 * sup.REPOS_EVERY) is False
+    assert asked == ["/repos/a/quiet"]
