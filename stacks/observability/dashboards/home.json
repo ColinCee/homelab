@@ -566,7 +566,7 @@
       "gridPos": {
         "x": 13,
         "y": 0,
-        "w": 6,
+        "w": 7,
         "h": 3
       },
       "description": "Working: tasks an agent or CI is on. Waiting: queued for a machine (homelab or GitHub's). Merged and cost count since midnight UTC.",
@@ -824,9 +824,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 19,
+        "x": 20,
         "y": 0,
-        "w": 5,
+        "w": 4,
         "h": 3
       },
       "description": "CrowdSec: addresses blocked now, and whether its engine and firewall bouncer are working. Bans by reason are under Security detail.",
