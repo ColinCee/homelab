@@ -326,7 +326,7 @@
     },
     {
       "id": 5,
-      "title": "CI VMs running",
+      "title": "CI VMs",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -399,7 +399,7 @@
     },
     {
       "id": 6,
-      "title": "Containers",
+      "title": "Docker",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -543,7 +543,7 @@
         "w": 12,
         "h": 9
       },
-      "description": "Stacked: Docker containers, the Firecracker CI VMs, and the rest of the machine (system, Tailscale, the CI supervisor). The dashed line is all 4 cores.",
+      "description": "Stacked, in cores: Docker containers, the Firecracker CI VMs, and the rest of the machine (system, Tailscale, the CI supervisor). The dashed line is all 4 cores.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1003,7 +1003,7 @@
     },
     {
       "id": 12,
-      "title": "Waiting for a machine",
+      "title": "Waiting",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -1145,7 +1145,7 @@
     },
     {
       "id": 14,
-      "title": "Needs Colin",
+      "title": "For you",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -1157,7 +1157,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "Held changes and questions waiting on the board.",
+      "description": "Tasks needing Colin: held changes and questions waiting on the board.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1218,7 +1218,7 @@
     },
     {
       "id": 15,
-      "title": "Merged today",
+      "title": "Merged",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -1230,7 +1230,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "Since midnight UTC.",
+      "description": "Tasks merged since midnight UTC.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1287,7 +1287,7 @@
     },
     {
       "id": 16,
-      "title": "Agent cost today",
+      "title": "Cost",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -1299,7 +1299,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "What agents' finished runs cost since midnight UTC.",
+      "description": "What agents' finished runs cost today, since midnight UTC.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1449,7 +1449,7 @@
     },
     {
       "id": 19,
-      "title": "Last backup",
+      "title": "Backup",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -1522,7 +1522,7 @@
     },
     {
       "id": 20,
-      "title": "Active bans",
+      "title": "Bans",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
