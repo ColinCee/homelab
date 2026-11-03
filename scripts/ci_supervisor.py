@@ -478,7 +478,7 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> list[str]:
         except RateLimited:
             raise
         except Exception as e:
-            skipped(repo, e)
+            skipped(f"{repo} runners", e)
             failed.append(repo)
             continue
         for runner in page.get("runners", []):
