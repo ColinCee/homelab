@@ -89,7 +89,7 @@ jobs:
           done
           echo "::warning::Could not grant viewers access to Grafana's Home"
 
-      # Kaizen's Andon: a failed deploy stops all automated work until it is fixed, and a good one restarts it.
+      # Kaizen's line stop: a failed deploy stops Kaizen's work on the homelab until it is fixed, and a good one restarts it.
       - id: kaizen-key
         if: always()
         continue-on-error: true
@@ -106,9 +106,9 @@ jobs:
         if: always() && steps.kaizen-key.outputs.token
         env:
           GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
-          EVENT: ${{ job.status == 'success' && 'andon-close' || 'andon-open' }}
+          EVENT: ${{ job.status == 'success' && 'line-stop-close' || 'line-stop-open' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          reason=$([ "$EVENT" = andon-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
+          reason=$([ "$EVENT" = line-stop-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
           jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -

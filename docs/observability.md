@@ -13,7 +13,7 @@ The [deploy watchdog](../.github/workflows/deploy-watchdog.yaml) runs on
 GitHub-hosted runners when a deploy finishes, 16 minutes after one is queued,
 and every 15 minutes as a backup (GitHub delays schedules on quiet repos). It
 posts to Discord when a `deploy.yaml` run has been queued for over 15 minutes,
-which usually means the `beelink` runner is down, and pulls Auto Kaizen's Andon
+which usually means the `beelink` runner is down, and stops Auto Kaizen's line
 when the last deploy failed or was blocked by the runner guard. It posts once when a problem starts and once when it clears, using its
 previous run's conclusion as state. Healthchecks.io remains the external
 heartbeat for full host outages.
