@@ -32,7 +32,12 @@ Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
 updates. UI edits are disabled so Git remains the source of truth.
 
-- [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends
+Grafana opens on **Home** for everyone (`GF_USERS_HOME_PAGE`); every
+dashboard carries the same link bar to Home and the others.
+
+- [Home](../stacks/observability/dashboards/home.json) — the Beelink's CPU and memory split into containers, CI VMs and the rest; Kaizen's flow; flight tracker, last backup, bans and any alert not OK
+- [Kaizen](../stacks/observability/dashboards/kaizen.json) — Auto Kaizen's tasks by state, longest wait for a machine, merges and agent cost
+- [Container Overview](../stacks/observability/dashboards/container-overview.json) — host gauges, container table, CPU/memory trends (containers only; Home adds the CI VMs)
 - [Security](../stacks/observability/dashboards/security.json) — CrowdSec detections and firewall decisions
 - [Backups](../stacks/observability/dashboards/backups.json) — off-site backup successes, failures, stored size and run log
 
@@ -45,8 +50,13 @@ can reach it; remove `GF_AUTH_ANONYMOUS_*` if either changes.
 ### Dashboard patterns
 
 Use `max by (name)` for container metrics or `max()` for a single host value
-where deduplication is needed. Alloy recreation changes the `instance` label;
-old series remain temporarily visible and can double-count values.
+where deduplication is needed. Data before November 2026 carries a different
+`instance` label for each Alloy container; Alloy now runs with
+`hostname: beelink`, so new series keep one.
+
+Host metrics (`node_*`) cover the whole machine, Firecracker CI VMs included.
+Container metrics do not: the VMs are processes, not containers, so their CPU
+and memory come from their slot cgroups (`job="ci-vms"`).
 
 Datasource UIDs are pinned to `prometheus` and `loki` in
 `provisioning/datasources/datasources.yaml`. Grafana does not update
@@ -77,7 +87,16 @@ Prometheus receives metrics from:
 
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
+- **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
+  cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
+  only while it runs a VM, so counting them counts running VMs, the standby
+  included.
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
+- **Kaizen Board:** direct scrape of `http://100.100.146.119:8090/metrics`
+  (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
+  stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
+  `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`. The
+  board's code lives in the private auto-kaizen repo.
 - **Flight tracker:** Alloy's blackbox exporter probes the public
   `https://api.colincheung.dev/aircraft` every minute
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
@@ -125,13 +144,18 @@ The shipped rules cover host-level pressure such as:
 - high RAM
 - high disk usage
 - **Flight Tracker Down**: the live-data probe has failed for 10 minutes
+- **Kaizen Waiting For A Machine**: a Kaizen task has waited over 20 minutes
+  for a homelab CI machine
+- **Kaizen Not Merging**: Kaizen tasks are running or waiting and nothing has
+  merged for over 3 hours
 
 Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
 does not exist in Alloy's Unix exporter. Verify the rule's exact query in
 Prometheus when a dashboard has data but an alert does not.
 
 Discord uses the provisioned `homelab-discord` notification template in one
-embed. Threshold alerts show an evaluated percentage and threshold duration.
+embed. Threshold alerts show the rule's `value` annotation (a percentage,
+hours or minutes) and threshold duration.
 No-data and evaluation errors remain separate alerts, grouped by affected rule;
 they mean monitoring is unavailable, not that a resource threshold was crossed.
 Resolved messages describe an ended alert, not proof of recovery. Check the

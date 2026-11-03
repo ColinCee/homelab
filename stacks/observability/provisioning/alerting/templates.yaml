@@ -60,10 +60,10 @@ templates:
       {{- end }}
       {{- else if eq .Status "resolved" -}}
       This alert instance ended; closure alone does not confirm recovery.
-      {{ if match "^[0-9]+(\\.[0-9]+)?%$" .Annotations.value }}Last reported value: {{ .Annotations.value }}.
+      {{ if and .Annotations.value (ne .Annotations.value "[no value]") }}Last reported value: {{ .Annotations.value }}.
       {{ end -}}
       Check the current rule evaluation.
-      {{- else if match "^[0-9]+(\\.[0-9]+)?%$" .Annotations.value -}}
+      {{- else if and .Annotations.value (ne .Annotations.value "[no value]") -}}
       {{ .Annotations.summary }}: **{{ .Annotations.value }}**.
       {{ .Annotations.description }}
       {{ .Annotations.action }}
