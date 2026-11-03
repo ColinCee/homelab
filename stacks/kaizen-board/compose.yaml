@@ -1,6 +1,6 @@
 services:
   board:
-    image: ghcr.io/colincee/kaizen-board:latest@sha256:0cda7e0726015834f682a0c8712f4f93d1a940aa201951e6c95b47d9b49f1d05
+    image: ghcr.io/colincee/kaizen-board:latest@sha256:221ed81eb3e3760875b3d75b6cddeb42c8137d17cb34c1088440f9de85bdad4f
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
