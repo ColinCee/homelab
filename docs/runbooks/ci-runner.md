@@ -20,9 +20,11 @@ jobs:
 ```
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
-`sudo`, with Node 24 LTS, uv, Python 3.15 and a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`) already installed (pinned in `versions.env`) and on the
-job's `PATH`, so a job needs no setup actions. The libraries Playwright's
+`sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
+plugin (no daemon, so `docker compose config` works but containers do not)
+already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
+needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
 Chromium needs are installed too, so a job runs `playwright install chromium`
 and needs no `install-deps` step. The actions the CI repos use
 (`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
@@ -114,7 +116,7 @@ GitHub-hosted runners and take it off the list and the token.
 | VM image | [`ci-runner/rootfs/`](../../ci-runner/rootfs/), built by [`build-rootfs.sh`](../../ci-runner/build-rootfs.sh) |
 | Boot one VM | [`ci-runner/run-vm.sh`](../../ci-runner/run-vm.sh) |
 | Supervisor | [`scripts/ci_supervisor.py`](../../scripts/ci_supervisor.py), `homelab-ci-supervisor.service` |
-| Checks | [`ci-runner/tests/`](../../ci-runner/tests/): `audit.sh`, `test-network.sh`, `test-load.sh` |
+| Checks | [`ci-runner/tests/`](../../ci-runner/tests/): `audit.sh`, `test-network.sh`, `test-tools.sh`, `test-load.sh` |
 
 Each slot has its own tap device and a private address pair of its own.
 
@@ -125,6 +127,7 @@ From a checkout of `main` on the host:
 ```bash
 sudo ci-runner/install-host.sh   # Firecracker, slot users, network, supervisor files
 sudo ci-runner/build-rootfs.sh   # VM image and kernel
+sudo ci-runner/tests/test-tools.sh  # the image's tools run for a job
 sudo ci-runner/tests/audit.sh    # must pass before the supervisor runs
 sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f
@@ -157,6 +160,9 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   time out on every private address and the public address, and must not get
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
+- **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
+  mise, bun, pnpm, `docker compose`) as the runner user with the job's `PATH`.
+  Run it after `build-rootfs.sh`.
 - **`test-load.sh`** runs a VM in every slot at full CPU and most of its memory
   while timing Home Assistant and Grafana. In October 2026 their worst response
   went from 1 ms to 4 ms.

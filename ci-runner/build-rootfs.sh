@@ -26,6 +26,11 @@ docker build -q -t homelab-ci-rootfs \
   --build-arg "NODE_VERSION=$NODE_VERSION" --build-arg "NODE_SHA256=$NODE_SHA256" \
   --build-arg "UV_VERSION=$UV_VERSION" --build-arg "UV_SHA256=$UV_SHA256" \
   --build-arg "JDK_VERSION=$JDK_VERSION" --build-arg "JDK_SHA256=$JDK_SHA256" \
+  --build-arg "MISE_VERSION=$MISE_VERSION" --build-arg "MISE_SHA256=$MISE_SHA256" \
+  --build-arg "BUN_VERSION=$BUN_VERSION" --build-arg "BUN_SHA256=$BUN_SHA256" \
+  --build-arg "PNPM_VERSION=$PNPM_VERSION" --build-arg "PNPM_SHA256=$PNPM_SHA256" \
+  --build-arg "DOCKER_VERSION=$DOCKER_VERSION" --build-arg "DOCKER_SHA256=$DOCKER_SHA256" \
+  --build-arg "COMPOSE_VERSION=$COMPOSE_VERSION" --build-arg "COMPOSE_SHA256=$COMPOSE_SHA256" \
   --build-arg "PYTHON_VERSION=$PYTHON_VERSION" --build-arg "CACHED_ACTIONS=$CACHED_ACTIONS" \
   "$here/rootfs" >/dev/null
 cid=$(docker create homelab-ci-rootfs)
