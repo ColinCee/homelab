@@ -25,6 +25,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -32,6 +33,9 @@ from typing import Any
 
 LABEL = "homelab-fc"
 RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
+# One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
+# (a job working on that repo's code). GitHub owner names cannot hold `--`.
+CACHE_LABEL_PREFIX = "fc-cache-"
 REPOS_FILE = Path("/etc/homelab-ci/repos")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
@@ -71,12 +75,21 @@ CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 RUNNER_UID = 1001  # the runner user inside the VM image
 
 
+# What a VM is for: its repo, and the extra cache label it registers with ("" for none).
+# A VM covers only jobs with the same pair.
+type Want = tuple[str, str]
+
+
 @dataclass(frozen=True)
 class Job:
     repo: str
     id: int
     name: str
     labels: tuple[str, ...]
+
+    @property
+    def want(self) -> Want:
+        return (self.repo, cache_label(self.labels))
 
 
 @dataclass
@@ -92,6 +105,11 @@ class Launch:
     standby: bool = False
     # A standby that just took a job still covers it until GitHub's job list catches up.
     covers_until: float = 0.0
+    label: str = ""
+
+    @property
+    def want(self) -> Want:
+        return (self.repo, self.label)
 
 
 @dataclass
@@ -127,10 +145,26 @@ def read_repos(text: str) -> list[str]:
     return repos
 
 
+def cache_label_repo(label: str) -> str | None:
+    """owner/name (lowercase) named by an `fc-cache-<owner>--<name>` label, else None."""
+    label = label.lower()
+    owner, sep, name = label.removeprefix(CACHE_LABEL_PREFIX).partition("--")
+    if not label.startswith(CACHE_LABEL_PREFIX) or not (sep and owner and name):
+        return None
+    return f"{owner}/{name}"
+
+
+def cache_label(labels: Iterable[str]) -> str:
+    """The job's cache label, lowercase, or "" if it asks for none."""
+    return next((label.lower() for label in labels if cache_label_repo(label)), "")
+
+
 def wants_us(labels: Iterable[str]) -> bool:
-    """A job is ours if it asks for our label and nothing our VMs do not have."""
+    """A job is ours if it asks for our label and nothing our VMs do not have,
+    apart from at most one cache label."""
     asked = {label.lower() for label in labels}
-    return LABEL in asked and asked <= set(RUNNER_LABELS)
+    extra = asked - set(RUNNER_LABELS)
+    return LABEL in asked and len(extra) <= 1 and all(map(cache_label_repo, extra))
 
 
 def queued_jobs(
@@ -145,15 +179,15 @@ def queued_jobs(
     return jobs
 
 
-def plan(queued: Mapping[str, int], booting: Mapping[str, int], free_slots: int) -> list[str]:
-    """Which repos get a new VM now: one per queued job not already covered by a booting VM."""
-    starts: list[str] = []
-    for repo in sorted(queued):
-        need = max(0, queued[repo] - booting.get(repo, 0))
+def plan(queued: Mapping[Want, int], booting: Mapping[Want, int], free_slots: int) -> list[Want]:
+    """Which VMs start now: one per queued job not already covered by a booting VM."""
+    starts: list[Want] = []
+    for want in sorted(queued):
+        need = max(0, queued[want] - booting.get(want, 0))
         for _ in range(need):
             if len(starts) == free_slots:
                 return starts
-            starts.append(repo)
+            starts.append(want)
     return starts
 
 
@@ -281,13 +315,23 @@ def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> bool:
 
 
 def launch(
-    gh: GitHub, state: State, repo: str, slot: int, now: float, standby: bool = False
+    gh: GitHub,
+    state: State,
+    repo: str,
+    slot: int,
+    now: float,
+    *,
+    cache: Path | None,
+    label: str = "",
+    standby: bool = False,
 ) -> None:
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
+    # The cache label is registered too, so a job asking for it runs only on such a VM.
+    labels = [*RUNNER_LABELS, label] if label else list(RUNNER_LABELS)
     registration = gh.request(
         "POST",
         f"/repos/{repo}/actions/runners/generate-jitconfig",
-        {"name": name, "runner_group_id": 1, "labels": list(RUNNER_LABELS), "work_folder": "_work"},
+        {"name": name, "runner_group_id": 1, "labels": labels, "work_folder": "_work"},
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
@@ -311,16 +355,19 @@ def launch(
                 **os.environ,
                 "VCPUS": str(vcpus),
                 "MEM_MIB": str(mem_mib),
-                "CACHE_IMAGE": str(cache_image(repo)),
+                "CACHE_IMAGE": str(cache) if cache else "",
             },
         )
     except BaseException:
         metadata.unlink(missing_ok=True)
         delete_runner(gh, repo, runner_id, name)
         raise
-    state.launches[slot] = Launch(slot, repo, runner_id, name, now, process, metadata, standby)
+    state.launches[slot] = Launch(
+        slot, repo, runner_id, name, now, process, metadata, standby, label=label
+    )
     kind = "standby" if standby else "VM"
-    log(f"slot {slot}: started {kind} {name} for {repo} ({vcpus} vCPUs, {mem_mib} MiB)")
+    disk = cache.name if cache else "no cache disk"
+    log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
 
 
 def vm_size(running: int) -> tuple[int, int]:
@@ -386,7 +433,7 @@ def reap(
     gh: GitHub,
     state: State,
     now: float,
-    queued: Mapping[str, int] | None = None,
+    queued: Mapping[Want, int] | None = None,
     private: Iterable[str] = (),
 ) -> None:
     """Clear finished VMs. With this poll's queue, also stop VMs left without a job."""
@@ -399,7 +446,7 @@ def reap(
             if run.standby:
                 check_standby(gh, run, now, run.repo in private)
             else:
-                stop_idle(gh, run, now, queued.get(run.repo, 0))
+                stop_idle(gh, run, now, queued.get(run.want, 0))
             continue
         run.metadata.unlink(missing_ok=True)
         delete_runner(gh, run.repo, run.runner_id, run.runner_name)
@@ -419,6 +466,17 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> None:
 
 def cache_image(repo: str) -> Path:
     return CACHE_DIR / f"{repo.replace('/', '__')}.ext4"
+
+
+def cache_for(repo: str, label: str, private: Iterable[str]) -> Path | None:
+    """A VM's cache disk: its own repo's, or the one its label names if that repo is
+    served, private (`private` is this poll's served private repos) and has a disk."""
+    if not label:
+        return cache_image(repo)
+    served = {r.lower(): r for r in private}
+    named = served.get(cache_label_repo(label) or "")
+    image = cache_image(named) if named else None
+    return image if image and image.exists() else None
 
 
 def pick_cache_artifact(
@@ -563,39 +621,38 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
 
 
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
-    queued: dict[str, int] = {}
+    queued: Counter[Want] = Counter()
     private: list[str] = []
     for repo in repos:
         # A repo that is no longer private has nothing queued as far as we are
         # concerned, so its idle VMs are stopped below and no new ones start.
         if check_private(gh, state, repo, now):
             private.append(repo)
-            count = len(find_queued(gh, repo))
-            if count:
-                queued[repo] = count
+            queued.update(job.want for job in find_queued(gh, repo))
     reap(gh, state, now, queued, private)
     maybe_refresh_caches(gh, state, private, now)
-    # A VM still on its way to a job, or a standby waiting for one, covers a queued job.
-    booting: dict[str, int] = {}
-    for run in state.launches.values():
-        if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS:
-            booting[run.repo] = booting.get(run.repo, 0) + 1
+    # A VM still on its way to a job, or a standby waiting for one, covers a queued job
+    # with the same repo and cache label (or none).
+    booting: Counter[Want] = Counter(
+        run.want
+        for run in state.launches.values()
+        if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
+    )
     free = [slot for slot in range(SLOTS) if slot not in state.launches]
     starts = plan(queued, booting, len(free))
-    for slot, repo in zip(free, starts, strict=False):
-        launch(gh, state, repo, slot, now)
+    for slot, (repo, label) in zip(free, starts, strict=False):
+        launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
     free = free[len(starts) :]
-    # A job still waiting for a slot gets the standby's, if the standby serves another repo.
-    waiting = {repo: n - booting.get(repo, 0) for repo, n in queued.items()}
-    for repo in starts:
-        waiting[repo] -= 1
+    # A job still waiting for a slot gets the standby's, if the standby cannot take it.
+    waiting = queued - booting
+    waiting.subtract(starts)
     for run in list(state.launches.values()):
-        if run.standby and any(n > 0 and repo != run.repo for repo, n in waiting.items()):
+        if run.standby and any(n > 0 and want != run.want for want, n in waiting.items()):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
     if wants_standby(
         repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
     ):
-        launch(gh, state, repos[0], free[0], now, standby=True)
+        launch(gh, state, repos[0], free[0], now, cache=cache_image(repos[0]), standby=True)
 
 
 def wants_standby(
