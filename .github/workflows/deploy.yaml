@@ -63,10 +63,23 @@ jobs:
           printf '%s' "$GHCR_TOKEN" \
             | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-      - name: Deploy discovered stacks
+      # Only the stacks this push changed, so one image bump restarts one stack. A push that touches anything else
+      # (the deploy scripts, this workflow) or whose base cannot be read deploys every stack, as before.
+      - name: Deploy changed stacks
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
           cd /home/colin/code/homelab
-          scripts/deploy.sh
+          changed=$(git diff --name-only "$BEFORE" HEAD 2>/dev/null) || changed=""
+          stacks=()
+          if [ -n "$changed" ] && ! grep -qvE '^stacks/[^/]+/' <<< "$changed"; then
+            for s in $(cut -d/ -f2 <<< "$changed" | sort -u); do
+              [ -f "stacks/$s/compose.yaml" ] && stacks+=("$s")
+            done
+            [ ${#stacks[@]} -eq 0 ] && { echo "only removed stacks changed; nothing to deploy"; exit 0; }
+          fi
+          echo "deploying: ${stacks[*]:-every stack}"
+          scripts/deploy.sh "${stacks[@]}"
 
       # Kaizen's Andon: a failed deploy stops all automated work until it is fixed, and a good one restarts it.
       - id: kaizen-key
