@@ -68,7 +68,9 @@ jobs:
           cd /home/colin/code/homelab
           scripts/deploy.sh
 
-      # Kaizen's Andon: a failed deploy stops all automated work until it is fixed, and a good one restarts it.
+      # Kaizen's Andon: a deploy that fails twice in a row stops all automated work until it is fixed, and a good
+      # one restarts it. A first failure is retried by the watchdog instead: most are a download or a rate limit,
+      # not the stacks, and a stopped line costs more than a minute's retry.
       - id: kaizen-key
         if: always()
         continue-on-error: true
@@ -82,7 +84,7 @@ jobs:
 
       - name: Tell Kaizen
         continue-on-error: true
-        if: always() && steps.kaizen-key.outputs.token
+        if: always() && steps.kaizen-key.outputs.token && (job.status == 'success' || github.run_attempt > 1)
         env:
           GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
           EVENT: ${{ job.status == 'success' && 'andon-close' || 'andon-open' }}

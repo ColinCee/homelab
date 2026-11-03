@@ -13,7 +13,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
+  # Write, to retry a failed deploy once before it stops Kaizen's line.
+  actions: write
   contents: read
 
 jobs:
@@ -55,16 +56,22 @@ jobs:
           permission-contents: write
           permission-issues: read
 
+      # A first failure is retried; only a deploy that fails again stops the line. A setup failure (a download, a
+      # rate limit) is not the stacks' fault, and a retry clears it.
       - id: pull-andon
-        name: Pull Kaizen's Andon after a failed deploy
+        name: Retry a failed deploy once, then pull Kaizen's Andon
         if: steps.kaizen-key.outputs.token
         continue-on-error: true
         env:
           GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
           HOMELAB_TOKEN: ${{ github.token }}
         run: |
-          last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json status,conclusion,url --jq '.[0]')
+          last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json databaseId,attempt,status,conclusion,url --jq '.[0]')
           [ "$(jq -r .status <<< "$last")" = completed ] && [ "$(jq -r .conclusion <<< "$last")" = failure ] || exit 0
+          if [ "$(jq -r .attempt <<< "$last")" -lt 2 ]; then
+            GH_TOKEN=$HOMELAB_TOKEN gh run rerun "$(jq -r .databaseId <<< "$last")" -R "$GITHUB_REPOSITORY" --failed
+            echo "first failure: retried"; exit 0
+          fi
           search='"Repo: ColinCee/homelab" in:body'
           open=$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --search "$search" \
             --json number --jq '.[0].number // empty')
