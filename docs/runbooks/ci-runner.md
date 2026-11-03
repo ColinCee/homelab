@@ -50,8 +50,18 @@ at it, so `uv sync` and `npm ci` find almost everything in place.
 How it is made, without the host running any of the repo's code:
 
 1. A green push to the default branch tars `/cache` and uploads it as the
-   artifact `homelab-fc-cache` (the job's last two steps; see cortex's
-   `.github/workflows/linux.yml`).
+   artifact `homelab-fc-cache`. The job's last step does both with the shared
+   action, which does nothing on any other event:
+
+   ```yaml
+   - uses: ColinCee/homelab/.github/actions/fc-cache@main
+     with:
+       paths: web/node_modules web/package-lock.json # optional workspace paths
+   ```
+
+   It tars every readable top-level folder of `/cache` (not `lost+found`) and
+   the given paths, and fails the job rather than upload an archive bigger than
+   the supervisor takes.
 2. The supervisor checks for a newer one every minute, takes it only if its run
    was a successful push to the default branch, unpacks it (plain files,
    folders and links only, nothing outside the folder) and builds
@@ -74,8 +84,8 @@ repo's disk, and the supervisor boots another VM for the labelled job.
 
 A job should not restore GitHub's caches as well. Without a cache disk yet,
 `/cache` starts empty and the job downloads as usual. The default branch's job
-also puts `node_modules` and its `package-lock.json` on the disk (the tar step
-names them), copied rather than linked so TypeScript's incremental build info
+also puts `node_modules` and its `package-lock.json` on the disk (the action's
+`paths`), copied rather than linked so TypeScript's incremental build info
 stays valid.
 
 There are three slots. A job running alone gets 4 vCPUs and 4 GiB; a job

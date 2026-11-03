@@ -9,8 +9,8 @@ trivy = "0.76.1"
 description = "Lint Python, shell, YAML, and Actions"
 run = [
   "uv run ruff check scripts/ stacks/ tests/ && uv run ruff format --check scripts/ stacks/ tests/",
-  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot",
-  "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/",
+  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot .github/actions/fc-cache/*.sh",
+  "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
 ]
 
