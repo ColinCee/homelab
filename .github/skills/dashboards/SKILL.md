@@ -19,3 +19,8 @@ Edit source JSON, not dashboard copies in the Grafana UI.
 There is one dashboard, `home.json`, at the top level with no folder (Colin,
 3 Nov 2026): put new panels in its sections, and detail in a collapsed row,
 rather than adding a dashboard.
+
+Layout (Colin, 3 Nov 2026): group numbers that belong together into a titled
+section, one panel each, rather than one strip of unrelated numbers. Size every
+panel to its content: a row of numbers is 3 units tall, and no panel leaves
+empty space above, below or beside its values.
