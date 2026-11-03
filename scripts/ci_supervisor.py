@@ -46,6 +46,9 @@ REPOS_EVERY = 60
 # poll: with every private repo served, polling all of them every 2 s spent GitHub's
 # hourly request budget in about 40 minutes.
 QUIET_POLL_SECONDS = 60
+# How often each repo's collaborators are checked: a repo anyone else can write to is
+# never served, so only Colin (and his own apps) can start a job here.
+SOLO_EVERY = 3600
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
@@ -140,6 +143,8 @@ class State:
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
     polled: dict[str, float] = field(default_factory=dict)
+    # Per repo: whether Colin is its only collaborator, and when that was checked.
+    solo: dict[str, tuple[bool, float]] = field(default_factory=dict)
 
 
 def log(message: str) -> None:
@@ -271,11 +276,17 @@ def rate_limit_until(retry_after: str | None, reset: str | None, now: float) -> 
     return float(reset) if reset else now + 60
 
 
-def check_private(gh: GitHub, state: State, repo: str, now: float) -> bool:
+def check_private(gh: GitHub, state: State, repo: str, now: float, *, fresh: bool = False) -> bool:
     known = state.privacy.get(repo)
-    # A repo with VMs here is re-checked every poll; the rest are known private from
-    # the minutely repo listing (served_repos), which costs one request for all of them.
-    if known is None or (repo in state.used and now - known.checked > PRIVACY_RECHECK_SECONDS):
+    # A repo with VMs here, or about to get its first, is re-checked; the rest are known
+    # private from the minutely repo listing (served_repos), one request for all of them,
+    # and asked directly if that listing is out of date.
+    if (
+        known is None
+        or fresh
+        or now - known.checked > 2 * REPOS_EVERY
+        or (repo in state.used and now - known.checked > PRIVACY_RECHECK_SECONDS)
+    ):
         data = gh.request("GET", f"/repos/{repo}")
         private = is_private(data, repo)
         if not private:
@@ -660,8 +671,16 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
         # (3 Nov: a repo the token could not see stopped all CI).
         try:
             if check_private(gh, state, repo, now):
+                jobs = find_queued(gh, repo)
+                # A repo about to get its first VM is asked about its privacy directly.
+                if (
+                    jobs
+                    and repo not in state.used
+                    and not check_private(gh, state, repo, now, fresh=True)
+                ):
+                    continue
                 private.append(repo)
-                queued.update(job.want for job in find_queued(gh, repo))
+                queued.update(job.want for job in jobs)
             skipped(repo, None)
         except RateLimited:
             raise
@@ -728,6 +747,26 @@ def served_repos(gh: GitHub) -> dict[str, str]:
     }
 
 
+def only_colin(gh: GitHub, state: State, repo: str, now: float) -> bool:
+    """Whether Colin is the repo's only collaborator, checked hourly; any doubt is a no."""
+    known = state.solo.get(repo)
+    if known is None or now - known[1] >= SOLO_EVERY:
+        try:
+            people = gh.request(
+                "GET", f"/repos/{repo}/collaborators?affiliation=direct&per_page=100"
+            )
+            solo = all((p.get("login") or "") == OWNER for p in people)
+        except RateLimited:
+            raise
+        except Exception as e:
+            skipped(f"{repo} collaborators", e)
+            solo = False
+        if not solo and (known is None or known[0]):
+            log(f"not serving {repo}: others can write to it")
+        state.solo[repo] = (solo, now)
+    return state.solo[repo][0]
+
+
 def due(repos: list[str], state: State, now: float) -> list[str]:
     """The repos to poll now: every one that has had a VM or has a cache disk, and the
     quiet rest once a minute each."""
@@ -771,7 +810,7 @@ def main(argv: list[str] | None = None) -> int:
                 # A failed listing keeps the last list (none at start), never ending the poll.
                 try:
                     listing = served_repos(gh)
-                    found = list(listing)
+                    found = [r for r in listing if only_colin(gh, state, r, listed)]
                     # Listed private just now: quiet repos need no privacy request of their own.
                     for repo, branch in listing.items():
                         state.privacy[repo] = Privacy(True, listed, branch)

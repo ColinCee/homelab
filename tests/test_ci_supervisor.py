@@ -323,7 +323,9 @@ def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: 
     monkeypatch.setattr(
         sup,
         "check_private",
-        lambda gh, state, repo, now: broken(repo, True) if fails == "check_private" else True,
+        lambda gh, state, repo, now, fresh=False: (
+            broken(repo, True) if fails == "check_private" else True
+        ),
     )
     job = sup.Job("o/ok", 1, "check", tuple(sup.RUNNER_LABELS))
     monkeypatch.setattr(
@@ -375,3 +377,40 @@ def test_quiet_repos_are_polled_once_a_minute_used_ones_every_poll(monkeypatch, 
 def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
     state = sup.State(privacy={"a/quiet": sup.Privacy(True, 100.0, "main")})
     assert sup.check_private(Repos([]), state, "a/quiet", 130.0) is True
+
+
+class People:
+    def __init__(self, logins: list[str]) -> None:
+        self.logins, self.asked = logins, 0
+
+    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+        self.asked += 1
+        return [{"login": login} for login in self.logins]
+
+
+def test_a_repo_anyone_else_can_write_to_is_never_served() -> None:
+    state = sup.State()
+    assert sup.only_colin(People(["ColinCee"]), state, "a/mine", 0.0) is True
+    assert sup.only_colin(People(["ColinCee", "friend"]), state, "a/shared", 0.0) is False
+
+
+def test_collaborators_are_rechecked_hourly_and_doubt_is_a_no() -> None:
+    state = sup.State()
+    gh = People(["ColinCee"])
+    sup.only_colin(gh, state, "a/x", 0.0)
+    sup.only_colin(gh, state, "a/x", 100.0)
+    assert gh.asked == 1
+    assert sup.only_colin(OneRepoBroken("a/x"), sup.State(), "a/x", 0.0) is False
+
+
+def test_a_listing_too_old_to_trust_means_asking_github() -> None:
+    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 0.0, "main")})
+    asked = []
+
+    class Public:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            asked.append(path)
+            return {"private": False, "visibility": "public", "default_branch": "main"}
+
+    assert sup.check_private(Public(), state, "a/quiet", 3 * sup.REPOS_EVERY) is False
+    assert asked == ["/repos/a/quiet"]
