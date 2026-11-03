@@ -21,14 +21,64 @@
   "id": null,
   "links": [
     {
-      "asDropdown": true,
-      "icon": "external link",
+      "title": "Home",
+      "type": "link",
+      "url": "/d/home/home",
+      "icon": "dashboard",
+      "tooltip": "Everything at a glance",
+      "targetBlank": false,
+      "asDropdown": false,
       "includeVars": false,
       "keepTime": false,
-      "tags": [],
+      "tags": []
+    },
+    {
+      "title": "Containers",
+      "type": "link",
+      "url": "/d/container-overview/container-overview",
+      "tooltip": "Each container's CPU, memory and network",
+      "icon": "dashboard",
       "targetBlank": false,
-      "title": "Dashboards",
-      "type": "dashboards"
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": []
+    },
+    {
+      "title": "Kaizen",
+      "type": "link",
+      "url": "/d/kaizen/kaizen",
+      "tooltip": "Auto Kaizen's tasks, waits and cost",
+      "icon": "dashboard",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": []
+    },
+    {
+      "title": "Security",
+      "type": "link",
+      "url": "/d/security/security",
+      "tooltip": "CrowdSec detections and bans",
+      "icon": "dashboard",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": []
+    },
+    {
+      "title": "Backups",
+      "type": "link",
+      "url": "/d/backups/backups",
+      "tooltip": "Off-site backup runs and size",
+      "icon": "dashboard",
+      "targetBlank": false,
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": true,
+      "tags": []
     }
   ],
   "panels": [

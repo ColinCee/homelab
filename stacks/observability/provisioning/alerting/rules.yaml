@@ -38,7 +38,7 @@ groups:
           summary: "Beelink CPU usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 5 minutes (5-minute CPU average)."
-          action: "Check CPU consumers in Container Overview."
+          action: "Check CPU use on Home (containers, CI VMs and the rest), then Container Overview."
         labels:
           severity: warning
 
@@ -75,7 +75,7 @@ groups:
           summary: "Beelink RAM usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 90% for 5 minutes."
-          action: "Check memory consumers in Container Overview."
+          action: "Check memory use on Home (containers, CI VMs and the rest), then Container Overview."
         labels:
           severity: warning
 
@@ -232,3 +232,91 @@ groups:
           action: "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
         labels:
           severity: critical
+
+  - orgId: 1
+    name: Kaizen
+    folder: Homelab
+    interval: 1m
+    rules:
+      - uid: kaizen-machine-wait
+        title: Kaizen Waiting For A Machine
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Served by the Kaizen Board: the longest a running task has waited for a homelab machine.
+              # [2m] rides out a missed scrape while the board redeploys. Only while the board has read
+              # GitHub in the last 10 minutes: a stale board keeps counting a wait that may have ended.
+              expr: >-
+                max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
+                and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [20]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Longest Kaizen wait for a homelab machine"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} minutes{{ end }}"
+          description: "Threshold: a task has waited over 20 minutes for a homelab CI machine."
+          action: "Check `journalctl -u homelab-ci-supervisor` on the Beelink and the job's runner labels; see docs/runbooks/ci-runner.md."
+        labels:
+          severity: warning
+
+      - uid: kaizen-not-merging
+        title: Kaizen Not Merging
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 10800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Hours since the last merge, or 0 unless tasks have been running or waiting for the whole
+              # last 3 hours, so work starting after an idle night does not count as not merging.
+              expr: >-
+                (time() - max(max_over_time(kaizen_last_merge_timestamp_seconds{job="kaizen"}[2m]))) / 3600
+                * on() min_over_time((sum(kaizen_tasks{job="kaizen",state=~"working|waiting_for_machine|stuck"}) > bool 0)[3h:1m])
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [3]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: "Time since Kaizen last merged, with tasks queued"
+          value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
+          description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
+          action: "Open the Kaizen Board (http://100.100.146.119:8090) and the Kaizen dashboard; look for a failing step or a held change."
+        labels:
+          severity: warning

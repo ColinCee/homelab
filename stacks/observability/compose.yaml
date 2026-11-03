@@ -13,7 +13,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?}
       - GF_SERVER_ROOT_URL=http://100.100.146.119:3001
       - GF_USERS_DEFAULT_THEME=dark
-      - GF_USERS_HOME_PAGE=/d/container-overview/container-overview
+      - GF_USERS_HOME_PAGE=/d/home/home
       - GF_UNIFIED_ALERTING_ENABLED=true
       # Dashboards are readable without logging in; editing and admin still
       # need the password. Safe only because the port is bound to Tailscale.
@@ -67,6 +67,8 @@ services:
       - DAC_OVERRIDE
       - FOWNER
     command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    # The `instance` label on every series; a container ID would change on each recreate.
+    hostname: beelink
     environment:
       ALLOY_DEPLOY_MODE: docker
     labels:

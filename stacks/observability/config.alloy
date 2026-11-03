@@ -50,6 +50,52 @@ prometheus.scrape "cadvisor" {
 }
 
 // ================================
+// CI VM Metrics (cAdvisor)
+// ================================
+
+// The Firecracker CI VMs are processes, not containers: each runs in its slot's
+// cgroup, /firecracker/ci-slotN, which exists only while that slot has a VM.
+// No docker_host: with no Docker socket in this container it skips containers,
+// which the exporter above already collects.
+prometheus.exporter.cadvisor "ci_vms" {
+  docker_only                 = false
+  enabled_metrics             = ["cpu", "memory"]
+  raw_cgroup_prefix_allowlist = ["/firecracker/"]
+}
+
+discovery.relabel "ci_vms" {
+  targets = prometheus.exporter.cadvisor.ci_vms.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "ci-vms"
+  }
+  rule {
+    target_label = "instance"
+    replacement  = constants.hostname
+  }
+}
+
+prometheus.scrape "ci_vms" {
+  targets    = discovery.relabel.ci_vms.output
+  forward_to = [prometheus.relabel.ci_vms.receiver]
+
+  scrape_interval = "15s"
+}
+
+// Only the VMs' own cgroups; this exporter also reports the whole machine,
+// which the host scrape already covers.
+prometheus.relabel "ci_vms" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["id"]
+    regex         = "/firecracker/.+"
+    action        = "keep"
+  }
+}
+
+// ================================
 // Metrics Destination (Prometheus)
 // ================================
 
@@ -157,6 +203,21 @@ prometheus.scrape "crowdsec" {
   forward_to      = [prometheus.remote_write.default.receiver]
   scrape_interval = "30s"
   job_name        = "crowdsec"
+  metrics_path    = "/metrics"
+}
+
+// ================================
+// Kaizen Board
+// ================================
+
+// Auto Kaizen's tasks by state, waits for a machine and agent cost.
+prometheus.scrape "kaizen" {
+  targets = [{
+    __address__ = "100.100.146.119:8090",
+  }]
+  forward_to      = [prometheus.remote_write.default.receiver]
+  scrape_interval = "30s"
+  job_name        = "kaizen"
   metrics_path    = "/metrics"
 }
 
