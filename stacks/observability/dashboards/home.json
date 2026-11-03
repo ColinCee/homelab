@@ -49,7 +49,7 @@
         "w": 24,
         "h": 3
       },
-      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions on the Kaizen Board. Backup age: since the last off-site backup (alerts at 26 hours). CPU, memory and disk: the whole Beelink, CI VMs included. CI VMs: Firecracker VMs running out of 3 slots, the standby included. Kaizen counts and cost are since midnight UTC.",
+      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions on the Kaizen Board. Backup age: since the last off-site backup (alerts at 26 hours). CPU, memory and disk: the whole Beelink, CI VMs included. CI VMs: Firecracker VMs running out of 3 slots, the standby included. Flight tracker: the public API serving live aircraft. Working: Kaizen tasks an agent or CI is on now; merged and cost count since midnight UTC.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2709,16 +2709,19 @@
           "fieldConfig": {
             "defaults": {
               "color": {
-                "fixedColor": "orange",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
                     "color": "orange",
-                    "value": 0
+                    "value": 1
                   }
                 ]
               },
@@ -2734,7 +2737,7 @@
           },
           "id": 22,
           "options": {
-            "colorMode": "background",
+            "colorMode": "value",
             "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
@@ -2770,16 +2773,19 @@
           "fieldConfig": {
             "defaults": {
               "color": {
-                "fixedColor": "orange",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
                     "color": "orange",
-                    "value": 0
+                    "value": 1
                   }
                 ]
               },
@@ -2795,7 +2801,7 @@
           },
           "id": 23,
           "options": {
-            "colorMode": "background",
+            "colorMode": "value",
             "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
@@ -2831,16 +2837,19 @@
           "fieldConfig": {
             "defaults": {
               "color": {
-                "fixedColor": "orange",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
               "mappings": [],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
+                    "color": "text",
+                    "value": null
+                  },
+                  {
                     "color": "orange",
-                    "value": 0
+                    "value": 1
                   }
                 ]
               },
@@ -2856,7 +2865,7 @@
           },
           "id": 24,
           "options": {
-            "colorMode": "background",
+            "colorMode": "value",
             "graphMode": "none",
             "justifyMode": "auto",
             "orientation": "auto",
