@@ -50,7 +50,7 @@ RUN v=${NODE_VERSION#v} \
  && cp /usr/local/bin/uv /usr/local/bin/uvx "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64/" \
  && touch "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64.complete" \
  && UV_PYTHON_INSTALL_DIR=/opt/uv-python uv python install "${PYTHON_VERSION}" \
- && chown -R runner:runner /opt/hostedtoolcache \
+ && chown -R runner:runner /opt/hostedtoolcache /opt/uv-python \
  && printf 'RUNNER_TOOL_CACHE=/opt/hostedtoolcache\nUV_PYTHON_INSTALL_DIR=/opt/uv-python\n' >> /opt/runner/.env
 
 # Actions the CI repos use, unpacked where the runner looks before downloading

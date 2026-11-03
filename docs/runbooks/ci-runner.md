@@ -147,7 +147,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 
 - **`audit.sh`** is the gate. It checks host settings, what a slot user could
   read or write after escaping a VM (the token, Docker, Colin's home, the
-  image), that the image holds no keys or tokens, how a live Firecracker is
+  image), that the image holds no keys or tokens and its runner user owns uv's
+  Python folder, how a live Firecracker is
   confined, that a VM is told only its task, and runs the network test.
 - **`test-network.sh`** boots a VM that must reach GitHub, PyPI and npm, must
   time out on every private address and the public address, and must not get
