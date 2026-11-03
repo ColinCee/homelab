@@ -24,6 +24,10 @@ on:
         description: "Also print the firewall, listening ports and service states"
         type: boolean
         default: false
+      unban_tailnet:
+        description: "Lift CrowdSec bans on Colin's own tailnet and LAN addresses"
+        type: boolean
+        default: false
 
 # Own group: sharing "deploy" would let a queued health run cancel a pending
 # deploy. Pruning only removes images older than a week, so it is safe
@@ -87,6 +91,22 @@ jobs:
             echo "== kernel"; echo "ufw blocks: $(dmesg | grep -c "UFW BLOCK")"
             dmesg -T | grep -iE "out of memory|oom-kill|link is down|table full" | sed "s/[0-9a-f:]\{17\}//g" | tail -5
           '
+
+      # CrowdSec's own allow list covers LAN ranges but not the tailnet's 100.64.0.0/10, so it can ban Colin's
+      # devices. Only private addresses are shown (the log is public), with the scenario that banned them.
+      - name: CrowdSec bans on our own addresses
+        if: inputs.network || inputs.unban_tailnet
+        run: |
+          export OURS='^Ip:(100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|192\.168\.|10\.)'
+          docker exec crowdsec cscli decisions list -o raw 2>&1 \
+            | awk -F, 'NR == 1 || $3 ~ ENVIRON["OURS"] {print $2","$3","$4","$5","$9}' | head -20
+          echo "bans in all: $(docker exec crowdsec cscli decisions list -o raw 2>/dev/null | tail -n +2 | wc -l)"
+
+      - name: Lift bans on our own addresses
+        if: inputs.unban_tailnet
+        run: |
+          docker exec crowdsec cscli decisions delete --range 100.64.0.0/10
+          docker exec crowdsec cscli decisions delete --range 192.168.0.0/16
 
       - name: Report health
         env:
