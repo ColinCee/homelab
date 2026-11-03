@@ -51,7 +51,7 @@ ARG UV_VERSION
 ARG UV_SHA256
 ARG PYTHON_VERSION
 RUN v=${NODE_VERSION#v} \
- && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz" \
+ && curl -fsSL -o /tmp/node.tar.xz "https://nodejs.org/dist/v$v/node-v$v-linux-x64.tar.xz" \
  && echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c --quiet \
  && mkdir -p "/opt/hostedtoolcache/node/$v/x64" \
  && tar -xJf /tmp/node.tar.xz --strip-components 1 -C "/opt/hostedtoolcache/node/$v/x64" \
