@@ -179,7 +179,7 @@
     },
     {
       "id": 3,
-      "title": "Waiting for a machine",
+      "title": "Waiting",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -321,7 +321,7 @@
     },
     {
       "id": 5,
-      "title": "Needs Colin",
+      "title": "For you",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -333,7 +333,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "Held changes and questions waiting on the board.",
+      "description": "Tasks needing Colin: held changes and questions waiting on the board.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -394,7 +394,7 @@
     },
     {
       "id": 6,
-      "title": "Merged today",
+      "title": "Merged",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -406,7 +406,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "Since midnight UTC.",
+      "description": "Tasks merged since midnight UTC.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -463,7 +463,7 @@
     },
     {
       "id": 7,
-      "title": "Agent cost today",
+      "title": "Cost",
       "type": "stat",
       "datasource": {
         "type": "prometheus",
@@ -475,7 +475,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "What agents' finished runs cost since midnight UTC.",
+      "description": "What agents' finished runs cost today, since midnight UTC.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -719,7 +719,7 @@
         "w": 12,
         "h": 9
       },
-      "description": "The longest any running task has waited for a Firecracker CI machine. Over 20 minutes alerts (the red area).",
+      "description": "The longest any running task has waited for a Firecracker CI machine. Over 20 minutes alerts (the red dashed line).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -738,9 +738,10 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "line+area"
+              "mode": "dashed"
             },
-            "axisSoftMin": 0
+            "axisSoftMin": 0,
+            "axisSoftMax": 1500
           },
           "mappings": [],
           "thresholds": {
@@ -998,9 +999,10 @@
               "mode": "none"
             },
             "thresholdsStyle": {
-              "mode": "line+area"
+              "mode": "dashed"
             },
-            "axisSoftMin": 0
+            "axisSoftMin": 0,
+            "axisSoftMax": 3
           },
           "mappings": [],
           "thresholds": {
