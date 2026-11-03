@@ -5,16 +5,48 @@ import pytest
 from scripts import ci_supervisor as sup
 
 
-def test_reads_the_repo_list() -> None:
-    text = "# private repos only\nColinCee/cortex\n\nColinCee/servo  # Windows app, Linux checks\n"
+class Repos:
+    def __init__(self, page: list[dict]) -> None:
+        self.page = page
 
-    assert sup.read_repos(text) == ["ColinCee/cortex", "ColinCee/servo"]
+    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+        assert path.startswith("/user/repos?")
+        return self.page
 
 
-@pytest.mark.parametrize("line", ["cortex", "ColinCee/", "/cortex", "a/b/c"])
-def test_a_malformed_repo_line_is_an_error(line: str) -> None:
-    with pytest.raises(ValueError):
-        sup.read_repos(line)
+def test_serves_only_colins_private_repos_the_token_can_see() -> None:
+    page = [
+        {"full_name": "ColinCee/servo", "private": True, "owner": {"login": "ColinCee"}},
+        {"full_name": "ColinCee/cortex", "private": True, "owner": {"login": "ColinCee"}},
+        {"full_name": "ColinCee/blog", "private": False, "owner": {"login": "ColinCee"}},
+        {"full_name": "someone/theirs", "private": True, "owner": {"login": "someone"}},
+    ]
+    assert sup.served_repos(Repos(page)) == ["ColinCee/cortex", "ColinCee/servo"]
+
+
+class Pages:
+    def __init__(self, total: int) -> None:
+        self.total, self.asked = total, 0
+
+    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+        self.asked += 1
+        start = (self.asked - 1) * 100
+        return [
+            {"full_name": f"ColinCee/r{i:03}", "private": True, "owner": {"login": "ColinCee"}}
+            for i in range(start, min(start + 100, self.total))
+        ]
+
+
+def test_reads_every_page_of_repos() -> None:
+    gh = Pages(150)
+    assert len(sup.served_repos(gh)) == 150 and gh.asked == 2
+
+
+def test_the_standby_goes_to_the_repo_of_the_last_job() -> None:
+    repos = ["a/x", "a/y", "a/z"]
+    assert sup.standby_first(repos, "a/y") == ["a/y", "a/x", "a/z"]
+    assert sup.standby_first(repos, "") == repos
+    assert sup.standby_first(repos, "a/gone") == repos
 
 
 @pytest.mark.parametrize(
