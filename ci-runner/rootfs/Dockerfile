@@ -1,8 +1,8 @@
 # Root filesystem for the CI microVMs, built with Docker and exported to ext4 by
 # build-rootfs.sh. Boots Ubuntu's own kernel with systemd as init. No SSH server,
 # no host keys, no credentials: each VM learns its job from Firecracker's MMDS.
-# Workflows install their own tools (setup-uv, setup-node) and use GitHub's
-# cache, which keeps branches from writing main's entries.
+# The tools jobs need are baked in (pinned in versions.env) and package caches
+# come from the repo's cache disk at /cache.
 FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f579aaff33ac
 
 RUN apt-get update \
@@ -76,6 +76,38 @@ RUN v=${JDK_VERSION} \
  && echo "${JDK_SHA256}  /tmp/jdk.tgz" | sha256sum -c --quiet \
  && mkdir /opt/jdk && tar -xzf /tmp/jdk.tgz --strip-components 1 -C /opt/jdk && rm /tmp/jdk.tgz \
  && echo 'JAVA_HOME=/opt/jdk' >> /opt/runner/.env
+
+# mise (it installs the tools a repo's mise.toml lists), bun, pnpm, and the
+# docker CLI with the compose plugin but no daemon (enough for `docker compose
+# config`), all under /usr/local, already on the jobs' PATH.
+ARG MISE_VERSION
+ARG MISE_SHA256
+ARG BUN_VERSION
+ARG BUN_SHA256
+ARG PNPM_VERSION
+ARG PNPM_SHA256
+ARG DOCKER_VERSION
+ARG DOCKER_SHA256
+ARG COMPOSE_VERSION
+ARG COMPOSE_SHA256
+RUN curl -fsSL -o /usr/local/bin/mise \
+      "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-x64" \
+ && echo "${MISE_SHA256}  /usr/local/bin/mise" | sha256sum -c --quiet \
+ && curl -fsSL -o /tmp/bun.zip "https://github.com/oven-sh/bun/releases/download/bun-v${BUN_VERSION}/bun-linux-x64.zip" \
+ && echo "${BUN_SHA256}  /tmp/bun.zip" | sha256sum -c --quiet \
+ && unzip -qj /tmp/bun.zip bun-linux-x64/bun -d /usr/local/bin && rm /tmp/bun.zip \
+ && curl -fsSL -o /tmp/pnpm.tgz "https://github.com/pnpm/pnpm/releases/download/v${PNPM_VERSION}/pnpm-linux-x64.tar.gz" \
+ && echo "${PNPM_SHA256}  /tmp/pnpm.tgz" | sha256sum -c --quiet \
+ && mkdir /usr/local/lib/pnpm && tar -xzf /tmp/pnpm.tgz -C /usr/local/lib/pnpm && rm /tmp/pnpm.tgz \
+ && ln -s /usr/local/lib/pnpm/pnpm /usr/local/bin/pnpm \
+ && curl -fsSL -o /tmp/docker.tgz "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION#v}.tgz" \
+ && echo "${DOCKER_SHA256}  /tmp/docker.tgz" | sha256sum -c --quiet \
+ && tar -xzf /tmp/docker.tgz --strip-components 1 -C /usr/local/bin docker/docker && rm /tmp/docker.tgz \
+ && mkdir -p /usr/local/lib/docker/cli-plugins \
+ && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+      "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+ && echo "${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c --quiet \
+ && chmod 0755 /usr/local/bin/mise /usr/local/bin/bun /usr/local/lib/docker/cli-plugins/docker-compose
 
 # Actions the CI repos use, unpacked where the runner looks before downloading
 # (<owner>_<repo>/<commit>/<the archive's own folder>), and Node and the JDK on the
