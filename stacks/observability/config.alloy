@@ -55,9 +55,11 @@ prometheus.scrape "cadvisor" {
 
 // The Firecracker CI VMs are processes, not containers: each runs in its slot's
 // cgroup, /firecracker/ci-slotN, which exists only while that slot has a VM.
+// No docker_host: with no Docker socket in this container it skips containers,
+// which the exporter above already collects.
 prometheus.exporter.cadvisor "ci_vms" {
   docker_only                 = false
-  docker_host                 = "tcp://docker-socket-proxy:2375"
+  enabled_metrics             = ["cpu", "memory"]
   raw_cgroup_prefix_allowlist = ["/firecracker/"]
 }
 
@@ -81,8 +83,8 @@ prometheus.scrape "ci_vms" {
   scrape_interval = "15s"
 }
 
-// Only the VMs' own cgroups; this exporter also reports the containers and the
-// whole machine, which the other scrapes already cover.
+// Only the VMs' own cgroups; this exporter also reports the whole machine,
+// which the host scrape already covers.
 prometheus.relabel "ci_vms" {
   forward_to = [prometheus.remote_write.default.receiver]
 

@@ -38,7 +38,7 @@ groups:
           summary: "Beelink CPU usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 5 minutes (5-minute CPU average)."
-          action: "Check CPU consumers in Container Overview."
+          action: "Check CPU use on Home (containers, CI VMs and the rest), then Container Overview."
         labels:
           severity: warning
 
@@ -75,7 +75,7 @@ groups:
           summary: "Beelink RAM usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 90% for 5 minutes."
-          action: "Check memory consumers in Container Overview."
+          action: "Check memory use on Home (containers, CI VMs and the rest), then Container Overview."
         labels:
           severity: warning
 
@@ -249,7 +249,11 @@ groups:
             datasourceUid: prometheus
             model:
               # Served by the Kaizen Board: the longest a running task has waited for a homelab machine.
-              expr: max(kaizen_machine_wait_seconds_max{job="kaizen"}) / 60
+              # [2m] rides out a missed scrape while the board redeploys. Only while the board has read
+              # GitHub in the last 10 minutes: a stale board keeps counting a wait that may have ended.
+              expr: >-
+                max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
+                and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
               instant: true
               refId: A
           - refId: C
@@ -282,14 +286,15 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 300
+              from: 10800
               to: 0
             datasourceUid: prometheus
             model:
-              # Hours since the last merge, or 0 while no task is running or waiting.
+              # Hours since the last merge, or 0 unless tasks have been running or waiting for the whole
+              # last 3 hours, so work starting after an idle night does not count as not merging.
               expr: >-
-                (time() - max(kaizen_last_merge_timestamp_seconds{job="kaizen"})) / 3600
-                * on() (sum(kaizen_tasks{job="kaizen",state=~"working|waiting_for_machine|stuck"}) > bool 0)
+                (time() - max(max_over_time(kaizen_last_merge_timestamp_seconds{job="kaizen"}[2m]))) / 3600
+                * on() min_over_time((sum(kaizen_tasks{job="kaizen",state=~"working|waiting_for_machine|stuck"}) > bool 0)[3h:1m])
               instant: true
               refId: A
           - refId: C
@@ -311,7 +316,7 @@ groups:
         annotations:
           summary: "Time since Kaizen last merged, with tasks queued"
           value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
-          description: "Threshold: tasks are running or waiting, and nothing has merged for over 3 hours."
+          description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
           action: "Open the Kaizen Board (http://100.100.146.119:8090) and the Kaizen dashboard; look for a failing step or a held change."
         labels:
           severity: warning

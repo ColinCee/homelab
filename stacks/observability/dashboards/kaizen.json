@@ -191,7 +191,7 @@
         "w": 4,
         "h": 4
       },
-      "description": "Running tasks queued for a CI machine, under 20 minutes so far.",
+      "description": "Running tasks queued for a machine (homelab or GitHub's), not counted as stuck.",
       "fieldConfig": {
         "defaults": {
           "color": {
