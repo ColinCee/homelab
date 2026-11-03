@@ -68,6 +68,26 @@ jobs:
           cd /home/colin/code/homelab
           scripts/deploy.sh
 
+      # Grafana gives a top-level provisioned dashboard no viewer access, and
+      # provisioning cannot grant it, so each deploy lets viewers open Home.
+      - name: Let viewers open Grafana's Home
+        env:
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+        run: |
+          pw=${GRAFANA_ADMIN_PASSWORD//\\/\\\\}
+          pw=${pw//\"/\\\"}
+          # Grafana may still be starting after a recreate.
+          for _ in $(seq 30); do
+            if printf 'user = "admin:%s"\n' "$pw" |
+              curl -sf -K - -X POST -H "Content-Type: application/json" \
+                -d '{"items":[{"role":"Viewer","permission":1}]}' \
+                http://100.100.146.119:3001/api/dashboards/uid/home/permissions >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::warning::Could not grant viewers access to Grafana's Home"
+
       # Kaizen's Andon: a failed deploy stops all automated work until it is fixed, and a good one restarts it.
       - id: kaizen-key
         if: always()
