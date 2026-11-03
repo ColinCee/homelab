@@ -1228,6 +1228,27 @@
             "regex": "(.+)-1$",
             "renamePattern": "$1"
           }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^observability-(.+)$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*\\b(\\w+))-\\2$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^flight-tracker-(.+)$",
+            "renamePattern": "flight-$1"
+          }
         }
       ]
     },
@@ -1510,6 +1531,27 @@
           "options": {
             "regex": "(.+)-1$",
             "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^observability-(.+)$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^(.*\\b(\\w+))-\\2$",
+            "renamePattern": "$1"
+          }
+        },
+        {
+          "id": "renameByRegex",
+          "options": {
+            "regex": "^flight-tracker-(.+)$",
+            "renamePattern": "flight-$1"
           }
         }
       ]
