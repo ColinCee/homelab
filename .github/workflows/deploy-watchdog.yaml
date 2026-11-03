@@ -55,8 +55,8 @@ jobs:
           permission-contents: write
           permission-issues: read
 
-      - id: pull-andon
-        name: Pull Kaizen's Andon after a failed deploy
+      - id: stop-line
+        name: Stop Kaizen's line after a failed deploy
         if: steps.kaizen-key.outputs.token
         continue-on-error: true
         env:
@@ -66,16 +66,16 @@ jobs:
           last=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w deploy.yaml -b main -L 1 --json status,conclusion,url --jq '.[0]')
           [ "$(jq -r .status <<< "$last")" = completed ] && [ "$(jq -r .conclusion <<< "$last")" = failure ] || exit 0
           search='"Repo: ColinCee/homelab" in:body'
-          open=$(gh issue list -R ColinCee/auto-kaizen --label andon --state open --search "$search" \
+          open=$(gh issue list -R ColinCee/auto-kaizen --label line-stop --state open --search "$search" \
             --json number --jq '.[0].number // empty')
           [ -z "$open" ] || exit 0
           jq -n --arg r "The homelab deploy failed or was blocked: $(jq -r .url <<< "$last")" \
-            '{event_type: "andon-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
+            '{event_type: "line-stop-open", client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -
 
       # The watchdog is the backstop: if it cannot reach Auto Kaizen, Colin hears about it.
       - name: Say so if Auto Kaizen could not be told
-        if: steps.kaizen-key.outcome == 'failure' || steps.pull-andon.outcome == 'failure'
+        if: steps.kaizen-key.outcome == 'failure' || steps.stop-line.outcome == 'failure'
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
