@@ -38,7 +38,9 @@ RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API = "https://api.github.com"
-SLOTS = 2
+# Three VMs at most: a job alone gets 4 GiB, the others 2 GiB each, 8 GiB in all,
+# which leaves the home's own services room.
+SLOTS = 3
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
 # A VM that has not picked up a job by now counts as idle demand again.
@@ -322,7 +324,7 @@ def launch(
 
 
 def vm_size(running: int) -> tuple[int, int]:
-    """A job alone gets the whole machine's cores; two at once get half each."""
+    """A job alone gets the whole machine's cores; with others running, each gets half."""
     return (4, 4096) if running == 0 else (2, 2048)
 
 

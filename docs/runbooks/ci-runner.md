@@ -59,8 +59,8 @@ also puts `node_modules` and its `package-lock.json` on the disk (the tar step
 names them), copied rather than linked so TypeScript's incremental build info
 stays valid.
 
-A job running alone gets 4 vCPUs and 4 GiB; when both slots are busy, the
-second gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
+There are three slots. A job running alone gets 4 vCPUs and 4 GiB; a job
+that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
 Only repositories listed in the host's root-only repo list (`REPOS_FILE` in the supervisor,

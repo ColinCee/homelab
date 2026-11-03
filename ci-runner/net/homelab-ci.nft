@@ -38,7 +38,7 @@ table inet homelab_ci {
   chain forward {
     type filter hook forward priority filter; policy accept;
     iifname "fc-tap*" meta nfproto ipv6 counter drop
-    # A VM may only use its own address: no posing as the other slot or
+    # A VM may only use its own address: no posing as another slot or
     # sending unNATed traffic with someone else's address. (rp_filter is loose
     # on Beelink, so this rule is what enforces it.)
     iifname "fc-tap*" fib saddr . iif oif missing counter drop
