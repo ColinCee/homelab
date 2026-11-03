@@ -94,7 +94,8 @@ process, not the VM.
 
 Only Colin's private repositories the token can see are served (its repository
 access is the list; `served_repos` in the supervisor), and only those nobody else can
-write to: a repo with any other collaborator is skipped (checked hourly), so only Colin
+write to: a repo with any other collaborator or a deploy key that can write is skipped
+(checked every minute and before its first VM), so only Colin
 and his own apps (Kaizen, Renovate) can start a job here. Repos that have had a VM are
 polled every 2 s; the rest once a minute. Only while private: privacy is
 checked on every poll, and once a repo is public no new VM starts for it and its

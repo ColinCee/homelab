@@ -380,27 +380,24 @@ def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
 
 
 class People:
-    def __init__(self, logins: list[str]) -> None:
-        self.logins, self.asked = logins, 0
+    def __init__(self, logins: list[str], keys: list[dict] | None = None) -> None:
+        self.logins, self.keys = logins, keys or []
 
     def request(self, method: str, path: str, body: object = None) -> list[dict]:
-        self.asked += 1
+        if "/keys" in path:
+            return self.keys
         return [{"login": login} for login in self.logins]
 
 
-def test_a_repo_anyone_else_can_write_to_is_never_served() -> None:
-    state = sup.State()
-    assert sup.only_colin(People(["ColinCee"]), state, "a/mine", 0.0) is True
-    assert sup.only_colin(People(["ColinCee", "friend"]), state, "a/shared", 0.0) is False
+def test_a_repo_anyone_else_can_push_to_is_never_served() -> None:
+    assert sup.only_colin(People(["ColinCee"]), "a/mine") is True
+    assert sup.only_colin(People(["ColinCee", "friend"]), "a/shared") is False
+    assert sup.only_colin(People(["ColinCee"], [{"read_only": True}]), "a/key") is True
+    assert sup.only_colin(People(["ColinCee"], [{"read_only": False}]), "a/key") is False
 
 
-def test_collaborators_are_rechecked_hourly_and_doubt_is_a_no() -> None:
-    state = sup.State()
-    gh = People(["ColinCee"])
-    sup.only_colin(gh, state, "a/x", 0.0)
-    sup.only_colin(gh, state, "a/x", 100.0)
-    assert gh.asked == 1
-    assert sup.only_colin(OneRepoBroken("a/x"), sup.State(), "a/x", 0.0) is False
+def test_doubt_about_collaborators_is_a_no() -> None:
+    assert sup.only_colin(OneRepoBroken("a/x"), "a/x") is False
 
 
 def test_a_listing_too_old_to_trust_means_asking_github() -> None:
