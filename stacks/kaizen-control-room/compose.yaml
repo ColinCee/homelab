@@ -1,5 +1,5 @@
 services:
-  board:
+  control-room:
     image: ghcr.io/colincee/kaizen-board:latest@sha256:9592b0838f6ae64cd496c8900fc8f5637c0947330cb495b0793c34cc5be420e2
     restart: unless-stopped
     security_opt:
@@ -7,7 +7,7 @@ services:
     ports:
       - "100.100.146.119:8090:8090"
     volumes:
-      - board-data:/data
+      - data:/data
     environment:
       KAIZEN_APP_ID: ${KAIZEN_APP_ID:?}
       KAIZEN_APP_KEY_FILE: /run/secrets/kaizen_app_key
@@ -19,4 +19,4 @@ secrets:
     environment: KAIZEN_APP_KEY
 
 volumes:
-  board-data:
+  data:

@@ -23,7 +23,7 @@ heartbeat for full host outages.
 | Component | What it does |
 |-----------|---------------|
 | **Grafana** | Dashboards, Explore, and alert routing |
-| **Prometheus** | Metrics storage for host, containers, CI VMs, CrowdSec, the Kaizen Board and the flight-tracker probe |
+| **Prometheus** | Metrics storage for host, containers, CI VMs, CrowdSec, Auto Kaizen's Control room and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
 | **CrowdSec** | Security detections and firewall decisions, also exported as metrics |
@@ -104,13 +104,13 @@ Prometheus receives metrics from:
   included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`.
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
-- **Kaizen Board:** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
+- **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
   `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`, and
   `kaizen_tasks_read_timestamp_seconds` (its last good read of GitHub).
   `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and the
-  longest wait count homelab machines only. The board's code lives in the
+  longest wait count homelab machines only. The Control room's code lives in the
   private auto-kaizen repo.
 - **Flight tracker:** Alloy's blackbox exporter probes the public
   `https://api.colincheung.dev/aircraft` every minute

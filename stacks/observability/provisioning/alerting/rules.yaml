@@ -250,9 +250,9 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              # Served by the Kaizen Board: the longest a running task has waited for a homelab machine.
-              # [2m] rides out a missed scrape while the board redeploys. Only while the board has read
-              # GitHub in the last 10 minutes: a stale board keeps counting a wait that may have ended.
+              # Served by Auto Kaizen's Control room: the longest a running task has waited for a homelab machine.
+              # [2m] rides out a missed scrape while the Control room redeploys. Only while it has read
+              # GitHub in the last 10 minutes: a stale Control room keeps counting a wait that may have ended.
               expr: >-
                 max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
                 and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
@@ -319,6 +319,6 @@ groups:
           summary: "Time since Kaizen last merged, with tasks queued"
           value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
           description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
-          action: "Open the Kaizen Board (http://beelink.tail4f465e.ts.net:8090) and Grafana Home; look for a failing step or held change."
+          action: "Open the Control room (http://beelink.tail4f465e.ts.net:8090) and Grafana Home; look for a failing step or held change."
         labels:
           severity: warning

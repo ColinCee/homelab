@@ -15,6 +15,10 @@ from pathlib import Path
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 
+# Stacks renamed or removed from stacks/: each deploy takes their containers down (their
+# volumes stay), so a renamed stack's new name can take the old one's ports.
+RETIRED = ("kaizen-board",)
+
 
 class DeploymentInputError(ValueError):
     """Raised when deployment inputs are invalid before any mutation."""
@@ -164,6 +168,13 @@ def deploy(
         raise DeploymentInputError("readiness timeout must be a positive integer")
 
     validate_plans(repo_root, plans, runner=runner)
+    for name in RETIRED:
+        runner(
+            ["docker", "compose", "-p", name, "down"],
+            cwd=repo_root,
+            env=_compose_environment(),
+            check=False,
+        )
     completed: list[str] = []
     failed: dict[str, str] = {}
 

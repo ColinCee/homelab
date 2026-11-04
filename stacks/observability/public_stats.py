@@ -25,7 +25,7 @@ STACKS = (
     "crowdsec",
     "flight-tracker",
     "home-assistant",
-    "kaizen-board",
+    "kaizen-control-room",
     "observability",
 )
 EVERY_S = 300

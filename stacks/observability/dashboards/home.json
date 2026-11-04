@@ -21,11 +21,11 @@
   "id": null,
   "links": [
     {
-      "title": "Kaizen Board",
+      "title": "Control room",
       "type": "link",
       "url": "http://beelink.tail4f465e.ts.net:8090",
       "icon": "external link",
-      "tooltip": "The live board",
+      "tooltip": "The Control room",
       "targetBlank": true,
       "asDropdown": false,
       "includeVars": false,
@@ -49,7 +49,7 @@
         "w": 6,
         "h": 3
       },
-      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions on the Kaizen Board. Flight tracker: the public API serving live aircraft.",
+      "description": "Stuck: a Kaizen task waited over 20 minutes for a machine. For you: held changes and questions in the Control room. Flight tracker: the public API serving live aircraft.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -102,7 +102,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -143,7 +143,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -1619,7 +1619,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -1656,7 +1656,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -1693,7 +1693,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -1734,7 +1734,7 @@
                 "id": "links",
                 "value": [
                   {
-                    "title": "Kaizen Board",
+                    "title": "Control room",
                     "url": "http://beelink.tail4f465e.ts.net:8090"
                   }
                 ]
@@ -1811,7 +1811,7 @@
       ],
       "links": [
         {
-          "title": "Kaizen Board",
+          "title": "Control room",
           "url": "http://beelink.tail4f465e.ts.net:8090"
         }
       ]
@@ -1916,7 +1916,7 @@
         "w": 9,
         "h": 10
       },
-      "description": "Counts on the Kaizen Board, every 30 seconds.",
+      "description": "Counts in the Control room, every 30 seconds.",
       "fieldConfig": {
         "defaults": {
           "color": {
