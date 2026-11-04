@@ -138,8 +138,9 @@ GitHub-hosted runners and take it off the token's repository access.
   included, can open a connection to a VM. The iptables accept is limited to
   the uplink, so it opens nothing private even without the nftables table.
 - **Firecracker is jailed.** The jailer runs it as the slot's own user
-  (`fc-slotN`), chrooted, with Firecracker's syscall filter, no capabilities,
-  at a lower CPU weight than the services and with a memory cap.
+  (`fc-slotN`), chrooted, with Firecracker's syscall filter, no capabilities
+  and a memory cap. All VMs share one cgroup (`firecracker`) at CPU weight 20,
+  below the services' 100 (`system.slice`): weight only counts between siblings.
 - **One VM per slot.** A lock stops two runs sharing a slot; if a run dies,
   the next one kills whatever it left behind.
 - **Installed by hand.** Everything lives root-owned under
@@ -250,12 +251,14 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
   2 GiB), each spinning every CPU and holding all but 128 MiB of its free
   memory, while timing Home Assistant and Grafana once a second. It prints each
-  service's median and worst response, quiet and loaded, and the host's lowest
+  service's median and worst response with the second it came (counted from
+  when the VMs start), each failed request as `code@second`, and the host's lowest
   `MemAvailable` during the run, then one `PASS` or `FAIL` line naming the slot
   count. It fails, exiting 1 with the reasons on that line, when a VM does not
   boot or finish its burn, any request fails, or a worst response is over
-  `MAX_RESPONSE` seconds (1 by default). In October 2026, with 3 slots, their
-  worst response went from 1 ms to 4 ms.
+  `MAX_RESPONSE` seconds (1 by default). On 4 November 2026, before the VMs'
+  CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
+  3 to 5 slots, with 5 failed requests in some runs.
 
 ## Changing the number of slots
 

@@ -29,10 +29,12 @@ trap 'rm -rf "$tmp"' EXIT
 reasons=()
 
 mem_available() { awk '/^MemAvailable:/ {print $2}' /proc/meminfo; }
-sample() { # PREFIX COUNT: one timing per service per second for COUNT seconds
+sample() { # PREFIX COUNT: one timing per service per second for COUNT seconds,
+  # each line "seconds code at", at being seconds since $start. curl prints code 000
+  # when it gets no answer (a timeout, a refused connection).
   for _ in $(seq 1 "$2"); do
     for i in "${!urls[@]}"; do
-      { curl -s -o /dev/null -m 10 -w '%{time_total} %{http_code}\n' "${urls[$i]}" || echo "fail 000"; } >> "$1.$i"
+      curl -s -o /dev/null -m 10 -w "%{time_total} %{http_code} $((SECONDS - start))\n" "${urls[$i]}" >> "$1.$i" || true
     done
     mem_available >> "$1.mem"
     sleep 1
@@ -40,19 +42,22 @@ sample() { # PREFIX COUNT: one timing per service per second for COUNT seconds
 }
 report() { # LABEL PREFIX: print each service's median and worst, and note what breaks the bounds
   for i in "${!urls[@]}"; do
-    local line failed worst
-    line=$(awk '$1 != "fail" && $2 >= 200 && $2 < 400 {print $1}' "$2.$i" | sort -n |
-      awk '{a[NR]=$1} END {if (NR) printf "median %.3fs, worst %.3fs", a[int((NR+1)/2)], a[NR]}')
-    failed=$(awk '$1 == "fail" || $2 < 200 || $2 >= 400' "$2.$i" | wc -l)
-    echo "$1 ${names[$i]}: ${line:-no answers}, $failed failed"
+    local line failed failures worst
+    line=$(awk '$2 >= 200 && $2 < 400' "$2.$i" | sort -n |
+      awk '{a[NR]=$1; at[NR]=$3} END {if (NR) printf "median %.3fs, worst %.3fs at %ds", a[int((NR+1)/2)], a[NR], at[NR]}')
+    failed=$(awk '$2 < 200 || $2 >= 400' "$2.$i" | wc -l)
+    # Each failure as code@second, so a burst at boot shows apart from one under the burn.
+    failures=$(awk '$2 < 200 || $2 >= 400 {printf " %s@%ds", $2, $3}' "$2.$i")
+    echo "$1 ${names[$i]}: ${line:-no answers}, $failed failed${failures:+ (code@second:$failures)}"
     ((failed == 0)) || reasons+=("$1 ${names[$i]}: $failed requests failed")
-    worst=$(awk '$1 != "fail" && $2 >= 200 && $2 < 400 {print $1}' "$2.$i" | sort -n | tail -1)
+    worst=$(awk '$2 >= 200 && $2 < 400 {print $1}' "$2.$i" | sort -n | tail -1)
     if [[ -n $worst ]] && awk -v w="$worst" -v m="$max_response" 'BEGIN {exit !(w > m)}'; then
       reasons+=("$1 ${names[$i]}: worst ${worst}s over ${max_response}s")
     fi
   done
 }
 
+start=$SECONDS
 sample "$tmp/quiet" 15
 report quiet "$tmp/quiet"
 
@@ -66,6 +71,8 @@ for i in \$(seq \$(nproc)); do timeout $seconds sh -c 'while :; do :; done' & do
 wait
 [ \"\$(stat -c %s /run/burn/fill)\" = \$((burn_mib * 1048576)) ] && echo BURN_DONE"
 jq -n --arg probe "$burn" '{task: "probe", probe: $probe}' > "$tmp/metadata.json"
+# Seconds in the loaded report count from here, when the VMs start booting.
+start=$SECONDS
 pids=()
 for ((n = 0; n < SLOTS; n++)); do
   "$run_vm" "$n" "$tmp/metadata.json" $((seconds + 120)) > "$tmp/vm$n.log" 2>&1 &

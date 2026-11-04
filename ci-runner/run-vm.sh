@@ -89,7 +89,12 @@ if [[ -n "$cache_drive" ]]; then
   chown -h "$uid:$gid" "$chroot/cache.ext4"
 fi
 
-# Below the services in CPU priority; memory capped a little above the guest's.
+# Below the services in CPU priority. cpu.weight only ranks a cgroup against its
+# siblings: the slot's own weight ranks the VMs against each other, the parent's
+# ranks them all against system.slice, where the services run at 100.
+mkdir -p "${cgroup%/*}"
+echo 20 > "${cgroup%/*}/cpu.weight"
+# Memory capped a little above the guest's.
 # The lock stays with this script: if it dies, the next run kills the orphan.
 timeout --kill-after=10 "$timeout" /usr/local/bin/jailer \
   --id "$id" --exec-file /usr/local/bin/firecracker \

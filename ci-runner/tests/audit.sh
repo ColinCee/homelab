@@ -107,7 +107,8 @@ if [[ -n "${pid:-}" ]]; then
     [ "$seen" = "dev firecracker firecracker.pid metadata.json rootfs.ext4 run vm.json vmlinuz " ]
   cg=/sys/fs/cgroup/firecracker/ci-slot0
   check "memory capped" [ "$(cat $cg/memory.max)" != max ]
-  check "CPU weight below services" [ "$(cat $cg/cpu.weight)" -lt 100 ]
+  # The parent's weight ranks the VMs against system.slice (100), where the services run.
+  check "CPU weight below services" [ "$(cat "${cg%/*}/cpu.weight")" -lt 100 ]
 else
   fail "no Firecracker process to inspect"
 fi
