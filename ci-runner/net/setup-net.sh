@@ -6,7 +6,11 @@
 # "wan" refreshes the blocked public address; run-vm.sh calls it before each VM.
 set -euo pipefail
 
-SLOTS=${SLOTS:-3}
+# The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
+# explicit SLOTS wins. 3 when neither is a number, at least 1, as in ci_supervisor.py.
+SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
+SLOTS=${SLOTS//[[:space:]]/}
+if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=3; fi
 dir=$(cd "$(dirname "$0")" && pwd)
 # The accept is limited to the uplink, so it opens nothing private even if the
 # nftables table were missing.
