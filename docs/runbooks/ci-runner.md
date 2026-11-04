@@ -106,9 +106,11 @@ Only Colin's private repositories the token can see are served (its repository
 access is the list; `served_repos` in the supervisor), and only those nobody else can
 write to: a repo with any other collaborator or a deploy key that can write is skipped
 (checked every minute and before its first VM), so only Colin
-and his own apps (Kaizen, Renovate) can start a job here. Repos that have had a VM are
-polled every 2 s; the rest once a minute, a few per poll, and the minutely repo listing
-runs beside the poll, so neither delays a queued job's VM. A poll slower than 5 s is
+and his own apps (Kaizen, Renovate) can start a job here. Repos that have had a job here
+are polled every 2 s (a standby booted for a repo does not count); the rest once a minute,
+a few per poll, and the minutely repo listing runs beside the poll, so neither delays a
+queued job's VM. The polled repos are asked all at once, each on its own thread over a
+connection kept open, so a poll takes about as long as one repo's answers. A poll slower than 5 s is
 logged (`slow poll:`) with its GitHub requests and its slowest repos. Only while private: privacy is
 checked on every poll, and once a repo is public no new VM starts for it and its
 idle ones are stopped. Before making a repo public, move its workflows to

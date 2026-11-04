@@ -1,6 +1,10 @@
+import email.message
+import http.client
 import io
 import json
 import tarfile
+import threading
+from typing import ClassVar
 
 import pytest
 
@@ -413,8 +417,8 @@ def test_after_a_restart_the_standby_goes_where_the_last_job_ran(monkeypatch, tm
 def test_a_slow_poll_says_what_it_spent_its_time_on() -> None:
     line = sup.slow_poll(9.0, 40, 8.5, {"a/x": 1.0, "a/y": 6.0, "a/z": 0.5, "a/w": 0.2})
     assert line == (
-        "slow poll: 9.0s; 40 GitHub requests took 8.5s; asking 4 repos for queued jobs "
-        "took 7.7s (slowest a/y 6.0s, a/x 1.0s, a/z 0.5s); the rest 1.3s"
+        "slow poll: 9.0s; 40 GitHub requests took 8.5s in all; asking 4 repos for queued jobs "
+        "at once took 6.0s (slowest a/y 6.0s, a/x 1.0s, a/z 0.5s); the rest 3.0s"
     )
 
 
@@ -719,3 +723,100 @@ def test_a_standby_boots_only_with_memory_for_it(host, monkeypatch) -> None:
     queue(jobs=0, free_mib=3072 + 4095)
     sup.tick(None, sup.State(), ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert started == []
+
+
+def test_the_polled_repos_are_asked_at_once(monkeypatch) -> None:
+    repos = ["o/a", "o/b", "o/c", "o/d"]
+    # Each answer waits until every repo is being asked: one after another, it would time out.
+    together = threading.Barrier(len(repos), timeout=5)
+
+    def find(gh, repo: str) -> list[sup.Job]:
+        together.wait()
+        return [sup.Job(repo, 1, "check", tuple(sup.RUNNER_LABELS))]
+
+    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "find_queued", find)
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    launched: list[str] = []
+    monkeypatch.setattr(
+        sup, "launch", lambda gh, state, repo, slot, now, **k: launched.append(repo)
+    )
+    spent = sup.tick(None, sup.State(slots=5), repos, 0.0)  # type: ignore[arg-type]
+    assert launched == repos  # in the order given, whatever order the answers came in
+    assert list(spent) == repos
+
+
+class Connection:
+    """api.github.com as seen down one connection, recording what is sent; `drop` makes
+    its next request fail as if GitHub had closed it while it sat idle."""
+
+    made: ClassVar[list[Connection]] = []
+
+    def __init__(self, host: str, timeout: float) -> None:
+        self.sent: list[str] = []
+        self.drop = False
+        Connection.made.append(self)
+
+    def request(self, method: str, path: str, body: bytes | None, headers: dict) -> None:
+        if self.drop:
+            raise http.client.RemoteDisconnected("closed")
+        self.sent.append(f"{method} {path}")
+
+    def getresponse(self) -> object:
+        class Reply:
+            status, reason = 200, "OK"
+            headers = email.message.Message()
+
+            def read(self) -> bytes:
+                return b"{}"
+
+        return Reply()
+
+    def close(self) -> None:
+        pass
+
+
+def test_requests_share_one_open_connection_and_a_closed_one_is_reopened(monkeypatch) -> None:
+    monkeypatch.setattr(Connection, "made", [])
+    monkeypatch.setattr(sup.http.client, "HTTPSConnection", Connection)
+    gh = sup.GitHub("t")
+    gh.request("GET", "/a")
+    gh.request("GET", "/b")
+    assert len(Connection.made) == 1 and Connection.made[0].sent == ["GET /a", "GET /b"]
+    Connection.made[0].drop = True
+    gh.request("GET", "/c")
+    assert len(Connection.made) == 2 and Connection.made[1].sent == ["GET /c"]
+    # A registration is never sent twice, so it never goes down a connection that may be closed.
+    gh.request("POST", "/r", {})
+    assert len(Connection.made) == 3 and Connection.made[2].sent == ["POST /r"]
+
+
+def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
+    monkeypatch, tmp_path
+) -> None:
+    class Registers:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    class Process:
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO()
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr(sup, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
+    monkeypatch.setattr(sup.subprocess, "Popen", lambda *a, **k: Process())
+    state = sup.State()
+    sup.launch(Registers(), state, "o/spare", 0, 0.0, cache=None, standby=True)  # type: ignore[arg-type]
+    assert state.used == set()
+    # Once the standby takes a job, its repo counts.
+    monkeypatch.setattr(sup, "is_idle", lambda gh, run: False)
+    sup.reap(None, state, 60.0, {}, ["o/spare"])  # type: ignore[arg-type]
+    assert state.used == {"o/spare"}
+    sup.launch(Registers(), state, "o/job", 1, 0.0, cache=None)  # type: ignore[arg-type]
+    assert state.used == {"o/spare", "o/job"}
