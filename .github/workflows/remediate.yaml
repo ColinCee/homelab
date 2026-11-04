@@ -2,12 +2,13 @@ name: Remediate
 
 # The "Homelab alert triage" Claude routine runs in the cloud and cannot SSH
 # to Beelink; it dispatches this workflow to look at the server and to restart
-# a container. Anything bigger goes through a pull request and deploy.
+# a broken container. Anything bigger goes through a pull request and deploy.
+# This repo is public, so the job log holds states and counts, never log lines.
 on:
   workflow_dispatch:
     inputs:
       action:
-        description: "diagnose: report server and container state; restart: restart one container"
+        description: "diagnose: report server and container state; restart: restart one broken container"
         type: choice
         options: [diagnose, restart]
         default: diagnose
@@ -17,7 +18,7 @@ on:
         default: all
 
 concurrency:
-  group: remediate-${{ inputs.target }}
+  group: remediate
   cancel-in-progress: false
 
 permissions:
@@ -34,32 +35,42 @@ jobs:
       - name: Check target
         run: |
           if [[ "$TARGET" == all && "$ACTION" == diagnose ]]; then exit 0; fi
-          if [[ ! "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || ! docker inspect "$TARGET" >/dev/null 2>&1; then
+          if [[ ! "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || ! docker inspect --type container "$TARGET" >/dev/null 2>&1; then
             echo "::error::No container named '$TARGET'. Containers:"
             docker ps -a --format '{{.Names}}'
             exit 1
           fi
 
+      # Only a container that is down, restarting or unhealthy, so alert text
+      # cannot talk the routine into bouncing a working service.
       - name: Restart
         if: inputs.action == 'restart'
         run: |
+          state=$(docker inspect --type container "$TARGET" \
+            --format '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}')
+          if [[ "$state" == "running healthy" || "$state" == "running " ]]; then
+            echo "::error::$TARGET is $state; restart refused."
+            exit 1
+          fi
           docker restart "$TARGET"
           sleep 20
 
       - name: Server state
         run: |
-          echo "## Host"; uptime; free -h; df -h / /home 2>/dev/null
+          echo "## Host"; uptime; free -h; df -h / /home 2>/dev/null || true
           echo "## Containers"
-          docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
-          echo "## Restart counts"
-          docker ps -aq | xargs docker inspect --format '{{.Name}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' | sed 's#^/##'
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}'
+          echo "## Restarts"
+          docker ps -aq | xargs -r docker inspect --format '{{.Name}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' | sed 's#^/##'
           echo "## Resource use"
           docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
 
-      - name: Target logs
+      - name: Target detail
         if: inputs.target != 'all'
         run: |
-          docker inspect "$TARGET" --format \
+          docker inspect --type container "$TARGET" --format \
             'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}
-          started={{.State.StartedAt}} exit={{.State.ExitCode}}'
-          docker logs --tail 200 --timestamps "$TARGET" 2>&1
+          started={{.State.StartedAt}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'
+          lines=$(docker logs --since 15m "$TARGET" 2>&1)
+          echo "log lines in last 15m: $(wc -l <<<"$lines")"
+          echo "of which error-like: $(grep -ciE 'error|fatal|panic|exception|traceback' <<<"$lines" || true)"
