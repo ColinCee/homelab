@@ -5,6 +5,17 @@ import pytest
 
 from scripts import ci_supervisor as sup
 
+# The real readers, kept before plenty_of_memory replaces them.
+READ_MEMORY, READ_RESERVE = sup.mem_available_mib, sup.memory_reserve_mib
+
+
+@pytest.fixture(autouse=True)
+def plenty_of_memory(monkeypatch):
+    """Tests do not depend on the machine running them: memory is never short unless a
+    test says so."""
+    monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
+    monkeypatch.setattr(sup, "memory_reserve_mib", lambda: sup.DEFAULT_MEMORY_RESERVE_MIB)
+
 
 class Repos:
     def __init__(self, page: list[dict]) -> None:
@@ -426,13 +437,17 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         slots=5, launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)}
     )
 
-    assert sup.status(state, 1700000000.5, github_ok=True) == {
+    state.held = {7: "octo/agent"}
+
+    assert sup.status(state, 1700000000.5, github_ok=True, mem_available=9000) == {
         "updated": 1700000000,
         "slots": 5,
         "in_use": 2,
         "standby": 1,
         "cache_disks": ["octo/agent", "octo/widgets"],
         "github_ok": True,
+        "mem_available_mib": 9000,
+        "held_for_memory": 1,
     }
 
 
@@ -490,3 +505,128 @@ def test_a_failed_status_write_leaves_the_old_file_and_no_temp_file(tmp_path) ->
 
     assert json.loads(path.read_text()) == {"in_use": 1}
     assert [p.name for p in tmp_path.iterdir()] == ["machines.json"]
+
+
+def test_reads_available_memory_and_the_reserve_from_the_host(tmp_path, monkeypatch) -> None:
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text("MemTotal:       16000000 kB\nMemAvailable:    8192000 kB\n")
+    monkeypatch.setattr(sup, "MEMINFO", meminfo)
+    reserve = tmp_path / "memory-reserve-mib"
+    monkeypatch.setattr(sup, "MEMORY_RESERVE_FILE", reserve)
+    assert READ_MEMORY() == 8000
+    assert READ_RESERVE() == 3072  # no file: the default
+    reserve.write_text("2048\n")
+    assert READ_RESERVE() == 2048
+    reserve.write_text("lots\n")
+    assert READ_RESERVE() == 3072
+
+
+@pytest.fixture
+def host(caches, monkeypatch):
+    """One served repo with jobs queued, and a launch that records the VMs it starts."""
+    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    started: list[tuple[str, int, bool]] = []
+
+    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False) -> None:
+        mem = sup.next_size(state, standby)[1]
+        started.append((repo, mem, standby))
+        run = _launch(slot, standby)
+        run.repo = repo
+        state.launches[slot] = run
+
+    monkeypatch.setattr(sup, "launch", launch)
+
+    def queue(jobs: int, free_mib: int) -> None:
+        monkeypatch.setattr(
+            sup,
+            "find_queued",
+            lambda gh, repo: (
+                [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(jobs)]
+                if repo == "o/ok"
+                else []
+            ),
+        )
+        monkeypatch.setattr(sup, "mem_available_mib", lambda: free_mib)
+
+    return queue, started, lines
+
+
+def test_vms_start_while_memory_leaves_the_reserve(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    queue(jobs=3, free_mib=3072 + 4096 + 2048 + 2048)
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, False), ("o/ok", 2048, False), ("o/ok", 2048, False)]
+    assert state.held == {}
+
+
+def test_a_job_waits_queued_when_memory_is_short_and_is_logged_once(host, monkeypatch) -> None:
+    queue, started, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    queue(jobs=2, free_mib=3072 + 4096 + 2047)  # room for the first VM only
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, False)]
+    assert state.held == {1: "o/ok"}
+
+    queue(jobs=2, free_mib=3072 + 2047)  # still short, the first job's VM is still booting
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, False)]
+    assert [line for line in lines if "memory" in line] == ["job 1 in o/ok waits for memory"]
+    status = sup.status(state, 2.0, github_ok=True, mem_available=5119)
+    assert status["held_for_memory"] == 1 and status["mem_available_mib"] == 5119
+
+    queue(jobs=2, free_mib=3072 + 2048)  # memory freed: the job starts
+    sup.tick(None, state, ["o/ok"], 4.0)  # type: ignore[arg-type]
+    assert started[-1] == ("o/ok", 2048, False)
+    assert state.held == {}
+
+
+def test_a_held_job_in_a_repo_not_polled_this_time_stays_held(host) -> None:
+    queue, _, _ = host
+    queue(jobs=0, free_mib=1 << 20)
+    state = sup.State(held={5: "o/quiet"})
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert state.held == {5: "o/quiet"}
+
+
+def test_a_standby_gives_way_to_a_job_waiting_for_memory(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(f"{run.repo} {why}")
+    )
+    standby = _launch(0, True)  # waiting ready for octo/agent, holding 4 GiB
+    state = sup.State(launches={0: standby})
+    queue(jobs=1, free_mib=3072 + 1024)  # a free slot, but not the memory for the job
+    sup.tick(None, state, ["o/ok", "octo/agent"], 0.0)  # type: ignore[arg-type]
+    assert started == []  # neither the job nor another standby
+    assert state.held == {0: "o/ok"}
+    assert stopped == ["octo/agent is in the way of a queued job"]
+
+
+def test_no_standby_boots_while_a_job_waits_for_memory(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    queue(jobs=0, free_mib=1 << 20)
+    state = sup.State(held={5: "o/quiet"})
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == []
+    state.held = {}
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, True)]
+
+
+def test_a_standby_boots_only_with_memory_for_it(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    queue(jobs=0, free_mib=3072 + 4095)
+    sup.tick(None, sup.State(), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == []

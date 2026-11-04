@@ -88,6 +88,13 @@ RUNNER_UID = 1001  # the runner user inside the VM image
 # What the CI runner is doing, for the Control room: rewritten after every poll, readable
 # by anyone on the host. Nothing secret goes in it (see status()).
 STATUS_FILE = Path("/var/lib/homelab-ci/status/machines.json")
+# A VM starts only if the host's available memory, less the VM's size, still leaves this
+# much for the home's own services (the host's 16 GiB are shared with them). A booted VM
+# touches far less than its size, so the check uses what is really free, not the sum of
+# the sizes. /etc/homelab-ci/memory-reserve-mib changes it with no code change.
+MEMINFO = Path("/proc/meminfo")
+MEMORY_RESERVE_FILE = Path("/etc/homelab-ci/memory-reserve-mib")
+DEFAULT_MEMORY_RESERVE_MIB = 3 * 1024
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -147,6 +154,8 @@ class State:
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
     polled: dict[str, float] = field(default_factory=dict)
+    # Queued jobs not started for lack of memory (job id -> repo), each logged once.
+    held: dict[int, str] = field(default_factory=dict)
 
 
 def log(message: str) -> None:
@@ -351,8 +360,7 @@ def launch(
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
-    # A standby outlives the jobs around it, so it is sized for running alone.
-    vcpus, mem_mib = vm_size(0 if standby else len(state.launches))
+    vcpus, mem_mib = next_size(state, standby)
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -392,6 +400,26 @@ def launch(
 def vm_size(running: int) -> tuple[int, int]:
     """A job alone gets the whole machine's cores; with others running, each gets half."""
     return (4, 4096) if running == 0 else (2, 2048)
+
+
+def next_size(state: State, standby: bool) -> tuple[int, int]:
+    """A standby outlives the jobs around it, so it is sized for running alone."""
+    return vm_size(0 if standby else len(state.launches))
+
+
+def mem_available_mib() -> int:
+    """MemAvailable from /proc/meminfo, in MiB."""
+    for line in MEMINFO.read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1]) // 1024
+    raise ValueError(f"no MemAvailable in {MEMINFO}")
+
+
+def memory_reserve_mib() -> int:
+    try:
+        return max(0, int(MEMORY_RESERVE_FILE.read_text().strip()))
+    except (OSError, ValueError):
+        return DEFAULT_MEMORY_RESERVE_MIB
 
 
 def may_be_idle(age: float, queued_for_repo: int) -> bool:
@@ -665,6 +693,7 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
 
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     queued: Counter[Want] = Counter()
+    job_ids: dict[Want, list[int]] = {}
     private: list[str] = []
     for repo in repos:
         # A repo that is no longer private has nothing queued as far as we are
@@ -685,6 +714,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
                     continue
                 private.append(repo)
                 queued.update(job.want for job in jobs)
+                for job in jobs:
+                    job_ids.setdefault(job.want, []).append(job.id)
             skipped(repo, None)
         except RateLimited:
             raise
@@ -704,19 +735,54 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
     )
     free = [slot for slot in range(state.slots) if slot not in state.launches]
     starts = plan(queued, booting, len(free))
+    # The VMs started this poll are counted by their size: they have touched almost
+    # nothing yet, so MemAvailable does not show them.
+    room = mem_available_mib() - memory_reserve_mib()
+    started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
+        mem = next_size(state, False)[1]
+        if mem > room:
+            break
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
-    free = free[len(starts) :]
-    # A job still waiting for a slot gets the standby's, if the standby cannot take it.
+        room -= mem
+        started += 1
+    hold_for_memory(state, repos, starts[started:], job_ids, booting + Counter(starts[:started]))
+    free = free[started:]
+    # A job still waiting for a slot, or for memory, gets the standby's slot and memory,
+    # if the standby cannot take it.
     waiting = queued - booting
-    waiting.subtract(starts)
+    waiting.subtract(starts[:started])
     for run in list(state.launches.values()):
         if run.standby and any(n > 0 and want != run.want for want, n in waiting.items()):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
-    if wants_standby(
-        repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
+    # A standby is the first thing given up: never booted while a job waits for memory.
+    if (
+        not state.held
+        and next_size(state, True)[1] <= room
+        and wants_standby(
+            repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
+        )
     ):
         launch(gh, state, repos[0], free[0], now, cache=cache_image(repos[0]), standby=True)
+
+
+def hold_for_memory(
+    state: State,
+    repos: list[str],
+    held: list[Want],
+    job_ids: Mapping[Want, list[int]],
+    covered: Mapping[Want, int],
+) -> None:
+    """Note the queued jobs left waiting for memory, logging each once. They stay queued
+    and are tried again next poll. Jobs of repos not polled this time keep their mark."""
+    now_held: dict[int, str] = {}
+    for want, n in Counter(held).items():
+        skip = covered.get(want, 0)
+        for job_id in sorted(job_ids.get(want, []))[skip : skip + n]:
+            now_held[job_id] = want[0]
+            if job_id not in state.held:
+                log(f"job {job_id} in {want[0]} waits for memory")
+    state.held = {i: r for i, r in state.held.items() if r not in repos} | now_held
 
 
 def wants_standby(
@@ -742,8 +808,9 @@ def slot_count() -> int:
     return max(1, int(text)) if text.isdecimal() else DEFAULT_SLOTS
 
 
-def status(state: State, now: float, github_ok: bool) -> dict[str, Any]:
-    """Slots, VMs running a job or waiting ready, and the repos with a cache disk."""
+def status(state: State, now: float, github_ok: bool, mem_available: int) -> dict[str, Any]:
+    """Slots, VMs running a job or waiting ready, the repos with a cache disk, and the
+    host's free memory with the jobs waiting for it."""
     standby = sum(run.standby for run in state.launches.values())
     return {
         "updated": int(now),
@@ -754,6 +821,8 @@ def status(state: State, now: float, github_ok: bool) -> dict[str, Any]:
             image.stem.replace("__", "/", 1) for image in CACHE_DIR.glob("*__*.ext4")
         ),
         "github_ok": github_ok,
+        "mem_available_mib": mem_available,
+        "held_for_memory": len(state.held),
     }
 
 
@@ -891,7 +960,7 @@ def main(argv: list[str] | None = None) -> int:
                     stop(run, "cannot be checked while GitHub fails")
         # Written after a failed poll too, so it still shows the supervisor is alive.
         try:
-            write_status(STATUS_FILE, status(state, time.time(), github_ok))
+            write_status(STATUS_FILE, status(state, time.time(), github_ok, mem_available_mib()))
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"

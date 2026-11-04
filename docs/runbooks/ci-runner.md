@@ -93,6 +93,15 @@ Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
+A VM starts only when the host's available memory (`MemAvailable` in
+`/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
+services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
+touches far less than its size, so this counts what is really free, not the
+sizes added up. A job without the memory stays queued and is tried again on the
+next poll; the log says so once per job. A standby gives way first: none boots
+while a job waits for memory, and one waiting for another repo is stopped to
+make room.
+
 Only Colin's private repositories the token can see are served (its repository
 access is the list; `served_repos` in the supervisor), and only those nobody else can
 write to: a repo with any other collaborator or a deploy key that can write is skipped
@@ -190,12 +199,15 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 
 ```json
 {"updated": 1793000000, "slots": 3, "in_use": 1, "standby": 1,
- "cache_disks": ["ColinCee/example"], "github_ok": true}
+ "cache_disks": ["ColinCee/example"], "github_ok": true,
+ "mem_available_mib": 9216, "held_for_memory": 0}
 ```
 
 `in_use` counts VMs started for a job, `standby` the ones waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
-false when the last poll failed or was rate limited. A failed write is logged
+false when the last poll failed or was rate limited. `mem_available_mib` is the
+host's free memory when the file was written, and `held_for_memory` counts queued
+jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
