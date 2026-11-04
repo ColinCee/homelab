@@ -124,6 +124,15 @@ for expr in 'count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})'
     --data-urlencode "query=$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
   echo "  $expr: $value"
 done
+# Log only: where the rest goes, by CPU mode and by container.
+for expr in 'sum by (mode) (rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))' \
+  'topk(6, sum by (name) (rate(container_cpu_usage_seconds_total{job="docker",name!=""}[5m])))'; do
+  echo "  $expr:"
+  curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
+    --data-urlencode "query=$expr" |
+    jq -r '.data.result | sort_by(-(.value[1] | tonumber))[] | "    \(.metric.mode // .metric.name): \(.value[1])"' 2>/dev/null ||
+    echo "    unavailable"
+done
 
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
