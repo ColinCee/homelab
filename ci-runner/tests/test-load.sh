@@ -28,7 +28,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 reasons=()
 
-mem_available() { awk '/^MemAvailable:/ {print $2}' /proc/meminfo; }
+# MemAvailable, and data waiting to be written to disk (Dirty + Writeback), in KiB.
+mem_sample() { awk '/^MemAvailable:/ {a = $2} /^(Dirty|Writeback):/ {d += $2} END {print a, d}' /proc/meminfo; }
 sample() { # PREFIX COUNT: one timing per service per second for COUNT seconds,
   # each line "seconds code at", at being seconds since $start. curl prints code 000
   # when it gets no answer (a timeout, a refused connection).
@@ -36,7 +37,7 @@ sample() { # PREFIX COUNT: one timing per service per second for COUNT seconds,
     for i in "${!urls[@]}"; do
       curl -s -o /dev/null -m 10 -w "%{time_total} %{http_code} $((SECONDS - start))\n" "${urls[$i]}" >> "$1.$i" || true
     done
-    mem_available >> "$1.mem"
+    mem_sample >> "$1.mem"
     sleep 1
   done
 }
@@ -78,8 +79,8 @@ for ((n = 0; n < SLOTS; n++)); do
   "$run_vm" "$n" "$tmp/metadata.json" $((seconds + 120)) > "$tmp/vm$n.log" 2>&1 &
   pids+=($!)
 done
-sleep 10
-sample "$tmp/loaded" $((seconds - 15))
+# Time the services from the start, so the image copies before boot count too.
+sample "$tmp/loaded" $((seconds - 5))
 for ((n = 0; n < SLOTS; n++)); do
   status=0
   wait "${pids[$n]}" || status=$?
@@ -96,6 +97,7 @@ done
 report loaded "$tmp/loaded"
 echo "load average: $(cut -d' ' -f1-3 /proc/loadavg)"
 echo "host lowest MemAvailable: $(sort -n "$tmp/loaded.mem" | head -1 | awk '{printf "%d MiB", $1 / 1024}')"
+echo "host most data waiting for the disk: $(sort -k2 -n "$tmp/loaded.mem" | tail -1 | awk '{printf "%d MiB", $2 / 1024}')"
 
 if ((${#reasons[@]} == 0)); then
   echo "PASS $SLOTS slots: every VM booted and finished, no request failed, worst response within ${max_response}s"
