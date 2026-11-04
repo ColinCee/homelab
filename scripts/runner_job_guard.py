@@ -27,7 +27,8 @@ REPOSITORY = "ColinCee/homelab"
 REF = "refs/heads/main"
 EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
-    f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
+    f"{REPOSITORY}/.github/workflows/{name}@{REF}"
+    for name in ("deploy.yaml", "server-health.yaml", "remediate.yaml")
 )
 # Who may start a job here: Colin; Renovate merging its own pull requests; and Auto Kaizen,
 # Colin's agents, merging changes that passed CI, its Reviewer and its red-line checks
