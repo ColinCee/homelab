@@ -16,6 +16,8 @@ Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervis
 from __future__ import annotations
 
 import argparse
+import http.client
+import io
 import json
 import os
 import re
@@ -55,13 +57,17 @@ QUIET_POLL_SECONDS = 60
 QUIET_PER_POLL = 3
 # A poll slower than this is logged with what it spent its time on.
 SLOW_POLL_SECONDS = 5
+# Repos asked about queued jobs at once: more than a poll ever asks (the used ones and
+# QUIET_PER_POLL more), so a poll costs about one repo's asking.
+ASK_THREADS = 16
 # The repo of the last job, kept across restarts so the standby goes back to it.
 LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
-API = "https://api.github.com"
+API_HOST = "api.github.com"
+API = f"https://{API_HOST}"
 # How many VMs run at once, read from /etc/homelab-ci/slots at start-up. install-host.sh
 # writes it and makes that many slot users and taps, so the three always match. A job
 # alone gets 4 GiB and each one started beside it 2 GiB (see vm_size), so N slots use
@@ -171,9 +177,14 @@ class State:
     privacy: dict[str, Privacy] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
     cache_busy: threading.Lock = field(default_factory=threading.Lock)
+    # The threads that ask the polled repos for queued jobs at once, kept so each keeps
+    # its open connection to GitHub.
+    askers: ThreadPoolExecutor = field(
+        default_factory=lambda: ThreadPoolExecutor(ASK_THREADS, thread_name_prefix="ask")
+    )
     # The repository of the last job a VM started for: the standby goes to it.
     last_repo: str = ""
-    # Repos that have had a VM here (or have a cache disk): polled every poll, the rest
+    # Repos that have had a job here (or have a cache disk): polled every poll, the rest
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
     polled: dict[str, float] = field(default_factory=dict)
@@ -247,46 +258,83 @@ class RateLimited(Exception):
 class GitHub:
     def __init__(self, token: str) -> None:
         self._token = token
-        # Conditional GETs: a 304 reply does not count against the rate limit.
+        # Conditional GETs: a 304 reply does not count against the rate limit. The threads
+        # asking repos at once share it, so they take the lock to touch it or the counts.
         self._cache: dict[str, tuple[str, Any]] = {}
+        self._lock = threading.Lock()
+        # One connection per thread, kept open across requests, so a request does not wait
+        # for a new connection and its TLS handshake (4 Nov: about 0.45 s a request).
+        self._local = threading.local()
         # Requests made and seconds spent on them, for the slow-poll log.
         self.requests = 0
         self.seconds = 0.0
 
+    def _send(
+        self, method: str, path: str, data: bytes | None, headers: Mapping[str, str]
+    ) -> tuple[http.client.HTTPResponse, bytes]:
+        """One request on this thread's open connection. One GitHub closed while it sat
+        idle fails at once and is tried again on a new one; a POST (a VM's registration)
+        always gets a new one, so it is never sent twice."""
+        conn: http.client.HTTPSConnection | None = getattr(self._local, "conn", None)
+        if method == "POST" and conn is not None:
+            conn.close()
+            conn = None
+        while True:
+            reused = conn is not None
+            if conn is None:
+                conn = self._local.conn = http.client.HTTPSConnection(API_HOST, timeout=20)
+            try:
+                conn.request(method, path, body=data, headers=dict(headers))
+                response = conn.getresponse()
+                return response, response.read()
+            except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError):
+                conn.close()
+                if not reused:
+                    raise
+                conn = None
+            except BaseException:
+                conn.close()
+                raise
+
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
-        req = urllib.request.Request(f"{API}{path}", data=data, method=method)
-        # Not carried to another host if GitHub ever redirects.
-        req.add_unredirected_header("Authorization", f"Bearer {self._token}")
-        req.add_header("Accept", "application/vnd.github+json")
-        req.add_header("X-GitHub-Api-Version", "2022-11-28")
+        # Sent only to api.github.com: redirects are not followed.
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "homelab-ci-supervisor",
+        }
         if data is not None:
-            req.add_header("Content-Type", "application/json")
-        cached = self._cache.get(path) if method == "GET" else None
+            headers["Content-Type"] = "application/json"
+        with self._lock:
+            cached = self._cache.get(path) if method == "GET" else None
+            self.requests += 1
         if cached:
-            req.add_header("If-None-Match", cached[0])
-        self.requests += 1
+            headers["If-None-Match"] = cached[0]
         started = time.monotonic()
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read()
-                etag = response.headers.get("ETag")
-        except urllib.error.HTTPError as e:
-            if e.code == 304 and cached:
-                return cached[1]
-            if e.code in (403, 429) and (
-                e.headers.get("Retry-After") or e.headers.get("X-RateLimit-Remaining") == "0"
-            ):
-                until = rate_limit_until(
-                    e.headers.get("Retry-After"), e.headers.get("X-RateLimit-Reset"), time.time()
-                )
-                raise RateLimited(until) from None
-            raise
+            response, raw = self._send(method, path, data, headers)
         finally:
-            self.seconds += time.monotonic() - started
+            with self._lock:
+                self.seconds += time.monotonic() - started
+        code, reply = response.status, response.headers
+        if code == 304 and cached:
+            return cached[1]
+        if code in (403, 429) and (
+            reply.get("Retry-After") or reply.get("X-RateLimit-Remaining") == "0"
+        ):
+            until = rate_limit_until(
+                reply.get("Retry-After"), reply.get("X-RateLimit-Reset"), time.time()
+            )
+            raise RateLimited(until)
+        if not 200 <= code < 300:
+            url = f"{API}{path}"
+            raise urllib.error.HTTPError(url, code, response.reason, reply, io.BytesIO(raw))
         result = json.loads(raw) if raw else None
-        if method == "GET" and etag:
-            self._cache[path] = (etag, result)
+        if method == "GET" and (etag := reply.get("ETag")):
+            with self._lock:
+                self._cache[path] = (etag, result)
         return result
 
     def download(self, path: str, dest: Path, limit: int) -> None:
@@ -306,8 +354,9 @@ class GitHub:
         return GitHub(self._token)
 
     def forget(self, drop: Callable[[str], bool]) -> None:
-        for path in [path for path in self._cache if drop(path)]:
-            del self._cache[path]
+        with self._lock:
+            for path in [path for path in self._cache if drop(path)]:
+                del self._cache[path]
 
 
 def rate_limit_until(retry_after: str | None, reset: str | None, now: float) -> float:
@@ -419,7 +468,10 @@ def launch(
     run = Launch(slot, repo, runner_id, name, now, process, metadata, standby, label=label)
     state.launches[slot] = run
     threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
-    state.used.add(repo)
+    # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
+    # booted after a restart kept a repo with no work polled every poll).
+    if not standby:
+        state.used.add(repo)
     if not standby and repo != state.last_repo:
         state.last_repo = repo
         remember_last_repo(repo)
@@ -580,6 +632,8 @@ def reap(
                 continue
             if run.standby:
                 check_standby(gh, run, now, run.repo in private)
+                if not run.standby:  # it took a job
+                    state.used.add(run.repo)
             else:
                 stop_idle(gh, run, now, queued.get(run.want, 0))
             continue
@@ -779,41 +833,51 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
     threading.Thread(target=work, daemon=True).start()
 
 
+def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
+    """One repo's queued jobs (None if it is not served this poll), and the seconds the
+    asking took. Run for every polled repo at once, each on its own thread."""
+    asked = time.monotonic()
+    # A repo that is no longer private has nothing queued as far as we are
+    # concerned, so its idle VMs are stopped and no new ones start. One
+    # repo GitHub will not show is skipped this poll; it never stops the others
+    # (3 Nov: a repo the token could not see stopped all CI).
+    try:
+        if not check_private(gh, state, repo, now):
+            skipped(repo, None)
+            return None, time.monotonic() - asked
+        jobs = find_queued(gh, repo)
+        # A repo about to get its first VM is asked about its privacy directly.
+        if (
+            jobs
+            and repo not in state.used
+            and not (check_private(gh, state, repo, now, fresh=True) and only_colin(gh, repo))
+        ):
+            return None, time.monotonic() - asked
+        skipped(repo, None)
+        return jobs, time.monotonic() - asked
+    except RateLimited:
+        raise
+    except Exception as e:
+        skipped(repo, e)
+        return None, time.monotonic() - asked
+
+
 def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, float]:
     """One poll. Returns how long asking each repo for queued jobs took, in seconds."""
     queued: Counter[Want] = Counter()
     job_ids: dict[Want, list[int]] = {}
     private: list[str] = []
     spent: dict[str, float] = {}
-    for repo in repos:
-        asked = time.monotonic()
-        # A repo that is no longer private has nothing queued as far as we are
-        # concerned, so its idle VMs are stopped below and no new ones start. One
-        # repo GitHub will not show is skipped this poll; it never stops the others
-        # (3 Nov: a repo the token could not see stopped all CI).
-        try:
-            if check_private(gh, state, repo, now):
-                jobs = find_queued(gh, repo)
-                # A repo about to get its first VM is asked about its privacy directly.
-                if (
-                    jobs
-                    and repo not in state.used
-                    and not (
-                        check_private(gh, state, repo, now, fresh=True) and only_colin(gh, repo)
-                    )
-                ):
-                    continue
-                private.append(repo)
-                queued.update(job.want for job in jobs)
-                for job in jobs:
-                    job_ids.setdefault(job.want, []).append(job.id)
-            skipped(repo, None)
-        except RateLimited:
-            raise
-        except Exception as e:
-            skipped(repo, e)
-        finally:
-            spent[repo] = time.monotonic() - asked
+    # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
+    answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
+    for repo, (jobs, took) in zip(repos, answers, strict=True):
+        spent[repo] = took
+        if jobs is None:
+            continue
+        private.append(repo)
+        queued.update(job.want for job in jobs)
+        for job in jobs:
+            job_ids.setdefault(job.want, []).append(job.id)
     reap(gh, state, now, queued, private)
     # Cache disks only for repos that run here; a quiet repo gets checked after its first job.
     maybe_refresh_caches(
@@ -985,14 +1049,15 @@ def list_repos(gh: GitHub) -> tuple[dict[str, str], list[str]]:
 
 
 def slow_poll(took: float, requests: int, waited: float, spent: Mapping[str, float]) -> str:
-    """What a slow poll spent its time on: GitHub's answers, asking each repo for queued
-    jobs (the slowest named), and the rest (stale runners, stopping and starting VMs)."""
-    asking = sum(spent.values())
+    """What a slow poll spent its time on: GitHub's answers (summed over the threads),
+    asking the repos for queued jobs at once (as long as the slowest, named), and the rest
+    (stale runners, stopping and starting VMs)."""
+    asking = max(spent.values(), default=0.0)
     slowest = sorted(spent.items(), key=lambda item: -item[1])[:3]
     named = ", ".join(f"{repo} {seconds:.1f}s" for repo, seconds in slowest)
     return (
-        f"slow poll: {took:.1f}s; {requests} GitHub requests took {waited:.1f}s; "
-        f"asking {len(spent)} repos for queued jobs took {asking:.1f}s"
+        f"slow poll: {took:.1f}s; {requests} GitHub requests took {waited:.1f}s in all; "
+        f"asking {len(spent)} repos for queued jobs at once took {asking:.1f}s"
         f"{f' (slowest {named})' if named else ''}; the rest {took - asking:.1f}s"
     )
 
