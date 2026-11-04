@@ -16,7 +16,13 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              expr: 1 - avg(rate(node_cpu_seconds_total{mode="idle",job="integrations/unix"}[5m]))
+              # Busy share of the CPU, minus the CI VMs: they run at low CPU weight on
+              # purpose and soak up idle time, so they alone should not page.
+              expr: |
+                (
+                  sum(rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))
+                  - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
+                ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
               instant: true
               refId: A
           - refId: C
