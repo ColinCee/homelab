@@ -134,6 +134,21 @@ for expr in 'sum by (mode) (rate(node_cpu_seconds_total{mode!="idle",job="integr
     echo "    unavailable"
 done
 
+# CI machines (Kaizen Waiting For A Machine). This log is public, so repository
+# names are masked and only counts from the status file are printed.
+supervisor="$(systemctl is-active homelab-ci-supervisor 2>/dev/null || true)"
+if [[ "$supervisor" == active ]]; then
+  row "CI supervisor" "active"
+else
+  bad "CI supervisor" "${supervisor:-unknown}"
+fi
+echo "CI machines status:"
+jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
+  /var/lib/homelab-ci/status/machines.json 2>/dev/null || echo "  unavailable"
+echo "CI supervisor log, last hour (last 40 lines, repos masked):"
+sudo -n journalctl -u homelab-ci-supervisor --since -1h --no-pager -o short-iso 2>/dev/null |
+  tail -n 40 | sed -E 's#[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#<repo>#g; s/^/  /' || echo "  unavailable"
+
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
 # Log only: which packages are waiting, and whether Ubuntu is still phasing them in.
