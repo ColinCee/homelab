@@ -12,18 +12,15 @@ contactPoints:
           use_embed_description: true
           title: '{{ template "homelab.discord.title" . }}'
           message: '{{ template "homelab.discord.message" . }}'
-      # Wakes the "Homelab alert triage" Claude routine, which diagnoses and
-      # fixes it. Firing only; Discord still gets resolves.
-      - uid: claude-triage
+      # Opens an `alert` issue in Auto Kaizen through its Control room, which
+      # starts the responder; the resolve closes it. Discord gets both too.
+      - uid: kaizen-alert
         type: webhook
-        disableResolveMessage: true
+        disableResolveMessage: false
         settings:
-          url: https://api.anthropic.com/v1/claude_code/routines/trig_019CAZPbSkiyWMPPYFkxfitP/fire
+          url: http://100.100.146.119:8090/alert
           httpMethod: POST
           authorization_scheme: Bearer
-          authorization_credentials: ${CLAUDE_ROUTINE_TOKEN}
-          headers:
-            anthropic-version: "2023-06-01"
-            anthropic-beta: experimental-cc-routine-2026-04-01
+          authorization_credentials: ${KAIZEN_ALERT_SECRET}
           payload:
-            template: '{{ template "homelab.claude.payload" . }}'
+            template: '{{ template "homelab.kaizen.payload" . }}'

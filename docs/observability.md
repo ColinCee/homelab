@@ -136,19 +136,18 @@ max(crowdsec_acquisition_source_hits_total{job="crowdsec"})
 
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and currently routes to the
-`Discord Private` contact point. That contact point also has a webhook to the
-"Homelab alert triage" Claude routine (resolves go to Discord only). Each fire
-starts a cloud session that diagnoses and fixes the alert on its own: it looks
-at Beelink and restarts broken containers through the `Remediate` workflow,
-opens a PR for a config fix (Colin merges it, since alert text is untrusted),
-and opens an "Alert: …" issue when Colin must act. The repo is public, so
-`Remediate` logs states and counts only; read container logs in Grafana.
-Its runs are listed at claude.ai/code/routines. Test the
-whole chain with Server health → `test_alert`. The deploy
-watchdog wakes the same routine when a deploy stalls. Both need the
-`CLAUDE_ROUTINE_TOKEN` secret (claude.ai/code/routines → routine → API
-trigger → Generate token); without it the webhook gets a 401 and Discord is
-unaffected.
+`Discord Private` contact point. That contact point also posts every firing and
+resolved alert to the Kaizen Control room's `/alert`, which opens (or, for a
+repeat, comments on) an `alert` issue in the private auto-kaizen repo and closes
+it on resolve. Each new one starts Auto Kaizen's responder on GitHub's machines:
+it looks at Beelink through the `Remediate` workflow, may restart one broken
+container, opens a Kaizen task for the lasting fix, and tells Colin on Discord
+when only he can act. The repo is public, so `Remediate` logs states and counts
+only; read container logs in Grafana. Grafana and the Control room share the
+`KAIZEN_ALERT_SECRET` secret; without it `/alert` refuses and Discord is
+unaffected. Test the whole chain with Server health → `test_alert`. A stuck
+deploy goes to Discord from the deploy watchdog, and a failed one stops
+Kaizen's line.
 After deploying alerting file changes, reload them with Grafana's authenticated
 `POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
 are not polled. A Grafana-only restart also reloads them.
