@@ -12,7 +12,8 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # shellcheck disable=SC2016 # expands inside the VM, not here
 probe='tools=("node --version" "uv --version" "java -version" "mise --version" "bun --version"
-  "pnpm --version" "docker compose version")
+  "pnpm --version" "docker compose version" "python3 --version" "shellcheck --version"
+  "file --version")
 for t in "${tools[@]}"; do
   if out=$(cd /home/runner && sudo -u runner -H env "PATH=$(cat /opt/runner/.path)" bash -c "$t" 2>&1); then
     echo "PASS $t: $(head -n 1 <<<"$out")"
