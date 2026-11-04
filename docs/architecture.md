@@ -1,6 +1,6 @@
 # Architecture
 
-How changes reach the Beelink, and who can reach what runs on it.
+How changes reach the Beelink, and who can reach what runs on it. Auto Kaizen, the factory that makes many of these changes, has its own: [auto-kaizen architecture](https://github.com/ColinCee/auto-kaizen/blob/main/docs/architecture.md).
 
 ```mermaid
 flowchart TB
