@@ -115,7 +115,7 @@ for expr in 'avg_over_time(probe_success{job="integrations/blackbox/flight-track
 done
 
 # Log only: CPU over the last 5 minutes, in cores. High CPU Usage alerts on the
-# whole machine minus the CI VMs, so busy CI alone does not page.
+# whole machine minus iowait and the CI VMs, so busy CI alone does not page.
 echo "CPU, last 5m (cores):"
 for expr in 'count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})' \
   'sum(rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))' \
