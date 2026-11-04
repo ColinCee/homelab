@@ -217,9 +217,30 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
   mise, bun, pnpm, `docker compose`) as the runner user with the job's `PATH`.
   Run it after `build-rootfs.sh`.
-- **`test-load.sh`** runs a VM in every slot at full CPU and most of its memory
-  while timing Home Assistant and Grafana. In October 2026 their worst response
-  went from 1 ms to 4 ms.
+- **`test-load.sh`** boots a VM in every slot (the count in
+  `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
+  2 GiB), each spinning every CPU and holding all but 128 MiB of its free
+  memory, while timing Home Assistant and Grafana once a second. It prints each
+  service's median and worst response, quiet and loaded, and the host's lowest
+  `MemAvailable` during the run, then one `PASS` or `FAIL` line naming the slot
+  count. It fails, exiting 1 with the reasons on that line, when a VM does not
+  boot or finish its burn, any request fails, or a worst response is over
+  `MAX_RESPONSE` seconds (1 by default). In October 2026, with 3 slots, their
+  worst response went from 1 ms to 4 ms.
+
+## Changing the number of slots
+
+With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
+its VMs finished:
+
+1. Write the new number: `sudo SLOTS=4 ci-runner/install-host.sh`, which also
+   makes that many slot users and taps.
+2. `sudo ci-runner/tests/test-load.sh` must end with `PASS 4 slots`.
+3. `sudo ci-runner/tests/audit.sh` must pass.
+4. `sudo systemctl restart homelab-ci-supervisor`; it reads the number when it starts.
+
+If the load test fails, go back to the old number with
+`sudo SLOTS=3 ci-runner/install-host.sh` (your old count) and start the supervisor.
 
 ## Review
 
