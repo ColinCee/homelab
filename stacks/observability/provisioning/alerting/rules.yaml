@@ -40,11 +40,13 @@ groups:
               refId: C
         noDataState: NoData
         execErrState: Error
-        for: 5m
+        # Deploys build images for a few minutes at full CPU (twice on 4 Nov),
+        # which needs nobody; a runaway process lasts longer.
+        for: 20m
         annotations:
           summary: "Beelink CPU usage"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
-          description: "Threshold: above 80% for 5 minutes (5-minute CPU average)."
+          description: "Threshold: above 80% for 20 minutes (5-minute CPU average)."
           action: "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
         labels:
           severity: warning
