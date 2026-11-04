@@ -78,9 +78,12 @@ templates:
       {{ end -}}
       {{- end }}
   - orgId: 1
-    name: homelab-claude
-    # The Claude routine API takes {"text": "..."}; reuse the Discord wording.
+    name: homelab-kaizen
+    # Kaizen's /alert takes a status, a key naming the alert group (so a repeat
+    # finds its issue), a title, and the Discord wording as text.
     template: |
-      {{ define "homelab.claude.payload" -}}
-      {{ coll.Dict "text" (print (tmpl.Exec "homelab.discord.title" .) "\n\n" (tmpl.Exec "homelab.discord.message" .)) | data.ToJSON }}
+      {{ define "homelab.kaizen.payload" -}}
+      {{ $title := tmpl.Exec "homelab.discord.title" . -}}
+      {{ $text := tmpl.Exec "homelab.discord.message" . -}}
+      {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text | data.ToJSON }}
       {{- end }}

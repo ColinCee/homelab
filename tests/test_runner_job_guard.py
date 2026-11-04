@@ -188,3 +188,22 @@ def test_kaizen_may_deploy() -> None:
         "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
     }
     assert guard.decide(env).allowed
+
+
+KAIZEN = {
+    "GITHUB_ACTOR": "auto-kaizen[bot]",
+    "GITHUB_ACTOR_ID": "351551650",
+    "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
+    "GITHUB_EVENT_NAME": "workflow_dispatch",
+}
+
+
+def test_kaizen_may_run_remediate() -> None:
+    remediate = "ColinCee/homelab/.github/workflows/remediate.yaml@refs/heads/main"
+    assert guard.decide(_env(**KAIZEN, GITHUB_WORKFLOW_REF=remediate)).allowed
+
+
+def test_kaizen_may_not_run_server_health() -> None:
+    decision = guard.decide(_env(**KAIZEN, GITHUB_WORKFLOW_REF=HEALTH))
+    assert not decision.allowed
+    assert "may not run" in decision.reason
