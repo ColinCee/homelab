@@ -8,8 +8,12 @@ services:
       - "100.100.146.119:8090:8090"
     volumes:
       - data:/data
+      # The CI runner's status file (docs/runbooks/ci-runner.md); empty until the
+      # supervisor writes it.
+      - /var/lib/homelab-ci/status:/machines:ro
     environment:
       KAIZEN_APP_ID: ${KAIZEN_APP_ID:?}
+      KAIZEN_MACHINES_FILE: /machines/machines.json
       KAIZEN_APP_KEY_FILE: /run/secrets/kaizen_app_key
     secrets:
       - kaizen_app_key

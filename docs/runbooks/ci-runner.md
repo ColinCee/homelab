@@ -174,6 +174,21 @@ To serve another repository (sign it up), add it to the token's repository acces
 in GitHub (Settings, Developer settings, Fine-grained tokens): within a minute its
 jobs asking for `homelab-fc` get VMs. Nothing changes on the host.
 
+After every poll, failed ones too, the supervisor replaces
+`/var/lib/homelab-ci/status/machines.json` (folder 0755, file 0644, written to a
+temporary file and renamed, so a reader never sees half of it). The Control room
+mounts the folder read-only at `/machines`. It holds only counts and repo names:
+
+```json
+{"updated": 1793000000, "slots": 3, "in_use": 1, "standby": 1,
+ "cache_disks": ["ColinCee/example"], "github_ok": true}
+```
+
+`in_use` counts VMs started for a job, `standby` the ones waiting ready,
+`cache_disks` the repos with a disk in the caches folder, and `github_ok` is
+false when the last poll failed or was rate limited. A failed write is logged
+once and tried again next poll; it never holds up the poll.
+
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then

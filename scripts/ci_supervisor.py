@@ -82,6 +82,9 @@ CACHE_MAX_BYTES = 2 * 1024**3
 # Unpacked: a zip can expand far beyond its own size, and / is shared with everything.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 RUNNER_UID = 1001  # the runner user inside the VM image
+# What the CI runner is doing, for the Control room: rewritten after every poll, readable
+# by anyone on the host. Nothing secret goes in it (see status()).
+STATUS_FILE = Path("/var/lib/homelab-ci/status/machines.json")
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -726,6 +729,36 @@ def standby_count() -> int:
         return 1
 
 
+def status(state: State, now: float, github_ok: bool) -> dict[str, Any]:
+    """Slots, VMs running a job or waiting ready, and the repos with a cache disk."""
+    standby = sum(run.standby for run in state.launches.values())
+    return {
+        "updated": int(now),
+        "slots": SLOTS,
+        "in_use": len(state.launches) - standby,
+        "standby": standby,
+        "cache_disks": sorted(
+            image.stem.replace("__", "/", 1) for image in CACHE_DIR.glob("*__*.ext4")
+        ),
+        "github_ok": github_ok,
+    }
+
+
+def write_status(path: Path, data: Mapping[str, Any]) -> None:
+    """Replace the file whole, so a reader never sees half of it."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(0o755)
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".machines-")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f)
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
 def served_repos(gh: GitHub) -> dict[str, str]:
     """Colin's private repositories the token can see, the ones that signed up, each
     with its default branch."""
@@ -795,9 +828,12 @@ def main(argv: list[str] | None = None) -> int:
     # Repos whose stale registrations are not cleared yet.
     unclean: list[str] = []
     failures = 0
+    # Why the status file could not be written last time, so a lasting failure logs once.
+    status_error = ""
     log(f"{SLOTS} slots; serving private repos the token can see")
     while True:
         wait: float = POLL_SECONDS
+        github_ok = False
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
             if time.time() - listed >= REPOS_EVERY:
@@ -829,6 +865,7 @@ def main(argv: list[str] | None = None) -> int:
             for repo in polling:
                 state.polled[repo] = now
             failures = 0
+            github_ok = True
         except RateLimited as e:
             log(str(e))
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
@@ -839,6 +876,15 @@ def main(argv: list[str] | None = None) -> int:
             if failures == 5:
                 for run in [r for r in state.launches.values() if r.standby]:
                     stop(run, "cannot be checked while GitHub fails")
+        # Written after a failed poll too, so it still shows the supervisor is alive.
+        try:
+            write_status(STATUS_FILE, status(state, time.time(), github_ok))
+            status_error = ""
+        except Exception as e:
+            why = f"{type(e).__name__}: {e}"
+            if why != status_error:
+                log(f"could not write the status file: {why}")
+            status_error = why
         if args.once:
             while state.launches:
                 time.sleep(POLL_SECONDS)
