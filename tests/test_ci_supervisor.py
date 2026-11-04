@@ -1,3 +1,4 @@
+import json
 import tarfile
 
 import pytest
@@ -411,3 +412,45 @@ def test_a_listing_too_old_to_trust_means_asking_github() -> None:
 
     assert sup.check_private(Public(), state, "a/quiet", 3 * sup.REPOS_EVERY) is False
     assert asked == ["/repos/a/quiet"]
+
+
+def _launch(slot: int, standby: bool) -> sup.Launch:
+    # Only the counts are read: no process or registration file is needed.
+    return sup.Launch(slot, "octo/agent", slot, f"fc-{slot}", 0.0, None, None, standby)  # type: ignore[arg-type]
+
+
+def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> None:
+    (caches / "octo__agent.ext4").touch()
+    (caches / "octo__agent.json").touch()  # which artifact built it, not a disk
+    state = sup.State(launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)})
+
+    assert sup.status(state, 1700000000.5, github_ok=True) == {
+        "updated": 1700000000,
+        "slots": sup.SLOTS,
+        "in_use": 2,
+        "standby": 1,
+        "cache_disks": ["octo/agent", "octo/widgets"],
+        "github_ok": True,
+    }
+
+
+def test_the_status_file_is_replaced_whole_and_readable_by_all(tmp_path) -> None:
+    path = tmp_path / "status" / "machines.json"
+    sup.write_status(path, {"in_use": 1})
+    sup.write_status(path, {"in_use": 2})
+
+    assert json.loads(path.read_text()) == {"in_use": 2}
+    assert path.stat().st_mode & 0o777 == 0o644
+    assert path.parent.stat().st_mode & 0o777 == 0o755
+    assert [p.name for p in path.parent.iterdir()] == ["machines.json"]  # no temp file left
+
+
+def test_a_failed_status_write_leaves_the_old_file_and_no_temp_file(tmp_path) -> None:
+    path = tmp_path / "machines.json"
+    sup.write_status(path, {"in_use": 1})
+
+    with pytest.raises(TypeError):
+        sup.write_status(path, {"in_use": object()})
+
+    assert json.loads(path.read_text()) == {"in_use": 1}
+    assert [p.name for p in tmp_path.iterdir()] == ["machines.json"]
