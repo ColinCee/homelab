@@ -114,6 +114,17 @@ for expr in 'avg_over_time(probe_success{job="integrations/blackbox/flight-track
   echo "  ${expr%%(*}: $value"
 done
 
+# Log only: CPU over the last 5 minutes, in cores. High CPU Usage alerts on the
+# whole machine minus the CI VMs, so busy CI alone does not page.
+echo "CPU, last 5m (cores):"
+for expr in 'count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})' \
+  'sum(rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))' \
+  'sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m]))'; do
+  value="$(curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
+    --data-urlencode "query=$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
+  echo "  $expr: $value"
+done
+
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
 # Log only: which packages are waiting, and whether Ubuntu is still phasing them in.
