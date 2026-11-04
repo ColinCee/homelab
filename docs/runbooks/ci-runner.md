@@ -259,8 +259,9 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   `MAX_RESPONSE` seconds (1 by default). On 4 November 2026, before the VMs'
   CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
   3 to 5 slots, with 5 failed requests in some runs. With that fixed, Grafana
-  still answered 503 20 to 50 s after the VMs started, at any slot count, while
-  the kernel wrote out the image copies; they now skip the page cache.
+  still answered 503 20 to 50 s after the VMs started, at any slot count, most
+  likely while the kernel wrote out the image copies; they now skip the page
+  cache, and the loaded timings start with the copies.
 
 ## Changing the number of slots
 
