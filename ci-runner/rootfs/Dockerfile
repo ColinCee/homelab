@@ -8,7 +8,7 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd systemd-sysv udev iproute2 ca-certificates curl jq netcat-openbsd iputils-ping \
-      git sudo unzip xz-utils zstd build-essential \
+      git sudo unzip xz-utils zstd build-essential python3 python-is-python3 shellcheck file \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && systemctl mask systemd-resolved.service systemd-networkd.service \
       systemd-timesyncd.service apt-daily.timer apt-daily-upgrade.timer \

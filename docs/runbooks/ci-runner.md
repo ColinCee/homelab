@@ -19,8 +19,8 @@ jobs:
     runs-on: [self-hosted, linux, x64, homelab-fc]
 ```
 
-The VM is Ubuntu 24.04 with the GitHub runner, git, build tools and passwordless
-`sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
+The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
+python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
 `JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
 plugin (no daemon, so `docker compose config` works but containers do not)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
@@ -250,7 +250,7 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`) as the runner user with the job's `PATH`.
+  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
   Run it after `build-rootfs.sh`.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
