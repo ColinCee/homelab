@@ -51,9 +51,12 @@ RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API = "https://api.github.com"
-# Three VMs at most: a job alone gets 4 GiB, the others 2 GiB each, 8 GiB in all,
-# which leaves the home's own services room.
-SLOTS = 3
+# How many VMs run at once, read from /etc/homelab-ci/slots at start-up. install-host.sh
+# writes it and makes that many slot users and taps, so the three always match. A job
+# alone gets 4 GiB and each one started beside it 2 GiB (see vm_size), so N slots use
+# up to 2 + 2N GiB; the default 3 (8 GiB) leaves the home's own services room.
+SLOTS_FILE = Path("/etc/homelab-ci/slots")
+DEFAULT_SLOTS = 3
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
 # A VM that has not picked up a job by now counts as idle demand again.
@@ -133,6 +136,7 @@ class Privacy:
 
 @dataclass
 class State:
+    slots: int = DEFAULT_SLOTS
     launches: dict[int, Launch] = field(default_factory=dict)
     privacy: dict[str, Privacy] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
@@ -698,7 +702,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
         for run in state.launches.values()
         if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
     )
-    free = [slot for slot in range(SLOTS) if slot not in state.launches]
+    free = [slot for slot in range(state.slots) if slot not in state.launches]
     starts = plan(queued, booting, len(free))
     for slot, (repo, label) in zip(free, starts, strict=False):
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
@@ -729,12 +733,21 @@ def standby_count() -> int:
         return 1
 
 
+def slot_count() -> int:
+    """The host's slot count: DEFAULT_SLOTS if the file is missing or not a number, at least 1."""
+    try:
+        text = SLOTS_FILE.read_text().strip()
+    except OSError:
+        return DEFAULT_SLOTS
+    return max(1, int(text)) if text.isdecimal() else DEFAULT_SLOTS
+
+
 def status(state: State, now: float, github_ok: bool) -> dict[str, Any]:
     """Slots, VMs running a job or waiting ready, and the repos with a cache disk."""
     standby = sum(run.standby for run in state.launches.values())
     return {
         "updated": int(now),
-        "slots": SLOTS,
+        "slots": state.slots,
         "in_use": len(state.launches) - standby,
         "standby": standby,
         "cache_disks": sorted(
@@ -824,13 +837,13 @@ def main(argv: list[str] | None = None) -> int:
     # Half-built caches from a supervisor that was killed mid-build.
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
-    state = State()
+    state = State(slots=slot_count())
     # Repos whose stale registrations are not cleared yet.
     unclean: list[str] = []
     failures = 0
     # Why the status file could not be written last time, so a lasting failure logs once.
     status_error = ""
-    log(f"{SLOTS} slots; serving private repos the token can see")
+    log(f"{state.slots} slots; serving private repos the token can see")
     while True:
         wait: float = POLL_SECONDS
         github_ok = False

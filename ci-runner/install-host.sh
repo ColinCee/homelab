@@ -9,7 +9,13 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
-SLOTS=${SLOTS:-3}
+# How many VMs run at once: SLOTS if given, else the count in /etc/homelab-ci/slots
+# from the last run. 3 when neither is a number, at least 1, as in ci_supervisor.py.
+# Written to that file below, so the supervisor, network and slot users all match:
+#   sudo SLOTS=4 ci-runner/install-host.sh
+SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
+SLOTS=${SLOTS//[[:space:]]/}
+if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=3; fi
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between
@@ -50,6 +56,12 @@ if pgrep -x firecracker >/dev/null; then
   exit 1
 fi
 
+# Host-side settings, never in the repo: the slot count, and the GitHub token
+# (written by hand, see ci-runner.md). Which repos are served is the token's
+# repository access. Written before the network, which reads the slot count.
+install -d -o root -g root -m 0700 /etc/homelab-ci
+echo "$SLOTS" > /etc/homelab-ci/slots
+
 install -d -o root -g root -m 0755 "$dest" "$dest/net"
 install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
 install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
@@ -63,9 +75,6 @@ systemctl enable --now homelab-ci-net.service
 # Apply rule changes in place; restarting the unit would remove the taps.
 "$dest/net/setup-net.sh" up
 
-# Host-side settings, never in the repo: the GitHub token (written by hand, see
-# ci-runner.md). Which repos are served is the token's repository access.
-install -d -o root -g root -m 0700 /etc/homelab-ci
 # Cache disks the supervisor builds from main-only artifacts; VMs read them, never write.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 if $was_running; then

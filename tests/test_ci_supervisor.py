@@ -422,16 +422,52 @@ def _launch(slot: int, standby: bool) -> sup.Launch:
 def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> None:
     (caches / "octo__agent.ext4").touch()
     (caches / "octo__agent.json").touch()  # which artifact built it, not a disk
-    state = sup.State(launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)})
+    state = sup.State(
+        slots=5, launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)}
+    )
 
     assert sup.status(state, 1700000000.5, github_ok=True) == {
         "updated": 1700000000,
-        "slots": sup.SLOTS,
+        "slots": 5,
         "in_use": 2,
         "standby": 1,
         "cache_disks": ["octo/agent", "octo/widgets"],
         "github_ok": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("text", "slots"),
+    [(None, 3), ("", 3), ("four\n", 3), ("-2\n", 3), ("0\n", 1), ("5\n", 5), (" 2 ", 2)],
+)
+def test_the_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
+    path = tmp_path / "slots"
+    if text is not None:
+        path.write_text(text)
+    monkeypatch.setattr(sup, "SLOTS_FILE", path)
+    assert sup.slot_count() == slots
+
+
+def test_an_unreadable_slot_file_means_the_default(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "SLOTS_FILE", tmp_path)  # a folder: reading it fails
+    assert sup.slot_count() == 3
+
+
+def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(
+        sup,
+        "find_queued",
+        lambda gh, repo: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
+    )
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    slots: list[int] = []
+    monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: slots.append(slot))
+    sup.tick(None, sup.State(slots=5), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert slots == [0, 1, 2, 3, 4]
 
 
 def test_the_status_file_is_replaced_whole_and_readable_by_all(tmp_path) -> None:

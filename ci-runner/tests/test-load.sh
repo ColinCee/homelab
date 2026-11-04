@@ -7,7 +7,11 @@ set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 seconds=${1:-60}
-slots=${SLOTS:-3}
+# The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
+# explicit SLOTS wins. 3 when neither is a number, at least 1, as in ci_supervisor.py.
+SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
+SLOTS=${SLOTS//[[:space:]]/}
+if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=3; fi
 run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
 tailnet=$(ip -4 -br addr show tailscale0 | awk '{print $3}' | cut -d/ -f1)
 urls=("http://$tailnet:8123/" "http://$tailnet:3001/api/health")
@@ -30,7 +34,7 @@ burn="for i in \$(seq \$(nproc)); do timeout $seconds sh -c 'while :; do :; done
 timeout $seconds sh -c 'head -c 1500M /dev/zero | tail > /dev/null' &
 wait; echo BURN_DONE"
 jq -n --arg probe "$burn" '{task: "probe", probe: $probe}' > "$tmp/metadata.json"
-for ((n = 0; n < slots; n++)); do
+for ((n = 0; n < SLOTS; n++)); do
   "$run_vm" "$n" "$tmp/metadata.json" $((seconds + 120)) > "$tmp/vm$n.log" 2>&1 &
 done
 sleep 10
@@ -38,6 +42,6 @@ sample "$tmp/loaded" $((seconds - 15))
 wait
 echo "loaded:  $(summary "$tmp/loaded")"
 echo "load average: $(cut -d' ' -f1-3 /proc/loadavg)"
-for ((n = 0; n < slots; n++)); do
+for ((n = 0; n < SLOTS; n++)); do
   grep -q BURN_DONE "$tmp/vm$n.log" && echo "slot $n: burned and exited" || echo "slot $n: did not finish (see log)"
 done
