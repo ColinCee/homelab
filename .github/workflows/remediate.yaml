@@ -1,7 +1,7 @@
 name: Remediate
 
-# The "Homelab alert triage" Claude routine runs in the cloud and cannot SSH
-# to Beelink; it dispatches this workflow to look at the server and to restart
+# Auto Kaizen's responder (auto-kaizen respond.yml) runs on GitHub's machines and cannot
+# reach Beelink; it dispatches this workflow to look at the server and to restart
 # a broken container. Anything bigger goes through a pull request and deploy.
 # This repo is public, so the job log holds states and counts, never log lines.
 on:
@@ -16,10 +16,6 @@ on:
         description: "Container name, or 'all' with diagnose"
         type: string
         default: all
-
-concurrency:
-  group: remediate
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -42,7 +38,7 @@ jobs:
           fi
 
       # Only a container that is down, restarting or unhealthy, so alert text
-      # cannot talk the routine into bouncing a working service.
+      # cannot talk the responder into bouncing a working service.
       - name: Restart
         if: inputs.action == 'restart'
         run: |

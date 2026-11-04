@@ -36,12 +36,13 @@ jobs:
       - name: Render stack environments
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
-          # Optional until the routine's API token is added; Grafana gets a 401 meanwhile.
-          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN || 'unset' }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           KAIZEN_APP_ID: ${{ vars.KAIZEN_APP_ID }}
           KAIZEN_APP_KEY: ${{ secrets.KAIZEN_APP_KEY }}
+          # Shared by Grafana and the Kaizen Control room's /alert, which refuses the "unset" placeholder:
+          # until the secret is set, alerts reach Discord only.
+          KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}

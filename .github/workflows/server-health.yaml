@@ -17,7 +17,7 @@ on:
         type: boolean
         default: false
       test_alert:
-        description: "Send a test alert to the Claude triage routine"
+        description: "Send a test alert to Auto Kaizen's responder"
         type: boolean
         default: false
 
@@ -44,27 +44,26 @@ jobs:
         # report below reads it. Success also clears Backup Missed.
         run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
 
-      - name: Send test alert to Claude
+      - name: Send test alert to Kaizen
         if: inputs.test_alert
         env:
-          CLAUDE_ROUTINE_TOKEN: ${{ secrets.CLAUDE_ROUTINE_TOKEN }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-        # Same endpoint and payload shape as Grafana's claude-triage receiver.
-        # Secrets reach curl as a config on stdin, never as arguments visible in ps.
+          KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET }}
+          KEY: test-${{ github.run_id }}
+        # The same route and payload as Grafana's kaizen-alert receiver: it opens
+        # an `alert` issue in Auto Kaizen, whose responder answers "test".
+        # The secret reaches curl as a config on stdin, never as an argument.
         run: |
-          pw=${GRAFANA_ADMIN_PASSWORD//\\/\\\\}
-          pw=${pw//\"/\\\"}
-          printf 'user = "admin:%s"\n' "$pw" |
-            curl -sf -K - http://beelink.tail4f465e.ts.net:3001/api/v1/provisioning/contact-points |
-            jq -r '.[] | select(.uid == "claude-triage") | "Grafana receiver: \(.name) / \(.type)"' ||
-            echo "Grafana receiver: could not read (admin login failed?)"
-          # Print the response body too: HTTP 200 alone didn't prove a wake landed.
-          printf 'header = "Authorization: Bearer %s"\n' "$CLAUDE_ROUTINE_TOKEN" |
-            curl -sS -K - -w '\nRoutine fire: HTTP %{http_code}\n' -X POST \
-            https://api.anthropic.com/v1/claude_code/routines/trig_019CAZPbSkiyWMPPYFkxfitP/fire \
-            -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
-            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
-            -d '{"text": "Test — Server health test_alert. Delivery check only; no resource alert fired."}'
+          send() {
+            body=$(jq -n --arg s "$1" --arg k "$KEY" \
+              '{status: $s, key: $k, title: "Test alert", text: "Server health test_alert: a delivery check, nothing is wrong."}')
+            printf 'header = "Authorization: Bearer %s"\n' "$KAIZEN_ALERT_SECRET" |
+              curl -sS -K - -o /dev/null -w "Kaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert \
+              -H "Content-Type: application/json" --data-binary "$body"
+          }
+          send firing
+          # Long enough for the responder to read the issue before it closes.
+          sleep 180
+          send resolved
 
       - name: Report health
         env:

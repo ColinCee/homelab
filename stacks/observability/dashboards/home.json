@@ -922,7 +922,7 @@
     {
       "title": "Alerts",
       "type": "alertlist",
-      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and the Claude triage routine.",
+      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and to Auto Kaizen's responder.",
       "options": {
         "alertInstanceLabelFilter": "",
         "alertName": "",
@@ -2092,7 +2092,7 @@
         {
           "title": "Alerts",
           "type": "alertlist",
-          "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and the Claude triage routine.",
+          "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and to Auto Kaizen's responder.",
           "options": {
             "alertInstanceLabelFilter": "",
             "alertName": "",
