@@ -13,7 +13,7 @@ disposable.
 | Grafana volume | Users and UI-made changes (`grafana.db`). Dashboards are in Git. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | CrowdSec config volume | Bouncer registration and local settings. |
-| Kaizen Board volume | The board's local data. |
+| Control room volume | The last state Auto Kaizen's Control room read. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
 Left out on purpose: the Home Assistant recorder database (sensor history; a

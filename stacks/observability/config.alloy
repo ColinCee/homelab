@@ -207,7 +207,7 @@ prometheus.scrape "crowdsec" {
 }
 
 // ================================
-// Kaizen Board
+// Auto Kaizen's Control room
 // ================================
 
 // Auto Kaizen's tasks by state, waits for a machine and agent cost.

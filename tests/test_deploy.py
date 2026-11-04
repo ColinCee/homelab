@@ -192,3 +192,16 @@ def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> N
     up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
     assert isinstance(up_env, dict)
     assert up_env["STACK_CONFIG_HASH"] == after
+
+
+def test_takes_retired_stacks_down_before_starting_any(tmp_path: Path) -> None:
+    _make_stack(tmp_path, "alpha")
+    runner, calls = _recording_runner()
+
+    deploy.deploy(tmp_path, deploy.discover_stack_plans(tmp_path), runner=runner)
+
+    commands = [command for command, _ in calls]
+    downs = [i for i, c in enumerate(commands) if c[-1] == "down"]
+    ups = [i for i, c in enumerate(commands) if "up" in c]
+    assert [commands[i][3] for i in downs] == list(deploy.RETIRED)
+    assert max(downs) < min(ups)
