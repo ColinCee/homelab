@@ -103,7 +103,7 @@ def post_discord(webhook_url: str, content: str) -> None:
 
 
 ROUTINE_FIRE_URL = (
-    "https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire"
+    "https://api.anthropic.com/v1/claude_code/routines/trig_019CAZPbSkiyWMPPYFkxfitP/fire"
 )
 
 

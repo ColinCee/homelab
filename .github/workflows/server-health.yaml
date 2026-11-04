@@ -61,7 +61,7 @@ jobs:
           # Print the response body too: HTTP 200 alone didn't prove a wake landed.
           printf 'header = "Authorization: Bearer %s"\n' "$CLAUDE_ROUTINE_TOKEN" |
             curl -sS -K - -w '\nRoutine fire: HTTP %{http_code}\n' -X POST \
-            https://api.anthropic.com/v1/claude_code/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire \
+            https://api.anthropic.com/v1/claude_code/routines/trig_019CAZPbSkiyWMPPYFkxfitP/fire \
             -H "anthropic-version: 2023-06-01" -H "Content-Type: application/json" \
             -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
             -d '{"text": "Test — Server health test_alert. Delivery check only; no resource alert fired."}'

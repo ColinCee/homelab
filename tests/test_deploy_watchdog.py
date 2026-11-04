@@ -85,7 +85,7 @@ def test_fire_routine_posts_alert_text(monkeypatch) -> None:
     monkeypatch.setattr(watchdog.urllib.request, "urlopen", fake_urlopen)
     watchdog.fire_routine("tok", "deploy stalled")
 
-    assert sent["url"].endswith("/routines/trig_0177p7ADgjATF9pSBqk74wQ1/fire")
+    assert sent["url"].endswith("/routines/trig_019CAZPbSkiyWMPPYFkxfitP/fire")
     assert sent["headers"]["Authorization"] == "Bearer tok"
     assert sent["headers"]["Anthropic-version"] == "2023-06-01"
     assert sent["body"] == {"text": "deploy stalled"}
