@@ -1,0 +1,65 @@
+name: Remediate
+
+# The "Homelab alert triage" Claude routine runs in the cloud and cannot SSH
+# to Beelink; it dispatches this workflow to look at the server and to restart
+# a container. Anything bigger goes through a pull request and deploy.
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "diagnose: report server and container state; restart: restart one container"
+        type: choice
+        options: [diagnose, restart]
+        default: diagnose
+      target:
+        description: "Container name, or 'all' with diagnose"
+        type: string
+        default: all
+
+concurrency:
+  group: remediate-${{ inputs.target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  remediate:
+    runs-on: beelink
+    timeout-minutes: 10
+    env:
+      ACTION: ${{ inputs.action }}
+      TARGET: ${{ inputs.target }}
+    steps:
+      - name: Check target
+        run: |
+          if [[ "$TARGET" == all && "$ACTION" == diagnose ]]; then exit 0; fi
+          if [[ ! "$TARGET" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || ! docker inspect "$TARGET" >/dev/null 2>&1; then
+            echo "::error::No container named '$TARGET'. Containers:"
+            docker ps -a --format '{{.Names}}'
+            exit 1
+          fi
+
+      - name: Restart
+        if: inputs.action == 'restart'
+        run: |
+          docker restart "$TARGET"
+          sleep 20
+
+      - name: Server state
+        run: |
+          echo "## Host"; uptime; free -h; df -h / /home 2>/dev/null
+          echo "## Containers"
+          docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}'
+          echo "## Restart counts"
+          docker ps -aq | xargs docker inspect --format '{{.Name}} restarts={{.RestartCount}} oom={{.State.OOMKilled}}' | sed 's#^/##'
+          echo "## Resource use"
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
+
+      - name: Target logs
+        if: inputs.target != 'all'
+        run: |
+          docker inspect "$TARGET" --format \
+            'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}
+          started={{.State.StartedAt}} exit={{.State.ExitCode}}'
+          docker logs --tail 200 --timestamps "$TARGET" 2>&1

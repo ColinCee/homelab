@@ -138,8 +138,10 @@ Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and currently routes to the
 `Discord Private` contact point. That contact point also has a webhook to the
 "Homelab alert triage" Claude routine (resolves go to Discord only). Each fire
-starts a short relay session that posts "Homelab alert: …" in the Claude
-project chat, which routes it to the homelab alerts thread for triage. Test the
+starts a cloud session that diagnoses and fixes the alert on its own: it looks
+at Beelink and restarts containers through the `Remediate` workflow, ships
+config fixes as merged PRs, and opens an "Alert: …" issue when Colin must act.
+Its runs are listed at claude.ai/code/routines. Test the
 whole chain with Server health → `test_alert`. The deploy
 watchdog wakes the same routine when a deploy stalls. Both need the
 `CLAUDE_ROUTINE_TOKEN` secret (claude.ai/code/routines → routine → API
