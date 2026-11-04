@@ -436,7 +436,7 @@
                     },
                     {
                       "color": "orange",
-                      "value": 3
+                      "value": 5
                     }
                   ]
                 }
@@ -2388,7 +2388,7 @@
                   "mode": "dashed"
                 },
                 "axisSoftMin": 0,
-                "axisSoftMax": 3
+                "axisSoftMax": 5
               },
               "mappings": [],
               "thresholds": {
@@ -2400,7 +2400,7 @@
                   },
                   {
                     "color": "orange",
-                    "value": 3
+                    "value": 5
                   }
                 ]
               },

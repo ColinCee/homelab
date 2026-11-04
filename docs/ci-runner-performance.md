@@ -134,9 +134,11 @@ Four jobs back to back, offline:
 
 Four at once still added throughput and peaked at 3.5 GB, under 1 GB a job.
 That is why the runner defaults to 5 slots (from 3): most jobs are agent
-sessions waiting on the network, five jobs at that rate fit the 16 GB with the
-3 GiB reserve for the home's services, and the memory check holds a VM back
-when they do not. The load test on the host must pass at 5 before it is used
+sessions waiting on the network, and five jobs at that rate (an extrapolation
+from the four-job run, not measured) would fit the 16 GB with the 3 GiB reserve
+for the home's services. The supervisor's memory check (`memory_reserve_mib`)
+holds a VM back when they do not. No 5-slot load test has run yet; it must pass
+on the host before 5 is used
 (see [Changing the number of slots](runbooks/ci-runner.md#changing-the-number-of-slots)).
 
 The suite in one 4-vCPU VM by number of test workers: 1: 10.5 s, 2: 7.4 s,
