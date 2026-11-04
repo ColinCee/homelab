@@ -30,6 +30,7 @@ import urllib.request
 import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, Any
@@ -41,12 +42,21 @@ RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 CACHE_LABEL_PREFIX = "fc-cache-"
 # Only Colin's own repositories are served, whatever else the token can see.
 OWNER = "ColinCee"
-# How often to ask GitHub which repositories the token can see.
+# How often to ask GitHub which repositories the token can see. The listing and its
+# collaborator checks (two requests a repo) run beside the poll, never holding it up.
 REPOS_EVERY = 60
 # A repo that has never had a VM here is asked about queued jobs this often, not every
 # poll: with every private repo served, polling all of them every 2 s spent GitHub's
 # hourly request budget in about 40 minutes.
 QUIET_POLL_SECONDS = 60
+# At most this many quiet repos per poll, the longest unasked first. All of them in one
+# poll (three requests each, about 40 repos), with the listing beside them, made that
+# poll take most of a minute while a queued job waited (4 Nov: 44 to 106 s to its VM).
+QUIET_PER_POLL = 3
+# A poll slower than this is logged with what it spent its time on.
+SLOW_POLL_SECONDS = 5
+# The repo of the last job, kept across restarts so the standby goes back to it.
+LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
@@ -68,7 +78,7 @@ BOOT_GRACE_SECONDS = 120
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30
 VM_TIMEOUT_SECONDS = 3600
-# One VM is kept booted and registered for the first repo on the list, so a job
+# One VM is kept booted and registered for the last job's repo, so a job
 # starts in seconds instead of waiting for a VM. It is replaced every 45 minutes
 # while idle; its timeout leaves a job that starts just before then time to finish.
 STANDBY_RECYCLE_SECONDS = 45 * 60
@@ -239,6 +249,9 @@ class GitHub:
         self._token = token
         # Conditional GETs: a 304 reply does not count against the rate limit.
         self._cache: dict[str, tuple[str, Any]] = {}
+        # Requests made and seconds spent on them, for the slow-poll log.
+        self.requests = 0
+        self.seconds = 0.0
 
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
@@ -252,6 +265,8 @@ class GitHub:
         cached = self._cache.get(path) if method == "GET" else None
         if cached:
             req.add_header("If-None-Match", cached[0])
+        self.requests += 1
+        started = time.monotonic()
         try:
             with urllib.request.urlopen(req, timeout=20) as response:
                 raw = response.read()
@@ -267,6 +282,8 @@ class GitHub:
                 )
                 raise RateLimited(until) from None
             raise
+        finally:
+            self.seconds += time.monotonic() - started
         result = json.loads(raw) if raw else None
         if method == "GET" and etag:
             self._cache[path] = (etag, result)
@@ -403,11 +420,27 @@ def launch(
     state.launches[slot] = run
     threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
     state.used.add(repo)
-    if not standby:
+    if not standby and repo != state.last_repo:
         state.last_repo = repo
+        remember_last_repo(repo)
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
+
+
+def remember_last_repo(repo: str) -> None:
+    """Kept for the next start; losing it only sends the first standby elsewhere."""
+    try:
+        LAST_REPO_FILE.write_text(repo + "\n")
+    except OSError as e:
+        log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
+
+
+def recalled_last_repo() -> str:
+    try:
+        return LAST_REPO_FILE.read_text().strip()
+    except OSError:
+        return ""
 
 
 def live_line(raw: bytes, heard: float) -> dict[str, Any] | None:
@@ -746,11 +779,14 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
     threading.Thread(target=work, daemon=True).start()
 
 
-def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
+def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, float]:
+    """One poll. Returns how long asking each repo for queued jobs took, in seconds."""
     queued: Counter[Want] = Counter()
     job_ids: dict[Want, list[int]] = {}
     private: list[str] = []
+    spent: dict[str, float] = {}
     for repo in repos:
+        asked = time.monotonic()
         # A repo that is no longer private has nothing queued as far as we are
         # concerned, so its idle VMs are stopped below and no new ones start. One
         # repo GitHub will not show is skipped this poll; it never stops the others
@@ -776,6 +812,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
             raise
         except Exception as e:
             skipped(repo, e)
+        finally:
+            spent[repo] = time.monotonic() - asked
     reap(gh, state, now, queued, private)
     # Cache disks only for repos that run here; a quiet repo gets checked after its first job.
     maybe_refresh_caches(
@@ -819,6 +857,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> None:
         )
     ):
         launch(gh, state, repos[0], free[0], now, cache=cache_image(repos[0]), standby=True)
+    return spent
 
 
 def hold_for_memory(
@@ -938,16 +977,37 @@ def only_colin(gh: GitHub, repo: str) -> bool:
     )
 
 
+def list_repos(gh: GitHub) -> tuple[dict[str, str], list[str]]:
+    """The served private repos with their default branches, and those nobody else can
+    push to: the ones to serve."""
+    listing = served_repos(gh)
+    return listing, [r for r in listing if only_colin(gh, r)]
+
+
+def slow_poll(took: float, requests: int, waited: float, spent: Mapping[str, float]) -> str:
+    """What a slow poll spent its time on: GitHub's answers, asking each repo for queued
+    jobs (the slowest named), and the rest (stale runners, stopping and starting VMs)."""
+    asking = sum(spent.values())
+    slowest = sorted(spent.items(), key=lambda item: -item[1])[:3]
+    named = ", ".join(f"{repo} {seconds:.1f}s" for repo, seconds in slowest)
+    return (
+        f"slow poll: {took:.1f}s; {requests} GitHub requests took {waited:.1f}s; "
+        f"asking {len(spent)} repos for queued jobs took {asking:.1f}s"
+        f"{f' (slowest {named})' if named else ''}; the rest {took - asking:.1f}s"
+    )
+
+
 def due(repos: list[str], state: State, now: float) -> list[str]:
-    """The repos to poll now: every one that has had a VM or has a cache disk, and the
-    quiet rest once a minute each."""
-    return [
-        r
-        for r in repos
-        if r in state.used
-        or cache_image(r).exists()
-        or now - state.polled.get(r, 0) >= QUIET_POLL_SECONDS
+    """The repos to poll now, in the order given: every one that has had a VM or has a
+    cache disk, and of the quiet rest those unasked for a minute, QUIET_PER_POLL at most,
+    the longest unasked first, so no poll is slowed by all of them at once."""
+    busy = {r for r in repos if r in state.used or cache_image(r).exists()}
+    quiet = [
+        r for r in repos if r not in busy and now - state.polled.get(r, 0) >= QUIET_POLL_SECONDS
     ]
+    quiet.sort(key=lambda r: state.polled.get(r, 0))
+    chosen = busy | set(quiet[:QUIET_PER_POLL])
+    return [r for r in repos if r in chosen]
 
 
 def standby_first(repos: list[str], last: str) -> list[str]:
@@ -968,6 +1028,16 @@ def main(argv: list[str] | None = None) -> int:
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
     state = State(slots=slot_count())
+    # The standby waits where the last job before the restart ran, not on the first repo
+    # listed (4 Nov: it booted for a repo with no work, for 45 minutes).
+    state.last_repo = recalled_last_repo()
+    if state.last_repo:
+        state.used.add(state.last_repo)
+    # The repo listing runs beside the poll, on its own client (the request cache is not
+    # shared between threads).
+    lister = ThreadPoolExecutor(max_workers=1)
+    list_gh = gh.clone()
+    listing: Future[tuple[dict[str, str], list[str]]] | None = None
     # Repos whose stale registrations are not cleared yet.
     unclean: list[str] = []
     failures = 0
@@ -979,14 +1049,17 @@ def main(argv: list[str] | None = None) -> int:
         github_ok = False
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
-            if time.time() - listed >= REPOS_EVERY:
+            if listing is None and time.time() - listed >= REPOS_EVERY:
                 listed = time.time()
+                listing = lister.submit(list_repos, list_gh)
+            # The first listing is waited for: there is nothing to serve before it.
+            if listing and (listing.done() or not repos):
+                done, listing = listing, None
                 # A failed listing keeps the last list (none at start), never ending the poll.
                 try:
-                    listing = served_repos(gh)
-                    found = [r for r in listing if only_colin(gh, r)]
+                    privacy, found = done.result()
                     # Listed private just now: quiet repos need no privacy request of their own.
-                    for repo, branch in listing.items():
+                    for repo, branch in privacy.items():
                         state.privacy[repo] = Privacy(True, listed, branch)
                     skipped("the repo list", None)
                 except RateLimited:
@@ -1000,13 +1073,16 @@ def main(argv: list[str] | None = None) -> int:
                         r for r in found if r not in repos
                     ]
                     repos = found
+            started, asked, waited = time.monotonic(), gh.requests, gh.seconds
             if unclean:
                 unclean = remove_stale_runners(gh, unclean)
             now = time.time()
             polling = due(standby_first(repos, state.last_repo), state, now)
-            tick(gh, state, polling, now)
+            spent = tick(gh, state, polling, now)
             for repo in polling:
                 state.polled[repo] = now
+            if (took := time.monotonic() - started) >= SLOW_POLL_SECONDS:
+                log(slow_poll(took, gh.requests - asked, gh.seconds - waited, spent))
             failures = 0
             github_ok = True
         except RateLimited as e:

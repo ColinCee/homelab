@@ -107,7 +107,9 @@ access is the list; `served_repos` in the supervisor), and only those nobody els
 write to: a repo with any other collaborator or a deploy key that can write is skipped
 (checked every minute and before its first VM), so only Colin
 and his own apps (Kaizen, Renovate) can start a job here. Repos that have had a VM are
-polled every 2 s; the rest once a minute. Only while private: privacy is
+polled every 2 s; the rest once a minute, a few per poll, and the minutely repo listing
+runs beside the poll, so neither delays a queued job's VM. A poll slower than 5 s is
+logged (`slow poll:`) with its GitHub requests and its slowest repos. Only while private: privacy is
 checked on every poll, and once a repo is public no new VM starts for it and its
 idle ones are stopped. Before making a repo public, move its workflows to
 GitHub-hosted runners and take it off the token's repository access.
@@ -121,7 +123,8 @@ GitHub-hosted runners and take it off the token's repository access.
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  repo of the last job, so the next job there starts in about a
+  repo of the last job (kept in `/var/lib/homelab-ci/last-repo`, so a restart
+  puts it back there), so the next job there starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
