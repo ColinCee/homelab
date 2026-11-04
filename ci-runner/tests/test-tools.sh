@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prove the image's tools run for a job, after building the image:
 #   sudo ci-runner/tests/test-tools.sh
+# with the supervisor stopped, since it needs slot 0 free.
 # Boots a VM in slot 0 and runs each tool as the runner user, with the PATH
 # ci-boot gives the runner. Exits non-zero if any fails.
 set -euo pipefail
@@ -28,7 +29,7 @@ jq -n --arg probe "$probe" '{task: "probe", probe: $probe}' > "$tmp/metadata.jso
 results=$(grep -oE '(PASS|FAIL) .*' "$tmp/console.log" | tr -d '\r' || true)
 echo "$results"
 passes=$(grep -c '^PASS' <<<"$results" || true)
-total=$(grep -oE 'TOTAL [0-9]+' "$tmp/console.log" | awk '{print $2}')
+total=$(grep -oE 'TOTAL [0-9]+' "$tmp/console.log" | awk '{print $2}' || true)
 if [[ -z "$total" || $passes -ne $total ]]; then
   echo "TOOLS TEST FAILED ($passes of ${total:-?} passed)"
   tail -n 30 "$tmp/console.log"

@@ -171,7 +171,7 @@ From a checkout of `main` on the host:
 ```bash
 sudo ci-runner/install-host.sh   # Firecracker, slot users, network, supervisor files
 sudo ci-runner/build-rootfs.sh   # VM image and kernel
-sudo ci-runner/tests/test-tools.sh  # the image's tools run for a job
+sudo ci-runner/tests/test-tools.sh  # the image's tools run for a job; supervisor stopped first
 sudo ci-runner/tests/audit.sh    # must pass before the supervisor runs
 sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f
@@ -251,7 +251,9 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
   mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
-  Run it after `build-rootfs.sh`.
+  Run it after `build-rootfs.sh`, with the supervisor stopped
+  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
+  in slot 0, and fails with "slot 0 is busy" while a job holds it.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
   2 GiB), each spinning every CPU and holding all but 128 MiB of its free
