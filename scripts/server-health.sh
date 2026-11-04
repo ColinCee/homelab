@@ -145,9 +145,10 @@ fi
 echo "CI machines status:"
 jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
   /var/lib/homelab-ci/status/machines.json 2>/dev/null || echo "  unavailable"
-echo "CI supervisor log, last hour (last 40 lines, repos masked):"
-sudo -n journalctl -u homelab-ci-supervisor --since -1h --no-pager -o short-iso 2>/dev/null |
-  tail -n 40 | sed -E 's#[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#<repo>#g; s/^/  /' || echo "  unavailable"
+echo "CI supervisor log, last 2 hours (slow polls left out, last 60 lines, repos masked):"
+sudo -n journalctl -u homelab-ci-supervisor --since -2h --no-pager -o short-iso 2>/dev/null |
+  { grep -v ': slow poll: ' || true; } | tail -n 60 |
+  sed -E 's#[A-Za-z0-9_.-]+(/|__)[A-Za-z0-9_.-]+#<repo>#g; s/^/  /' || echo "  unavailable"
 
 upgrades="$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ' || true)"
 row "Pending apt upgrades" "$upgrades"
