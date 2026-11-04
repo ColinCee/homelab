@@ -387,6 +387,37 @@ def test_quiet_repos_are_polled_once_a_minute_used_ones_every_poll(monkeypatch, 
     assert sup.due(["a/busy", "a/quiet"], state, 161.0) == ["a/busy", "a/quiet"]
 
 
+def test_a_poll_asks_only_a_few_quiet_repos_the_longest_unasked_first(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    quiet = [f"a/q{i}" for i in range(10)]
+    state = sup.State(used={"a/busy"}, polled={r: 100.0 - i for i, r in enumerate(quiet)})
+    polling = sup.due(["a/busy", *quiet], state, 200.0)
+    assert polling == ["a/busy", "a/q7", "a/q8", "a/q9"]
+    assert len(polling) == 1 + sup.QUIET_PER_POLL
+
+
+def test_after_a_restart_the_standby_goes_where_the_last_job_ran(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
+    assert sup.recalled_last_repo() == ""
+    sup.remember_last_repo("a/y")
+    last = sup.recalled_last_repo()
+    assert last == "a/y"
+    repos = ["a/x", "a/y", "a/z"]
+    state = sup.State(used={last})
+    # Polled every time, first, so the standby boots for it and not for the first listed.
+    assert sup.due(sup.standby_first(repos, last), state, 0.0)[0] == "a/y"
+
+
+def test_a_slow_poll_says_what_it_spent_its_time_on() -> None:
+    line = sup.slow_poll(9.0, 40, 8.5, {"a/x": 1.0, "a/y": 6.0, "a/z": 0.5, "a/w": 0.2})
+    assert line == (
+        "slow poll: 9.0s; 40 GitHub requests took 8.5s; asking 4 repos for queued jobs "
+        "took 7.7s (slowest a/y 6.0s, a/x 1.0s, a/z 0.5s); the rest 1.3s"
+    )
+
+
 def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
     state = sup.State(privacy={"a/quiet": sup.Privacy(True, 100.0, "main")})
     assert sup.check_private(Repos([]), state, "a/quiet", 130.0) is True
