@@ -1,3 +1,4 @@
+import io
 import json
 import tarfile
 
@@ -505,6 +506,63 @@ def test_a_failed_status_write_leaves_the_old_file_and_no_temp_file(tmp_path) ->
 
     assert json.loads(path.read_text()) == {"in_use": 1}
     assert [p.name for p in tmp_path.iterdir()] == ["machines.json"]
+
+
+LIVE = b"KAIZEN-LIVE 1 105 builder 1792999990 runs the tests (uv run pytest -q)\r\n"
+
+
+def test_only_lines_in_the_exact_live_format_are_kept() -> None:
+    assert sup.live_line(LIVE, 1792999998.7) == {
+        "task": 105,
+        "who": "builder",
+        "at": 1792999990,
+        "heard": 1792999998,
+        "text": "runs the tests (uv run pytest -q)",
+    }
+    for noise in [
+        b"[    0.412] EXT4-fs (vda): mounted filesystem\n",
+        b"KAIZEN-LIVE 2 105 builder 1792999990 a later format\n",
+        b"KAIZEN-LIVE 1 105 judge 1792999990 not an agent with a line\n",
+        b"KAIZEN-LIVE 1 105 builder 179299999 a nine-digit time\n",
+        b"KAIZEN-LIVE 1 105 builder 1792999990 \n",
+        b"KAIZEN-LIVE 1 105 builder 1792999990 " + b"x" * 121 + b"\n",
+        b"KAIZEN-LIVE 1 105 builder 1792999990 tab\there\n",
+        b"KAIZEN-LIVE 1 105 builder 1792999990 \xff not text\n",
+        b"boot KAIZEN-LIVE 1 105 builder 1792999990 not at the start\n",
+    ]:
+        assert sup.live_line(noise, 0) is None, noise
+
+
+def test_the_console_reader_keeps_the_last_valid_line_and_drops_over_long_ones() -> None:
+    later = b"KAIZEN-LIVE 1 105 builder 1793000005 edits src/kaizen/live.py\n"
+    over_long = b"KAIZEN-LIVE 1 105 builder 1793000009 " + b"x" * 5000 + b"\n"
+    console = io.BytesIO(b"Linux version 6.1\n" + LIVE + later + over_long + b"login:")
+    kept: list[dict] = []
+    sup.read_console(console, kept.append)
+    assert [line["at"] for line in kept] == [1792999990, 1793000005]
+    assert console.closed
+
+
+def test_only_auto_kaizen_vms_get_a_live_line() -> None:
+    ours = sup.Launch(0, "ColinCee/auto-kaizen", 1, "fc-0", 0.0, None, None)  # type: ignore[arg-type]
+    product = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, None, None)  # type: ignore[arg-type]
+    for run in (ours, product):
+        sup.read_console(io.BytesIO(LIVE), sup.keeper(run))
+    state = sup.State(launches={1: product, 0: ours})
+
+    assert sup.live(state, 1793000000.2) == {
+        "updated": 1793000000,
+        "lines": [sup.live_line(LIVE, ours.live["heard"])],  # type: ignore[index]
+    }
+    assert product.live is None
+
+
+def test_the_live_file_is_written_beside_the_status_file(tmp_path) -> None:
+    path = tmp_path / "live.json"
+    sup.write_status(path, sup.live(sup.State(), 5.0))
+    assert json.loads(path.read_text()) == {"updated": 5, "lines": []}
+    assert path.stat().st_mode & 0o777 == 0o644
+    assert sup.LIVE_FILE.parent == sup.STATUS_FILE.parent
 
 
 def test_reads_available_memory_and_the_reserve_from_the_host(tmp_path, monkeypatch) -> None:

@@ -215,6 +215,18 @@ host's free memory when the file was written, and `held_for_memory` counts queue
 jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
+Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
+doing, the line its VM prints on its console (format in auto-kaizen's
+`docs/live-view.md`). One background reader per VM reads that console for the
+VM's whole life, so the console never stalls, and keeps only lines in that exact
+format, at most 4 KB each, from VMs booted for `ColinCee/auto-kaizen`; everything
+else is dropped unlogged. A VM's entry goes when it ends:
+
+```json
+{"updated": 1793000000,
+ "lines": [{"task": 105, "who": "builder", "at": 1792999990, "heard": 1792999998, "text": "runs the tests (uv run pytest -q)"}]}
+```
+
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then

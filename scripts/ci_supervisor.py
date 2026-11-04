@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
@@ -31,7 +32,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 LABEL = "homelab-fc"
 RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
@@ -90,6 +91,14 @@ RUNNER_UID = 1001  # the runner user inside the VM image
 # What the CI runner is doing, for the Control room: rewritten after every poll, readable
 # by anyone on the host. Nothing secret goes in it (see status()).
 STATUS_FILE = Path("/var/lib/homelab-ci/status/machines.json")
+# Each running Builder's and Reviewer's latest live line, read from its VM's console, for
+# the Control room (auto-kaizen's docs/live-view.md). Only that repo's VMs count, and only
+# lines in its exact format; the rest of the console is read and dropped, never logged.
+LIVE_FILE = STATUS_FILE.with_name("live.json")
+LIVE_REPO = "ColinCee/auto-kaizen"
+LIVE_LINE = re.compile(rb"KAIZEN-LIVE 1 ([0-9]{1,9}) (builder|reviewer) ([0-9]{10}) (.+)")
+LIVE_TEXT_MAX = 120
+CONSOLE_LINE_MAX = 4096
 # A VM starts only if the host's available memory, less the VM's size, still leaves this
 # much for the home's own services (the host's 16 GiB are shared with them). A booted VM
 # touches far less than its size, so the check uses what is really free, not the sum of
@@ -130,6 +139,8 @@ class Launch:
     # A standby that just took a job still covers it until GitHub's job list catches up.
     covers_until: float = 0.0
     label: str = ""
+    # The VM's latest live line, set by its console reader (see read_console).
+    live: dict[str, Any] | None = None
 
     @property
     def want(self) -> Want:
@@ -375,7 +386,7 @@ def launch(
                 str(STANDBY_TIMEOUT_SECONDS if standby else VM_TIMEOUT_SECONDS),
             ],
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             env={
                 **os.environ,
@@ -388,15 +399,57 @@ def launch(
         metadata.unlink(missing_ok=True)
         delete_runner(gh, repo, runner_id, name)
         raise
-    state.launches[slot] = Launch(
-        slot, repo, runner_id, name, now, process, metadata, standby, label=label
-    )
+    run = Launch(slot, repo, runner_id, name, now, process, metadata, standby, label=label)
+    state.launches[slot] = run
+    threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
     state.used.add(repo)
     if not standby:
         state.last_repo = repo
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
+
+
+def live_line(raw: bytes, heard: float) -> dict[str, Any] | None:
+    """One console line as a live line, or None unless it is exactly in the live format."""
+    match = LIVE_LINE.fullmatch(raw.removesuffix(b"\n").removesuffix(b"\r"))
+    if not match:
+        return None
+    try:
+        text = match[4].decode()
+    except UnicodeDecodeError:
+        return None
+    if len(text) > LIVE_TEXT_MAX or not text.isprintable():
+        return None
+    return {
+        "task": int(match[1]),
+        "who": match[2].decode(),
+        "at": int(match[3]),
+        "heard": int(heard),
+        "text": text,
+    }
+
+
+def keeper(run: Launch) -> Callable[[dict[str, Any]], None] | None:
+    """Where a VM's live lines go: onto its Launch, for auto-kaizen's VMs only, so a
+    product's VM cannot put a line on a task."""
+    if run.repo.lower() != LIVE_REPO.lower():
+        return None
+    return lambda line: setattr(run, "live", line)
+
+
+def read_console(stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None) -> None:
+    """Read a VM's console until it ends, keeping each valid live line. It must never stop
+    early: once the pipe fills, the VM's console, and with it the job, would stall. A line
+    over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held in memory."""
+    with stream:
+        too_long = False
+        while chunk := stream.readline(CONSOLE_LINE_MAX):
+            whole = chunk.endswith(b"\n")
+            fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
+            if keep and fits and (line := live_line(chunk, time.time())):
+                keep(line)
+            too_long = not whole
 
 
 def vm_size(running: int) -> tuple[int, int]:
@@ -828,11 +881,17 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
     }
 
 
+def live(state: State, now: float) -> dict[str, Any]:
+    """The latest live line of each running VM that has sent one."""
+    lines = [run.live for _, run in sorted(state.launches.items()) if run.live]
+    return {"updated": int(now), "lines": lines}
+
+
 def write_status(path: Path, data: Mapping[str, Any]) -> None:
     """Replace the file whole, so a reader never sees half of it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o755)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".machines-")
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(data, f)
@@ -963,6 +1022,7 @@ def main(argv: list[str] | None = None) -> int:
         # Written after a failed poll too, so it still shows the supervisor is alive.
         try:
             write_status(STATUS_FILE, status(state, time.time(), github_ok, mem_available_mib()))
+            write_status(LIVE_FILE, live(state, time.time()))
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"
