@@ -20,3 +20,4 @@ secrets:
 
 volumes:
   data:
+    name: kaizen-control-room_data

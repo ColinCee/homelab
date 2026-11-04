@@ -59,6 +59,7 @@ volumes:
   crowdsec-config:
     external: true
     name: crowdsec_crowdsec-config
+  # Not external: backup deploys before the Control room (stacks go in name order), so on its first deploy under this
+  # name the volume may not exist yet; either stack creates it, the other uses it.
   control-room-data:
-    external: true
     name: kaizen-control-room_data
