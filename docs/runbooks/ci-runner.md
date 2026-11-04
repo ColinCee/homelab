@@ -118,7 +118,7 @@ GitHub-hosted runners and take it off the token's repository access.
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 2
   seconds (unchanged answers are free) for queued jobs with the label and boots
-  a VM for each, up to two at once. The VM's root filesystem is a private copy, deleted with everything the
+  a VM for each, up to two at once. The VM's root filesystem is a private copy, written straight to the disk past the page cache, and deleted with everything the
   job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
@@ -255,13 +255,16 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   2 GiB), each spinning every CPU and holding all but 128 MiB of its free
   memory, while timing Home Assistant and Grafana once a second. It prints each
   service's median and worst response with the second it came (counted from
-  when the VMs start), each failed request as `code@second`, and the host's lowest
-  `MemAvailable` during the run, then one `PASS` or `FAIL` line naming the slot
+  when the VMs start), each failed request as `code@second`, the host's lowest
+  `MemAvailable` and most data waiting to be written to disk during the run, then one `PASS` or `FAIL` line naming the slot
   count. It fails, exiting 1 with the reasons on that line, when a VM does not
   boot or finish its burn, any request fails, or a worst response is over
   `MAX_RESPONSE` seconds (1 by default). On 4 November 2026, before the VMs'
   CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
-  3 to 5 slots, with 5 failed requests in some runs.
+  3 to 5 slots, with 5 failed requests in some runs. With that fixed, Grafana
+  still answered 503 20 to 50 s after the VMs started, at any slot count, most
+  likely while the kernel wrote out the image copies; they now skip the page
+  cache, and the loaded timings start with the copies.
 
 ## Changing the number of slots
 

@@ -43,17 +43,23 @@ cleanup() {
 cleanup
 trap cleanup EXIT
 
+# Copy a disk image straight to the disk (no page cache), skipping zeros. A
+# buffered copy leaves gigabytes for the kernel to write out 20 to 50 s later,
+# while the VMs boot, and the services' own disk writes (Grafana's database)
+# queue behind it: Grafana's health check then answers 503.
+copy_image() { dd if="$1" of="$2" bs=1M oflag=direct conv=sparse status=none; }
+
 # Fill the chroot as root, then hand it over, so the slot user cannot plant
 # links for root to follow.
 install -d -o root -g root -m 0700 "$chroot"
-cp --sparse=always "$images/rootfs.ext4" "$chroot/rootfs.ext4"
+copy_image "$images/rootfs.ext4" "$chroot/rootfs.ext4"
 cp "$images/vmlinuz" "$chroot/vmlinuz"
 install -m 0600 "$metadata" "$chroot/metadata.json"
 # The repo's cache disk, if the supervisor names one: a private copy, like the root
 # disk, so the job can write to it and nothing it writes reaches the next job.
 cache_drive=""
 if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
-  cp --sparse=always "$CACHE_IMAGE" "$chroot/cache.ext4"
+  copy_image "$CACHE_IMAGE" "$chroot/cache.ext4"
   cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": false}'
 fi
 
