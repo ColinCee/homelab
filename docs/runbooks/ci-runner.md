@@ -88,7 +88,8 @@ also puts `node_modules` and its `package-lock.json` on the disk (the action's
 `paths`), copied rather than linked so TypeScript's incremental build info
 stays valid.
 
-There are three slots. A job running alone gets 4 vCPUs and 4 GiB; a job
+There are three slots unless `/etc/homelab-ci/slots` says otherwise (see
+Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
@@ -160,6 +161,14 @@ sudo ci-runner/tests/audit.sh    # must pass before the supervisor runs
 sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f
 ```
+
+`/etc/homelab-ci/slots` holds how many VMs run at once (3 when the file is
+missing or not a number). `install-host.sh` writes it, keeping its value unless
+run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
+and taps; the supervisor reads it when it starts, and `setup-net.sh` and
+`test-load.sh` read it too (a `SLOTS` variable wins). Change it only through
+`install-host.sh`, so the network always has a tap for every slot. With N slots
+the VMs use up to 2 + 2N GiB.
 
 The GitHub token is a fine-grained token with Administration read and write (to
 create one-job registrations) and Actions read. Its repository access is the list
