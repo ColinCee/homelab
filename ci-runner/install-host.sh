@@ -10,12 +10,12 @@ here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
 # How many VMs run at once: SLOTS if given, else the count in /etc/homelab-ci/slots
-# from the last run. 3 when neither is a number, at least 1, as in ci_supervisor.py.
+# from the last run. 5 when neither is a number, at least 1, as in ci_supervisor.py.
 # Written to that file below, so the supervisor, network and slot users all match:
 #   sudo SLOTS=4 ci-runner/install-host.sh
 SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
 SLOTS=${SLOTS//[[:space:]]/}
-if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=3; fi
+if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=5; fi
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between

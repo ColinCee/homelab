@@ -132,6 +132,13 @@ Four jobs back to back, offline:
 | Firecracker 2 vCPU, 2 at once | 378 | 18.9 s | 1.5 GB |
 | Firecracker 2 vCPU, 4 at once | 415 | 34.6 s | 3.5 GB |
 
+Four at once still added throughput and peaked at 3.5 GB, under 1 GB a job.
+That is why the runner defaults to 5 slots (from 3): most jobs are agent
+sessions waiting on the network, five jobs at that rate fit the 16 GB with the
+3 GiB reserve for the home's services, and the memory check holds a VM back
+when they do not. The load test on the host must pass at 5 before it is used
+(see [Changing the number of slots](runbooks/ci-runner.md#changing-the-number-of-slots)).
+
 The suite in one 4-vCPU VM by number of test workers: 1: 10.5 s, 2: 7.4 s,
 3: 7.0 s, 4: 6.7 s, 6: 7.4 s. About 5 s cannot be split up (Python starting,
 collecting the tests, the single TypeScript check), so more cores would barely

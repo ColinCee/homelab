@@ -272,7 +272,7 @@
         "w": 6,
         "h": 3
       },
-      "description": "Whole machine, CI VMs included. CI VMs: Firecracker VMs running, out of 3 slots, the standby included.",
+      "description": "Whole machine, CI VMs included. CI VMs: Firecracker VMs running, out of 5 slots by default, the standby included.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2366,7 +2366,7 @@
             "w": 24,
             "h": 6
           },
-          "description": "Firecracker VMs on the Beelink for every repo, out of 3 slots; one is usually a standby.",
+          "description": "Firecracker VMs on the Beelink for every repo, out of 5 slots by default; one is usually a standby.",
           "fieldConfig": {
             "defaults": {
               "color": {
