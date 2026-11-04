@@ -102,7 +102,6 @@ def post_discord(webhook_url: str, content: str) -> None:
         pass
 
 
-
 def collect_problems(
     fetch: Fetch,
     repo: str,

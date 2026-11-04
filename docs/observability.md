@@ -146,8 +146,8 @@ when only he can act. The repo is public, so `Remediate` logs states and counts
 only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret; without it `/alert` refuses and Discord is
 unaffected. Test the whole chain with Server health → `test_alert`. A stuck
-deploy goes to Discord from the deploy watchdog, and a failed one stops
-Kaizen's line.
+deploy goes to Discord from the deploy watchdog, and a failed one stops Auto
+Kaizen.
 After deploying alerting file changes, reload them with Grafana's authenticated
 `POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
 are not polled. A Grafana-only restart also reloads them.

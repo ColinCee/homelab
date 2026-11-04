@@ -63,4 +63,3 @@ def test_message_lists_problems_with_links() -> None:
     )
 
     assert "- Deploy run #1 queued for 30 min (https://x/1)" in message
-

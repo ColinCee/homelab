@@ -40,7 +40,8 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           KAIZEN_APP_ID: ${{ vars.KAIZEN_APP_ID }}
           KAIZEN_APP_KEY: ${{ secrets.KAIZEN_APP_KEY }}
-          # Shared by Grafana and the Kaizen Control room's /alert; until it is set, alerts reach Discord only.
+          # Shared by Grafana and the Kaizen Control room's /alert, which refuses the "unset" placeholder:
+          # until the secret is set, alerts reach Discord only.
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}

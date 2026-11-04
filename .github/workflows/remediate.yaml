@@ -17,10 +17,6 @@ on:
         type: string
         default: all
 
-concurrency:
-  group: remediate
-  cancel-in-progress: false
-
 permissions:
   contents: read
 

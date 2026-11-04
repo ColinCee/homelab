@@ -57,7 +57,7 @@ jobs:
             body=$(jq -n --arg s "$1" --arg k "$KEY" \
               '{status: $s, key: $k, title: "Test alert", text: "Server health test_alert: a delivery check, nothing is wrong."}')
             printf 'header = "Authorization: Bearer %s"\n' "$KAIZEN_ALERT_SECRET" |
-              curl -sS -K - -w "\nKaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert \
+              curl -sS -K - -o /dev/null -w "Kaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert \
               -H "Content-Type: application/json" --data-binary "$body"
           }
           send firing
