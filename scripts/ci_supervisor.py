@@ -54,9 +54,11 @@ API = "https://api.github.com"
 # How many VMs run at once, read from /etc/homelab-ci/slots at start-up. install-host.sh
 # writes it and makes that many slot users and taps, so the three always match. A job
 # alone gets 4 GiB and each one started beside it 2 GiB (see vm_size), so N slots use
-# up to 2 + 2N GiB; the default 3 (8 GiB) leaves the home's own services room.
+# up to 2 + 2N GiB on paper. The default 5 (12 GiB on paper) fits the 16 GiB host because
+# jobs mostly wait on the network and touch far less than their size, and the memory
+# check below holds a VM back rather than eat into the services' reserve.
 SLOTS_FILE = Path("/etc/homelab-ci/slots")
-DEFAULT_SLOTS = 3
+DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
 # A VM that has not picked up a job by now counts as idle demand again.

@@ -453,7 +453,7 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
 
 @pytest.mark.parametrize(
     ("text", "slots"),
-    [(None, 3), ("", 3), ("four\n", 3), ("-2\n", 3), ("0\n", 1), ("5\n", 5), (" 2 ", 2)],
+    [(None, 5), ("", 5), ("four\n", 5), ("-2\n", 5), ("0\n", 1), ("3\n", 3), (" 2 ", 2)],
 )
 def test_the_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
     path = tmp_path / "slots"
@@ -465,7 +465,7 @@ def test_the_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, sl
 
 def test_an_unreadable_slot_file_means_the_default(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(sup, "SLOTS_FILE", tmp_path)  # a folder: reading it fails
-    assert sup.slot_count() == 3
+    assert sup.slot_count() == 5
 
 
 def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:

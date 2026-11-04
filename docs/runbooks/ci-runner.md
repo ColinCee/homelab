@@ -88,7 +88,7 @@ also puts `node_modules` and its `package-lock.json` on the disk (the action's
 `paths`), copied rather than linked so TypeScript's incremental build info
 stays valid.
 
-There are three slots unless `/etc/homelab-ci/slots` says otherwise (see
+There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
 Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
@@ -171,13 +171,18 @@ sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f
 ```
 
-`/etc/homelab-ci/slots` holds how many VMs run at once (3 when the file is
+`/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
 missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
 and taps; the supervisor reads it when it starts, and `setup-net.sh` and
 `test-load.sh` read it too (a `SLOTS` variable wins). Change it only through
 `install-host.sh`, so the network always has a tap for every slot. With N slots
-the VMs use up to 2 + 2N GiB.
+the VMs use up to 2 + 2N GiB on paper (12 GiB for 5). A job touches far less
+than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
+and the memory check above holds a VM back before the services' reserve is
+reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
+that already has the file keeps its number: to move one from 3 to 5, follow
+[Changing the number of slots](#changing-the-number-of-slots).
 
 The GitHub token is a fine-grained token with Administration read and write (to
 create one-job registrations) and Actions read. Its repository access is the list
@@ -198,7 +203,7 @@ temporary file and renamed, so a reader never sees half of it). The Control room
 mounts the folder read-only at `/machines`. It holds only counts and repo names:
 
 ```json
-{"updated": 1793000000, "slots": 3, "in_use": 1, "standby": 1,
+{"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0}
 ```
@@ -245,14 +250,15 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
 its VMs finished:
 
-1. Write the new number: `sudo SLOTS=4 ci-runner/install-host.sh`, which also
+1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
    makes that many slot users and taps.
-2. `sudo ci-runner/tests/test-load.sh` must end with `PASS 4 slots`.
+2. `sudo ci-runner/tests/test-load.sh` must end with `PASS 5 slots`.
 3. `sudo ci-runner/tests/audit.sh` must pass.
 4. `sudo systemctl restart homelab-ci-supervisor`; it reads the number when it starts.
 
 If the load test fails, go back to the old number with
-`sudo SLOTS=3 ci-runner/install-host.sh` (your old count) and start the supervisor.
+`sudo SLOTS=3 ci-runner/install-host.sh` (your old count), start the
+supervisor, and try 4.
 
 ## Review
 

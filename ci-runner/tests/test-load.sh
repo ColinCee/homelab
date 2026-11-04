@@ -13,10 +13,10 @@ seconds=${1:-60}
 if ! [[ $seconds =~ ^[0-9]+$ ]] || ((seconds <= 15)); then echo "SECONDS must be a number over 15" >&2; exit 2; fi
 max_response=${MAX_RESPONSE:-1}
 # The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
-# explicit SLOTS wins. 3 when neither is a number, at least 1, as in ci_supervisor.py.
+# explicit SLOTS wins. 5 when neither is a number, at least 1, as in ci_supervisor.py.
 SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
 SLOTS=${SLOTS//[[:space:]]/}
-if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=3; fi
+if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=5; fi
 # vm_size in ci_supervisor.py for a job started while others run.
 export VCPUS=2 MEM_MIB=2048
 run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
