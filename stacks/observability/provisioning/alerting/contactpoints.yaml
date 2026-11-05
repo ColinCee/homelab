@@ -12,9 +12,24 @@ contactPoints:
           use_embed_description: true
           title: '{{ template "homelab.discord.title" . }}'
           message: '{{ template "homelab.discord.message" . }}'
-      # Opens an `alert` issue in Auto Kaizen through its Control room, which
-      # starts the responder; the resolve closes it. Discord gets both too.
+      # Also to Kaizen, so these alerts get a post in #alerts like the rest.
       - uid: kaizen-alert
+        type: webhook
+        disableResolveMessage: false
+        settings:
+          url: http://100.100.146.119:8090/alert
+          httpMethod: POST
+          authorization_scheme: Bearer
+          authorization_credentials: ${KAIZEN_ALERT_SECRET}
+          payload:
+            template: '{{ template "homelab.kaizen.payload" . }}'
+  # Every other alert: an `alert` issue in Auto Kaizen through its Control
+  # room, which starts the responder and keeps the alert's post in the Discord
+  # #alerts forum; the resolve closes the issue.
+  - orgId: 1
+    name: Kaizen
+    receivers:
+      - uid: kaizen-only
         type: webhook
         disableResolveMessage: false
         settings:

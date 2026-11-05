@@ -140,19 +140,25 @@ max(crowdsec_acquisition_source_hits_total{job="crowdsec"})
 ## Alerts
 
 Grafana alerting is provisioned from
-`stacks/observability/provisioning/alerting/` and currently routes to the
-`Discord Private` contact point. That contact point also posts every firing and
-resolved alert to the Kaizen Control room's `/alert`, which opens (or, for a
-repeat, comments on) an `alert` issue in the private auto-kaizen repo and closes
-it on resolve. Each new one starts Auto Kaizen's responder on GitHub's machines:
-it looks at Beelink through the `Remediate` workflow, may restart one broken
-container, opens a Kaizen task for the lasting fix, and tells Colin on Discord
-when only he can act. The repo is public, so `Remediate` logs states and counts
+`stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
+point: every firing and resolved alert goes to the Kaizen Control room's
+`/alert`, which opens (or, for a repeat, comments on) an `alert` issue in the
+private auto-kaizen repo and closes it on resolve. Each new one starts Auto
+Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
+restart one broken container, and opens a Kaizen task for the lasting fix (or to
+tune a noisy rule). The Control room keeps one post per alert in Discord's
+#alerts forum through the auto-kaizen bot (`KAIZEN_DISCORD_TOKEN` secret): its
+state tags, what the responder found, and a line per event; it mentions Colin
+only when he must act. The repo is public, so `Remediate` logs states and counts
 only; read container logs in Grafana. Grafana and the Control room share the
-`KAIZEN_ALERT_SECRET` secret; without it `/alert` refuses and Discord is
-unaffected. Test the whole chain with Server health → `test_alert`. A stuck
-deploy goes to Discord from the deploy watchdog, and a failed one stops Auto
-Kaizen.
+`KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
+`test_alert`.
+
+Kaizen cannot report its own failure, so Kaizen Watcher Stopped, Kaizen Control
+Room Down, and every no-data or evaluation-error alert also go straight to the
+`Discord Private` webhook (Discord's #uptime channel), as do the deploy
+watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A failed
+deploy stops Auto Kaizen.
 After deploying alerting file changes, reload them with Grafana's authenticated
 `POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
 are not polled. A Grafana-only restart also reloads them.
@@ -171,13 +177,15 @@ The shipped rules cover host-level pressure such as:
   for a homelab CI machine
 - **Kaizen Not Merging**: Kaizen tasks have been running or waiting for 3
   hours and nothing has merged in that time
+- **Kaizen Control Room Down**: Prometheus has not reached the Control room for
+  5 minutes, so alerts are not reaching the #alerts forum
 
 Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
 does not exist in Alloy's Unix exporter. Verify the rule's exact query in
 Prometheus when a dashboard has data but an alert does not.
 
-Discord uses the provisioned `homelab-discord` notification template in one
-embed. Threshold alerts show whatever the rule's `value` annotation holds and the
+The #uptime webhook and the Control room's `/alert` both use the provisioned
+`homelab-discord` notification template. Threshold alerts show whatever the rule's `value` annotation holds and the
 threshold duration.
 No-data and evaluation errors remain separate alerts, grouped by affected rule;
 they mean monitoring is unavailable, not that a resource threshold was crossed.
