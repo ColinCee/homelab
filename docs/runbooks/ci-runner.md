@@ -113,9 +113,12 @@ VM drops its cache once it passes a quarter of its memory, and the balloon
 device's free page reporting returns the freed pages to the host. So this counts
 what is really free, not the sizes added up. When a VM ends, the journal says how
 much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
-MiB of Y`), to size VMs by kind of job. A job without the memory stays queued and is tried again on the
+MiB of Y`), to size VMs by kind of job. No VM starts either while tasks waited on the disk for
+over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
+a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
+or the disk stays queued and is tried again on the
 next poll; the log says so once per job. A standby gives way first: none boots
-while a job waits for memory, and one waiting for another repo is stopped to
+while a job waits, and one waiting for another repo is stopped to
 make room.
 
 Only Colin's private repositories the token can see are served (its repository
@@ -163,7 +166,7 @@ GitHub-hosted runners and take it off the token's repository access.
   registered for the repo of the last light job (kept in
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
   first and last steps start in seconds. It gives way first: none boots while a job
-  waits for memory, and an idle one is stopped for another repo's light job with no
+  waits for memory or the disk, and an idle one is stopped for another repo's light job with no
   light slot free or for a build job waiting for memory. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
@@ -256,7 +259,7 @@ running a job and the ones waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
+jobs not started because that memory would have dipped into the services' reserve, or the disk was busy. A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
 Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
