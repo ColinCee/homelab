@@ -93,6 +93,12 @@ Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
+Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's gate, merge and Watcher,
+which moved off GitHub's paid machines on 5 Nov). They run in five light slots of their own, numbered after the
+build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, 2 GiB, no cache disk, no standby, a 3-hour
+timeout (a merge waits for CI). A light VM registers without `homelab-fc`, so it never takes a build job, and a
+merge waiting on CI never takes the slot that CI needs. Builds get memory first.
+
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
 services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
@@ -181,7 +187,8 @@ journalctl -u homelab-ci-supervisor -f
 missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
 and taps; the supervisor reads it when it starts, and `setup-net.sh` and
-`test-load.sh` read it too (a `SLOTS` variable wins). Change it only through
+`test-load.sh` read it too (a `SLOTS` variable wins). `/etc/homelab-ci/light-slots`
+works the same way (`LIGHT_SLOTS`, 5 by default), and the users and taps cover both. Change it only through
 `install-host.sh`, so the network always has a tap for every slot. With N slots
 the VMs use up to 2 + 2N GiB on paper (12 GiB for 5). A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
@@ -210,7 +217,7 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
- "cache_disks": ["ColinCee/example"], "github_ok": true,
+ "light_slots": 5, "light_in_use": 2, "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0}
 ```
 

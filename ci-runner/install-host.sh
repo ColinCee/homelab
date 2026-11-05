@@ -16,6 +16,11 @@ source "$here/versions.env"
 SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
 SLOTS=${SLOTS//[[:space:]]/}
 if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=5; fi
+# Light slots (small VMs for light jobs, numbered after the build slots): LIGHT_SLOTS if
+# given, else /etc/homelab-ci/light-slots, else 5, as in ci_supervisor.py; 0 is none.
+LIGHT_SLOTS=${LIGHT_SLOTS:-$(cat /etc/homelab-ci/light-slots 2>/dev/null || true)}
+LIGHT_SLOTS=${LIGHT_SLOTS//[[:space:]]/}
+if [[ $LIGHT_SLOTS =~ ^[0-9]+$ ]]; then LIGHT_SLOTS=$((10#$LIGHT_SLOTS)); else LIGHT_SLOTS=5; fi
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between
@@ -37,8 +42,8 @@ if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${F
   install -o root -g root -m 0755 "$rel/jailer-${FIRECRACKER_VERSION}-x86_64" /usr/local/bin/jailer
 fi
 
-# One unprivileged user per slot; the jailer drops to it.
-for ((n = 0; n < SLOTS; n++)); do
+# One unprivileged user per slot, light slots too; the jailer drops to it.
+for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
   id "fc-slot$n" >/dev/null 2>&1 ||
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "fc-slot$n"
 done
@@ -61,6 +66,7 @@ fi
 # repository access. Written before the network, which reads the slot count.
 install -d -o root -g root -m 0700 /etc/homelab-ci
 echo "$SLOTS" > /etc/homelab-ci/slots
+echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
 
 install -d -o root -g root -m 0755 "$dest" "$dest/net"
 install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
@@ -81,4 +87,4 @@ if $was_running; then
   systemctl start homelab-ci-supervisor.service
 fi
 
-echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots, network up."
+echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, network up."
