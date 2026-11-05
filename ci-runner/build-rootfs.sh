@@ -2,7 +2,7 @@
 # Build the microVM root filesystem and copy Ubuntu's kernel next to it:
 #   sudo ci-runner/build-rootfs.sh
 # Writes /var/lib/homelab-ci/images/{rootfs.ext4,vmlinuz}, root-owned and
-# read-only; each job boots a private copy. Rebuild after a kernel upgrade.
+# read-only; each job boots a snapshot of it (vm-disks.sh). Rebuild after a kernel upgrade.
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
@@ -45,6 +45,7 @@ rm -f "$tmp/root/.dockerenv"
 install -d -o root -g root -m 0755 /var/lib/homelab-ci "$images"
 truncate -s "$size" "$tmp/rootfs.ext4"
 mkfs.ext4 -q -F -L rootfs -d "$tmp/root" "$tmp/rootfs.ext4"
+# install replaces the file (a new inode): running VMs keep reading the old one.
 install -o root -g root -m 0644 "$tmp/rootfs.ext4" "$images/rootfs.ext4"
 install -o root -g root -m 0644 "/boot/vmlinuz-$(uname -r)" "$images/vmlinuz"
 

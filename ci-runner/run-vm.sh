@@ -22,6 +22,8 @@ uid=$(id -u "$user")
 gid=$(id -g "$user")
 chroot="$base/firecracker/$id/root"
 cgroup="/sys/fs/cgroup/firecracker/$id"
+# shellcheck source=ci-runner/vm-disks.sh
+source "$(dirname "$0")/vm-disks.sh"
 
 # One VM per slot at a time.
 install -d -m 0700 /run/homelab-ci
@@ -38,28 +40,25 @@ cleanup() {
     echo 1 > "$cgroup/cgroup.kill" 2>/dev/null || true
     for _ in $(seq 1 50); do rmdir "$cgroup" 2>/dev/null && break; sleep 0.1; done
   fi
+  detach_disks "$slot" || true
   rm -rf "${base:?}/firecracker/$id"
 }
 cleanup
 trap cleanup EXIT
 
-# Copy a disk image straight to the disk (no page cache), skipping zeros. A
-# buffered copy leaves gigabytes for the kernel to write out 20 to 50 s later,
-# while the VMs boot, and the services' own disk writes (Grafana's database)
-# queue behind it: Grafana's health check then answers 503.
-copy_image() { dd if="$1" of="$2" bs=1M oflag=direct conv=sparse status=none; }
-
 # Fill the chroot as root, then hand it over, so the slot user cannot plant
 # links for root to follow.
 install -d -o root -g root -m 0700 "$chroot"
-copy_image "$images/rootfs.ext4" "$chroot/rootfs.ext4"
+# The disks are snapshots of the images (vm-disks.sh), not copies: copying the 8 GB
+# image took up to 10 minutes with ten VMs starting at once (5 Nov).
+attach_disk "$slot" root "$images/rootfs.ext4" "$chroot/rootfs.ext4"
 cp "$images/vmlinuz" "$chroot/vmlinuz"
 install -m 0600 "$metadata" "$chroot/metadata.json"
-# The repo's cache disk, if the supervisor names one: a private copy, like the root
+# The repo's cache disk, if the supervisor names one: a snapshot, like the root
 # disk, so the job can write to it and nothing it writes reaches the next job.
 cache_drive=""
 if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
-  copy_image "$CACHE_IMAGE" "$chroot/cache.ext4"
+  attach_disk "$slot" cache "$CACHE_IMAGE" "$chroot/cache.ext4"
   cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": false}'
 fi
 
