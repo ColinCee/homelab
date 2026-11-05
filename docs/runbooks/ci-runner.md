@@ -107,8 +107,12 @@ merge waiting on CI never takes the slot that CI needs. Builds get memory first.
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
 services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
-touches far less than its size, so this counts what is really free, not the
-sizes added up. A job without the memory stays queued and is tried again on the
+touches far less than its size and gives file cache back: `ci-trim-cache` in the
+VM drops its cache once it passes a quarter of its memory, and the balloon
+device's free page reporting returns the freed pages to the host. So this counts
+what is really free, not the sizes added up. When a VM ends, the journal says how
+much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
+MiB of Y`), to size VMs by kind of job. A job without the memory stays queued and is tried again on the
 next poll; the log says so once per job. A standby gives way first: none boots
 while a job waits for memory, and one waiting for another repo is stopped to
 make room.
@@ -134,7 +138,12 @@ GitHub-hosted runners and take it off the token's repository access.
   a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
   (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
   page cache all VMs share, and its writes go to a deleted file thrown away
-  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
+  with everything the job wrote. A starting VM covers a queued job of its repo and
+  label only until GitHub shows its runner with a job, for at most 2 minutes, so a
+  second job of the same kind gets its own VM within a poll. The supervisor runs from
+  the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
+  `scripts/ci_supervisor.py` on the Beelink.
+  However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
@@ -259,7 +268,7 @@ line, so one VM cannot write into another's. Folder 0750 and files 0640, root on
 sessions can carry private notes. A file stops growing at 30 MB, and files not written to
 for 30 days are deleted. A failed save is logged once and the console keeps being read.
 
-Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
+Re-run `build-rootfs.sh` after a change under `ci-runner/rootfs/` and after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
 re-run `install-host.sh`, `build-rootfs.sh` and the audit.

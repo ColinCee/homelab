@@ -3,8 +3,14 @@
 The [deploy workflow](../../.github/workflows/deploy.yaml) runs on Beelink for
 stack, script, or workflow changes pushed to protected `main`. Actions resets
 the server checkout to the triggering commit, renders `.env` files from an
-explicit secret allowlist, and invokes the shared deployment command. Compose
-leaves unchanged containers running. CI and deployment are separate workflows;
+explicit secret allowlist, and invokes the shared deployment command for the
+stacks whose files changed since the last full deploy. A change to `scripts/`
+or the deploy workflow, or an unknown last deploy, deploys every stack. The
+last fully deployed commit is kept in `~/.local/state/homelab/last-deployed` and
+moves only when every selected stack deploys, so a failed deploy is retried next
+time. A changed GitHub secret reaches a stack only when that stack next deploys:
+run `scripts/deploy.sh <stack>` by hand, or delete the marker so the next push
+deploys everything. Compose leaves unchanged containers running. CI and deployment are separate workflows;
 require CI on pull requests before merging.
 
 A deploy that changes the Control room's pinned image also reports how many
