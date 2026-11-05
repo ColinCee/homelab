@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -98,6 +99,45 @@ def discover_stack_plans(
     if errors:
         raise DeploymentInputError("\n".join(errors))
     return tuple(plans)
+
+
+# Files every stack's deploy depends on: a change to any of them deploys all stacks.
+SHARED_PATHS = ("scripts/", ".github/workflows/deploy.yaml")
+
+
+def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None:
+    """Name the stacks with files changed between ``since`` and HEAD.
+
+    None means deploy every stack: no earlier deploy is known, git does not
+    know the commit, or shared deploy files changed. Deleted stacks are left
+    out, as deploys never remove a stack.
+    """
+    if not since:
+        return None
+    listed = subprocess.run(
+        ["git", "diff", "--name-only", since, "HEAD", "--"],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if listed.returncode != 0:
+        return None
+    paths = listed.stdout.splitlines()
+    if any(path.startswith(SHARED_PATHS) for path in paths):
+        return None
+    names = {
+        path.split("/")[1] for path in paths if path.startswith("stacks/") and path.count("/") >= 2
+    }
+    return tuple(
+        sorted(name for name in names if (repo_root / "stacks" / name / "compose.yaml").is_file())
+    )
+
+
+def head_commit(repo_root: Path) -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo_root, capture_output=True, text=True, check=True
+    ).stdout.strip()
 
 
 def discover_timers(stack_dir: Path) -> tuple[Path, ...]:
@@ -367,17 +407,65 @@ def main() -> int:
         default=os.environ.get("DEPLOY_READINESS_TIMEOUT_SECONDS", "120"),
         help="Compose readiness wait in seconds (default: 120)",
     )
+    parser.add_argument(
+        "--last-deployed",
+        type=Path,
+        help="file holding the last fully deployed commit: deploy only stacks changed since"
+        " it (all when unknown or shared deploy files changed), and record HEAD there"
+        " once every selected stack deploys",
+    )
     parser.add_argument("stacks", nargs="*", help="stack names (default: all discovered stacks)")
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
+    return run(
+        repo_root,
+        tuple(args.stacks),
+        readiness_timeout=args.readiness_timeout,
+        last_deployed=args.last_deployed,
+    )
+
+
+def run(
+    repo_root: Path,
+    stacks: Sequence[str],
+    *,
+    readiness_timeout: int = 120,
+    last_deployed: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+) -> int:
+    """Deploy the given, changed or all stacks; exit code 0 ok, 1 failed, 2 bad input."""
+    selected: tuple[str, ...] | None = tuple(stacks) or None
+    head = ""
+    if last_deployed is not None and selected is None:
+        head = head_commit(repo_root)
+        since = last_deployed.read_text().strip() if last_deployed.is_file() else None
+        selected = changed_stacks(repo_root, since)
+        print(
+            "Deploying " + ("all stacks" if selected is None else ", ".join(selected) or "nothing")
+        )
 
     try:
-        plans = discover_stack_plans(repo_root, tuple(args.stacks) or None)
-        report = deploy(repo_root, plans, readiness_timeout=args.readiness_timeout)
+        plans = discover_stack_plans(repo_root, selected) if selected != () else ()
+        report = (
+            deploy(repo_root, plans, readiness_timeout=readiness_timeout, runner=runner)
+            if plans
+            else DeploymentReport((), {})
+        )
     except (DeploymentInputError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 2
-    return 1 if report.failed else 0
+
+    if output := os.environ.get("GITHUB_OUTPUT"):
+        with open(output, "a", encoding="utf-8") as file:
+            file.write(f"deployed={json.dumps(list(report.completed))}\n")
+    if report.failed:
+        return 1
+    if head and last_deployed is not None:
+        last_deployed.parent.mkdir(parents=True, exist_ok=True)
+        temporary = last_deployed.with_name(f".{last_deployed.name}.tmp")
+        temporary.write_text(head + "\n")
+        os.replace(temporary, last_deployed)
+    return 0
 
 
 if __name__ == "__main__":
