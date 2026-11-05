@@ -106,8 +106,8 @@ Prometheus receives metrics from:
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
-  only while it runs a VM, so counting them counts running VMs, the standby
-  included. Its relabel keeps only those series, so there is no
+  only while it runs a VM, so counting them counts running VMs, the ones
+  waiting ready included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`.
 - **CrowdSec:** direct scrape (`job="crowdsec"`)
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`

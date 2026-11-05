@@ -554,6 +554,7 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "standby": 1,
         "light_slots": 0,
         "light_in_use": 0,
+        "light_standby": 0,
         "cache_disks": ["octo/agent", "octo/widgets"],
         "github_ok": True,
         "mem_available_mib": 9000,
@@ -1175,6 +1176,92 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
     assert asked == [f"fc-{slot}"]
 
 
+def test_a_free_light_slot_gets_a_ready_light_vm_for_the_last_light_jobs_repo(
+    pools, monkeypatch
+) -> None:
+    queue, started = pools
+    queue(build=0, light=1)
+    state = sup.State(slots=2, light_slots=2)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    state.last_light_repo = "o/ok"  # as launch remembers it
+    assert started == [(2, sup.LIGHT_LABEL)]  # the job; one slot left free
+
+    queue(build=0, light=0)
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert started[-1] == (3, sup.LIGHT_LABEL) and state.launches[3].standby
+    status = sup.status(state, 2.0, github_ok=True, mem_available=9000)
+    assert (status["in_use"], status["standby"]) == (0, 0)
+    assert (status["light_in_use"], status["light_standby"]) == (1, 1)
+
+    sup.tick(None, state, ["o/ok"], 4.0)  # type: ignore[arg-type]
+    assert len(started) == 2  # one is enough
+
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
+    del state.launches[3]
+    sup.tick(None, state, ["o/ok"], 6.0)  # type: ignore[arg-type]
+    assert len(started) == 2
+
+
+def test_a_light_job_of_its_repo_takes_the_light_standby(pools) -> None:
+    queue, started = pools
+    queue(build=0, light=1)
+    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
+    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
+    assert started == []  # left to the ready VM
+
+
+def test_the_light_standby_gives_way_to_another_repos_light_job(pools, monkeypatch) -> None:
+    queue, started = pools
+    queue(build=0, light=1)
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(f"{run.repo} {why}")
+    )
+    state = sup.State(slots=1, light_slots=1, last_light_repo="o/other")
+    state.launches[1] = sup.Launch(1, "o/other", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok", "o/other"], 60.0)  # type: ignore[arg-type]
+    assert stopped == ["o/other is in the way of a queued job"]
+    assert started == []  # the job takes the slot once the standby has gone
+
+
+def test_the_light_standby_stays_out_of_a_build_jobs_way_for_a_slot(pools, monkeypatch) -> None:
+    queue, _ = pools
+    queue(build=1, light=0)
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
+    state.launches[0] = _launch(0, False)  # the build slot is busy
+    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
+    assert stopped == []  # a build cannot use a light slot
+
+
+def test_the_light_standby_gives_its_memory_to_a_build_and_never_boots_while_one_waits(
+    host, monkeypatch
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    state = sup.State(slots=2, light_slots=2, last_light_repo="o/ok")
+    state.launches[2] = sup.Launch(2, "o/ok", 2, "fc-2", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    queue(jobs=1, free_mib=3072 + 1024)  # a free build slot, but not the memory
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert stopped == ["is in the way of a job waiting for memory"]
+    assert started == []  # nor another light standby in the free light slot
+
+
+def test_the_last_light_jobs_repo_is_kept_and_polled_every_time(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    assert sup.recalled_last_light_repo() == ""
+    sup.remember(sup.LAST_LIGHT_REPO_FILE, "a/k\n")
+    assert sup.recalled_last_light_repo() == "a/k"
+    state = sup.State(last_light_repo="a/k", polled={"a/k": 0.0, "a/q": 0.0})
+    assert sup.due(["a/k", "a/q"], state, 30.0) == ["a/k"]
+
+
 # The real one, before the fixture below replaces it in every test.
 START_VM = sup.start_vm
 
@@ -1251,3 +1338,26 @@ def test_stale_runners_skip_the_vms_still_running() -> None:
 
     sup.remove_stale_runners(Runners(), ["o/ok"], keep=["fc-2-5"])  # type: ignore[arg-type]
     assert Runners.deleted == ["1"]
+
+
+@pytest.mark.parametrize("label", ["", sup.LIGHT_LABEL])
+def test_a_standby_that_took_a_job_is_recorded_as_a_job_vm(vms, monkeypatch, label) -> None:
+    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"), True, label=label)
+    sup.write_status(run.record, sup.record(run))
+    monkeypatch.setattr(sup, "is_idle", lambda gh, r: False)
+    state = sup.State(launches={0: run})
+    sup.reap(None, state, 60.0, {}, ["o/ok"])  # type: ignore[arg-type]
+    assert json.loads(run.record.read_text())["standby"] is False
+    assert ("o/ok" in state.used) is (label == "")  # only a build job keeps its repo polled
+
+
+def test_no_light_standby_boots_while_the_disk_is_busy(pools, monkeypatch) -> None:
+    queue, started = pools
+    queue(build=0, light=0)
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 90.0)
+    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == []
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert started == [(1, sup.LIGHT_LABEL)]
