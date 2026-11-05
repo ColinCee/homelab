@@ -21,7 +21,8 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
+(`bwrap`), socat and Docker with its buildx and compose
 plugins (the engine starts on a job's first `docker` call, so `docker build`,
 `docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
@@ -30,7 +31,8 @@ Chromium needs are installed too, so a job runs `playwright install chromium`
 and needs no `install-deps` step. The actions the CI repos use
 (`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
 does not download them; a tag that has moved on is downloaded as usual until
-the list is refreshed and the image rebuilt.
+the list is refreshed and the image rebuilt. A change to the image's tools or
+actions reaches jobs only once `build-rootfs.sh` is re-run on the host.
 
 The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
 checkout, then one step that runs `uv sync --locked --no-install-project` and
@@ -140,7 +142,8 @@ GitHub-hosted runners and take it off the token's repository access.
   label only until GitHub shows its runner with a job, for at most 2 minutes, so a
   second job of the same kind gets its own VM within a poll. The supervisor runs from
   the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
-  `scripts/ci_supervisor.py` on the Beelink.
+  `scripts/ci_supervisor.py` on the Beelink (see
+  [Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)).
   However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
@@ -243,7 +246,8 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "light_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
- "mem_available_mib": 9216, "held_for_memory": 0}
+ "mem_available_mib": 9216, "held_for_memory": 0,
+ "restarting_since": null, "restart_reason": ""}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
@@ -252,7 +256,9 @@ running a job and the ones waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
+jobs not started because that memory would have dipped into the services' reserve. While a restart waits for
+running jobs, `restarting_since` is when it was asked for and `restart_reason` who asked and why (see
+[Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)). A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
 Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
@@ -292,10 +298,11 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
+  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`, gh, gitleaks,
+  `bwrap`, socat) as the runner user with the job's `PATH`,
   then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
-  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
+  (`sudo systemctl stop homelab-ci-supervisor`, which waits for running jobs) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
@@ -314,10 +321,35 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   snapshots of the images instead of copies (5 Nov), and the loaded timings
   start when the VMs start.
 
+## Changing the Beelink while jobs run
+
+Every change goes in through `sudo REASON="<who>: <why>" ci-runner/install-host.sh`
+from a checkout of `main`. Never stop or restart the supervisor directly while jobs run,
+and never leave a loop waiting to do it from your own connection: on 5 Nov three
+restarts cut off 20 running jobs, and one waiting loop outlived the session that
+thought it had stopped it.
+
+- **Without a restart:** `run-vm.sh`, `vm-disks.sh`, `stop-vms.sh`, Firecracker and
+  a rebuilt VM image (`build-rootfs.sh`) go in while jobs run. New VMs get them;
+  running ones keep what they started with.
+- **With a restart:** a change to the supervisor, the network rules, the systemd
+  units or the slot counts restarts the supervisor. A restart, from `install-host.sh`
+  or `systemctl stop`/`restart`, starts no new VM, stops a ready VM that has no job,
+  and waits for running jobs to finish, up to 20 minutes. Only then does the change
+  go in, ahead of every queued job; those wait at GitHub and start once it is back.
+  Anything still running after 20 minutes is cut off, and the log says how many
+  (`restarting after Ns: N jobs cut off`).
+- **One at a time:** a second `install-host.sh` waits for the first and names it.
+- **Seen:** the Control room shows the restart and its reason while it waits
+  (from `machines.json`, above).
+- **The first install of this** finds a supervisor that cannot wait yet: it waits for
+  a moment with no job running before the restart. A host shutdown or reboot does not
+  wait for jobs.
+
 ## Changing the number of slots
 
-With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
-its VMs finished:
+With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`, which
+waits up to 20 minutes for running jobs to finish) and its VMs finished:
 
 1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
    makes that many slot users and taps.
