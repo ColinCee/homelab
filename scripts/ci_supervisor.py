@@ -505,7 +505,8 @@ def launch(
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            # Its errors and each VM's memory peak go to the journal.
+            stderr=None,
             env={
                 **os.environ,
                 "VCPUS": str(vcpus),
