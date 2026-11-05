@@ -80,10 +80,15 @@ templates:
   - orgId: 1
     name: homelab-kaizen
     # Kaizen's /alert takes a status, a key naming the alert group (so a repeat
-    # finds its issue), a title, and the Discord wording as text.
+    # finds its issue), a title, the Discord wording as text, and the first
+    # alert's short fields for its #alerts post (rules.yaml annotations).
     template: |
       {{ define "homelab.kaizen.payload" -}}
       {{ $title := tmpl.Exec "homelab.discord.title" . -}}
       {{ $text := tmpl.Exec "homelab.discord.message" . -}}
-      {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text | data.ToJSON }}
+      {{ $a := index .Alerts 0 -}}
+      {{ $post := coll.Dict "name" (or $a.Labels.rulename $a.Labels.alertname) "measure" $a.Annotations.measure
+        "trigger" $a.Annotations.trigger "value" $a.Annotations.value "chart" $a.Annotations.chart
+        "chart_line" $a.Annotations.chart_line "grafana" $a.GeneratorURL -}}
+      {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text "post" $post | data.ToJSON }}
       {{- end }}

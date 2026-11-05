@@ -23,7 +23,7 @@ Loki logs. Secrets are rendered from GitHub on each deploy.
 Retention is 7 daily, 4 weekly and 6 monthly snapshots; each run also prunes
 and verifies the repository. On Sundays the verification is a deep check that
 downloads and verifies every stored byte (`restic check --read-data`); a
-failure fails the run and so raises **Backup Missed**. Force one with
+failure fails the run and so raises **Nightly backup didn't run**. Force one with
 `docker exec -e DEEP_CHECK=1 backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1'`.
 A passing deep check also writes
 `/var/lib/homelab-metrics/backup-deep-check.prom`, which the weekly server
@@ -76,7 +76,7 @@ R2 is free up to 10 GB and has no server-side quota, so the script enforces
 the limit itself. Before uploading it adds the repository's stored size to
 the size of the pending changes; if the total would pass 8 GB
 (`MAX_REPO_BYTES`) it uploads nothing, logs `backup SKIPPED`, and the run
-counts as failed, so **Backup Missed** fires. **Backup Storage High** warns
+counts as failed, so **Nightly backup didn't run** fires. **Backup storage nearly full** warns
 earlier, at 5 GB. The bucket's token is scoped to this bucket and nothing
 else writes to it.
 
@@ -94,7 +94,7 @@ docker exec backup restic ls latest /data/home-assistant
 ```
 
 The redirect sends a manual run's output to the container log. A manual run
-also updates the metric, so it clears **Backup Missed** like a scheduled run.
+also updates the metric, so it clears **Nightly backup didn't run** like a scheduled run.
 
 Without SSH, run the **Server health** workflow with `backup_now` ticked: it
 runs the same command, then reports, printing the backup log if it failed.

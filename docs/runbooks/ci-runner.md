@@ -21,8 +21,9 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
-plugin (no daemon, so `docker compose config` works but containers do not)
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+plugins (the engine starts on a job's first `docker` call, so `docker build`,
+`docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
 needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
 Chromium needs are installed too, so a job runs `playwright install chromium`
@@ -41,7 +42,7 @@ in [CI runner performance](../ci-runner-performance.md).
 
 Each VM gets its repo's **cache disk** at `/cache`: uv's and npm's caches and
 the Python environment from the repo's last green push to its default branch.
-Each VM gets its own copy (about 0.5 s, before boot, like the root disk), so a
+Each VM gets a snapshot of it (`ci-runner/vm-disks.sh`, like the root disk), so a
 job can install into it but nothing it writes outlives the VM, and a branch can
 never change what the next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
 `npm_config_cache` (`/cache/npm`) and `UV_PROJECT_ENVIRONMENT` (`/cache/venv`)
@@ -59,14 +60,17 @@ How it is made, without the host running any of the repo's code:
        paths: web/node_modules web/package-lock.json # optional workspace paths
    ```
 
-   It tars every readable top-level folder of `/cache` (not `lost+found`) and
-   the given paths, and fails the job rather than upload an archive bigger than
+   It tars every readable top-level folder of `/cache` (not `lost+found`, nor
+   one a given path starts with: the disk holds the last copy of `web/` there)
+   and the given paths, and fails the job rather than upload an archive bigger than
    the supervisor takes.
 2. The supervisor checks for a newer one every minute, takes it only if its run
    was a successful push to the default branch, unpacks it (plain files,
-   folders and links only, nothing outside the folder) and builds
+   folders and links only, nothing outside the folder; a file or link held
+   twice takes its later entry) and builds
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
-   to others. VMs started after that use it.
+   to others. VMs started after that use it. An artifact that fails to unpack
+   is skipped until a newer one comes.
 
 A job working on another served repo's code can ask for that repo's disk with
 one extra label, `fc-cache-<owner>--<name>` in lowercase:
@@ -125,17 +129,21 @@ GitHub-hosted runners and take it off the token's repository access.
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 2
   seconds (unchanged answers are free) for queued jobs with the label and boots
-  a VM for each, up to two at once. The VM's root filesystem is a private copy, written straight to the disk past the page cache, and deleted with everything the
-  job wrote. However the job ends, the VM ends, within seconds. A VM left
+  a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
+  (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
+  page cache all VMs share, and its writes go to a deleted file thrown away
+  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  repo of the last job (kept in `/var/lib/homelab-ci/last-repo`, so a restart
-  puts it back there), so the next job there starts in about a
+  repo and cache label of the last build job, with that label's cache disk (both
+  kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), so
+  the next job asking for the same starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
-  free slot; an idle standby is replaced every 45 minutes, and stopped if its
+  free slot. A build job wanting another repo or label, with no slot free, stops
+  it; an idle standby is replaced every 45 minutes, and stopped if its
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
   default); 2 was measured and not worth its RAM (see the performance doc).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
@@ -241,6 +249,14 @@ else is dropped unlogged. A VM's entry goes when it ends:
  "lines": [{"task": 105, "who": "builder", "at": 1792999990, "heard": 1792999998, "text": "runs the tests (uv run pytest -q)"}]}
 ```
 
+The same reader saves each `KAIZEN-SESSION 1 <JSON object>` line (printable ASCII only)
+from an auto-kaizen VM to `sessions/<runner name>.jsonl` in that folder: the agents'
+whole sessions, for the Control room's live chat page (auto-kaizen's
+`docs/live-session.md`). The file is named by the VM the line came from, never by the
+line, so one VM cannot write into another's. Folder 0750 and files 0640, root only, since
+sessions can carry private notes. A file stops growing at 30 MB, and files not written to
+for 30 days are deleted. A failed save is logged once and the console keeps being read.
+
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
@@ -258,7 +274,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
+  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
+  then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
   (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
@@ -275,8 +292,9 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
   3 to 5 slots, with 5 failed requests in some runs. With that fixed, Grafana
   still answered 503 20 to 50 s after the VMs started, at any slot count, most
-  likely while the kernel wrote out the image copies; they now skip the page
-  cache, and the loaded timings start with the copies.
+  likely while the kernel wrote out the image copies. VMs now boot from
+  snapshots of the images instead of copies (5 Nov), and the loaded timings
+  start when the VMs start.
 
 ## Changing the number of slots
 

@@ -1,0 +1,12 @@
+# Docker's engine, started by docker.socket on a job's first `docker` call.
+[Unit]
+Description=Docker engine
+Requires=docker.socket
+After=docker.socket
+
+[Service]
+ExecStart=/usr/local/bin/dockerd -H fd://
+Delegate=yes
+KillMode=process
+LimitNOFILE=infinity
+TasksMax=infinity

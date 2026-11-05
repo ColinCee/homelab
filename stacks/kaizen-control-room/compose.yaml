@@ -1,6 +1,6 @@
 services:
   control-room:
-    image: ghcr.io/colincee/kaizen-control-room:latest@sha256:2475e676930d311c39fe4c2ded2012e208d556e4e1f2285531a35ba0133e812e
+    image: ghcr.io/colincee/kaizen-control-room:latest@sha256:dd6902a18f302ae1a250978ed6a650122f79a8d60a497b9c7e536eec97c9250e
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -17,15 +17,33 @@ services:
       KAIZEN_APP_KEY_FILE: /run/secrets/kaizen_app_key
       # Grafana's alerts come in on /alert with this secret (auto-kaizen src/kaizen/alert.py).
       KAIZEN_ALERT_SECRET_FILE: /run/secrets/kaizen_alert_secret
+      # The auto-kaizen Discord bot keeps one post per alert in the #alerts forum, and mentions Colin only when he must act.
+      KAIZEN_DISCORD_TOKEN_FILE: /run/secrets/kaizen_discord_token
+      KAIZEN_ALERTS_FORUM: "1567861139142877295"
+      KAIZEN_DISCORD_COLIN: "124131392207454208"
+      # Number alerts' charts, from Prometheus over the network below (auto-kaizen src/kaizen/chart.py).
+      KAIZEN_PROMETHEUS: http://prometheus:9090
     secrets:
       - kaizen_app_key
       - kaizen_alert_secret
+      - kaizen_discord_token
+
+    networks:
+      - default
+      - kaizen-prometheus
+
+# Shared with the observability stack's Prometheus, which joins it. Made here, as this stack deploys first.
+networks:
+  kaizen-prometheus:
+    name: kaizen-prometheus
 
 secrets:
   kaizen_app_key:
     environment: KAIZEN_APP_KEY
   kaizen_alert_secret:
     environment: KAIZEN_ALERT_SECRET
+  kaizen_discord_token:
+    environment: KAIZEN_DISCORD_TOKEN
 
 volumes:
   data:

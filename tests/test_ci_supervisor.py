@@ -2,6 +2,7 @@ import email.message
 import http.client
 import io
 import json
+import os
 import tarfile
 import threading
 from typing import ClassVar
@@ -220,6 +221,19 @@ def test_the_cache_unpacker_refuses_paths_outside_its_folder(tmp_path) -> None:
         sup.safe_member(member, str(tmp_path))
 
 
+def test_the_cache_unpacker_refuses_a_hard_link_out_through_a_symlink(tmp_path) -> None:
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "victim").write_text("host file")
+    (root / "a").symlink_to("../outside")  # as if unpacked from the same archive
+    link = tarfile.TarInfo("h")
+    link.type, link.linkname = tarfile.LNKTYPE, "a/victim"
+
+    with pytest.raises(tarfile.FilterError):
+        sup.safe_member(link, str(root))
+
+
 def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) -> None:
     check = sup.size_capped(100)
     small, big = tarfile.TarInfo("cache/a"), tarfile.TarInfo("cache/b")
@@ -228,6 +242,57 @@ def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) ->
     check(small, str(tmp_path))
     with pytest.raises(tarfile.FilterError):
         check(big, str(tmp_path))
+
+
+def _tar(*members: tuple[str, bytes | str]) -> bytes:
+    """A tar of files (bytes content) and hard links (str target), in order."""
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w") as tar:
+        for name, body in members:
+            info = tarfile.TarInfo(name)
+            if isinstance(body, str):
+                info.type, info.linkname = tarfile.LNKTYPE, body
+                tar.addfile(info)
+            else:
+                info.size = len(body)
+                tar.addfile(info, io.BytesIO(body))
+    return out.getvalue()
+
+
+def test_the_cache_unpacker_takes_the_later_entry_of_a_path_held_twice(tmp_path) -> None:
+    # servo's cache, 5 Nov: web/node_modules twice, the second time with a hard link onto
+    # a file the first had unpacked, and tarfile tried to seek back in the stream.
+    archive = _tar(
+        ("web/esbuild/bin/esbuild", b"js shim"),
+        ("web/linux-x64/esbuild", b"binary"),
+        ("web/esbuild/bin/esbuild", "web/linux-x64/esbuild"),
+    )
+
+    sup.unpack_cache(io.BytesIO(archive), tmp_path)
+
+    assert (tmp_path / "web/esbuild/bin/esbuild").read_bytes() == b"binary"
+
+
+def test_a_cache_artifact_that_fails_to_unpack_is_not_tried_again(caches, monkeypatch) -> None:
+    artifact = _artifact(7, "main", "2026-11-05T09:56:00Z")
+    artifact["workflow_run"]["id"] = 70
+    run = {"id": 70, "status": "completed", "event": "push", "conclusion": "success"}
+    run["head_branch"] = "main"
+    downloads: list[str] = []
+
+    class FakeGitHub:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            return {"artifacts": [artifact]} if "artifacts?" in path else run
+
+        def download(self, path: str, dest, limit: int) -> None:
+            downloads.append(path)
+            dest.write_bytes(b"not a zip")
+
+    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
+    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
+
+    assert len(downloads) == 1
+    assert not sup.cache_image("octo/broken").exists()
 
 
 def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
@@ -406,9 +471,11 @@ def test_a_poll_asks_only_a_few_quiet_repos_the_longest_unasked_first(
 
 def test_after_a_restart_the_standby_goes_where_the_last_job_ran(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
-    assert sup.recalled_last_repo() == ""
-    sup.remember_last_repo("a/y")
-    last = sup.recalled_last_repo()
+    assert sup.recalled_last_job() == ("", "")
+    sup.remember_last_job("a/y", "fc-cache-a--z")
+    assert sup.recalled_last_job() == ("a/y", "fc-cache-a--z")
+    sup.remember_last_job("a/y", "")
+    last, _ = sup.recalled_last_job()
     assert last == "a/y"
     repos = ["a/x", "a/y", "a/z"]
     state = sup.State(used={last})
@@ -580,6 +647,62 @@ def test_the_console_reader_keeps_the_last_valid_line_and_drops_over_long_ones()
     sup.read_console(console, kept.append)
     assert [line["at"] for line in kept] == [1792999990, 1793000005]
     assert console.closed
+
+
+EVENT = b'{"kind":"text","at":1792999990,"text":"Running the tests"}'
+
+
+def test_session_events_are_saved_in_order_beside_live_lines(tmp_path) -> None:
+    session = tmp_path / "sessions" / "fc-0-1.jsonl"
+    console = io.BytesIO(
+        b"KAIZEN-SESSION 1 "
+        + EVENT
+        + b"\r\n"
+        + LIVE
+        + b"KAIZEN-SESSION 1 not json\n"
+        + b'KAIZEN-SESSION 1 {"text":"caf\xc3\xa9"}\n'  # not ASCII
+        + b'KAIZEN-SESSION 1 {"a":1}\n'
+    )
+    kept: list[dict] = []
+    sup.read_console(console, kept.append, session)
+
+    assert session.read_bytes() == EVENT + b'\n{"a":1}\n'
+    assert len(kept) == 1
+
+
+def test_a_session_file_stops_growing_at_its_cap(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "SESSION_MAX_BYTES", len(EVENT) * 2)
+    session = tmp_path / "s.jsonl"
+    sup.read_console(io.BytesIO((b"KAIZEN-SESSION 1 " + EVENT + b"\n") * 3), None, session)
+    assert session.read_bytes() == EVENT + b"\n"
+
+
+def test_a_failed_save_never_stops_the_console_reader(tmp_path) -> None:
+    blocked = tmp_path / "file"
+    blocked.write_text("")
+    console = io.BytesIO(b"KAIZEN-SESSION 1 " + EVENT + b"\n" + LIVE)
+    kept: list[dict] = []
+    sup.read_console(console, kept.append, blocked / "s.jsonl")  # its folder is a file
+    assert len(kept) == 1
+    assert console.closed
+
+
+def test_a_deeply_nested_line_is_dropped_and_reading_goes_on(tmp_path) -> None:
+    # Deep enough for Python 3.12's JSON parser, the Beelink's, to give up with RecursionError.
+    deep = b"KAIZEN-SESSION 1 {" + b'"a":' + b"[" * 2000 + b"]" * 2000 + b"}" + bytes([10])
+    session = tmp_path / "s.jsonl"
+    kept: list[dict] = []
+    sup.read_console(io.BytesIO(deep + LIVE), kept.append, session)
+    assert len(kept) == 1
+
+
+def test_session_files_go_after_thirty_days(tmp_path) -> None:
+    old, new = tmp_path / "old.jsonl", tmp_path / "new.jsonl"
+    for path in (old, new):
+        path.write_text("{}\n")
+    os.utime(old, (0, 1_000_000))
+    sup.prune_sessions(tmp_path, 1_000_000 + sup.SESSION_KEEP_SECONDS + 1)
+    assert [p.name for p in tmp_path.iterdir()] == ["new.jsonl"]
 
 
 def test_only_auto_kaizen_vms_get_a_live_line() -> None:
@@ -917,3 +1040,68 @@ def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, te
         path.write_text(text)
     monkeypatch.setattr(sup, "LIGHT_SLOTS_FILE", path)
     assert sup.light_slot_count() == slots
+
+
+def test_an_old_last_repo_file_with_the_repo_alone_still_loads(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "last-repo"
+    path.write_text("a/y\n")
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", path)
+    assert sup.recalled_last_job() == ("a/y", "")
+
+
+def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
+    caches, monkeypatch
+) -> None:
+    registered: list[list[str]] = []
+    disks: list[str] = []
+
+    class Registers:
+        def request(self, method: str, path: str, body: dict) -> dict:
+            registered.append(body["labels"])
+            return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
+
+    class Process:
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO()
+
+        def poll(self) -> None:
+            return None
+
+    def popen(*args, env, **kwargs) -> Process:
+        disks.append(env["CACHE_IMAGE"])
+        return Process()
+
+    for name in ("check_private", "only_colin"):
+        monkeypatch.setattr(sup, name, lambda *a, **k: True)
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    monkeypatch.setattr(sup, "STATE_DIR", caches)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", caches / "last-repo")
+    monkeypatch.setattr(sup.subprocess, "Popen", popen)
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    labelled = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
+    jobs: list[sup.Job] = []
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "octo/agent" else [])
+    repos = ["octo/agent", "octo/widgets"]
+    state = sup.State(slots=2)
+
+    # A task's Builder asks for another repo's cache disk: its VM and the next standby both
+    # register with that label and get that disk.
+    jobs[:] = [sup.Job("octo/agent", 1, "build", labelled)]
+    sup.tick(Registers(), state, repos, 0.0)  # type: ignore[arg-type]
+    assert registered == [[*labelled], [*labelled]]
+    assert disks == [str(caches / "octo__widgets.ext4")] * 2
+    assert [run.standby for run in state.launches.values()] == [False, True]
+    assert sup.recalled_last_job() == ("octo/agent", "fc-cache-octo--widgets")
+
+    # Its Reviewer, asking for the same, is left to the standby: no VM boots, none is stopped.
+    jobs[:] = [sup.Job("octo/agent", 2, "review", labelled)]
+    sup.tick(Registers(), state, repos, 100.0)  # type: ignore[arg-type]
+    assert len(registered) == 2 and stopped == []
+
+    # A job wanting something else, with no free slot, still gets the standby out of its way.
+    jobs[:] = [sup.Job("octo/agent", 3, "check", tuple(sup.RUNNER_LABELS))]
+    sup.tick(Registers(), state, repos, 200.0)  # type: ignore[arg-type]
+    assert stopped == ["is in the way of a queued job"]

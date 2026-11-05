@@ -81,6 +81,24 @@ def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_
     assert not (root / "lost+found").exists()
 
 
+def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_path) -> None:
+    # The cache disk unpacks web/node_modules to /cache/web; packing /cache/web as well
+    # put it in every later cache twice (servo, 5 Nov).
+    cache, workspace = tmp_path / "cache", tmp_path / "work"
+    (cache / "web" / "node_modules").mkdir(parents=True)
+    (cache / "web" / "node_modules" / "old.js").write_text("old")
+    (cache / "uv").mkdir()
+    (workspace / "web" / "node_modules").mkdir(parents=True)
+    (workspace / "web" / "node_modules" / "new.js").write_text("new")
+
+    result = pack(cache, workspace, "web/node_modules")
+    assert result.returncode == 0, result.stderr
+
+    with tarfile.open(tmp_path / "cache.tar") as tar:
+        names = tar.getnames()
+    assert sorted(names) == ["uv", "web/node_modules", "web/node_modules/new.js"]
+
+
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads everything")
 def test_leaves_out_what_it_cannot_read(tmp_path) -> None:
     cache, workspace = tmp_path / "cache", tmp_path / "work"

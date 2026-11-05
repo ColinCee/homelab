@@ -81,7 +81,7 @@ report() {
   fi
 }
 
-# Alloy reads this file into Prometheus for the Backup Missed alert. A metric
+# Alloy reads this file into Prometheus for the Nightly backup didn't run alert. A metric
 # instead of the "backup ok" log line: Loki missed that line once (2026-10-10)
 # and the alert fired with backups succeeding.
 METRICS_FILE=/metrics/backup.prom

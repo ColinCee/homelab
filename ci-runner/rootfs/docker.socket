@@ -1,0 +1,16 @@
+# Docker's socket: systemd listens, and starts the engine on the first call.
+# Early in boot, before ci-boot (which waits for it), so a job never finds it missing.
+[Unit]
+Description=Docker socket
+DefaultDependencies=no
+After=local-fs.target
+Before=sockets.target
+
+[Socket]
+ListenStream=/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target
