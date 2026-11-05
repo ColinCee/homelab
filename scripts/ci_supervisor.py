@@ -39,6 +39,19 @@ from typing import IO, Any
 
 LABEL = "homelab-fc"
 RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
+# Light jobs (Auto Kaizen's gate, merge, Watcher and other small jobs) get small VMs in
+# slots of their own, after the build slots, so they never hold up a build and a merge
+# waiting on CI never takes the slot that CI needs. A light VM registers without LABEL,
+# so GitHub never gives it a build job.
+LIGHT_LABEL = "homelab-fc-light"
+LIGHT_RUNNER_LABELS = ("self-hosted", "linux", "x64", LIGHT_LABEL)
+LIGHT_SLOTS_FILE = Path("/etc/homelab-ci/light-slots")
+# None until install-host.sh writes the file, as it also makes their users and taps.
+DEFAULT_LIGHT_SLOTS = 0
+# One core, as they mostly wait; 2 GiB, as the merge job runs Claude Code with no swap.
+LIGHT_SIZE = (1, 2048)
+# A merge job waits for a pull request's CI, two rounds at most.
+LIGHT_TIMEOUT_SECONDS = 3 * 3600
 # One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
 # (a job working on that repo's code). GitHub owner names cannot hold `--`.
 CACHE_LABEL_PREFIX = "fc-cache-"
@@ -138,6 +151,8 @@ class Job:
 
     @property
     def want(self) -> Want:
+        if LIGHT_LABEL in {label.lower() for label in self.labels}:
+            return (self.repo, LIGHT_LABEL)
         return (self.repo, cache_label(self.labels))
 
 
@@ -162,6 +177,10 @@ class Launch:
     def want(self) -> Want:
         return (self.repo, self.label)
 
+    @property
+    def light(self) -> bool:
+        return self.label == LIGHT_LABEL
+
 
 @dataclass
 class Privacy:
@@ -173,6 +192,8 @@ class Privacy:
 @dataclass
 class State:
     slots: int = DEFAULT_SLOTS
+    # Light slots, numbered after the build slots.
+    light_slots: int = 0
     launches: dict[int, Launch] = field(default_factory=dict)
     privacy: dict[str, Privacy] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
@@ -214,6 +235,8 @@ def wants_us(labels: Iterable[str]) -> bool:
     """A job is ours if it asks for our label and nothing our VMs do not have,
     apart from at most one cache label."""
     asked = {label.lower() for label in labels}
+    if LIGHT_LABEL in asked:
+        return asked <= set(LIGHT_RUNNER_LABELS)
     extra = asked - set(RUNNER_LABELS)
     return LABEL in asked and len(extra) <= 1 and all(map(cache_label_repo, extra))
 
@@ -432,8 +455,12 @@ def launch(
     standby: bool = False,
 ) -> None:
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
+    light = label == LIGHT_LABEL
     # The cache label is registered too, so a job asking for it runs only on such a VM.
-    labels = [*RUNNER_LABELS, label] if label else list(RUNNER_LABELS)
+    if light:
+        labels = list(LIGHT_RUNNER_LABELS)
+    else:
+        labels = [*RUNNER_LABELS, label] if label else list(RUNNER_LABELS)
     registration = gh.request(
         "POST",
         f"/repos/{repo}/actions/runners/generate-jitconfig",
@@ -441,7 +468,14 @@ def launch(
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
-    vcpus, mem_mib = next_size(state, standby)
+    vcpus, mem_mib = LIGHT_SIZE if light else next_size(state, standby)
+    timeout = (
+        LIGHT_TIMEOUT_SECONDS
+        if light
+        else STANDBY_TIMEOUT_SECONDS
+        if standby
+        else VM_TIMEOUT_SECONDS
+    )
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -451,7 +485,7 @@ def launch(
                 str(RUN_VM),
                 str(slot),
                 str(metadata),
-                str(STANDBY_TIMEOUT_SECONDS if standby else VM_TIMEOUT_SECONDS),
+                str(timeout),
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -472,9 +506,10 @@ def launch(
     threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
     # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
     # booted after a restart kept a repo with no work polled every poll).
-    if not standby:
+    # A light job neither keeps its repo polled every time nor draws the standby to it.
+    if not standby and not light:
         state.used.add(repo)
-    if not standby and repo != state.last_repo:
+    if not standby and not light and repo != state.last_repo:
         state.last_repo = repo
         remember_last_repo(repo)
     kind = "standby" if standby else "VM"
@@ -545,8 +580,9 @@ def vm_size(running: int) -> tuple[int, int]:
 
 
 def next_size(state: State, standby: bool) -> tuple[int, int]:
-    """A standby outlives the jobs around it, so it is sized for running alone."""
-    return vm_size(0 if standby else len(state.launches))
+    """A standby outlives the jobs around it, so it is sized for running alone. Light VMs
+    are small and mostly wait, so they do not count."""
+    return vm_size(0 if standby else sum(not run.light for run in state.launches.values()))
 
 
 def mem_available_mib() -> int:
@@ -893,11 +929,17 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
     )
     free = [slot for slot in range(state.slots) if slot not in state.launches]
+    light_free = [
+        slot
+        for slot in range(state.slots, state.slots + state.light_slots)
+        if slot not in state.launches
+    ]
     # GitHub's job ids only grow, so the smallest is the oldest.
     oldest_first = [w for _, w in sorted((i, w) for w, ids in job_ids.items() for i in ids)]
-    starts = plan(oldest_first, booting, len(free))
+    starts = plan([w for w in oldest_first if w[1] != LIGHT_LABEL], booting, len(free))
+    light_starts = plan([w for w in oldest_first if w[1] == LIGHT_LABEL], booting, len(light_free))
     # The VMs started this poll are counted by their size: they have touched almost
-    # nothing yet, so MemAvailable does not show them.
+    # nothing yet, so MemAvailable does not show them. Builds first, then light jobs.
     room = mem_available_mib() - memory_reserve_mib()
     started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
@@ -907,14 +949,31 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
         room -= mem
         started += 1
-    hold_for_memory(state, repos, starts[started:], job_ids, booting + Counter(starts[:started]))
+    light_started = 0
+    for slot, (repo, label) in zip(light_free, light_starts, strict=False):
+        # A build held for memory goes first: no light VM takes the memory it waits for.
+        if started < len(starts) or LIGHT_SIZE[1] > room:
+            break
+        launch(gh, state, repo, slot, now, label=label, cache=None)
+        room -= LIGHT_SIZE[1]
+        light_started += 1
+    launched = starts[:started] + light_starts[:light_started]
+    hold_for_memory(
+        state,
+        repos,
+        starts[started:] + light_starts[light_started:],
+        job_ids,
+        booting + Counter(launched),
+    )
     free = free[started:]
-    # A job still waiting for a slot, or for memory, gets the standby's slot and memory,
-    # if the standby cannot take it.
+    # A build job still waiting for a slot, or for memory, gets the standby's slot and
+    # memory, if the standby cannot take it. A light job never uses a build slot.
     waiting = queued - booting
-    waiting.subtract(starts[:started])
+    waiting.subtract(launched)
     for run in list(state.launches.values()):
-        if run.standby and any(n > 0 and want != run.want for want, n in waiting.items()):
+        if run.standby and any(
+            n > 0 and want != run.want and want[1] != LIGHT_LABEL for want, n in waiting.items()
+        ):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
     # A standby is the first thing given up: never booted while a job waits for memory.
     if (
@@ -961,6 +1020,15 @@ def standby_count() -> int:
         return 1
 
 
+def light_slot_count() -> int:
+    """The host's light slot count: 0 (none) if the file is missing or not a number."""
+    try:
+        text = LIGHT_SLOTS_FILE.read_text().strip()
+    except OSError:
+        return DEFAULT_LIGHT_SLOTS
+    return int(text) if text.isdecimal() else DEFAULT_LIGHT_SLOTS
+
+
 def slot_count() -> int:
     """The host's slot count: DEFAULT_SLOTS if the file is missing or not a number, at least 1."""
     try:
@@ -974,11 +1042,14 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
     """Slots, VMs running a job or waiting ready, the repos with a cache disk, and the
     host's free memory with the jobs waiting for it."""
     standby = sum(run.standby for run in state.launches.values())
+    light = sum(run.light for run in state.launches.values())
     return {
         "updated": int(now),
         "slots": state.slots,
-        "in_use": len(state.launches) - standby,
+        "in_use": len(state.launches) - standby - light,
         "standby": standby,
+        "light_slots": state.light_slots,
+        "light_in_use": light,
         "cache_disks": sorted(
             image.stem.replace("__", "/", 1) for image in CACHE_DIR.glob("*__*.ext4")
         ),
@@ -1096,7 +1167,7 @@ def main(argv: list[str] | None = None) -> int:
     # Half-built caches from a supervisor that was killed mid-build.
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
-    state = State(slots=slot_count())
+    state = State(slots=slot_count(), light_slots=light_slot_count())
     # The standby waits where the last job before the restart ran, not on the first repo
     # listed (4 Nov: it booted for a repo with no work, for 45 minutes).
     state.last_repo = recalled_last_repo()

@@ -482,6 +482,8 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "slots": 5,
         "in_use": 2,
         "standby": 1,
+        "light_slots": 0,
+        "light_in_use": 0,
         "cache_disks": ["octo/agent", "octo/widgets"],
         "github_ok": True,
         "mem_available_mib": 9000,
@@ -822,3 +824,96 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
     assert state.used == {"o/spare"}
     sup.launch(Registers(), state, "o/job", 1, 0.0, cache=None)  # type: ignore[arg-type]
     assert state.used == {"o/spare", "o/job"}
+
+
+LIGHT = (*sup.LIGHT_RUNNER_LABELS,)
+
+
+@pytest.mark.parametrize(
+    ("labels", "ours"),
+    [
+        (LIGHT, True),
+        (("self-hosted", "linux", "x64", "HOMELAB-FC-LIGHT"), True),
+        ((*LIGHT, "homelab-fc"), False),  # a build VM never has the light label
+        ((*LIGHT, "fc-cache-colincee--servo"), False),  # a light VM has no cache disk
+    ],
+)
+def test_a_light_job_asks_for_the_light_label_alone(labels, ours) -> None:
+    assert sup.wants_us(labels) is ours
+
+
+def test_a_light_jobs_want_is_the_light_label() -> None:
+    assert sup.Job("o/ok", 1, "j", LIGHT).want == ("o/ok", sup.LIGHT_LABEL)
+
+
+@pytest.fixture
+def pools(caches, monkeypatch):
+    """Build and light jobs queued in one repo; launch records (slot, label)."""
+    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    started: list[tuple[int, str]] = []
+
+    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False) -> None:
+        started.append((slot, label))
+        state.launches[slot] = sup.Launch(
+            slot, repo, slot, f"fc-{slot}", now, None, None, standby, label=label
+        )  # type: ignore[arg-type]
+
+    monkeypatch.setattr(sup, "launch", launch)
+
+    def queue(build: int, light: int) -> None:
+        jobs = [sup.Job("o/ok", n, "b", tuple(sup.RUNNER_LABELS)) for n in range(build)]
+        jobs += [sup.Job("o/ok", 100 + n, "l", LIGHT) for n in range(light)]
+        monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+
+    return queue, started
+
+
+def test_light_jobs_start_only_in_light_slots_and_build_jobs_only_in_build_slots(pools) -> None:
+    queue, started = pools
+    queue(build=7, light=4)
+    sup.tick(None, sup.State(slots=5, light_slots=3), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    light = [(slot, sup.LIGHT_LABEL) for slot in (5, 6, 7)]
+    assert sorted(started) == [(0, ""), (1, ""), (2, ""), (3, ""), (4, ""), *light]
+
+
+def test_light_jobs_still_start_while_every_build_slot_is_busy(pools) -> None:
+    queue, started = pools
+    queue(build=0, light=2)
+    state = sup.State(slots=2, light_slots=2)
+    for slot in (0, 1):
+        state.launches[slot] = _launch(slot, False)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [(2, sup.LIGHT_LABEL), (3, sup.LIGHT_LABEL)]
+
+
+def test_no_light_slots_means_light_jobs_wait(pools) -> None:
+    queue, started = pools
+    queue(build=1, light=2)
+    sup.tick(None, sup.State(slots=5, light_slots=0), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [(0, "")]
+
+
+def test_light_vms_do_not_shrink_a_build_vm() -> None:
+    state = sup.State(slots=5, light_slots=2)
+    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    assert sup.next_size(state, False) == (4, 4096)
+
+
+def test_the_status_file_counts_light_vms_apart() -> None:
+    state = sup.State(slots=5, light_slots=5, launches={0: _launch(0, False)})
+    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    status = sup.status(state, 0.0, github_ok=True, mem_available=9000)
+    assert (status["in_use"], status["light_slots"], status["light_in_use"]) == (1, 5, 1)
+
+
+@pytest.mark.parametrize(("text", "slots"), [(None, 0), (" 0 ", 0), ("3", 3), ("lots", 0)])
+def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
+    path = tmp_path / "light-slots"
+    if text is not None:
+        path.write_text(text)
+    monkeypatch.setattr(sup, "LIGHT_SLOTS_FILE", path)
+    assert sup.light_slot_count() == slots
