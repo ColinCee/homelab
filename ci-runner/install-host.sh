@@ -77,10 +77,9 @@ install_vm_files() {
 # Cache disks the supervisor builds from main-only artifacts; VMs read them, never write.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 
-# The supervisor, the network rules and the slot counts take a restart. A restart starts
-# no new VM and lets running jobs finish first (up to 20 minutes), so it never cuts off
-# work in progress. Reloading the rules needs no VM running: it briefly empties the
-# blocked public address set.
+# The supervisor, the network rules and the slot counts take a restart. Running VMs carry
+# on through it (each is a unit of its own, taken back by the new supervisor), and the
+# rules reload in one transaction, so a restart takes seconds and cuts off nothing.
 changed() { ! cmp -s "$1" "$2"; }
 restart=false
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
@@ -98,19 +97,12 @@ if ! $restart; then
 else
   if systemctl is-active --quiet homelab-ci-supervisor.service; then
     was_running=true
-    status=/var/lib/homelab-ci/status/machines.json
-    # A supervisor from before 5 Nov dies at once on a restart, cutting off its jobs: wait
-    # for a moment with none running instead.
-    if ! jq -e 'has("restarting_since")' "$status" >/dev/null 2>&1; then
-      echo "The running supervisor cannot wait for its jobs; waiting for none to run."
-      until jq -e '.in_use == 0 and .light_in_use == 0' "$status" >/dev/null 2>&1; do sleep 5; done
+    # A supervisor from before VMs ran as their own units owns its VMs: stopping it waits
+    # for their jobs (up to 20 minutes) instead of cutting them off.
+    if ! grep -q UNIT_PREFIX "$dest/ci_supervisor.py"; then
+      echo "The running supervisor owns its VMs: waiting for their jobs to finish (up to 20 minutes)."
     fi
-    echo "Restarting the supervisor: no new jobs start, running ones finish first (up to 20 minutes)."
     systemctl stop homelab-ci-supervisor.service
-  fi
-  if pgrep -x firecracker >/dev/null; then
-    echo "a VM is still running (started by hand?); wait for it to finish" >&2
-    exit 1
   fi
 
   # Host-side settings, never in the repo: the slot count, and the GitHub token
