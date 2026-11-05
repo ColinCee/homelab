@@ -748,6 +748,7 @@ def host(caches, monkeypatch):
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "has_job", lambda gh, run: False)  # VMs are still starting
     lines: list[str] = []
     monkeypatch.setattr(sup, "log", lines.append)
     started: list[tuple[str, int, bool]] = []
@@ -1056,7 +1057,10 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     disks: list[str] = []
 
     class Registers:
-        def request(self, method: str, path: str, body: dict) -> dict:
+        def request(self, method: str, path: str, body: dict | None = None) -> dict:
+            if method == "GET":  # the Builder's VM has its job
+                return {"busy": True}
+            assert body is not None
             registered.append(body["labels"])
             return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
 
@@ -1105,3 +1109,37 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     jobs[:] = [sup.Job("octo/agent", 3, "check", tuple(sup.RUNNER_LABELS))]
     sup.tick(Registers(), state, repos, 200.0)  # type: ignore[arg-type]
     assert stopped == ["is in the way of a queued job"]
+
+
+@pytest.mark.parametrize(("label", "slot"), [("", 0), (sup.LIGHT_LABEL, 2)])
+@pytest.mark.parametrize("busy", [True, False])
+def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
+    pools, monkeypatch, label, slot, busy
+) -> None:
+    queue, started = pools
+    queue(build=0 if label else 1, light=1 if label else 0)
+    asked: list[str] = []
+
+    def has_job(gh, run) -> bool:
+        asked.append(run.runner_name)
+        return busy
+
+    monkeypatch.setattr(sup, "has_job", has_job)
+    state = sup.State(slots=2, light_slots=2)
+    # Started a minute ago for the same repo and label.
+    state.launches[slot] = sup.Launch(
+        slot,
+        "o/ok",
+        slot,
+        f"fc-{slot}",
+        0.0,
+        None,
+        None,
+        label=label,  # type: ignore[arg-type]
+    )
+    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
+    if busy:  # it has its own job, so the queued one gets a VM of its own
+        assert len(started) == 1 and started[0][1] == label and state.launches[slot].busy
+    else:  # its runner is still connecting and will take the queued job: no duplicate
+        assert started == []
+    assert asked == [f"fc-{slot}"]
