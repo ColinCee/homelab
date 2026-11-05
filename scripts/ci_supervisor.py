@@ -91,8 +91,10 @@ SLOTS_FILE = Path("/etc/homelab-ci/slots")
 DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
-# A VM that has not picked up a job by now counts as idle demand again.
-BOOT_GRACE_SECONDS = 120
+# A VM that has not picked up a job by now counts as idle demand again. Starting includes
+# copying the disk image, which took up to 10 minutes with ten at once (5 Nov): at 2 minutes,
+# each slow start got a second VM for the same job, and a second copy, stopped later unused.
+BOOT_GRACE_SECONDS = 600
 # Time for a VM to boot and connect. After it, a VM with no job while nothing is
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30

@@ -21,8 +21,9 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
-plugin (no daemon, so `docker compose config` works but containers do not)
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+plugins (the engine starts on a job's first `docker` call, so `docker build`,
+`docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
 needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
 Chromium needs are installed too, so a job runs `playwright install chromium`
@@ -41,7 +42,7 @@ in [CI runner performance](../ci-runner-performance.md).
 
 Each VM gets its repo's **cache disk** at `/cache`: uv's and npm's caches and
 the Python environment from the repo's last green push to its default branch.
-Each VM gets its own copy (about 0.5 s, before boot, like the root disk), so a
+Each VM gets a snapshot of it (`ci-runner/vm-disks.sh`, like the root disk), so a
 job can install into it but nothing it writes outlives the VM, and a branch can
 never change what the next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
 `npm_config_cache` (`/cache/npm`) and `UV_PROJECT_ENVIRONMENT` (`/cache/venv`)
@@ -125,8 +126,10 @@ GitHub-hosted runners and take it off the token's repository access.
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 2
   seconds (unchanged answers are free) for queued jobs with the label and boots
-  a VM for each, up to two at once. The VM's root filesystem is a private copy, written straight to the disk past the page cache, and deleted with everything the
-  job wrote. However the job ends, the VM ends, within seconds. A VM left
+  a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
+  (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
+  page cache all VMs share, and its writes go to a deleted file thrown away
+  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
@@ -258,7 +261,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
+  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
+  then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
   (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
@@ -275,8 +279,9 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
   3 to 5 slots, with 5 failed requests in some runs. With that fixed, Grafana
   still answered 503 20 to 50 s after the VMs started, at any slot count, most
-  likely while the kernel wrote out the image copies; they now skip the page
-  cache, and the loaded timings start with the copies.
+  likely while the kernel wrote out the image copies. VMs now boot from
+  snapshots of the images instead of copies (5 Nov), and the loaded timings
+  start when the VMs start.
 
 ## Changing the number of slots
 
