@@ -1,0 +1,12 @@
+# Docker's socket: systemd listens, and starts the engine on the first call.
+[Unit]
+Description=Docker socket
+
+[Socket]
+ListenStream=/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target

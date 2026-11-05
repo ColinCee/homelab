@@ -21,8 +21,9 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
-plugin (no daemon, so `docker compose config` works but containers do not)
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+plugins (the engine starts on a job's first `docker` call, so `docker build`,
+`docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
 needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
 Chromium needs are installed too, so a job runs `playwright install chromium`
