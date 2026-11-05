@@ -137,12 +137,15 @@ RUN systemctl enable docker.socket
 
 # Actions the CI repos use, unpacked where the runner looks before downloading
 # (<owner>_<repo>/<commit>/<the archive's own folder>), and Node and the JDK on the
-# jobs' PATH.
+# jobs' PATH. The runner's user owns the actions: one like claude-code-action installs its
+# packages into its own folder when it runs, and root-owned copies failed every agent job
+# (5 Nov). Each VM is thrown away after one job, so nothing a job changes there carries over.
 ARG CACHED_ACTIONS
 RUN for a in ${CACHED_ACTIONS}; do \
       repo=${a%@*}; sha=${a#*@}; dir="/opt/actions-cache/$(echo "$repo" | tr / _)/$sha"; \
       mkdir -p "$dir" && curl -fsSL "https://api.github.com/repos/$repo/tarball/$sha" | tar -xz -C "$dir"; \
     done \
+ && chown -R runner:runner /opt/actions-cache \
  && printf 'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE=/opt/actions-cache\nACTIONS_RUNNER_SYMLINK_CACHED_ACTIONS=true\n' >> /opt/runner/.env \
  && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/opt/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
  && chown runner:runner /opt/runner/.path
