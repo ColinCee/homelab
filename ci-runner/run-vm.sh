@@ -22,7 +22,7 @@ uid=$(id -u "$user")
 gid=$(id -g "$user")
 chroot="$base/firecracker/$id/root"
 cgroup="/sys/fs/cgroup/firecracker/$id"
-# shellcheck source=vm-disks.sh
+# shellcheck source=ci-runner/vm-disks.sh
 source "$(dirname "$0")/vm-disks.sh"
 
 # One VM per slot at a time.

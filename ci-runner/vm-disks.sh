@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # A CI VM's disks without copying their images: each disk is a device-mapper
 # snapshot that reads the image through a read-only loop device and puts the VM's
 # writes in a sparse file. That file is deleted as soon as it is open and the loop
