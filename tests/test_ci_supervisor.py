@@ -2,6 +2,7 @@ import email.message
 import http.client
 import io
 import json
+import os
 import tarfile
 import threading
 from typing import ClassVar
@@ -644,6 +645,53 @@ def test_the_console_reader_keeps_the_last_valid_line_and_drops_over_long_ones()
     sup.read_console(console, kept.append)
     assert [line["at"] for line in kept] == [1792999990, 1793000005]
     assert console.closed
+
+
+EVENT = b'{"kind":"text","at":1792999990,"text":"Running the tests"}'
+
+
+def test_session_events_are_saved_in_order_beside_live_lines(tmp_path) -> None:
+    session = tmp_path / "sessions" / "fc-0-1.jsonl"
+    console = io.BytesIO(
+        b"KAIZEN-SESSION 1 "
+        + EVENT
+        + b"\r\n"
+        + LIVE
+        + b"KAIZEN-SESSION 1 not json\n"
+        + b'KAIZEN-SESSION 1 {"text":"caf\xc3\xa9"}\n'  # not ASCII
+        + b'KAIZEN-SESSION 1 {"a":1}\n'
+    )
+    kept: list[dict] = []
+    sup.read_console(console, kept.append, session)
+
+    assert session.read_bytes() == EVENT + b'\n{"a":1}\n'
+    assert len(kept) == 1
+
+
+def test_a_session_file_stops_growing_at_its_cap(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "SESSION_MAX_BYTES", len(EVENT) * 2)
+    session = tmp_path / "s.jsonl"
+    sup.read_console(io.BytesIO((b"KAIZEN-SESSION 1 " + EVENT + b"\n") * 3), None, session)
+    assert session.read_bytes() == EVENT + b"\n"
+
+
+def test_a_failed_save_never_stops_the_console_reader(tmp_path) -> None:
+    blocked = tmp_path / "file"
+    blocked.write_text("")
+    console = io.BytesIO(b"KAIZEN-SESSION 1 " + EVENT + b"\n" + LIVE)
+    kept: list[dict] = []
+    sup.read_console(console, kept.append, blocked / "s.jsonl")  # its folder is a file
+    assert len(kept) == 1
+    assert console.closed
+
+
+def test_session_files_go_after_thirty_days(tmp_path) -> None:
+    old, new = tmp_path / "old.jsonl", tmp_path / "new.jsonl"
+    for path in (old, new):
+        path.write_text("{}\n")
+    os.utime(old, (0, 1_000_000))
+    sup.prune_sessions(tmp_path, 1_000_000 + sup.SESSION_KEEP_SECONDS + 1)
+    assert [p.name for p in tmp_path.iterdir()] == ["new.jsonl"]
 
 
 def test_only_auto_kaizen_vms_get_a_live_line() -> None:
