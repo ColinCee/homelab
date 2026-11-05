@@ -21,8 +21,9 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
-plugin (no daemon, so `docker compose config` works but containers do not)
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+plugins (the engine starts on a job's first `docker` call, so `docker build`,
+`docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
 needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
 Chromium needs are installed too, so a job runs `playwright install chromium`
@@ -260,7 +261,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
+  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
+  then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
   (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
