@@ -16,7 +16,7 @@ max_zip=2147483648
 # web/node_modules): pack the job's fresh ones, not both, or every cache would carry
 # all earlier copies too.
 tops=" "
-for path in "$@"; do tops+="${path%%/*} "; done
+for path in "$@"; do path=${path#./}; tops+="${path%%/*} "; done
 
 members=() folders=()
 for path in "$cache_dir"/*/; do

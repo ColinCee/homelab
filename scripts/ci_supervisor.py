@@ -754,6 +754,13 @@ def safe_member(member: tarfile.TarInfo, dest: str) -> tarfile.TarInfo | None:
         or member.issparse()
     ):
         raise tarfile.FilterError(f"not a plain file, folder or link: {member.name}")
+    # tar_filter checks a hard link's own path but not its target's: through a symlink
+    # unpacked earlier, the target could be a host file, which the chown would then take.
+    if member.islnk():
+        root = os.path.realpath(dest)
+        target = os.path.realpath(os.path.join(root, member.linkname))
+        if os.path.commonpath([root, target]) != root:
+            raise tarfile.FilterError(f"hard link to outside the folder: {member.name}")
     return tarfile.tar_filter(member, dest)
 
 
@@ -772,8 +779,8 @@ def size_capped(limit: int) -> Callable[[tarfile.TarInfo, str], tarfile.TarInfo 
 
 
 def unpack_cache(stream: IO[bytes], root: Path) -> None:
-    """Unpack a cache tar into root through size_capped. A path the archive holds twice
-    takes its later entry, as tar does; tarfile would instead seek back for a hard link
+    """Unpack a cache tar into root through size_capped. A file or link the archive holds
+    twice takes its later entry, as tar does; tarfile would instead seek back for a hard link
     onto a file already there, which a stream cannot (servo's cache, 5 Nov)."""
     check = size_capped(CACHE_MAX_UNPACKED_BYTES)
     with tarfile.open(fileobj=stream, mode="r|") as tar:
@@ -787,14 +794,21 @@ def unpack_cache(stream: IO[bytes], root: Path) -> None:
             tar.extract(safe, root, filter="fully_trusted")
 
 
+class BadArtifact(Exception):
+    """The artifact itself cannot be unpacked; trying it again would fail the same way."""
+
+
 def build_cache_image(zip_path: Path, image: Path) -> None:
     """Artifact zip -> cache.tar -> a folder -> an ext4 image, owned by the VM's runner user.
     Runs as root on the host and never executes anything from the artifact."""
     with tempfile.TemporaryDirectory(dir=CACHE_DIR) as tmp:
         root = Path(tmp) / "root"
         root.mkdir()
-        with zipfile.ZipFile(zip_path) as z, z.open("cache.tar") as raw:
-            unpack_cache(raw, root)
+        try:
+            with zipfile.ZipFile(zip_path) as z, z.open("cache.tar") as raw:
+                unpack_cache(raw, root)
+        except Exception as e:
+            raise BadArtifact(f"{type(e).__name__}: {e}") from e
         # Owned by the VM's runner user, so the job can write through its throwaway layer.
         # The folder is in a root-only temporary directory, so no host user reaches it.
         subprocess.run(["chown", "-R", f"{RUNNER_UID}:{RUNNER_UID}", str(root)], check=True)
@@ -856,7 +870,7 @@ def refresh_cache(gh: GitHub, repo: str, branch: str) -> None:
         )
         try:
             build_cache_image(zip_path, image)
-        except (OSError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as e:
+        except BadArtifact as e:
             # The same artifact fails the same way: wait for a newer one rather than
             # download and unpack it again every minute.
             seen.write_text(json.dumps({**known, "failed": artifact["id"]}))

@@ -220,6 +220,19 @@ def test_the_cache_unpacker_refuses_paths_outside_its_folder(tmp_path) -> None:
         sup.safe_member(member, str(tmp_path))
 
 
+def test_the_cache_unpacker_refuses_a_hard_link_out_through_a_symlink(tmp_path) -> None:
+    root, outside = tmp_path / "root", tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    (outside / "victim").write_text("host file")
+    (root / "a").symlink_to("../outside")  # as if unpacked from the same archive
+    link = tarfile.TarInfo("h")
+    link.type, link.linkname = tarfile.LNKTYPE, "a/victim"
+
+    with pytest.raises(tarfile.FilterError):
+        sup.safe_member(link, str(root))
+
+
 def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) -> None:
     check = sup.size_capped(100)
     small, big = tarfile.TarInfo("cache/a"), tarfile.TarInfo("cache/b")

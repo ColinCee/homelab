@@ -66,8 +66,8 @@ How it is made, without the host running any of the repo's code:
    the supervisor takes.
 2. The supervisor checks for a newer one every minute, takes it only if its run
    was a successful push to the default branch, unpacks it (plain files,
-   folders and links only, nothing outside the folder; a path held twice takes
-   its later entry) and builds
+   folders and links only, nothing outside the folder; a file or link held
+   twice takes its later entry) and builds
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
    to others. VMs started after that use it. An artifact that fails to unpack
    is skipped until a newer one comes.
