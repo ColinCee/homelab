@@ -192,3 +192,91 @@ def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> N
     up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
     assert isinstance(up_env, dict)
     assert up_env["STACK_CONFIG_HASH"] == after
+
+
+def _git(repo_root: Path, *arguments: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *arguments],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def _commit_all(repo_root: Path) -> str:
+    _git(repo_root, "add", "-A")
+    _git(repo_root, "commit", "-qm", "change")
+    return _git(repo_root, "rev-parse", "HEAD")
+
+
+@pytest.fixture
+def repo(tmp_path: Path) -> Path:
+    _git(tmp_path, "init", "-q")
+    for name in ("kaizen-control-room", "observability"):
+        _make_stack(tmp_path, name)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "deploy.py").write_text("", encoding="utf-8")
+    _commit_all(tmp_path)
+    return tmp_path
+
+
+def test_a_change_to_one_stack_selects_only_that_stack(repo: Path) -> None:
+    before = _git(repo, "rev-parse", "HEAD")
+    (repo / "stacks" / "kaizen-control-room" / "compose.yaml").write_text(
+        "services: {app: {image: new}}\n", encoding="utf-8"
+    )
+    _commit_all(repo)
+
+    assert deploy.changed_stacks(repo, before) == ("kaizen-control-room",)
+
+
+def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
+    before = _git(repo, "rev-parse", "HEAD")
+    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    (repo / "stacks" / "observability" / "extra.txt").write_text("x\n", encoding="utf-8")
+    _commit_all(repo)
+
+    assert deploy.changed_stacks(repo, before) is None
+
+
+@pytest.mark.parametrize("since", [None, "", "0123456789abcdef0123456789abcdef01234567"])
+def test_a_missing_or_unknown_last_deploy_selects_all_stacks(repo: Path, since: str | None) -> None:
+    assert deploy.changed_stacks(repo, since) is None
+
+
+def test_deploys_changed_stacks_and_records_the_commit(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path_factory.mktemp("state") / "last-deployed"
+    output = state.with_name("github-output")
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    state.write_text(_git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
+    (repo / "stacks" / "kaizen-control-room" / "compose.yaml").write_text(
+        "services: {app: {image: new}}\n", encoding="utf-8"
+    )
+    head = _commit_all(repo)
+    runner, calls = _recording_runner()
+
+    assert deploy.run(repo, (), last_deployed=state, runner=runner) == 0
+
+    composed = {command[command.index("-f") + 1] for command, _ in calls if "-f" in command}
+    assert composed == {str(repo / "stacks" / "kaizen-control-room" / "compose.yaml")}
+    assert state.read_text(encoding="utf-8").strip() == head
+    assert output.read_text(encoding="utf-8") == 'deployed=["kaizen-control-room"]\n'
+
+
+def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    state = tmp_path_factory.mktemp("state") / "last-deployed"
+    before = _git(repo, "rev-parse", "HEAD")
+    state.write_text(before + "\n", encoding="utf-8")
+    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    _commit_all(repo)
+    runner, _ = _recording_runner(fail_when="up")
+
+    assert deploy.run(repo, (), last_deployed=state, runner=runner) == 1
+
+    assert state.read_text(encoding="utf-8").strip() == before

@@ -70,10 +70,13 @@ jobs:
           printf '%s' "$GHCR_TOKEN" \
             | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-      - name: Deploy discovered stacks
+      # Only stacks changed since the last full deploy (all when shared deploy files changed);
+      # the marker lives outside the checkout, which each deploy resets.
+      - name: Deploy changed stacks
+        id: deploy
         run: |
           cd /home/colin/code/homelab
-          scripts/deploy.sh
+          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed"
 
       # How long a Control room change took from its auto-kaizen merge to answering here.
       # Measuring never fails a deploy.
@@ -113,8 +116,9 @@ jobs:
             --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED"
 
       # Grafana gives a top-level provisioned dashboard no viewer access, and
-      # provisioning cannot grant it, so each deploy lets viewers open Home.
+      # provisioning cannot grant it, so each deploy of Grafana's stack lets viewers open Home.
       - name: Let viewers open Grafana's Home
+        if: contains(fromJSON(steps.deploy.outputs.deployed || '[]'), 'observability')
         env:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
         run: |
