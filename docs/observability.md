@@ -20,7 +20,7 @@ heartbeat for full host outages.
 
 The [Kaizen watchdog](../.github/workflows/kaizen-watchdog.yaml) runs there every 15 minutes too, and posts
 once when Auto Kaizen's Watcher (due every 20 minutes) has not worked for an hour, and once when it works again.
-The Grafana rule Kaizen Watcher Stopped checks the same from the Beelink, so one of the two warns whether GitHub
+The Grafana rule Kaizen's Watcher stopped running checks the same from the Beelink, so one of the two warns whether GitHub
 stops starting Kaizen's jobs or the Beelink goes down.
 
 ## What's deployed
@@ -154,8 +154,8 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
 `test_alert`.
 
-Kaizen cannot report its own failure, so Kaizen Watcher Stopped, Kaizen Control
-Room Down, and every no-data or evaluation-error alert also go straight to the
+Kaizen cannot report its own failure, so Kaizen's Watcher stopped running, Kaizen Control
+room unreachable, and every no-data or evaluation-error alert also go straight to the
 `Discord Private` webhook (Discord's #uptime channel), as do the deploy
 watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A failed
 deploy stops Auto Kaizen.
@@ -172,12 +172,12 @@ The shipped rules cover host-level pressure such as:
 - high CPU
 - high RAM
 - high disk usage
-- **Flight Tracker Down**: the live-data probe has failed for 10 minutes
-- **Kaizen Waiting For A Machine**: a Kaizen task has waited over 20 minutes
+- **Flight Tracker site down**: the live-data probe has failed for 10 minutes
+- **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine
-- **Kaizen Not Merging**: Kaizen tasks have been running or waiting for 3
+- **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
   hours and nothing has merged in that time
-- **Kaizen Control Room Down**: Prometheus has not reached the Control room for
+- **Kaizen Control room unreachable**: Prometheus has not reached the Control room for
   5 minutes, so alerts are not reaching the #alerts forum
 
 Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`

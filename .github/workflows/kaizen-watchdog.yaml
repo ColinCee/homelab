@@ -2,7 +2,7 @@ name: Kaizen watchdog
 
 # Off the Beelink: says on Discord when Auto Kaizen's Watcher, due every 20 minutes, has not worked for an hour.
 # That means GitHub stopped starting Kaizen's jobs or the Beelink, where the Watcher runs, is down.
-# Grafana on the Beelink checks the same thing without GitHub's machines (rules.yaml, Kaizen Watcher Stopped).
+# Grafana on the Beelink checks the same thing without GitHub's machines (rules.yaml, Kaizen's Watcher stopped running).
 # Free here: this repository is public.
 on:
   schedule:
