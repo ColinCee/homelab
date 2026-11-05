@@ -92,10 +92,11 @@ SLOTS_FILE = Path("/etc/homelab-ci/slots")
 DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
-# A VM that has not picked up a job by now counts as idle demand again. Starting includes
-# copying the disk image, which took up to 10 minutes with ten at once (5 Nov): at 2 minutes,
-# each slow start got a second VM for the same job, and a second copy, stopped later unused.
-BOOT_GRACE_SECONDS = 600
+# A VM covers a queued job of its repo and label only while it is starting: until its runner
+# takes a job, and for at most this long. VMs start in seconds since the disk image is no
+# longer copied (homelab#759); 600 s, set while copies took minutes, made a busy VM hold back
+# the next job of its kind with slots free (5 Nov: a task's Reviewer behind its Builder).
+BOOT_GRACE_SECONDS = 120
 # Time for a VM to boot and connect. After it, a VM with no job while nothing is
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30
@@ -181,6 +182,8 @@ class Launch:
     # A standby that just took a job still covers it until GitHub's job list catches up.
     covers_until: float = 0.0
     label: str = ""
+    # GitHub showed its runner with a job: it no longer covers a queued one.
+    busy: bool = False
     # The VM's latest live line, set by its console reader (see read_console).
     live: dict[str, Any] | None = None
 
@@ -682,6 +685,30 @@ def is_idle(gh: GitHub, run: Launch) -> bool:
     return runner.get("busy") is False
 
 
+def has_job(gh: GitHub, run: Launch) -> bool:
+    """GitHub says the VM's runner has taken a job (or has finished and gone)."""
+    try:
+        runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return True
+        raise
+    return runner.get("busy") is True
+
+
+def on_its_way(gh: GitHub, run: Launch, now: float, queued_for_want: int) -> bool:
+    """The VM may still take a queued job of its repo and label: a standby, one that just
+    took a job, or one starting whose runner has no job yet. GitHub is asked only while a
+    job it could cover is queued, at most once a poll."""
+    if run.standby or now < run.covers_until:
+        return True
+    if run.busy or now - run.started >= BOOT_GRACE_SECONDS:
+        return False
+    if queued_for_want:
+        run.busy = has_job(gh, run)
+    return not run.busy
+
+
 def stop(run: Launch, why: str) -> None:
     log(f"slot {run.slot}: {run.runner_name} {why}, stopping it")
     run.process.terminate()
@@ -1023,9 +1050,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
     # with the same repo and cache label (or none).
     booting: Counter[Want] = Counter(
-        run.want
-        for run in state.launches.values()
-        if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
+        run.want for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])
     )
     free = [slot for slot in range(state.slots) if slot not in state.launches]
     light_free = [
