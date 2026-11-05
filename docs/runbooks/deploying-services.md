@@ -159,6 +159,9 @@ generated `.env` as shell.
    Services that read a bind-mounted config file without reloading it should
    set `labels: {homelab.config-hash: ${STACK_CONFIG_HASH:-}}` so deploys
    recreate them when the stack's tracked files change.
+   Set `init: true` when the main process does not handle SIGTERM (a shell
+   script, a plain Python loop): as PID 1 it ignores it, so every stop waits
+   10 s and then kills it.
 2. If needed, add `.env.example` and explicitly name its secrets in the deploy
    workflow. Do not pass the entire GitHub secrets collection.
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
