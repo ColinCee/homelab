@@ -29,7 +29,7 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
   Unattended agent changes come only through Auto Kaizen's pull requests (its
   Reviewer and risk check decide the merge); do not add another agent here.
   Dependency auto-merge belongs in Renovate.
-- Change the Beelink's CI runner only through `sudo REASON="<who>: <why>"
+- Change the Beelink's CI runner only through `sudo REASON="<repo>#<number>: <why>"
   ci-runner/install-host.sh`, never by stopping or restarting its supervisor directly:
   a restart waits for running jobs (docs/runbooks/ci-runner.md, "Changing the Beelink
   while jobs run"). Run any wait on the Beelink as a named systemd unit, never as a loop

@@ -314,7 +314,7 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 
 ## Changing the Beelink while jobs run
 
-Every change goes in through `sudo REASON="<who>: <why>" ci-runner/install-host.sh`
+Every change goes in through `sudo REASON="<repo>#<number>: <why>" ci-runner/install-host.sh`, naming the issue or pull request it ships (the Control room links it),
 from a checkout of `main`. Never stop or restart the supervisor directly while jobs run,
 and never leave a loop waiting to do it from your own connection: on 5 Nov three
 restarts cut off 20 running jobs, and one waiting loop outlived the session that
