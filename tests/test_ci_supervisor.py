@@ -836,6 +836,21 @@ def test_no_vm_starts_while_the_disk_is_busy(host, tmp_path, monkeypatch) -> Non
     assert started[0][0] == "o/ok" and state.held == {}
 
 
+def test_a_half_busy_disk_starts_one_vm_a_minute(host, monkeypatch) -> None:
+    queue, started, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 40.0)
+    queue(jobs=3, free_mib=1 << 20)
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert len(started) == 1
+    assert "job 1 in o/ok waits for a busy disk" in lines
+    sup.tick(None, state, ["o/ok"], 30.0)  # type: ignore[arg-type]
+    assert len(started) == 1  # the first VM's load has not shown yet
+    sup.tick(None, state, ["o/ok"], 61.0)  # type: ignore[arg-type]
+    assert len(started) == 2
+
+
 def test_an_unreadable_pressure_file_does_not_hold_vms(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(sup, "IO_PRESSURE", tmp_path / "missing")
     assert READ_DISK_WAIT() == 0.0

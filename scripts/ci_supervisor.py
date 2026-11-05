@@ -154,13 +154,16 @@ CONSOLE_LINE_MAX = 4096
 MEMINFO = Path("/proc/meminfo")
 MEMORY_RESERVE_FILE = Path("/etc/homelab-ci/memory-reserve-mib")
 DEFAULT_MEMORY_RESERVE_MIB = 3 * 1024
-# No VM starts while tasks waited on the disk for more than this share of the last
-# minute (`some avg60` in /proc/pressure/io); running VMs carry on. VM disks and swap
-# share the host's one SSD with Grafana's database: on 5 Nov 9 VMs kept it at 70-95%,
-# Grafana's checks failed on a locked database and posted false alerts. Busy CI hours
-# that hurt nothing stay under 50%.
+# No VM starts while tasks waited on the disk for more than DISK_WAIT_LIMIT percent of
+# the last minute (`some avg60` in /proc/pressure/io), and over half that, one a minute,
+# since a new VM's load takes about a minute to show; running VMs carry on. VM disks and
+# swap share the host's one SSD with Grafana's database: on 5 Nov 9 VMs kept it at 70-95%,
+# Grafana's checks failed on a locked database and posted false alerts. 50 is a judgement
+# from hourly samples: quiet hours stayed under it, and Grafana already failed at some
+# samples near it, hence the pacing below it.
 IO_PRESSURE = Path("/proc/pressure/io")
 DISK_WAIT_LIMIT = 50.0
+DISK_PACE_SECONDS = 60.0
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -249,8 +252,11 @@ class State:
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
     polled: dict[str, float] = field(default_factory=dict)
-    # Queued jobs not started for lack of memory (job id -> repo), each logged once.
+    # Queued jobs not started for lack of memory or a busy disk (job id -> repo), each
+    # logged once.
     held: dict[int, str] = field(default_factory=dict)
+    # While the disk is half busy, no VM starts before this time (see DISK_PACE_SECONDS).
+    disk_paced_until: float = 0.0
 
 
 def log(message: str) -> None:
@@ -1218,9 +1224,19 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them. Builds first, then light jobs.
     room = mem_available_mib() - memory_reserve_mib()
-    disk_busy = disk_wait_percent() > DISK_WAIT_LIMIT
+    disk_wait = disk_wait_percent()
+    disk_paced = disk_wait > DISK_WAIT_LIMIT / 2
+    disk_busy = disk_wait > DISK_WAIT_LIMIT or (disk_paced and now < state.disk_paced_until)
     if disk_busy:
         room = min(room, 0)
+
+    def pace() -> None:
+        """One VM a minute while the disk is half busy: no more room after this start."""
+        nonlocal room
+        if disk_paced:
+            state.disk_paced_until = now + DISK_PACE_SECONDS
+            room = min(room, 0)
+
     started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
         mem = next_size(state, False)[1]
@@ -1229,6 +1245,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
         room -= mem
         started += 1
+        pace()
     light_started = 0
     for slot, (repo, label) in zip(light_free, light_starts, strict=False):
         # A build held for memory goes first: no light VM takes the memory it waits for.
@@ -1237,6 +1254,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         launch(gh, state, repo, slot, now, label=label, cache=None)
         room -= LIGHT_SIZE[1]
         light_started += 1
+        pace()
     launched = starts[:started] + light_starts[:light_started]
     hold_for_memory(
         state,
@@ -1244,7 +1262,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         starts[started:] + light_starts[light_started:],
         job_ids,
         booting + Counter(launched),
-        "a busy disk" if disk_busy else "memory",
+        "a busy disk" if disk_busy or disk_paced else "memory",
     )
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
@@ -1270,6 +1288,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         label = state.last_label if repo == state.last_repo else ""
         cache = cache_for(repo, label, private)
         launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
+        pace()
     return spent
 
 
