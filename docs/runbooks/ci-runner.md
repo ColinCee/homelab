@@ -132,7 +132,12 @@ GitHub-hosted runners and take it off the token's repository access.
   a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
   (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
   page cache all VMs share, and its writes go to a deleted file thrown away
-  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
+  with everything the job wrote. A starting VM covers a queued job of its repo and
+  label only until GitHub shows its runner with a job, for at most 2 minutes, so a
+  second job of the same kind gets its own VM within a poll. The supervisor runs from
+  the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
+  `scripts/ci_supervisor.py` on the Beelink.
+  However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
