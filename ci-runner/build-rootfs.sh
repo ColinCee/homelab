@@ -2,7 +2,7 @@
 # Build the microVM root filesystem and copy Ubuntu's kernel next to it:
 #   sudo ci-runner/build-rootfs.sh
 # Writes /var/lib/homelab-ci/images/{rootfs.ext4,vmlinuz}, root-owned and
-# read-only; each job boots a private copy. Rebuild after a kernel upgrade.
+# read-only; each job boots a snapshot of it (vm-disks.sh). Rebuild after a kernel upgrade.
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }

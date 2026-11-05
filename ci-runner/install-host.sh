@@ -73,6 +73,7 @@ install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci
 install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
 install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
 install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
+install -o root -g root -m 0644 "$here/vm-disks.sh" "$dest/vm-disks.sh"
 install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
 install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
 install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service

@@ -125,8 +125,10 @@ GitHub-hosted runners and take it off the token's repository access.
 
 - **One VM per job, never reused.** The supervisor polls GitHub every 2
   seconds (unchanged answers are free) for queued jobs with the label and boots
-  a VM for each, up to two at once. The VM's root filesystem is a private copy, written straight to the disk past the page cache, and deleted with everything the
-  job wrote. However the job ends, the VM ends, within seconds. A VM left
+  a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
+  (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
+  page cache all VMs share, and its writes go to a deleted file thrown away
+  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
