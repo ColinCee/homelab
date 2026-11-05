@@ -143,7 +143,7 @@ else
   bad "CI supervisor" "${supervisor:-unknown}"
 fi
 echo "CI machines status:"
-jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
+jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), light \(.light_in_use // 0)/\(.light_slots // 0), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
   /var/lib/homelab-ci/status/machines.json 2>/dev/null || echo "  unavailable"
 echo "CI supervisor log, last 2 hours (slow polls left out, last 60 lines, repos masked):"
 sudo -n journalctl -u homelab-ci-supervisor --since -2h --no-pager -o short-iso 2>/dev/null |
