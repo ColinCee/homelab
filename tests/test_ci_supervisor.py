@@ -533,7 +533,7 @@ def test_a_listing_too_old_to_trust_means_asking_github() -> None:
 
 def _launch(slot: int, standby: bool) -> sup.Launch:
     # Only the counts are read: no process or registration file is needed.
-    return sup.Launch(slot, "octo/agent", slot, f"fc-{slot}", 0.0, None, None, standby)  # type: ignore[arg-type]
+    return sup.Launch(slot, "octo/agent", slot, f"fc-{slot}", 0.0, None, standby)  # type: ignore[arg-type]
 
 
 def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> None:
@@ -557,8 +557,6 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "github_ok": True,
         "mem_available_mib": 9000,
         "held_for_memory": 1,
-        "restarting_since": None,
-        "restart_reason": "",
     }
 
 
@@ -594,65 +592,6 @@ def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:
     monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: slots.append(slot))
     sup.tick(None, sup.State(slots=5), ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert slots == [0, 1, 2, 3, 4]
-
-
-def test_a_restarting_supervisor_starts_nothing_and_lets_a_standby_go(caches, monkeypatch) -> None:
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
-    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
-    monkeypatch.setattr(
-        sup,
-        "find_queued",
-        lambda gh, repo: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
-    )
-    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
-    started: list[int] = []
-    monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: started.append(slot))
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(run.runner_name)
-    )
-
-    class Running:
-        def poll(self) -> None:
-            return None
-
-    state = sup.State(slots=5)
-    state.launches[0] = sup.Launch(0, "o/ok", 1, "fc-0", 0.0, Running(), Path("m"), standby=True)  # type: ignore[arg-type]
-    state.launches[1] = sup.Launch(1, "o/ok", 2, "fc-1", 0.0, Running(), Path("m"))  # type: ignore[arg-type]
-    state.restarting_since = 100.0
-
-    sup.tick(None, state, ["o/ok"], 200.0)  # type: ignore[arg-type]
-
-    assert started == []
-    assert stopped == ["fc-0"]  # the standby goes; the job VM finishes
-
-
-def test_a_restart_waits_for_running_jobs_then_goes_ahead(monkeypatch) -> None:
-    class Running:
-        def poll(self) -> None:
-            return None
-
-    state = sup.State(slots=5)
-    assert not sup.finished_restarting(state, 0.0)  # not restarting
-    state.restarting_since = 100.0
-    state.launches[1] = sup.Launch(1, "o/ok", 2, "fc-1", 0.0, Running(), Path("m"))  # type: ignore[arg-type]
-    assert not sup.finished_restarting(state, 100.0 + 60)  # a job still runs
-    assert sup.finished_restarting(state, 100.0 + sup.RESTART_WAIT_SECONDS)  # waited long enough
-    state.launches.clear()
-    assert sup.finished_restarting(state, 101.0)  # every job finished
-
-
-def test_the_status_says_when_a_restart_waits_and_why(monkeypatch, tmp_path) -> None:
-    reason = tmp_path / "restart-reason"
-    reason.write_text("session X: VM memory fix\n")
-    monkeypatch.setattr(sup, "RESTART_REASON_FILE", reason)
-    state = sup.State(slots=5)
-    assert sup.status(state, 0.0, True, 1000)["restarting_since"] is None
-    state.restarting_since = 123.4
-    shown = sup.status(state, 200.0, True, 1000)
-    assert shown["restarting_since"] == 123
-    assert shown["restart_reason"] == "session X: VM memory fix"
 
 
 def test_the_status_file_is_replaced_whole_and_readable_by_all(tmp_path) -> None:
@@ -768,18 +707,20 @@ def test_session_files_go_after_thirty_days(tmp_path) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["new.jsonl"]
 
 
-def test_only_auto_kaizen_vms_get_a_live_line() -> None:
-    ours = sup.Launch(0, "ColinCee/auto-kaizen", 1, "fc-0", 0.0, None, None)  # type: ignore[arg-type]
-    product = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, None, None)  # type: ignore[arg-type]
+def test_only_auto_kaizen_vms_get_a_live_line(monkeypatch) -> None:
+    started: list[list[str]] = []
+    monkeypatch.setattr(sup.subprocess, "run", lambda cmd, **k: started.append(cmd))
+    ours = sup.Launch(0, "ColinCee/auto-kaizen", 1, "fc-0", 0.0, Path("m0"))
+    product = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, Path("m1"))
     for run in (ours, product):
-        sup.read_console(io.BytesIO(LIVE), sup.keeper(run))
-    state = sup.State(launches={1: product, 0: ours})
+        START_VM(run, 60, {})
+    assert "--live" in started[0] and "--live" not in started[1]
 
-    assert sup.live(state, 1793000000.2) == {
-        "updated": 1793000000,
-        "lines": [sup.live_line(LIVE, ours.live["heard"])],  # type: ignore[index]
-    }
-    assert product.live is None
+    # Its console reader keeps the latest line in its live file; the supervisor reads it.
+    line = sup.live_line(LIVE, 1793000000.0)
+    sup.write_status(ours.live_file, line)
+    state = sup.State(launches={1: product, 0: ours})
+    assert sup.live(state, 1793000000.2) == {"updated": 1793000000, "lines": [line]}
 
 
 def test_the_live_file_is_written_beside_the_status_file(tmp_path) -> None:
@@ -992,16 +933,8 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
         def request(self, method: str, path: str, body: object = None) -> dict:
             return {"runner": {"id": 1}, "encoded_jit_config": "x"}
 
-    class Process:
-        def __init__(self) -> None:
-            self.stdout = io.BytesIO()
-
-        def poll(self) -> None:
-            return None
-
     monkeypatch.setattr(sup, "STATE_DIR", tmp_path)
     monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
-    monkeypatch.setattr(sup.subprocess, "Popen", lambda *a, **k: Process())
     state = sup.State()
     sup.launch(Registers(), state, "o/spare", 0, 0.0, cache=None, standby=True)  # type: ignore[arg-type]
     assert state.used == set()
@@ -1046,7 +979,7 @@ def pools(caches, monkeypatch):
     def launch(gh, state, repo, slot, now, *, cache, label="", standby=False) -> None:
         started.append((slot, label))
         state.launches[slot] = sup.Launch(
-            slot, repo, slot, f"fc-{slot}", now, None, None, standby, label=label
+            slot, repo, slot, f"fc-{slot}", now, None, standby, label=label
         )  # type: ignore[arg-type]
 
     monkeypatch.setattr(sup, "launch", launch)
@@ -1086,13 +1019,13 @@ def test_no_light_slots_means_light_jobs_wait(pools) -> None:
 
 def test_light_vms_do_not_shrink_a_build_vm() -> None:
     state = sup.State(slots=5, light_slots=2)
-    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     assert sup.next_size(state, False) == (4, 4096)
 
 
 def test_the_status_file_counts_light_vms_apart() -> None:
     state = sup.State(slots=5, light_slots=5, launches={0: _launch(0, False)})
-    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     status = sup.status(state, 0.0, github_ok=True, mem_available=9000)
     assert (status["in_use"], status["light_slots"], status["light_in_use"]) == (1, 5, 1)
 
@@ -1127,16 +1060,8 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
             registered.append(body["labels"])
             return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
 
-    class Process:
-        def __init__(self) -> None:
-            self.stdout = io.BytesIO()
-
-        def poll(self) -> None:
-            return None
-
-    def popen(*args, env, **kwargs) -> Process:
+    def start_vm(run, timeout, env) -> None:
         disks.append(env["CACHE_IMAGE"])
-        return Process()
 
     for name in ("check_private", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
@@ -1145,7 +1070,7 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     monkeypatch.setattr(sup, "standby_count", lambda: 1)
     monkeypatch.setattr(sup, "STATE_DIR", caches)
     monkeypatch.setattr(sup, "LAST_REPO_FILE", caches / "last-repo")
-    monkeypatch.setattr(sup.subprocess, "Popen", popen)
+    monkeypatch.setattr(sup, "start_vm", start_vm)
     stopped: list[str] = []
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     labelled = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
@@ -1196,9 +1121,8 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
         slot,
         f"fc-{slot}",
         0.0,
-        None,
-        None,
-        label=label,  # type: ignore[arg-type]
+        None,  # type: ignore[arg-type]
+        label=label,
     )
     sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
     if busy:  # it has its own job, so the queued one gets a VM of its own
@@ -1238,9 +1162,7 @@ def test_a_light_job_of_its_repo_takes_the_light_standby(pools) -> None:
     queue, started = pools
     queue(build=0, light=1)
     state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
-    state.launches[1] = sup.Launch(
-        1, "o/ok", 1, "fc-1", 0.0, None, None, True, label=sup.LIGHT_LABEL
-    )  # type: ignore[arg-type]
+    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
     assert started == []  # left to the ready VM
 
@@ -1253,9 +1175,7 @@ def test_the_light_standby_gives_way_to_another_repos_light_job(pools, monkeypat
         sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(f"{run.repo} {why}")
     )
     state = sup.State(slots=1, light_slots=1, last_light_repo="o/other")
-    state.launches[1] = sup.Launch(
-        1, "o/other", 1, "fc-1", 0.0, None, None, True, label=sup.LIGHT_LABEL
-    )  # type: ignore[arg-type]
+    state.launches[1] = sup.Launch(1, "o/other", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     sup.tick(None, state, ["o/ok", "o/other"], 60.0)  # type: ignore[arg-type]
     assert stopped == ["o/other is in the way of a queued job"]
     assert started == []  # the job takes the slot once the standby has gone
@@ -1268,9 +1188,7 @@ def test_the_light_standby_stays_out_of_a_build_jobs_way_for_a_slot(pools, monke
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
     state.launches[0] = _launch(0, False)  # the build slot is busy
-    state.launches[1] = sup.Launch(
-        1, "o/ok", 1, "fc-1", 0.0, None, None, True, label=sup.LIGHT_LABEL
-    )  # type: ignore[arg-type]
+    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
     assert stopped == []  # a build cannot use a light slot
 
@@ -1283,9 +1201,7 @@ def test_the_light_standby_gives_its_memory_to_a_build_and_never_boots_while_one
     stopped: list[str] = []
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     state = sup.State(slots=2, light_slots=2, last_light_repo="o/ok")
-    state.launches[2] = sup.Launch(
-        2, "o/ok", 2, "fc-2", 0.0, None, None, True, label=sup.LIGHT_LABEL
-    )  # type: ignore[arg-type]
+    state.launches[2] = sup.Launch(2, "o/ok", 2, "fc-2", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
     queue(jobs=1, free_mib=3072 + 1024)  # a free build slot, but not the memory
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert stopped == ["is in the way of a job waiting for memory"]
@@ -1300,3 +1216,92 @@ def test_the_last_light_jobs_repo_is_kept_and_polled_every_time(monkeypatch, tmp
     assert sup.recalled_last_light_repo() == "a/k"
     state = sup.State(last_light_repo="a/k", polled={"a/k": 0.0, "a/q": 0.0})
     assert sup.due(["a/k", "a/q"], state, 30.0) == ["a/k"]
+
+
+# The real one, before the fixture below replaces it in every test.
+START_VM = sup.start_vm
+
+
+class EveryUnit(set):
+    """Every VM unit counts as running, unless a test says otherwise."""
+
+    def __contains__(self, item: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def vms(tmp_path, monkeypatch):
+    """VM records in a temporary folder, VMs never really started, and all still running."""
+    monkeypatch.setattr(sup, "VMS_DIR", tmp_path / "vms")
+    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: None)
+    monkeypatch.setattr(sup, "running_vms", lambda: EveryUnit())
+    return tmp_path / "vms"
+
+
+def test_a_restarted_supervisor_takes_back_running_vms_and_drops_ended_ones(
+    vms, monkeypatch
+) -> None:
+    running = sup.Launch(3, "o/ok", 7, "fc-3-100", 100.0, Path("m3"), label="fc-cache-o--ok")
+    ended = sup.Launch(4, "o/ok", 8, "fc-4-100", 100.0, Path("m4"))
+    for run in (running, ended):
+        sup.write_status(run.record, sup.record(run))
+    stopped: list[list[str]] = []
+    monkeypatch.setattr(sup.subprocess, "run", lambda cmd, **k: stopped.append(cmd))
+    units = {running.unit, "homelab-ci-vm-fc-9-1"}  # the second has no record
+    monkeypatch.setattr(sup, "running_vms", lambda: units)
+
+    state = sup.State()
+    sup.adopt(state)
+
+    assert state.launches == {3: running}
+    assert not ended.record.exists()
+    assert stopped == [["systemctl", "stop", "--no-block", "homelab-ci-vm-fc-9-1"]]
+
+
+def test_a_vm_that_ended_is_forgotten_and_its_runner_removed(vms, monkeypatch) -> None:
+    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, vms / "metadata")
+    sup.write_status(run.record, sup.record(run))
+    removed: list[str] = []
+    monkeypatch.setattr(sup, "delete_runner", lambda gh, repo, rid, name: removed.append(name))
+    monkeypatch.setattr(sup, "running_vms", lambda: set())
+    state = sup.State(launches={0: run})
+
+    sup.reap(None, state, 10.0)  # type: ignore[arg-type]
+
+    assert state.launches == {} and removed == ["fc-0-1"] and not run.record.exists()
+
+
+def test_reaping_waits_while_systemd_cannot_be_asked(monkeypatch) -> None:
+    monkeypatch.setattr(sup, "running_vms", lambda: None)
+    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"))
+    state = sup.State(launches={0: run})
+    sup.reap(None, state, 10.0)  # type: ignore[arg-type]
+    assert state.launches == {0: run}
+
+
+def test_stale_runners_skip_the_vms_still_running() -> None:
+    class Runners:
+        deleted: ClassVar[list[str]] = []
+
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            if method == "DELETE":
+                Runners.deleted.append(path.rsplit("/", 1)[1])
+                return {}
+            return {"runners": [{"id": 1, "name": "fc-1-5"}, {"id": 2, "name": "fc-2-5"}]}
+
+        def forget(self, drop) -> None:
+            pass
+
+    sup.remove_stale_runners(Runners(), ["o/ok"], keep=["fc-2-5"])  # type: ignore[arg-type]
+    assert Runners.deleted == ["1"]
+
+
+@pytest.mark.parametrize("label", ["", sup.LIGHT_LABEL])
+def test_a_standby_that_took_a_job_is_recorded_as_a_job_vm(vms, monkeypatch, label) -> None:
+    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"), True, label=label)
+    sup.write_status(run.record, sup.record(run))
+    monkeypatch.setattr(sup, "is_idle", lambda gh, r: False)
+    state = sup.State(launches={0: run})
+    sup.reap(None, state, 60.0, {}, ["o/ok"])  # type: ignore[arg-type]
+    assert json.loads(run.record.read_text())["standby"] is False
+    assert ("o/ok" in state.used) is (label == "")  # only a build job keeps its repo polled

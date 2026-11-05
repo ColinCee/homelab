@@ -84,6 +84,11 @@ LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
 STATE_DIR = Path("/run/homelab-ci")
+# Each running VM is a systemd unit of its own (homelab-ci-vm-<runner name>), so it outlives a
+# restart of this supervisor; its record here, written before it starts, lets a restarted
+# supervisor take it back (5 Nov: restarting killed every VM, and 20 jobs were cut off).
+VMS_DIR = STATE_DIR / "vms"
+UNIT_PREFIX = "homelab-ci-vm-"
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API_HOST = "api.github.com"
 API = f"https://{API_HOST}"
@@ -93,17 +98,11 @@ API = f"https://{API_HOST}"
 # up to 2 + 2N GiB on paper. The default 5 (12 GiB on paper) fits the 16 GiB host because
 # jobs mostly wait on the network and touch far less than their size, and the memory
 # check below holds a VM back rather than eat into the services' reserve.
+# Auto Kaizen caps its running tasks at this number (its build.yml and watch.yml).
 SLOTS_FILE = Path("/etc/homelab-ci/slots")
 DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
-# A restart (SIGTERM, from `systemctl stop` or `install-host.sh`) starts no new VM and lets
-# running jobs finish first, so a change never cuts off work (5 Nov: three restarts cut off
-# 20 jobs). Past this wait, what still runs is stopped: a merge waiting on CI that cannot
-# start meanwhile would wait forever. systemd's TimeoutStopSec is a little longer.
-RESTART_WAIT_SECONDS = 20 * 60
-# Who asked for the restart and why, written by install-host.sh for the Control room.
-RESTART_REASON_FILE = Path("/run/homelab-ci/restart-reason")
 # A VM covers a queued job of its repo and label only while it is starting: until its runner
 # takes a job, and for at most this long. VMs start in seconds since the disk image is no
 # longer copied (homelab#759); 600 s, set while copies took minutes, made a busy VM hold back
@@ -187,7 +186,6 @@ class Launch:
     runner_id: int
     runner_name: str
     started: float
-    process: subprocess.Popen[bytes]
     metadata: Path
     # Booted ahead of any job; becomes an ordinary job VM once GitHub gives it one.
     standby: bool = False
@@ -196,8 +194,19 @@ class Launch:
     label: str = ""
     # GitHub showed its runner with a job: it no longer covers a queued one.
     busy: bool = False
-    # The VM's latest live line, set by its console reader (see read_console).
-    live: dict[str, Any] | None = None
+
+    @property
+    def unit(self) -> str:
+        return f"{UNIT_PREFIX}{self.runner_name}"
+
+    @property
+    def record(self) -> Path:
+        return VMS_DIR / f"{self.runner_name}.json"
+
+    @property
+    def live_file(self) -> Path:
+        """Its latest live line, written by its console reader (`vm` mode)."""
+        return VMS_DIR / f"{self.runner_name}.live"
 
     @property
     def want(self) -> Want:
@@ -241,8 +250,6 @@ class State:
     polled: dict[str, float] = field(default_factory=dict)
     # Queued jobs not started for lack of memory (job id -> repo), each logged once.
     held: dict[int, str] = field(default_factory=dict)
-    # When a restart was asked for: from then on no VM starts and running jobs finish.
-    restarting_since: float | None = None
 
 
 def log(message: str) -> None:
@@ -508,39 +515,22 @@ def launch(
         if standby
         else VM_TIMEOUT_SECONDS
     )
+    run = Launch(slot, repo, runner_id, name, now, metadata, standby, label=label)
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             json.dump({"task": "runner", "jitconfig": registration["encoded_jit_config"]}, f)
-        process = subprocess.Popen(
-            [
-                str(RUN_VM),
-                str(slot),
-                str(metadata),
-                str(timeout),
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            # Its errors and each VM's memory peak go to the journal.
-            stderr=None,
-            env={
-                **os.environ,
-                "VCPUS": str(vcpus),
-                "MEM_MIB": str(mem_mib),
-                "CACHE_IMAGE": str(cache) if cache else "",
-            },
-        )
+        # The record first: a supervisor that dies right after starting the VM still finds it.
+        write_status(run.record, record(run))
+        env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
+        start_vm(run, timeout, env)
     except BaseException:
-        metadata.unlink(missing_ok=True)
+        # It may have started anyway (systemd-run timing out, say).
+        subprocess.run(["systemctl", "stop", "--no-block", run.unit], check=False, timeout=30)
+        forget(run)
         delete_runner(gh, repo, runner_id, name)
         raise
-    run = Launch(slot, repo, runner_id, name, now, process, metadata, standby, label=label)
     state.launches[slot] = run
-    session = SESSIONS_DIR / f"{name}.jsonl" if repo.lower() == LIVE_REPO.lower() else None
-    reader = threading.Thread(
-        target=read_console, args=(process.stdout, keeper(run), session), daemon=True
-    )
-    reader.start()
     # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
     # booted after a restart kept a repo with no work polled every poll).
     # A light job neither keeps its repo polled every time nor draws the standby to it.
@@ -605,12 +595,138 @@ def live_line(raw: bytes, heard: float) -> dict[str, Any] | None:
     }
 
 
-def keeper(run: Launch) -> Callable[[dict[str, Any]], None] | None:
-    """Where a VM's live lines go: onto its Launch, for auto-kaizen's VMs only, so a
-    product's VM cannot put a line on a task."""
-    if run.repo.lower() != LIVE_REPO.lower():
+def record(run: Launch) -> dict[str, Any]:
+    """What a restarted supervisor needs to take a running VM back: its launch facts."""
+    return {
+        "slot": run.slot,
+        "repo": run.repo,
+        "runner_id": run.runner_id,
+        "runner_name": run.runner_name,
+        "started": run.started,
+        "metadata": str(run.metadata),
+        "standby": run.standby,
+        "label": run.label,
+    }
+
+
+def start_vm(run: Launch, timeout: int, env: Mapping[str, str]) -> None:
+    """Start the VM as a systemd unit of its own, so a restart of this supervisor leaves it
+    running. Its console goes through this script's `vm` mode, which keeps the live lines and
+    sessions of auto-kaizen's VMs only, so a product's VM cannot put a line on a task. The
+    unit stops before the CI network does, at shutdown."""
+    vm = [str(run.slot), str(run.metadata), str(timeout)]
+    if run.repo.lower() == LIVE_REPO.lower():
+        session = SESSIONS_DIR / f"{run.runner_name}.jsonl"
+        vm += ["--live", str(run.live_file), "--session", str(session)]
+    subprocess.run(
+        [
+            "systemd-run",
+            f"--unit={run.unit}",
+            "--collect",
+            "--quiet",
+            # Stops before the network does at shutdown; Wants, not Requires, as the network
+            # unit says: restarting it must not take running VMs with it.
+            "--property=After=homelab-ci-net.service",
+            "--property=Wants=homelab-ci-net.service",
+            "--property=SyslogIdentifier=homelab-ci-vm",
+            *(f"--setenv={k}={v}" for k, v in env.items()),
+            sys.executable,
+            "-I",
+            str(Path(__file__).resolve()),
+            "vm",
+            *vm,
+        ],
+        check=True,
+        timeout=30,
+    )
+
+
+def running_vms() -> set[str] | None:
+    """The VM units still running (stopping counts), or None if systemd could not be asked."""
+    try:
+        out = subprocess.run(
+            [
+                "systemctl",
+                "list-units",
+                "--plain",
+                "--no-legend",
+                "--state=active,activating,deactivating",
+                f"{UNIT_PREFIX}*",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
         return None
-    return lambda line: setattr(run, "live", line)
+    return {line.split()[0].removesuffix(".service") for line in out.splitlines() if line.strip()}
+
+
+def forget(run: Launch) -> None:
+    """A VM's files, once it has ended."""
+    for path in (run.record, run.live_file, run.metadata):
+        path.unlink(missing_ok=True)
+
+
+def adopt(state: State) -> None:
+    """Take back the VMs a previous supervisor started and that still run; delete the records
+    of those that ended, and stop a VM unit without a record (nothing could track it)."""
+    running = running_vms()
+    if running is None:
+        raise RuntimeError("cannot list the running VMs")
+    VMS_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    for path in VMS_DIR.glob("*.json"):
+        try:
+            fields = json.loads(path.read_text())
+            run = Launch(
+                int(fields["slot"]),
+                str(fields["repo"]),
+                int(fields["runner_id"]),
+                str(fields["runner_name"]),
+                float(fields["started"]),
+                Path(fields["metadata"]),
+                standby=bool(fields["standby"]),
+                label=str(fields["label"]),
+            )
+        except (OSError, ValueError, TypeError, KeyError):
+            path.unlink(missing_ok=True)
+            continue
+        if run.unit in running and run.slot not in state.launches:
+            state.launches[run.slot] = run
+            log(f"slot {run.slot}: took back {run.runner_name} for {run.repo}")
+        else:
+            forget(run)
+    known = {run.unit for run in state.launches.values()}
+    for unit in running - known:
+        log(f"{unit} has no record, stopping it")
+        subprocess.run(["systemctl", "stop", "--no-block", unit], check=False, timeout=30)
+
+
+def vm_main(argv: list[str]) -> int:
+    """`vm SLOT METADATA TIMEOUT [--live FILE --session FILE]`: run-vm.sh's console reader,
+    the main process of the VM's unit. It reads the console to the end (a full pipe would
+    stall the VM), keeps the latest live line in FILE and the session events, and exits with
+    run-vm.sh's code."""
+    parser = argparse.ArgumentParser(prog="ci_supervisor.py vm")
+    parser.add_argument("slot")
+    parser.add_argument("metadata")
+    parser.add_argument("timeout")
+    parser.add_argument("--live", type=Path)
+    parser.add_argument("--session", type=Path)
+    args = parser.parse_args(argv)
+    # Stopping the unit signals every process in it: run-vm.sh cleans up on its own, and this
+    # reader keeps reading until it has (a closed pipe would cut its cleanup short).
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    process = subprocess.Popen(
+        [str(RUN_VM), args.slot, args.metadata, args.timeout],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+    )
+    assert process.stdout is not None
+    keep = (lambda line: write_status(args.live, line)) if args.live else None
+    read_console(process.stdout, keep, args.session)
+    return process.wait()
 
 
 def session_event(raw: bytes) -> bytes | None:
@@ -741,7 +857,7 @@ def on_its_way(gh: GitHub, run: Launch, now: float, queued_for_want: int) -> boo
 
 def stop(run: Launch, why: str) -> None:
     log(f"slot {run.slot}: {run.runner_name} {why}, stopping it")
-    run.process.terminate()
+    subprocess.run(["systemctl", "stop", "--no-block", run.unit], check=False, timeout=30)
     # Do not rely on run-vm.sh's trap alone: the VM lives in its own cgroup.
     kill = CGROUP_ROOT / f"ci-slot{run.slot}" / "cgroup.kill"
     if kill.exists():
@@ -785,21 +901,27 @@ def reap(
 ) -> None:
     """Clear finished VMs. With this poll's queue, also stop VMs left without a job."""
     private = set(private)
+    running = running_vms()
+    if running is None:
+        return  # systemd did not answer: tried again next poll
     for slot, run in list(state.launches.items()):
-        code = run.process.poll()
-        if code is None:
+        if run.unit in running:
             if queued is None:
                 continue
             if run.standby:
                 check_standby(gh, run, now, run.repo in private)
-                if not run.standby and not run.light:  # it took a build job
-                    state.used.add(run.repo)
+                if not run.standby:  # it took a job
+                    write_status(
+                        run.record, record(run)
+                    )  # a restart must not take it for a standby
+                    if not run.light:
+                        state.used.add(run.repo)
             else:
                 stop_idle(gh, run, now, queued.get(run.want, 0))
             continue
-        run.metadata.unlink(missing_ok=True)
+        forget(run)
         delete_runner(gh, run.repo, run.runner_id, run.runner_name)
-        log(f"slot {slot}: {run.runner_name} finished (exit {code})")
+        log(f"slot {slot}: {run.runner_name} finished")
         del state.launches[slot]
 
 
@@ -817,9 +939,11 @@ def skipped(repo: str, error: Exception | None) -> None:
         log(f"{repo} is back")
 
 
-def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> list[str]:
-    """Registrations left by a previous supervisor; their VMs died with it. Returns the
-    repos GitHub would not show (say, the token cannot see them), to try again later."""
+def remove_stale_runners(gh: GitHub, repos: Iterable[str], keep: Iterable[str] = ()) -> list[str]:
+    """Registrations left by a previous supervisor whose VMs have ended (`keep` names the
+    ones still running). Returns the repos GitHub would not show (say, the token cannot see
+    them), to try again later."""
+    keep = set(keep)
     failed: list[str] = []
     for repo in repos:
         try:
@@ -832,7 +956,11 @@ def remove_stale_runners(gh: GitHub, repos: Iterable[str]) -> list[str]:
             continue
         for runner in page.get("runners", []):
             name = str(runner.get("name", ""))
-            if name.startswith(RUNNER_PREFIX) and delete_runner(gh, repo, int(runner["id"]), name):
+            if (
+                name.startswith(RUNNER_PREFIX)
+                and name not in keep
+                and delete_runner(gh, repo, int(runner["id"]), name)
+            ):
                 log(f"removed stale runner {name} from {repo}")
     return failed
 
@@ -1073,12 +1201,6 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         for job in jobs:
             job_ids.setdefault(job.want, []).append(job.id)
     reap(gh, state, now, queued, private)
-    if state.restarting_since is not None:
-        # Restarting: running jobs finish, nothing new starts, and a standby without a job
-        # goes (asked twice, so one that just took a job is kept).
-        for run in [r for r in state.launches.values() if r.standby and r.process.poll() is None]:
-            stop_if_still_idle(gh, run, "has no job and the supervisor is restarting")
-        return spent
     # Cache disks only for repos that run here; a quiet repo gets checked after its first job.
     maybe_refresh_caches(
         gh, state, [r for r in private if r in state.used or cache_image(r).exists()], now
@@ -1104,7 +1226,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
         mem = next_size(state, False)[1]
-        if mem > room or state.restarting_since is not None:
+        if mem > room:
             break
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
         room -= mem
@@ -1254,54 +1376,21 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
         "github_ok": github_ok,
         "mem_available_mib": mem_available,
         "held_for_memory": len(state.held),
-        "restarting_since": int(state.restarting_since) if state.restarting_since else None,
-        "restart_reason": restart_reason() if state.restarting_since else "",
     }
 
 
-def restart_reason() -> str:
+def read_live(run: Launch) -> dict[str, Any] | None:
+    """The VM's latest live line, if its console reader has written one."""
     try:
-        return RESTART_REASON_FILE.read_text().strip()[:200]
-    except OSError:
-        return ""
-
-
-def shutting_down() -> bool:
-    """The host itself is stopping (a reboot or shutdown), not just this service."""
-    try:
-        state = subprocess.run(
-            ["systemctl", "is-system-running"], capture_output=True, text=True, timeout=5
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return state == "stopping"
-
-
-def reap_while_restarting(gh: GitHub, state: State) -> None:
-    """A poll that failed still clears finished VMs while a restart waits for them."""
-    if state.restarting_since is None:
-        return
-    try:
-        reap(gh, state, time.time())
-    except Exception as e:
-        log(f"reap failed: {type(e).__name__}: {e}")
-
-
-def finished_restarting(state: State, now: float) -> bool:
-    """A restart may go ahead: every job has finished, or the wait is over. Logs which."""
-    if state.restarting_since is None:
-        return False
-    waited = now - state.restarting_since
-    if state.launches and waited < RESTART_WAIT_SECONDS:
-        return False
-    cut = sum(not run.standby for run in state.launches.values())
-    log(f"restarting after {waited:.0f}s: {cut} jobs cut off")
-    return True
+        line = json.loads(run.live_file.read_text())
+    except (OSError, ValueError):
+        return None
+    return line if isinstance(line, dict) else None
 
 
 def live(state: State, now: float) -> dict[str, Any]:
     """The latest live line of each running VM that has sent one."""
-    lines = [run.live for _, run in sorted(state.launches.items()) if run.live]
+    lines = [line for _, run in sorted(state.launches.items()) if (line := read_live(run))]
     return {"updated": int(now), "lines": lines}
 
 
@@ -1399,6 +1488,9 @@ def standby_first(repos: list[str], last: str) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["vm"]:
+        return vm_main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="one poll, for testing")
     args = parser.parse_args(argv)
@@ -1428,24 +1520,11 @@ def main(argv: list[str] | None = None) -> int:
     # Why the status file could not be written last time, so a lasting failure logs once.
     status_error = ""
     log(f"{state.slots} slots; serving private repos the token can see")
-
-    # Only sets the time: the loop logs it (printing from a signal handler can interrupt a print).
-    def restarting(signum: int, frame: object) -> None:
-        if state.restarting_since is None:
-            state.restarting_since = time.time()
-
-    signal.signal(signal.SIGTERM, restarting)
-    told = False
+    # VMs started before a restart are still running: take them back before anything else.
+    adopt(state)
     while True:
         wait: float = POLL_SECONDS
         github_ok = False
-        if state.restarting_since is not None and not told:
-            told = True
-            if shutting_down():
-                # The host is going down: no 20-minute wait to hold the shutdown up.
-                state.restarting_since -= RESTART_WAIT_SECONDS
-            jobs = sum(not run.standby for run in state.launches.values())
-            log(f"restarting: no new VMs; waiting for {jobs} running jobs to finish")
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
             if listing is None and time.time() - listed >= REPOS_EVERY:
@@ -1474,7 +1553,8 @@ def main(argv: list[str] | None = None) -> int:
                     repos = found
             started, asked, waited = time.monotonic(), gh.requests, gh.seconds
             if unclean:
-                unclean = remove_stale_runners(gh, unclean)
+                running = [run.runner_name for run in state.launches.values()]
+                unclean = remove_stale_runners(gh, unclean, running)
             now = time.time()
             polling = due(standby_first(repos, state.last_repo), state, now)
             spent = tick(gh, state, polling, now)
@@ -1487,10 +1567,8 @@ def main(argv: list[str] | None = None) -> int:
         except RateLimited as e:
             log(str(e))
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
-            reap_while_restarting(gh, state)
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
-            reap_while_restarting(gh, state)
             failures += 1
             # Without GitHub nothing re-checks privacy, so no VM is left waiting meanwhile.
             if failures == 5:
@@ -1507,13 +1585,6 @@ def main(argv: list[str] | None = None) -> int:
             if why != status_error:
                 log(f"could not write the status file: {why}")
             status_error = why
-        if finished_restarting(state, time.time()):
-            # Not `return`: that waits for the request threads, and a hung request would
-            # hold the restart up.
-            sys.stdout.flush()
-            os._exit(0)
-        if state.restarting_since is not None:
-            wait = POLL_SECONDS
         if args.once:
             while state.launches:
                 time.sleep(POLL_SECONDS)

@@ -26,11 +26,17 @@ accept_rules() {
   echo "-i $uplink -o fc-tap+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT"
 }
 
-refresh_wan() {
+public_address() {
   local wan
   # A few tries: one slow answer should not cost a VM (run-vm.sh refuses to start without it).
   wan=$(curl -4 -sf -m 3 --retry 3 --retry-all-errors --retry-delay 1 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
   [[ "$wan" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "cannot find the public address" >&2; return 1; }
+  echo "$wan"
+}
+
+refresh_wan() {
+  local wan
+  wan=$(public_address) || return 1
   # One transaction, so the set is never empty in between.
   nft -f - <<<"flush set inet homelab_ci wan4; add element inet homelab_ci wan4 { $wan }"
   nft list set inet homelab_ci wan4 | grep -qF "$wan"
@@ -51,7 +57,16 @@ case ${1:-up} in
 esac
 
 [[ -n "$uplink" ]] || { echo "no default route" >&2; exit 1; }
-nft -f "$dir/homelab-ci.nft"
+# The rules and the public address in one transaction, so running VMs never see the blocked
+# address set empty. Without the address, rules already in place are kept; on a first start
+# they load without it, and run-vm.sh refuses VMs until it is set.
+if wan=$(public_address); then
+  { cat "$dir/homelab-ci.nft"; echo "add element inet homelab_ci wan4 { $wan }"; } | nft -f -
+elif nft list table inet homelab_ci >/dev/null 2>&1; then
+  echo "public address not found: the current rules stay; run-vm.sh refreshes it before each VM" >&2
+else
+  nft -f "$dir/homelab-ci.nft"
+fi
 
 for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
   tap=fc-tap$n
@@ -62,9 +77,6 @@ for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
   ip addr replace "10.200.$n.1/30" dev "$tap"
   ip link set "$tap" up
 done
-# Reloading the table emptied the public address set; VMs that start before it
-# is filled again are refused by run-vm.sh, so a failure here is not fatal.
-refresh_wan || echo "public address not set yet; run-vm.sh will retry" >&2
 
 while read -r -a rule; do
   iptables -C DOCKER-USER "${rule[@]}" 2>/dev/null || iptables -I DOCKER-USER "${rule[@]}"

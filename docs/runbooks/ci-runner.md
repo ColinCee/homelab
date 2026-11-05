@@ -95,7 +95,8 @@ also puts `node_modules` and its `package-lock.json` on the disk (the action's
 stays valid.
 
 There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
-Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
+Operating). Auto Kaizen runs no more tasks at once than this number, set in its
+`build.yml` and `watch.yml`; change them with it. A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
@@ -207,7 +208,7 @@ sudo ci-runner/build-rootfs.sh   # VM image and kernel
 sudo ci-runner/tests/test-tools.sh  # the image's tools run for a job; supervisor stopped first
 sudo ci-runner/tests/audit.sh    # must pass before the supervisor runs
 sudo systemctl enable --now homelab-ci-supervisor.service
-journalctl -u homelab-ci-supervisor -f
+journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -t homelab-ci-vm -f
 ```
 
 `/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
@@ -246,8 +247,7 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "light_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
- "mem_available_mib": 9216, "held_for_memory": 0,
- "restarting_since": null, "restart_reason": ""}
+ "mem_available_mib": 9216, "held_for_memory": 0}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
@@ -256,9 +256,7 @@ running a job and the ones waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve. While a restart waits for
-running jobs, `restarting_since` is when it was asked for and `restart_reason` who asked and why (see
-[Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)). A failed write is logged
+jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
 Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
@@ -302,7 +300,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   `bwrap`, socat) as the runner user with the job's `PATH`,
   then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
-  (`sudo systemctl stop homelab-ci-supervisor`, which waits for running jobs) and its VMs finished: it boots
+  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished (VMs outlive the
+  supervisor: wait for them, or stop them with `sudo ci-runner/stop-vms.sh`): it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
@@ -323,33 +322,31 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
 
 ## Changing the Beelink while jobs run
 
-Every change goes in through `sudo REASON="<who>: <why>" ci-runner/install-host.sh`
-from a checkout of `main`. Never stop or restart the supervisor directly while jobs run,
-and never leave a loop waiting to do it from your own connection: on 5 Nov three
-restarts cut off 20 running jobs, and one waiting loop outlived the session that
-thought it had stopped it.
+Every change goes in through `sudo REASON="<repo>#<number>: <why>" ci-runner/install-host.sh`, naming the issue or pull request it ships (the Control room links it),
+from a checkout of `main`. Never leave a loop waiting to change the Beelink from your
+own connection: on 5 Nov one outlived the session that thought it had stopped it.
 
+- **Running jobs carry on through any change.** Each VM is a systemd unit of its own
+  (`homelab-ci-vm-<runner name>`), not the supervisor's child, with its record in
+  `/run/homelab-ci/vms/`. A restarted supervisor takes the running VMs back and carries
+  on watching them; a restart takes seconds and cuts off nothing (on 5 Nov, before this,
+  three restarts cut off 20 running jobs).
 - **Without a restart:** `run-vm.sh`, `vm-disks.sh`, `stop-vms.sh`, Firecracker and
   a rebuilt VM image (`build-rootfs.sh`) go in while jobs run. New VMs get them;
   running ones keep what they started with.
 - **With a restart:** a change to the supervisor, the network rules, the systemd
-  units or the slot counts restarts the supervisor. A restart, from `install-host.sh`
-  or `systemctl stop`/`restart`, starts no new VM, stops a ready VM that has no job,
-  and waits for running jobs to finish, up to 20 minutes. Only then does the change
-  go in, ahead of every queued job; those wait at GitHub and start once it is back.
-  Anything still running after 20 minutes is cut off, and the log says how many
-  (`restarting after Ns: N jobs cut off`).
+  units or the slot counts restarts the supervisor. The rules reload together with
+  the home's public address in one transaction, so running VMs never see that address
+  unblocked.
 - **One at a time:** a second `install-host.sh` waits for the first and names it.
-- **Seen:** the Control room shows the restart and its reason while it waits
-  (from `machines.json`, above).
-- **The first install of this** finds a supervisor that cannot wait yet: it waits for
-  a moment with no job running before the restart. A host shutdown or reboot does not
-  wait for jobs.
+- **Stopping every VM** on purpose (to clear the host): `sudo ci-runner/stop-vms.sh`.
+- **A VM's own lines** (its errors and memory peak) are in `journalctl -t homelab-ci-vm`.
 
 ## Changing the number of slots
 
-With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`, which
-waits up to 20 minutes for running jobs to finish) and its VMs finished:
+With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
+its VMs finished (they outlive the supervisor: wait for them, or stop them with
+`sudo ci-runner/stop-vms.sh`):
 
 1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
    makes that many slot users and taps.

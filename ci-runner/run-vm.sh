@@ -50,7 +50,8 @@ cleanup() {
 }
 peak_file=/run/homelab-ci/slot$slot.peak
 cleanup
-trap cleanup EXIT
+# The one-job registration goes with the VM (not at the start: it is this run's).
+trap 'cleanup; rm -f "$metadata"' EXIT
 
 # Fill the chroot as root, then hand it over, so the slot user cannot plant
 # links for root to follow.
