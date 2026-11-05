@@ -17,20 +17,22 @@ services:
       KAIZEN_APP_KEY_FILE: /run/secrets/kaizen_app_key
       # Grafana's alerts come in on /alert with this secret (auto-kaizen src/kaizen/alert.py).
       KAIZEN_ALERT_SECRET_FILE: /run/secrets/kaizen_alert_secret
-      # Kaizen says in Discord, next to Grafana's alert, that it picked the alert up, or that no answer came.
-      KAIZEN_DISCORD_FILE: /run/secrets/kaizen_discord
+      # The auto-kaizen Discord bot keeps one post per alert in the #alerts forum, and mentions Colin only when he must act.
+      KAIZEN_DISCORD_TOKEN_FILE: /run/secrets/kaizen_discord_token
+      KAIZEN_ALERTS_FORUM: "1567861139142877295"
+      KAIZEN_DISCORD_COLIN: "124131392207454208"
     secrets:
       - kaizen_app_key
       - kaizen_alert_secret
-      - kaizen_discord
+      - kaizen_discord_token
 
 secrets:
   kaizen_app_key:
     environment: KAIZEN_APP_KEY
   kaizen_alert_secret:
     environment: KAIZEN_ALERT_SECRET
-  kaizen_discord:
-    environment: DISCORD_PRIVATE_WEBHOOK_URL
+  kaizen_discord_token:
+    environment: KAIZEN_DISCORD_TOKEN
 
 volumes:
   data:
