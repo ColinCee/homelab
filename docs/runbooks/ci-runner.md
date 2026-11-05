@@ -105,8 +105,12 @@ merge waiting on CI never takes the slot that CI needs. Builds get memory first.
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
 services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
-touches far less than its size, so this counts what is really free, not the
-sizes added up. A job without the memory stays queued and is tried again on the
+touches far less than its size and gives file cache back: `ci-trim-cache` in the
+VM drops its cache once it passes a quarter of its memory, and the balloon
+device's free page reporting returns the freed pages to the host. So this counts
+what is really free, not the sizes added up. When a VM ends, the journal says how
+much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
+MiB of Y`), to size VMs by kind of job. A job without the memory stays queued and is tried again on the
 next poll; the log says so once per job. A standby gives way first: none boots
 while a job waits for memory, and one waiting for another repo is stopped to
 make room.
@@ -132,16 +136,23 @@ GitHub-hosted runners and take it off the token's repository access.
   a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
   (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
   page cache all VMs share, and its writes go to a deleted file thrown away
-  with everything the job wrote. However the job ends, the VM ends, within seconds. A VM left
+  with everything the job wrote. A starting VM covers a queued job of its repo and
+  label only until GitHub shows its runner with a job, for at most 2 minutes, so a
+  second job of the same kind gets its own VM within a poll. The supervisor runs from
+  the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
+  `scripts/ci_supervisor.py` on the Beelink.
+  However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  repo of the last job (kept in `/var/lib/homelab-ci/last-repo`, so a restart
-  puts it back there), so the next job there starts in about a
+  repo and cache label of the last build job, with that label's cache disk (both
+  kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), so
+  the next job asking for the same starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
-  free slot; an idle standby is replaced every 45 minutes, and stopped if its
+  free slot. A build job wanting another repo or label, with no slot free, stops
+  it; an idle standby is replaced every 45 minutes, and stopped if its
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
   default); 2 was measured and not worth its RAM (see the performance doc).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
@@ -247,7 +258,15 @@ else is dropped unlogged. A VM's entry goes when it ends:
  "lines": [{"task": 105, "who": "builder", "at": 1792999990, "heard": 1792999998, "text": "runs the tests (uv run pytest -q)"}]}
 ```
 
-Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
+The same reader saves each `KAIZEN-SESSION 1 <JSON object>` line (printable ASCII only)
+from an auto-kaizen VM to `sessions/<runner name>.jsonl` in that folder: the agents'
+whole sessions, for the Control room's live chat page (auto-kaizen's
+`docs/live-session.md`). The file is named by the VM the line came from, never by the
+line, so one VM cannot write into another's. Folder 0750 and files 0640, root only, since
+sessions can carry private notes. A file stops growing at 30 MB, and files not written to
+for 30 days are deleted. A failed save is logged once and the console keeps being read.
+
+Re-run `build-rootfs.sh` after a change under `ci-runner/rootfs/` and after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
 re-run `install-host.sh`, `build-rootfs.sh` and the audit.

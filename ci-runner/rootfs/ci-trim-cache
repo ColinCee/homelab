@@ -1,0 +1,14 @@
+#!/bin/sh
+# Give the VM's file cache back to the host once it passes a quarter of the VM's memory.
+# The host caches the shared image once for every VM and can reclaim it; a VM's own cache
+# stays stuck in it, so ten VMs each grow to their full size. Dropping clean cache never
+# loses data, and the balloon device's free page reporting hands the freed pages back to
+# the host within seconds (run-vm.sh). tmpfs (Shmem) cannot be dropped, so it is left out.
+# A minute's pause after each drop, so a job whose files in use stay above the mark is not
+# made to read them again every 10 s.
+while sleep 10; do
+  if awk '/^MemTotal:/ {t = $2} /^Cached:/ {c = $2} /^Shmem:/ {s = $2} END {exit !(c - s > t / 4)}' /proc/meminfo; then
+    echo 1 > /proc/sys/vm/drop_caches
+    sleep 60
+  fi
+done

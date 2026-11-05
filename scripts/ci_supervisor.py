@@ -73,7 +73,8 @@ SLOW_POLL_SECONDS = 5
 # Repos asked about queued jobs at once: more than a poll ever asks (the used ones and
 # QUIET_PER_POLL more), so a poll costs about one repo's asking.
 ASK_THREADS = 16
-# The repo of the last job, kept across restarts so the standby goes back to it.
+# The repo and cache label of the last build job, one per line, kept across restarts so
+# the standby goes back to them. Older versions wrote the repo alone.
 LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
@@ -91,10 +92,11 @@ SLOTS_FILE = Path("/etc/homelab-ci/slots")
 DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
-# A VM that has not picked up a job by now counts as idle demand again. Starting includes
-# copying the disk image, which took up to 10 minutes with ten at once (5 Nov): at 2 minutes,
-# each slow start got a second VM for the same job, and a second copy, stopped later unused.
-BOOT_GRACE_SECONDS = 600
+# A VM covers a queued job of its repo and label only while it is starting: until its runner
+# takes a job, and for at most this long. VMs start in seconds since the disk image is no
+# longer copied (homelab#759); 600 s, set while copies took minutes, made a busy VM hold back
+# the next job of its kind with slots free (5 Nov: a task's Reviewer behind its Builder).
+BOOT_GRACE_SECONDS = 120
 # Time for a VM to boot and connect. After it, a VM with no job while nothing is
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30
@@ -129,6 +131,14 @@ LIVE_FILE = STATUS_FILE.with_name("live.json")
 LIVE_REPO = "ColinCee/auto-kaizen"
 LIVE_LINE = re.compile(rb"KAIZEN-LIVE 1 ([0-9]{1,9}) (builder|reviewer) ([0-9]{10}) (.+)")
 LIVE_TEXT_MAX = 120
+# Each auto-kaizen VM's agent sessions, one event per console line, for the Control room's
+# live chat page (auto-kaizen's docs/live-session.md). Filed under the VM's own runner name,
+# never anything the line says, so one VM cannot write into another's session. Root only:
+# sessions can carry Colin's private notes.
+SESSIONS_DIR = STATUS_FILE.with_name("sessions")
+SESSION_LINE = re.compile(rb"KAIZEN-SESSION 1 (\{[ -~]*\})")
+SESSION_MAX_BYTES = 30 * 1024**2
+SESSION_KEEP_SECONDS = 30 * 24 * 3600
 CONSOLE_LINE_MAX = 4096
 # A VM starts only if the host's available memory, less the VM's size, still leaves this
 # much for the home's own services (the host's 16 GiB are shared with them). A booted VM
@@ -172,6 +182,8 @@ class Launch:
     # A standby that just took a job still covers it until GitHub's job list catches up.
     covers_until: float = 0.0
     label: str = ""
+    # GitHub showed its runner with a job: it no longer covers a queued one.
+    busy: bool = False
     # The VM's latest live line, set by its console reader (see read_console).
     live: dict[str, Any] | None = None
 
@@ -205,8 +217,10 @@ class State:
     askers: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(ASK_THREADS, thread_name_prefix="ask")
     )
-    # The repository of the last job a VM started for: the standby goes to it.
+    # The repository and cache label of the last build job a VM started for: the standby
+    # boots for the same, so the next such job (a task's Builder, then its Reviewer) takes it.
     last_repo: str = ""
+    last_label: str = ""
     # Repos that have had a job here (or have a cache disk): polled every poll, the rest
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
@@ -491,7 +505,8 @@ def launch(
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            # Its errors and each VM's memory peak go to the journal.
+            stderr=None,
             env={
                 **os.environ,
                 "VCPUS": str(vcpus),
@@ -505,33 +520,39 @@ def launch(
         raise
     run = Launch(slot, repo, runner_id, name, now, process, metadata, standby, label=label)
     state.launches[slot] = run
-    threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
+    session = SESSIONS_DIR / f"{name}.jsonl" if repo.lower() == LIVE_REPO.lower() else None
+    reader = threading.Thread(
+        target=read_console, args=(process.stdout, keeper(run), session), daemon=True
+    )
+    reader.start()
     # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
     # booted after a restart kept a repo with no work polled every poll).
     # A light job neither keeps its repo polled every time nor draws the standby to it.
     if not standby and not light:
         state.used.add(repo)
-    if not standby and not light and repo != state.last_repo:
-        state.last_repo = repo
-        remember_last_repo(repo)
+    if not standby and not light and (repo, label) != (state.last_repo, state.last_label):
+        state.last_repo, state.last_label = repo, label
+        remember_last_job(repo, label)
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
 
 
-def remember_last_repo(repo: str) -> None:
+def remember_last_job(repo: str, label: str) -> None:
     """Kept for the next start; losing it only sends the first standby elsewhere."""
     try:
-        LAST_REPO_FILE.write_text(repo + "\n")
+        LAST_REPO_FILE.write_text(f"{repo}\n{label}\n")
     except OSError as e:
         log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
 
 
-def recalled_last_repo() -> str:
+def recalled_last_job() -> Want:
+    """The last build job's repo and cache label ("" for none, as from an older file)."""
     try:
-        return LAST_REPO_FILE.read_text().strip()
+        lines = LAST_REPO_FILE.read_text().split()
     except OSError:
-        return ""
+        return ("", "")
+    return (lines[0] if lines else "", lines[1] if len(lines) > 1 else "")
 
 
 def live_line(raw: bytes, heard: float) -> dict[str, Any] | None:
@@ -562,18 +583,63 @@ def keeper(run: Launch) -> Callable[[dict[str, Any]], None] | None:
     return lambda line: setattr(run, "live", line)
 
 
-def read_console(stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None) -> None:
-    """Read a VM's console until it ends, keeping each valid live line. It must never stop
-    early: once the pipe fills, the VM's console, and with it the job, would stall. A line
-    over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held in memory."""
+def session_event(raw: bytes) -> bytes | None:
+    """One console line as a session event (a JSON object in printable ASCII), or None."""
+    match = SESSION_LINE.fullmatch(raw.removesuffix(b"\n").removesuffix(b"\r"))
+    if not match:
+        return None
+    try:
+        return match[1] if isinstance(json.loads(match[1]), dict) else None
+    except (ValueError, RecursionError):  # deep nesting raises the second
+        return None
+
+
+def save_event(path: Path, event: bytes) -> None:
+    """Append one event in one write, so it never lands half; none once the file has
+    reached SESSION_MAX_BYTES."""
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o640)
+    try:
+        if os.fstat(fd).st_size + len(event) < SESSION_MAX_BYTES:
+            os.write(fd, event + b"\n")
+    finally:
+        os.close(fd)
+
+
+def read_console(
+    stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None, session: Path | None = None
+) -> None:
+    """Read a VM's console until it ends, keeping each valid live line and saving each
+    session event to `session`. It must never stop early: once the pipe fills, the VM's
+    console, and with it the job, would stall; so a failed save is logged once and reading
+    goes on. A line over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held
+    in memory."""
     with stream:
-        too_long = False
+        too_long, failed = False, False
         while chunk := stream.readline(CONSOLE_LINE_MAX):
             whole = chunk.endswith(b"\n")
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
             if keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
+            elif session and fits:
+                try:
+                    if event := session_event(chunk):
+                        save_event(session, event)
+                except Exception as e:  # anything, even a bug: the reader must outlive the VM
+                    if not failed:
+                        log(f"could not save to {session}: {type(e).__name__}: {e}")
+                    failed = True
             too_long = not whole
+
+
+def prune_sessions(folder: Path, now: float) -> None:
+    """Delete session files not written to for SESSION_KEEP_SECONDS."""
+    for path in folder.glob("*.jsonl"):
+        try:
+            if path.stat().st_mtime < now - SESSION_KEEP_SECONDS:
+                path.unlink(missing_ok=True)
+        except OSError:
+            continue  # gone meanwhile, or tried again next poll
 
 
 def vm_size(running: int) -> tuple[int, int]:
@@ -617,6 +683,30 @@ def is_idle(gh: GitHub, run: Launch) -> bool:
             return False
         raise
     return runner.get("busy") is False
+
+
+def has_job(gh: GitHub, run: Launch) -> bool:
+    """GitHub says the VM's runner has taken a job (or has finished and gone)."""
+    try:
+        runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return True
+        raise
+    return runner.get("busy") is True
+
+
+def on_its_way(gh: GitHub, run: Launch, now: float, queued_for_want: int) -> bool:
+    """The VM may still take a queued job of its repo and label: a standby, one that just
+    took a job, or one starting whose runner has no job yet. GitHub is asked only while a
+    job it could cover is queued, at most once a poll."""
+    if run.standby or now < run.covers_until:
+        return True
+    if run.busy or now - run.started >= BOOT_GRACE_SECONDS:
+        return False
+    if queued_for_want:
+        run.busy = has_job(gh, run)
+    return not run.busy
 
 
 def stop(run: Launch, why: str) -> None:
@@ -960,9 +1050,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
     # with the same repo and cache label (or none).
     booting: Counter[Want] = Counter(
-        run.want
-        for run in state.launches.values()
-        if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
+        run.want for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])
     )
     free = [slot for slot in range(state.slots) if slot not in state.launches]
     light_free = [
@@ -1019,7 +1107,12 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
         )
     ):
-        launch(gh, state, repos[0], free[0], now, cache=cache_image(repos[0]), standby=True)
+        repo = repos[0]
+        # Booted for the last job's cache label too, else a job asking for it never takes
+        # the standby and stops it as in the way (5 Nov: every task's Builder and Reviewer).
+        label = state.last_label if repo == state.last_repo else ""
+        cache = cache_for(repo, label, private)
+        launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
     return spent
 
 
@@ -1206,7 +1299,7 @@ def main(argv: list[str] | None = None) -> int:
     state = State(slots=slot_count(), light_slots=light_slot_count())
     # The standby waits where the last job before the restart ran, not on the first repo
     # listed (4 Nov: it booted for a repo with no work, for 45 minutes).
-    state.last_repo = recalled_last_repo()
+    state.last_repo, state.last_label = recalled_last_job()
     if state.last_repo:
         state.used.add(state.last_repo)
     # The repo listing runs beside the poll, on its own client (the request cache is not
@@ -1275,6 +1368,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             write_status(STATUS_FILE, status(state, time.time(), github_ok, mem_available_mib()))
             write_status(LIVE_FILE, live(state, time.time()))
+            prune_sessions(SESSIONS_DIR, time.time())
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"
