@@ -89,6 +89,7 @@ API = f"https://{API_HOST}"
 # up to 2 + 2N GiB on paper. The default 5 (12 GiB on paper) fits the 16 GiB host because
 # jobs mostly wait on the network and touch far less than their size, and the memory
 # check below holds a VM back rather than eat into the services' reserve.
+# Auto Kaizen caps its running tasks at this number (its build.yml and watch.yml).
 SLOTS_FILE = Path("/etc/homelab-ci/slots")
 DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
