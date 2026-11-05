@@ -30,7 +30,7 @@ case "$task" in
   runner)
     # Package caches and main's installs: this VM's own copy of the repo's cache
     # disk (built from main only), thrown away with the VM. Without it, an empty
-    # /cache. (OverlayFS is a module in Ubuntu's kernel, and the image has none.)
+    # /cache.
     mkdir -p /cache
     [[ -b /dev/vdb ]] && mount /dev/vdb /cache
     chown runner:runner /cache

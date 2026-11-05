@@ -8,6 +8,9 @@ for cgroup in /sys/fs/cgroup/firecracker/ci-slot*; do
   [[ -d "$cgroup" ]] && echo 1 > "$cgroup/cgroup.kill"
 done
 sleep 1
+# shellcheck source=ci-runner/vm-disks.sh
+source "$(dirname "$0")/vm-disks.sh"
+detach_disks ""  # every slot
 rm -f /run/homelab-ci/metadata-slot*.json
 rm -rf /srv/jailer/firecracker/ci-slot*
 exit 0
