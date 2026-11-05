@@ -373,3 +373,41 @@ groups:
           action: "Open github.com/ColinCee/auto-kaizen/actions: a refused job names the cause (billing, an outage, no machine)."
         labels:
           severity: warning
+
+      - uid: kaizen-control-room-down
+        title: Kaizen Control Room Down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # The Control room posts every other alert to Discord, so its own outage goes there directly (policies.yaml).
+              expr: max(up{job="kaizen"})
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Kaizen Control room scrape"
+          value: "{{ with $values.A }}{{ if eq .Value 0.0 }}down{{ else }}up{{ end }}{{ end }}"
+          description: "Threshold: Prometheus could not reach the Control room for 5 minutes, so alerts are not reaching the #alerts forum."
+          action: "On the Beelink: docker ps -a | grep control-room, then docker logs on it."
+        labels:
+          severity: critical
