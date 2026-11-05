@@ -48,44 +48,75 @@ for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "fc-slot$n"
 done
 
-# Stop running VMs before touching the network: reloading the rules briefly
-# empties the blocked public address set.
-was_running=false
-if systemctl is-active --quiet homelab-ci-supervisor.service; then
-  echo "Stopping the supervisor; any running CI jobs will fail."
-  was_running=true
-  systemctl stop homelab-ci-supervisor.service
+# One install at a time: a second waits its turn and is told whose is running.
+install -d -o root -g root -m 0700 /run/homelab-ci
+exec 8>/run/homelab-ci/install.lock
+if ! flock -n 8; then
+  echo "Another install is running ($(cat /run/homelab-ci/restart-reason 2>/dev/null || echo "reason unknown")); waiting for it."
+  flock 8
 fi
-if pgrep -x firecracker >/dev/null; then
-  echo "a VM is still running (started by hand?); wait for it to finish" >&2
-  exit 1
-fi
+reason="${REASON:-${SUDO_USER:-root}: install-host.sh}"
 
-# Host-side settings, never in the repo: the slot count, and the GitHub token
-# (written by hand, see ci-runner.md). Which repos are served is the token's
-# repository access. Written before the network, which reads the slot count.
-install -d -o root -g root -m 0700 /etc/homelab-ci
-echo "$SLOTS" > /etc/homelab-ci/slots
-echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
-
+# Files a VM reads when it starts are swapped while jobs run: new VMs get them, running
+# ones keep the copies they opened (install writes a new file, never the old one in place).
 install -d -o root -g root -m 0755 "$dest" "$dest/net"
-install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
-install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
+install -o root -g root -m 0644 "$here/vm-disks.sh" "$dest/vm-disks.sh"
 install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
 install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
-install -o root -g root -m 0644 "$here/vm-disks.sh" "$dest/vm-disks.sh"
-install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
-install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
-install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service
-systemctl daemon-reload
-systemctl enable --now homelab-ci-net.service
-# Apply rule changes in place; restarting the unit would remove the taps.
-"$dest/net/setup-net.sh" up
-
 # Cache disks the supervisor builds from main-only artifacts; VMs read them, never write.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
-if $was_running; then
-  systemctl start homelab-ci-supervisor.service
+
+# The supervisor, the network rules and the slot counts take a restart. A restart starts
+# no new VM and lets running jobs finish first (up to 20 minutes), so it never cuts off
+# work in progress; nothing else changes them. Reloading the rules needs no VM running:
+# it briefly empties the blocked public address set.
+changed() { ! cmp -s "$1" "$2"; }
+restart=false
+for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
+  "net/homelab-ci.nft:$dest/net/homelab-ci.nft" "net/setup-net.sh:$dest/net/setup-net.sh" \
+  "systemd/homelab-ci-net.service:/etc/systemd/system/homelab-ci-net.service" \
+  "systemd/homelab-ci-supervisor.service:/etc/systemd/system/homelab-ci-supervisor.service"; do
+  changed "$here/${pair%%:*}" "${pair#*:}" && restart=true
+done
+[[ "$(cat /etc/homelab-ci/slots 2>/dev/null)" == "$SLOTS" && "$(cat /etc/homelab-ci/light-slots 2>/dev/null)" == "$LIGHT_SLOTS" ]] || restart=true
+systemctl is-active --quiet homelab-ci-supervisor.service || restart=true
+
+if $restart; then
+  was_running=false
+  if systemctl is-active --quiet homelab-ci-supervisor.service; then
+    was_running=true
+    echo "$reason" > /run/homelab-ci/restart-reason
+    echo "Restarting the supervisor: no new jobs start, running ones finish first (up to 20 minutes)."
+    systemctl stop homelab-ci-supervisor.service
+  fi
+  rm -f /run/homelab-ci/restart-reason
+  if pgrep -x firecracker >/dev/null; then
+    echo "a VM is still running (started by hand?); wait for it to finish" >&2
+    exit 1
+  fi
+
+  # Host-side settings, never in the repo: the slot count, and the GitHub token
+  # (written by hand, see ci-runner.md). Which repos are served is the token's
+  # repository access. Written before the network, which reads the slot count.
+  install -d -o root -g root -m 0700 /etc/homelab-ci
+  echo "$SLOTS" > /etc/homelab-ci/slots
+  echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
+
+  install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
+  install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
+  install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
+  install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
+  install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service
+  systemctl daemon-reload
+  systemctl enable --now homelab-ci-net.service
+  # Apply rule changes in place; restarting the unit would remove the taps.
+  "$dest/net/setup-net.sh" up
+  if $was_running; then
+    systemctl start homelab-ci-supervisor.service
+  fi
+  how="network up, supervisor restarted"
+else
+  how="installed while jobs ran: no restart needed"
 fi
 
-echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, network up."
+echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, $how."

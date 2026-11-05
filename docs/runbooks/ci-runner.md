@@ -140,7 +140,8 @@ GitHub-hosted runners and take it off the token's repository access.
   label only until GitHub shows its runner with a job, for at most 2 minutes, so a
   second job of the same kind gets its own VM within a poll. The supervisor runs from
   the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
-  `scripts/ci_supervisor.py` on the Beelink.
+  `scripts/ci_supervisor.py` on the Beelink (see
+  [Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)).
   However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
@@ -304,6 +305,28 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   likely while the kernel wrote out the image copies. VMs now boot from
   snapshots of the images instead of copies (5 Nov), and the loaded timings
   start when the VMs start.
+
+## Changing the Beelink while jobs run
+
+Every change goes in through `sudo REASON="<who>: <why>" ci-runner/install-host.sh`
+from a checkout of `main`. Never stop or restart the supervisor directly while jobs run,
+and never leave a loop waiting to do it from your own connection: on 5 Nov three
+restarts cut off 20 running jobs, and one waiting loop outlived the session that
+thought it had stopped it.
+
+- **Without a restart:** `run-vm.sh`, `vm-disks.sh`, `stop-vms.sh`, Firecracker and
+  a rebuilt VM image (`build-rootfs.sh`) go in while jobs run. New VMs get them;
+  running ones keep what they started with.
+- **With a restart:** a change to the supervisor, the network rules, the systemd
+  units or the slot counts restarts the supervisor. A restart, from `install-host.sh`
+  or `systemctl stop`/`restart`, starts no new VM, stops a ready VM that has no job,
+  and waits for running jobs to finish, up to 20 minutes. Only then does the change
+  go in, ahead of every queued job; those wait at GitHub and start once it is back.
+  Anything still running after 20 minutes is cut off, and the log says how many
+  (`restarting after Ns: N jobs cut off`).
+- **One at a time:** a second `install-host.sh` waits for the first and names it.
+- **Seen:** `machines.json` carries `restarting_since` and `restart_reason`, which the
+  Control room shows while the restart waits.
 
 ## Changing the number of slots
 

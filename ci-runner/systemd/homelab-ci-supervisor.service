@@ -8,8 +8,11 @@ Wants=network-online.target
 ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py
 Restart=always
 RestartSec=30
-# Stopping the supervisor stops its VMs too; their jobs fail and GitHub shows it.
-KillMode=control-group
+# Stopping or restarting the supervisor sends it alone SIGTERM: it starts no new VM and
+# waits for running jobs to finish (up to 20 minutes, RESTART_WAIT_SECONDS), then exits.
+# Whatever is left after that, and after a crash, is killed, VMs included.
+KillMode=mixed
+TimeoutStopSec=22min
 ExecStopPost=/usr/local/lib/homelab-ci/stop-vms.sh
 Nice=5
 
