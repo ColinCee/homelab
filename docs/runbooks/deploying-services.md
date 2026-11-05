@@ -7,6 +7,13 @@ explicit secret allowlist, and invokes the shared deployment command. Compose
 leaves unchanged containers running. CI and deployment are separate workflows;
 require CI on pull requests before merging.
 
+A deploy that changes the Control room's pinned image also reports how many
+seconds passed from its auto-kaizen merge to the new version answering, split
+into the image build, the homelab pull request and the deploy, as a "Control
+room live" notice and a table in the run's summary
+([`control_room_timing.py`](../../scripts/control_room_timing.py)). It only
+measures, and a measuring failure never fails the deploy.
+
 ## Ownership and deployment contract
 
 This is a Git-defined homelab with self-contained stacks and one shared
