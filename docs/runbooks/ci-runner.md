@@ -252,7 +252,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`) as the runner user with the job's `PATH`.
+  mise, bun, pnpm, `docker compose`, python3, shellcheck, `file`, gh, gitleaks,
+  `bwrap`, socat) as the runner user with the job's `PATH`.
   Run it after `build-rootfs.sh`, with the supervisor stopped
   (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
