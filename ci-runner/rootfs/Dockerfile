@@ -9,7 +9,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd systemd-sysv udev iproute2 ca-certificates curl jq netcat-openbsd iputils-ping \
       git sudo unzip xz-utils zstd build-essential python3 python-is-python3 shellcheck file \
-      bubblewrap socat \
+      kmod iptables bubblewrap socat \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && systemctl mask systemd-resolved.service systemd-networkd.service \
       systemd-timesyncd.service apt-daily.timer apt-daily-upgrade.timer \
@@ -79,8 +79,11 @@ RUN v=${JDK_VERSION} \
  && echo 'JAVA_HOME=/opt/jdk' >> /opt/runner/.env
 
 # mise (it installs the tools a repo's mise.toml lists), bun, pnpm, the GitHub
-# CLI, gitleaks, and the docker CLI with the compose plugin but no daemon (enough
-# for `docker compose config`), all under /usr/local, already on the jobs' PATH.
+# CLI, gitleaks, and Docker with its buildx and compose plugins, all under
+# /usr/local, already on the jobs' PATH. The engine starts on a job's first
+# `docker` call (docker.socket), so jobs that never call it pay nothing; the
+# runner user may call it without sudo. Its kernel modules (OverlayFS, bridge,
+# netfilter) are the host's, copied in by build-rootfs.sh with the kernel.
 ARG MISE_VERSION
 ARG MISE_SHA256
 ARG BUN_VERSION
@@ -91,6 +94,8 @@ ARG DOCKER_VERSION
 ARG DOCKER_SHA256
 ARG COMPOSE_VERSION
 ARG COMPOSE_SHA256
+ARG BUILDX_VERSION
+ARG BUILDX_SHA256
 ARG GH_VERSION
 ARG GH_SHA256
 ARG GITLEAKS_VERSION
@@ -107,11 +112,14 @@ RUN curl -fsSL -o /usr/local/bin/mise \
  && ln -s /usr/local/lib/pnpm/pnpm /usr/local/bin/pnpm \
  && curl -fsSL -o /tmp/docker.tgz "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_VERSION#v}.tgz" \
  && echo "${DOCKER_SHA256}  /tmp/docker.tgz" | sha256sum -c --quiet \
- && tar -xzf /tmp/docker.tgz --strip-components 1 -C /usr/local/bin docker/docker && rm /tmp/docker.tgz \
+ && tar -xzf /tmp/docker.tgz --strip-components 1 -C /usr/local/bin && rm /tmp/docker.tgz \
  && mkdir -p /usr/local/lib/docker/cli-plugins \
  && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
       "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
  && echo "${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c --quiet \
+ && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-buildx \
+      "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64" \
+ && echo "${BUILDX_SHA256}  /usr/local/lib/docker/cli-plugins/docker-buildx" | sha256sum -c --quiet \
  && v=${GH_VERSION#v} \
  && curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v$v/gh_${v}_linux_amd64.tar.gz" \
  && echo "${GH_SHA256}  /tmp/gh.tgz" | sha256sum -c --quiet \
@@ -122,7 +130,10 @@ RUN curl -fsSL -o /usr/local/bin/mise \
  && echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c --quiet \
  && tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks && rm /tmp/gitleaks.tgz \
  && chmod 0755 /usr/local/bin/mise /usr/local/bin/bun /usr/local/bin/gh /usr/local/bin/gitleaks \
-      /usr/local/lib/docker/cli-plugins/docker-compose
+      /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/lib/docker/cli-plugins/docker-buildx \
+ && groupadd --system docker && usermod -aG docker runner
+COPY docker.socket docker.service /etc/systemd/system/
+RUN systemctl enable docker.socket
 
 # Actions the CI repos use, unpacked where the runner looks before downloading
 # (<owner>_<repo>/<commit>/<the archive's own folder>), and Node and the JDK on the

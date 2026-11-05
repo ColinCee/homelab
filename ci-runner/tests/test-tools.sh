@@ -12,9 +12,17 @@ run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # shellcheck disable=SC2016 # expands inside the VM, not here
-probe='tools=("node --version" "uv --version" "java -version" "mise --version" "bun --version"
-  "pnpm --version" "docker compose version" "python3 --version" "shellcheck --version"
-  "file --version" "gh --version" "gitleaks version" "bwrap --version" "socat -V")
+# The Docker check builds with BuildKit (RUN --mount), publishes a port and fetches the page.
+probe='mkdir -p /tmp/dc && cat > /tmp/dc/Dockerfile <<EOF
+FROM busybox:1.37
+RUN --mount=type=tmpfs,target=/t echo served > /index.html
+CMD ["httpd", "-f", "-p", "8090", "-h", "/"]
+EOF
+chmod -R a+rX /tmp/dc
+tools=("node --version" "uv --version" "java -version" "mise --version" "bun --version"
+  "pnpm --version" "docker compose version" "docker buildx version" "python3 --version"
+  "shellcheck --version" "file --version" "gh --version" "gitleaks version" "bwrap --version" "socat -V"
+  "docker build -q -t check /tmp/dc >/dev/null && docker run -d -p 8090:8090 check >/dev/null && curl -fsS --retry 10 --retry-all-errors --retry-delay 1 http://localhost:8090/")
 for t in "${tools[@]}"; do
   if out=$(cd /home/runner && sudo -u runner -H env "PATH=$(cat /opt/runner/.path)" bash -c "$t" 2>&1); then
     echo "PASS $t: $(head -n 1 <<<"$out")"
@@ -24,7 +32,7 @@ for t in "${tools[@]}"; do
 done
 echo "TOTAL ${#tools[@]}"'
 jq -n --arg probe "$probe" '{task: "probe", probe: $probe}' > "$tmp/metadata.json"
-"$run_vm" 0 "$tmp/metadata.json" 90 > "$tmp/console.log" 2>&1 || true
+"$run_vm" 0 "$tmp/metadata.json" 180 > "$tmp/console.log" 2>&1 || true
 
 results=$(grep -oE '(PASS|FAIL) .*' "$tmp/console.log" | tr -d '\r' || true)
 echo "$results"

@@ -32,6 +32,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "scripts/deploy_watchdog.py" = "py312"
 "scripts/runner_job_guard.py" = "py312"
 "scripts/ci_supervisor.py" = "py312"
+"scripts/control_room_timing.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests import scripts/ as a package, whichever way pytest is started.
+pythonpath = ["."]

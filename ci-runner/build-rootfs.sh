@@ -2,7 +2,8 @@
 # Build the microVM root filesystem and copy Ubuntu's kernel next to it:
 #   sudo ci-runner/build-rootfs.sh
 # Writes /var/lib/homelab-ci/images/{rootfs.ext4,vmlinuz}, root-owned and
-# read-only; each job boots a private copy. Rebuild after a kernel upgrade.
+# read-only; each job boots a snapshot of it (vm-disks.sh). Rebuild after a kernel upgrade
+# (the image carries that kernel's modules).
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
@@ -31,6 +32,7 @@ docker build -q -t homelab-ci-rootfs \
   --build-arg "PNPM_VERSION=$PNPM_VERSION" --build-arg "PNPM_SHA256=$PNPM_SHA256" \
   --build-arg "DOCKER_VERSION=$DOCKER_VERSION" --build-arg "DOCKER_SHA256=$DOCKER_SHA256" \
   --build-arg "COMPOSE_VERSION=$COMPOSE_VERSION" --build-arg "COMPOSE_SHA256=$COMPOSE_SHA256" \
+  --build-arg "BUILDX_VERSION=$BUILDX_VERSION" --build-arg "BUILDX_SHA256=$BUILDX_SHA256" \
   --build-arg "GH_VERSION=$GH_VERSION" --build-arg "GH_SHA256=$GH_SHA256" \
   --build-arg "GITLEAKS_VERSION=$GITLEAKS_VERSION" --build-arg "GITLEAKS_SHA256=$GITLEAKS_SHA256" \
   --build-arg "PYTHON_VERSION=$PYTHON_VERSION" --build-arg "CACHED_ACTIONS=$CACHED_ACTIONS" \
@@ -43,10 +45,17 @@ printf 'nameserver 1.1.1.1\nnameserver 9.9.9.9\n' > "$tmp/root/etc/resolv.conf"
 echo ci-vm > "$tmp/root/etc/hostname"
 printf '127.0.0.1 localhost\n127.0.1.1 ci-vm\n' > "$tmp/root/etc/hosts"  # or sudo complains it cannot resolve it
 rm -f "$tmp/root/.dockerenv"
+# The kernel's modules Docker's engine loads (OverlayFS, bridge, netfilter, veth):
+# about 11 MB of its 155.
+mods="$tmp/root/usr/lib/modules/$(uname -r)"
+mkdir -p "$mods"
+(cd "/lib/modules/$(uname -r)" &&
+  cp -a --parents modules.* kernel/fs/overlayfs kernel/net kernel/lib kernel/crypto kernel/drivers/net/veth.ko* "$mods/")
 
 install -d -o root -g root -m 0755 /var/lib/homelab-ci "$images"
 truncate -s "$size" "$tmp/rootfs.ext4"
 mkfs.ext4 -q -F -L rootfs -d "$tmp/root" "$tmp/rootfs.ext4"
+# install replaces the file (a new inode): running VMs keep reading the old one.
 install -o root -g root -m 0644 "$tmp/rootfs.ext4" "$images/rootfs.ext4"
 install -o root -g root -m 0644 "/boot/vmlinuz-$(uname -r)" "$images/vmlinuz"
 

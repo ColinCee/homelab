@@ -22,7 +22,11 @@ jobs:
     permissions:
       contents: read
       packages: read # Pull private GHCR images
+      pull-requests: read # Find the pull request behind this push, for the Control room's timing
     steps:
+      - name: Note when the deploy started
+        run: echo "DEPLOY_STARTED=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Select exact revision
@@ -43,6 +47,8 @@ jobs:
           # Shared by Grafana and the Kaizen Control room's /alert, which refuses the "unset" placeholder:
           # until the secret is set, alerts reach Discord only.
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
+          # The auto-kaizen Discord bot's token, for the #alerts forum; "unset" keeps the Control room quiet.
+          KAIZEN_DISCORD_TOKEN: ${{ secrets.KAIZEN_DISCORD_TOKEN || 'unset' }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -68,6 +74,43 @@ jobs:
         run: |
           cd /home/colin/code/homelab
           scripts/deploy.sh
+
+      # How long a Control room change took from its auto-kaizen merge to answering here.
+      # Measuring never fails a deploy.
+      - id: control-room-changed
+        continue-on-error: true
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          cd /home/colin/code/homelab
+          # A missing or unknown before commit counts as changed.
+          if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- stacks/kaizen-control-room/compose.yaml 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - id: kaizen-read-key
+        if: steps.control-room-changed.outputs.changed == 'true'
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.KAIZEN_APP_ID }}
+          private-key: ${{ secrets.KAIZEN_APP_KEY }}
+          owner: ColinCee
+          repositories: auto-kaizen
+          permission-contents: read
+          permission-actions: read
+
+      - name: Time the Control room from merge to live
+        if: steps.kaizen-read-key.outputs.token
+        continue-on-error: true
+        env:
+          KAIZEN_TOKEN: ${{ steps.kaizen-read-key.outputs.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/control_room_timing.py \
+            --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED"
 
       # Grafana gives a top-level provisioned dashboard no viewer access, and
       # provisioning cannot grant it, so each deploy lets viewers open Home.
@@ -101,6 +144,7 @@ jobs:
           owner: ColinCee
           repositories: auto-kaizen
           permission-contents: write
+          permission-issues: read
 
       - name: Tell Kaizen
         continue-on-error: true
@@ -110,6 +154,13 @@ jobs:
           EVENT: ${{ job.status == 'success' && 'line-stop-close' || 'line-stop-open' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A good deploy restarts the line only if it is stopped: each message starts a Kaizen job on the Beelink.
+          # A failed look-up sends no close (the safe side) and never holds up an open.
+          if [ "$EVENT" = line-stop-close ]; then
+            stopped=$(gh issue list -R ColinCee/auto-kaizen --label line-stop --state open \
+              --search '"Repo: ColinCee/homelab" in:body' --json number --jq '.[0].number // empty') || exit 0
+            [ -n "$stopped" ] || exit 0
+          fi
           reason=$([ "$EVENT" = line-stop-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
           jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -

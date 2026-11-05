@@ -21,7 +21,7 @@ row "Uptime" "$(uptime -p)"
 row "Root disk" "$(df -h / | awk 'NR==2 {print $3 " used of " $2 " (" $5 ")"}')"
 
 backup_log="$(docker logs --since 192h backup 2>&1 || true)"
-# The metric Backup Missed alerts on, not the container log: recreating the
+# The metric Nightly backup didn't run alerts on, not the container log: recreating the
 # container on deploy wipes its log. See docs/runbooks/backups.md.
 metric_ts="$(awk '{print $2}' /var/lib/homelab-metrics/backup.prom 2>/dev/null || true)"
 if [[ -n "$metric_ts" ]] && (( $(date +%s) - ${metric_ts%.*} < 26 * 3600 )); then
@@ -93,7 +93,7 @@ docker logs --since 24h flight-tracker-backend-1 2>&1 | grep 'fetch failed' |
 echo "Most recent:"
 docker logs --since 24h -t flight-tracker-backend-1 2>&1 | grep 'fetch failed' | tail -n 5 || true
 
-# What Flight Tracker Down alerts on: the /aircraft probe must report live data.
+# What Flight Tracker site down alerts on: the /aircraft probe must report live data.
 aircraft="$(curl -4 -sf -m 15 -w '\n%{http_code} in %{time_total}s' https://api.colincheung.dev/aircraft)" ||
   aircraft=$'\nrequest failed'
 health="$(head -n -1 <<<"$aircraft" | grep -o '"apiHealth": *"[a-z]*"' | grep -o '[a-z]*"$' | tr -d '"' || true)"
@@ -114,7 +114,7 @@ for expr in 'avg_over_time(probe_success{job="integrations/blackbox/flight-track
   echo "  ${expr%%(*}: $value"
 done
 
-# Log only: CPU over the last 5 minutes, in cores. High CPU Usage alerts on the
+# Log only: CPU over the last 5 minutes, in cores. Beelink CPU maxed out alerts on the
 # whole machine minus iowait and the CI VMs, so busy CI alone does not page.
 echo "CPU, last 5m (cores):"
 for expr in 'count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})' \
@@ -134,7 +134,7 @@ for expr in 'sum by (mode) (rate(node_cpu_seconds_total{mode!="idle",job="integr
     echo "    unavailable"
 done
 
-# CI machines (Kaizen Waiting For A Machine). This log is public, so repository
+# CI machines (Kaizen tasks stuck waiting for a test VM). This log is public, so repository
 # names are masked and only counts from the status file are printed.
 supervisor="$(systemctl is-active homelab-ci-supervisor 2>/dev/null || true)"
 if [[ "$supervisor" == active ]]; then
@@ -143,7 +143,7 @@ else
   bad "CI supervisor" "${supervisor:-unknown}"
 fi
 echo "CI machines status:"
-jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
+jq -r '"  updated \((now - .updated) | floor)s ago, slots \(.slots), in_use \(.in_use), standby \(.standby), light \(.light_in_use // 0)/\(.light_slots // 0), github_ok \(.github_ok), mem_available_mib \(.mem_available_mib), held_for_memory \(.held_for_memory)"' \
   /var/lib/homelab-ci/status/machines.json 2>/dev/null || echo "  unavailable"
 echo "CI supervisor log, last 2 hours (slow polls left out, last 60 lines, repos masked):"
 sudo -n journalctl -u homelab-ci-supervisor --since -2h --no-pager -o short-iso 2>/dev/null |

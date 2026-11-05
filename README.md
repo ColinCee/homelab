@@ -10,7 +10,7 @@ access; Cloudflare Tunnel exposes the flight tracker.
 
 - Runs Home Assistant for home automation
 - Hosts the [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend behind Cloudflare Tunnel
-- Collects metrics and logs with Grafana, Prometheus, Loki, and Alloy; alerts go to Discord and to Auto Kaizen's responder
+- Collects metrics and logs with Grafana, Prometheus, Loki, and Alloy; alerts go to Auto Kaizen's responder, with one post per alert in a Discord forum
 - Backs up nightly with encrypted restic snapshots to Cloudflare R2
 - Detects intrusions with CrowdSec, paired with the host firewall bouncer. It
   sees little: admin logins arrive through Tailscale SSH, which it does not
