@@ -130,6 +130,14 @@ LIVE_FILE = STATUS_FILE.with_name("live.json")
 LIVE_REPO = "ColinCee/auto-kaizen"
 LIVE_LINE = re.compile(rb"KAIZEN-LIVE 1 ([0-9]{1,9}) (builder|reviewer) ([0-9]{10}) (.+)")
 LIVE_TEXT_MAX = 120
+# Each auto-kaizen VM's agent sessions, one event per console line, for the Control room's
+# live chat page (auto-kaizen's docs/live-session.md). Filed under the VM's own runner name,
+# never anything the line says, so one VM cannot write into another's session. Root only:
+# sessions can carry Colin's private notes.
+SESSIONS_DIR = STATUS_FILE.with_name("sessions")
+SESSION_LINE = re.compile(rb"KAIZEN-SESSION 1 (\{[ -~]*\})")
+SESSION_MAX_BYTES = 30 * 1024**2
+SESSION_KEEP_SECONDS = 30 * 24 * 3600
 CONSOLE_LINE_MAX = 4096
 # A VM starts only if the host's available memory, less the VM's size, still leaves this
 # much for the home's own services (the host's 16 GiB are shared with them). A booted VM
@@ -508,7 +516,11 @@ def launch(
         raise
     run = Launch(slot, repo, runner_id, name, now, process, metadata, standby, label=label)
     state.launches[slot] = run
-    threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
+    session = SESSIONS_DIR / f"{name}.jsonl" if repo.lower() == LIVE_REPO.lower() else None
+    reader = threading.Thread(
+        target=read_console, args=(process.stdout, keeper(run), session), daemon=True
+    )
+    reader.start()
     # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
     # booted after a restart kept a repo with no work polled every poll).
     # A light job neither keeps its repo polled every time nor draws the standby to it.
@@ -567,18 +579,63 @@ def keeper(run: Launch) -> Callable[[dict[str, Any]], None] | None:
     return lambda line: setattr(run, "live", line)
 
 
-def read_console(stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None) -> None:
-    """Read a VM's console until it ends, keeping each valid live line. It must never stop
-    early: once the pipe fills, the VM's console, and with it the job, would stall. A line
-    over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held in memory."""
+def session_event(raw: bytes) -> bytes | None:
+    """One console line as a session event (a JSON object in printable ASCII), or None."""
+    match = SESSION_LINE.fullmatch(raw.removesuffix(b"\n").removesuffix(b"\r"))
+    if not match:
+        return None
+    try:
+        return match[1] if isinstance(json.loads(match[1]), dict) else None
+    except (ValueError, RecursionError):  # deep nesting raises the second
+        return None
+
+
+def save_event(path: Path, event: bytes) -> None:
+    """Append one event in one write, so it never lands half; none once the file has
+    reached SESSION_MAX_BYTES."""
+    path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o640)
+    try:
+        if os.fstat(fd).st_size + len(event) < SESSION_MAX_BYTES:
+            os.write(fd, event + b"\n")
+    finally:
+        os.close(fd)
+
+
+def read_console(
+    stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None, session: Path | None = None
+) -> None:
+    """Read a VM's console until it ends, keeping each valid live line and saving each
+    session event to `session`. It must never stop early: once the pipe fills, the VM's
+    console, and with it the job, would stall; so a failed save is logged once and reading
+    goes on. A line over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held
+    in memory."""
     with stream:
-        too_long = False
+        too_long, failed = False, False
         while chunk := stream.readline(CONSOLE_LINE_MAX):
             whole = chunk.endswith(b"\n")
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
             if keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
+            elif session and fits:
+                try:
+                    if event := session_event(chunk):
+                        save_event(session, event)
+                except Exception as e:  # anything, even a bug: the reader must outlive the VM
+                    if not failed:
+                        log(f"could not save to {session}: {type(e).__name__}: {e}")
+                    failed = True
             too_long = not whole
+
+
+def prune_sessions(folder: Path, now: float) -> None:
+    """Delete session files not written to for SESSION_KEEP_SECONDS."""
+    for path in folder.glob("*.jsonl"):
+        try:
+            if path.stat().st_mtime < now - SESSION_KEEP_SECONDS:
+                path.unlink(missing_ok=True)
+        except OSError:
+            continue  # gone meanwhile, or tried again next poll
 
 
 def vm_size(running: int) -> tuple[int, int]:
@@ -1285,6 +1342,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             write_status(STATUS_FILE, status(state, time.time(), github_ok, mem_available_mib()))
             write_status(LIVE_FILE, live(state, time.time()))
+            prune_sessions(SESSIONS_DIR, time.time())
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"

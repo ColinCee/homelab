@@ -249,6 +249,14 @@ else is dropped unlogged. A VM's entry goes when it ends:
  "lines": [{"task": 105, "who": "builder", "at": 1792999990, "heard": 1792999998, "text": "runs the tests (uv run pytest -q)"}]}
 ```
 
+The same reader saves each `KAIZEN-SESSION 1 <JSON object>` line (printable ASCII only)
+from an auto-kaizen VM to `sessions/<runner name>.jsonl` in that folder: the agents'
+whole sessions, for the Control room's live chat page (auto-kaizen's
+`docs/live-session.md`). The file is named by the VM the line came from, never by the
+line, so one VM cannot write into another's. Folder 0750 and files 0640, root only, since
+sessions can carry private notes. A file stops growing at 30 MB, and files not written to
+for 30 days are deleted. A failed save is logged once and the console keeps being read.
+
 Re-run `build-rootfs.sh` after a kernel upgrade, since the VMs boot the host's
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
