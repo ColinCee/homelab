@@ -18,9 +18,19 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    command: tunnel run --token ${TUNNEL_TOKEN:?}
+    # The token is read from a file, so it stays out of the process list and
+    # docker inspect.
+    command: ["tunnel", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
+    secrets:
+      - tunnel_token
     depends_on:
       - backend
+
+secrets:
+  tunnel_token:
+    environment: TUNNEL_TOKEN
 
 volumes:
   heatmap-data:
