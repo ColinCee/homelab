@@ -60,14 +60,17 @@ How it is made, without the host running any of the repo's code:
        paths: web/node_modules web/package-lock.json # optional workspace paths
    ```
 
-   It tars every readable top-level folder of `/cache` (not `lost+found`) and
-   the given paths, and fails the job rather than upload an archive bigger than
+   It tars every readable top-level folder of `/cache` (not `lost+found`, nor
+   one a given path starts with: the disk holds the last copy of `web/` there)
+   and the given paths, and fails the job rather than upload an archive bigger than
    the supervisor takes.
 2. The supervisor checks for a newer one every minute, takes it only if its run
    was a successful push to the default branch, unpacks it (plain files,
-   folders and links only, nothing outside the folder) and builds
+   folders and links only, nothing outside the folder; a file or link held
+   twice takes its later entry) and builds
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
-   to others. VMs started after that use it.
+   to others. VMs started after that use it. An artifact that fails to unpack
+   is skipped until a newer one comes.
 
 A job working on another served repo's code can ask for that repo's disk with
 one extra label, `fc-cache-<owner>--<name>` in lowercase:
