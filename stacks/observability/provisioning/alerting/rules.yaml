@@ -310,7 +310,9 @@ groups:
                     type: gt
                     params: [20]
               refId: C
-        noDataState: NoData
+        # No number while the Control room restarts for a deploy, several times a day: quiet, as
+        # Kaizen Control room unreachable says when it is really down.
+        noDataState: OK
         execErrState: Error
         for: 1m
         annotations:
@@ -357,7 +359,9 @@ groups:
                     type: gt
                     params: [3]
               refId: C
-        noDataState: NoData
+        # No number while the Control room restarts for a deploy, several times a day: quiet, as
+        # Kaizen Control room unreachable says when it is really down.
+        noDataState: OK
         execErrState: Error
         for: 15m
         annotations:
