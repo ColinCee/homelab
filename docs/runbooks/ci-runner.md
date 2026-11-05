@@ -136,12 +136,14 @@ GitHub-hosted runners and take it off the token's repository access.
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
 - **One VM waits ready.** A standby VM is kept booted and registered for the
-  repo of the last job (kept in `/var/lib/homelab-ci/last-repo`, so a restart
-  puts it back there), so the next job there starts in about a
+  repo and cache label of the last build job, with that label's cache disk (both
+  kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), so
+  the next job asking for the same starts in about a
   second instead of waiting for the next poll, a VM to boot and its runner to start
   (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in the
-  free slot; an idle standby is replaced every 45 minutes, and stopped if its
+  free slot. A build job wanting another repo or label, with no slot free, stops
+  it; an idle standby is replaced every 45 minutes, and stopped if its
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
   default); 2 was measured and not worth its RAM (see the performance doc).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a

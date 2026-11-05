@@ -36,3 +36,5 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Tests import scripts/ as a package, whichever way pytest is started.
+pythonpath = ["."]

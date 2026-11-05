@@ -73,7 +73,8 @@ SLOW_POLL_SECONDS = 5
 # Repos asked about queued jobs at once: more than a poll ever asks (the used ones and
 # QUIET_PER_POLL more), so a poll costs about one repo's asking.
 ASK_THREADS = 16
-# The repo of the last job, kept across restarts so the standby goes back to it.
+# The repo and cache label of the last build job, one per line, kept across restarts so
+# the standby goes back to them. Older versions wrote the repo alone.
 LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
@@ -213,8 +214,10 @@ class State:
     askers: ThreadPoolExecutor = field(
         default_factory=lambda: ThreadPoolExecutor(ASK_THREADS, thread_name_prefix="ask")
     )
-    # The repository of the last job a VM started for: the standby goes to it.
+    # The repository and cache label of the last build job a VM started for: the standby
+    # boots for the same, so the next such job (a task's Builder, then its Reviewer) takes it.
     last_repo: str = ""
+    last_label: str = ""
     # Repos that have had a job here (or have a cache disk): polled every poll, the rest
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
@@ -523,27 +526,29 @@ def launch(
     # A light job neither keeps its repo polled every time nor draws the standby to it.
     if not standby and not light:
         state.used.add(repo)
-    if not standby and not light and repo != state.last_repo:
-        state.last_repo = repo
-        remember_last_repo(repo)
+    if not standby and not light and (repo, label) != (state.last_repo, state.last_label):
+        state.last_repo, state.last_label = repo, label
+        remember_last_job(repo, label)
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
 
 
-def remember_last_repo(repo: str) -> None:
+def remember_last_job(repo: str, label: str) -> None:
     """Kept for the next start; losing it only sends the first standby elsewhere."""
     try:
-        LAST_REPO_FILE.write_text(repo + "\n")
+        LAST_REPO_FILE.write_text(f"{repo}\n{label}\n")
     except OSError as e:
         log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
 
 
-def recalled_last_repo() -> str:
+def recalled_last_job() -> Want:
+    """The last build job's repo and cache label ("" for none, as from an older file)."""
     try:
-        return LAST_REPO_FILE.read_text().strip()
+        lines = LAST_REPO_FILE.read_text().split()
     except OSError:
-        return ""
+        return ("", "")
+    return (lines[0] if lines else "", lines[1] if len(lines) > 1 else "")
 
 
 def live_line(raw: bytes, heard: float) -> dict[str, Any] | None:
@@ -1076,7 +1081,12 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             repos, private, [r.standby for r in state.launches.values()], len(free), standby_count()
         )
     ):
-        launch(gh, state, repos[0], free[0], now, cache=cache_image(repos[0]), standby=True)
+        repo = repos[0]
+        # Booted for the last job's cache label too, else a job asking for it never takes
+        # the standby and stops it as in the way (5 Nov: every task's Builder and Reviewer).
+        label = state.last_label if repo == state.last_repo else ""
+        cache = cache_for(repo, label, private)
+        launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
     return spent
 
 
@@ -1263,7 +1273,7 @@ def main(argv: list[str] | None = None) -> int:
     state = State(slots=slot_count(), light_slots=light_slot_count())
     # The standby waits where the last job before the restart ran, not on the first repo
     # listed (4 Nov: it booted for a repo with no work, for 45 minutes).
-    state.last_repo = recalled_last_repo()
+    state.last_repo, state.last_label = recalled_last_job()
     if state.last_repo:
         state.used.add(state.last_repo)
     # The repo listing runs beside the poll, on its own client (the request cache is not
