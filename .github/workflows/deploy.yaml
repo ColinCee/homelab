@@ -101,6 +101,7 @@ jobs:
           owner: ColinCee
           repositories: auto-kaizen
           permission-contents: write
+          permission-issues: read
 
       - name: Tell Kaizen
         continue-on-error: true
@@ -110,6 +111,12 @@ jobs:
           EVENT: ${{ job.status == 'success' && 'line-stop-close' || 'line-stop-open' }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # A good deploy restarts the line only if it is stopped: each message starts a Kaizen job on the Beelink.
+          stopped=$(gh issue list -R ColinCee/auto-kaizen --label line-stop --state open \
+            --search '"Repo: ColinCee/homelab" in:body' --json number --jq '.[0].number // empty')
+          if [ "$EVENT" = line-stop-close ] && [ -z "$stopped" ]; then
+            exit 0
+          fi
           reason=$([ "$EVENT" = line-stop-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
           jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
             | gh api repos/ColinCee/auto-kaizen/dispatches --input -
