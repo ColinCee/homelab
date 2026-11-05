@@ -125,6 +125,8 @@ services:
     pull_policy: build
     restart: unless-stopped
     command: ["python", "-I", "/public_stats.py"]
+    # Passes SIGTERM on (docs/runbooks/deploying-services.md, "Adding a stack").
+    init: true
     read_only: true
     security_opt:
       - no-new-privileges:true
