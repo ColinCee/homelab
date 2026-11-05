@@ -910,7 +910,7 @@ def test_the_status_file_counts_light_vms_apart() -> None:
     assert (status["in_use"], status["light_slots"], status["light_in_use"]) == (1, 5, 1)
 
 
-@pytest.mark.parametrize(("text", "slots"), [(None, 5), (" 0 ", 0), ("3", 3), ("lots", 5)])
+@pytest.mark.parametrize(("text", "slots"), [(None, 0), (" 0 ", 0), ("3", 3), ("lots", 0)])
 def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
     path = tmp_path / "light-slots"
     if text is not None:

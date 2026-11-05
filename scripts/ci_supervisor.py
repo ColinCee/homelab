@@ -42,14 +42,15 @@ RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 # Light jobs (Auto Kaizen's gate, merge, Watcher and other small jobs) get small VMs in
 # slots of their own, after the build slots, so they never hold up a build and a merge
 # waiting on CI never takes the slot that CI needs. A light VM registers without LABEL,
-# so GitHub never gives it a build job (5 Nov: GitHub's paid machines ran out).
+# so GitHub never gives it a build job.
 LIGHT_LABEL = "homelab-fc-light"
 LIGHT_RUNNER_LABELS = ("self-hosted", "linux", "x64", LIGHT_LABEL)
 LIGHT_SLOTS_FILE = Path("/etc/homelab-ci/light-slots")
-DEFAULT_LIGHT_SLOTS = 5
+# None until install-host.sh writes the file, as it also makes their users and taps.
+DEFAULT_LIGHT_SLOTS = 0
 # One core, as they mostly wait; 2 GiB, as the merge job runs Claude Code with no swap.
 LIGHT_SIZE = (1, 2048)
-# The merge job waits up to 140 minutes for a pull request's CI.
+# A merge job waits for a pull request's CI, two rounds at most.
 LIGHT_TIMEOUT_SECONDS = 3 * 3600
 # One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
 # (a job working on that repo's code). GitHub owner names cannot hold `--`.
@@ -505,9 +506,10 @@ def launch(
     threading.Thread(target=read_console, args=(process.stdout, keeper(run)), daemon=True).start()
     # Only a job makes a repo polled every time, not a standby booted for it (4 Nov: one
     # booted after a restart kept a repo with no work polled every poll).
-    if not standby:
+    # A light job neither keeps its repo polled every time nor draws the standby to it.
+    if not standby and not light:
         state.used.add(repo)
-    if not standby and repo != state.last_repo:
+    if not standby and not light and repo != state.last_repo:
         state.last_repo = repo
         remember_last_repo(repo)
     kind = "standby" if standby else "VM"
@@ -1019,8 +1021,7 @@ def standby_count() -> int:
 
 
 def light_slot_count() -> int:
-    """The host's light slot count: DEFAULT_LIGHT_SLOTS if the file is missing or not a
-    number; 0 turns the light pool off."""
+    """The host's light slot count: 0 (none) if the file is missing or not a number."""
     try:
         text = LIGHT_SLOTS_FILE.read_text().strip()
     except OSError:
