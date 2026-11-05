@@ -63,8 +63,7 @@ esac
 if wan=$(public_address); then
   { cat "$dir/homelab-ci.nft"; echo "add element inet homelab_ci wan4 { $wan }"; } | nft -f -
 elif nft list table inet homelab_ci >/dev/null 2>&1; then
-  echo "keeping the current rules until the public address is found" >&2
-  exit 1
+  echo "public address not found: the current rules stay; run-vm.sh refreshes it before each VM" >&2
 else
   nft -f "$dir/homelab-ci.nft"
 fi

@@ -291,7 +291,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   `bwrap`, socat) as the runner user with the job's `PATH`,
   then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
-  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
+  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished (VMs outlive the
+  supervisor: wait for them, or stop them with `sudo ci-runner/stop-vms.sh`): it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
@@ -335,7 +336,8 @@ own connection: on 5 Nov one outlived the session that thought it had stopped it
 ## Changing the number of slots
 
 With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
-its VMs finished:
+its VMs finished (they outlive the supervisor: wait for them, or stop them with
+`sudo ci-runner/stop-vms.sh`):
 
 1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
    makes that many slot users and taps.

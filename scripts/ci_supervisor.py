@@ -21,6 +21,7 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tarfile
@@ -518,6 +519,8 @@ def launch(
         env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
         start_vm(run, timeout, env)
     except BaseException:
+        # It may have started anyway (systemd-run timing out, say).
+        subprocess.run(["systemctl", "stop", "--no-block", run.unit], check=False, timeout=30)
         forget(run)
         delete_runner(gh, repo, runner_id, name)
         raise
@@ -601,7 +604,10 @@ def start_vm(run: Launch, timeout: int, env: Mapping[str, str]) -> None:
             f"--unit={run.unit}",
             "--collect",
             "--quiet",
+            # Stops before the network does at shutdown; Wants, not Requires, as the network
+            # unit says: restarting it must not take running VMs with it.
             "--property=After=homelab-ci-net.service",
+            "--property=Wants=homelab-ci-net.service",
             "--property=SyslogIdentifier=homelab-ci-vm",
             *(f"--setenv={k}={v}" for k, v in env.items()),
             sys.executable,
@@ -689,6 +695,9 @@ def vm_main(argv: list[str]) -> int:
     parser.add_argument("--live", type=Path)
     parser.add_argument("--session", type=Path)
     args = parser.parse_args(argv)
+    # Stopping the unit signals every process in it: run-vm.sh cleans up on its own, and this
+    # reader keeps reading until it has (a closed pipe would cut its cleanup short).
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
     process = subprocess.Popen(
         [str(RUN_VM), args.slot, args.metadata, args.timeout],
         stdin=subprocess.DEVNULL,
@@ -883,6 +892,9 @@ def reap(
                 check_standby(gh, run, now, run.repo in private)
                 if not run.standby:  # it took a job
                     state.used.add(run.repo)
+                    write_status(
+                        run.record, record(run)
+                    )  # a restart must not take it for a standby
             else:
                 stop_idle(gh, run, now, queued.get(run.want, 0))
             continue

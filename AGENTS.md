@@ -31,8 +31,9 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
   Dependency auto-merge belongs in Renovate.
 - Change the Beelink's CI runner only through `sudo REASON="<repo>#<number>: <why>"
   ci-runner/install-host.sh`: it takes turns with other installs, and running jobs carry
-  on through it (docs/runbooks/ci-runner.md, "Changing the Beelink while jobs run"). Run any wait on the Beelink as a named systemd unit, never as a loop
-  tied to your own connection.
+  on through it (docs/runbooks/ci-runner.md, "Changing the Beelink while jobs run").
+  Run any wait on the Beelink as a named systemd unit, never as a loop tied to your own
+  connection.
 - Use the existing `mise` tasks for relevant checks. Keep tests for meaningful
   behavior, not implementation details.
 - Update the relevant operational doc when behavior changes. Keep necessary
