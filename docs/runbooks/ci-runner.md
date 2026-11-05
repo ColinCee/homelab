@@ -95,7 +95,8 @@ also puts `node_modules` and its `package-lock.json` on the disk (the action's
 stays valid.
 
 There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
-Operating). A job running alone gets 4 vCPUs and 4 GiB; a job
+Operating). Auto Kaizen runs no more tasks at once than this number, set in its
+`build.yml` and `watch.yml`; change them with it. A job running alone gets 4 vCPUs and 4 GiB; a job
 that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
 process, not the VM.
 
