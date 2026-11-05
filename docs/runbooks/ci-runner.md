@@ -21,7 +21,8 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and Docker with its buildx and compose
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
+(`bwrap`), socat and Docker with its buildx and compose
 plugins (the engine starts on a job's first `docker` call, so `docker build`,
 `docker run -p` and `docker push` work as on GitHub's runner, without sudo)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
@@ -30,7 +31,8 @@ Chromium needs are installed too, so a job runs `playwright install chromium`
 and needs no `install-deps` step. The actions the CI repos use
 (`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
 does not download them; a tag that has moved on is downloaded as usual until
-the list is refreshed and the image rebuilt.
+the list is refreshed and the image rebuilt. A change to the image's tools or
+actions reaches jobs only once `build-rootfs.sh` is re-run on the host.
 
 The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
 checkout, then one step that runs `uv sync --locked --no-install-project` and
@@ -287,7 +289,8 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   out with another address. It then connects to the VM from a container and
   from the host and checks that the drop rule counted it. Every check must pass.
 - **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
+  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`, gh, gitleaks,
+  `bwrap`, socat) as the runner user with the job's `PATH`,
   then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
   (`sudo systemctl stop homelab-ci-supervisor`, which waits for running jobs) and its VMs finished: it boots

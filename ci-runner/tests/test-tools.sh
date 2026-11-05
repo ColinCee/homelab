@@ -21,7 +21,7 @@ EOF
 chmod -R a+rX /tmp/dc
 tools=("node --version" "uv --version" "java -version" "mise --version" "bun --version"
   "pnpm --version" "docker compose version" "docker buildx version" "python3 --version"
-  "shellcheck --version" "file --version"
+  "shellcheck --version" "file --version" "gh --version" "gitleaks version" "bwrap --version" "socat -V"
   "docker build -q -t check /tmp/dc >/dev/null && docker run -d -p 8090:8090 check >/dev/null && curl -fsS --retry 10 --retry-all-errors --retry-delay 1 http://localhost:8090/")
 for t in "${tools[@]}"; do
   if out=$(cd /home/runner && sudo -u runner -H env "PATH=$(cat /opt/runner/.path)" bash -c "$t" 2>&1); then
