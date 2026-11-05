@@ -32,7 +32,7 @@ attach_disk() {
   mknod -m 0600 "$node" b "${mm%:*}" "${mm#*:}"
 }
 
-# detach_disks [SLOT]: remove the slot's snapshots, or every CI VM's with no SLOT.
+# detach_disks SLOT: remove the slot's snapshots, or every CI VM's when SLOT is "".
 # Kill the VM first: an open snapshot cannot be removed.
 detach_disks() {
   local prefix=ci-slot${1:+$1-} dm status=0

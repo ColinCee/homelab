@@ -10,7 +10,7 @@ done
 sleep 1
 # shellcheck source=ci-runner/vm-disks.sh
 source "$(dirname "$0")/vm-disks.sh"
-detach_disks
+detach_disks ""  # every slot
 rm -f /run/homelab-ci/metadata-slot*.json
 rm -rf /srv/jailer/firecracker/ci-slot*
 exit 0
