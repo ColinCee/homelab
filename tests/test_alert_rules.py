@@ -22,7 +22,11 @@ def test_a_chart_queries_what_its_rule_alerts_on() -> None:
     for rule in RULES:
         if "chart" in rule["annotations"]:
             expr = next(d for d in rule["data"] if d["refId"] == "A")["model"]["expr"]
-            assert rule["annotations"]["chart"].split() == expr.split(), rule["uid"]
+            # The rule's own query, at most scaled to the box's unit ("100 * (...)" for percent).
+            assert " ".join(expr.split()) in " ".join(rule["annotations"]["chart"].split()), rule[
+                "uid"
+            ]
+            float(rule["annotations"]["chart_line"])
 
 
 def test_kaizens_own_failures_route_to_rules_that_exist() -> None:

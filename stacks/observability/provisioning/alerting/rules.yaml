@@ -48,10 +48,13 @@ groups:
           measure: "CPU use"
           trigger: "over 80% for 20 min"
           chart: |
-            (
-              sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
-              - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
-            ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
+            100 * (
+              (
+                sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
+                - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
+              ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
+            )
+          chart_line: "80"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 20 minutes (5-minute CPU average)."
           action: "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
@@ -92,7 +95,10 @@ groups:
           measure: "Memory use"
           trigger: "over 90% for 5 min"
           chart: |
-            1 - (node_memory_MemAvailable_bytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
+            100 * (
+              1 - (node_memory_MemAvailable_bytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
+            )
+          chart_line: "90"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 90% for 5 minutes."
           action: "Check the memory chart on Home (containers, CI VMs and the rest), then its Containers section."
@@ -134,9 +140,12 @@ groups:
           summary: "Beelink root disk usage"
           measure: "Disk use"
           trigger: "over 80% for 10 min"
-          chart: >-
-            1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
-            / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
+          chart: |
+            100 * (
+              1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+              / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
+            )
+          chart_line: "80"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 10 minutes."
           action: "Inspect root filesystem usage before removing files; preserve Docker volumes."
@@ -311,6 +320,7 @@ groups:
           chart: >-
             max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
             and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
+          chart_line: "20"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
           description: "Threshold: a task has waited over 20 minutes for a homelab CI machine."
           action: "Check `journalctl -u homelab-ci-supervisor` on the Beelink and the job's runner labels; see docs/runbooks/ci-runner.md."
