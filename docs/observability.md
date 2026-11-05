@@ -18,6 +18,11 @@ when the last deploy failed or was blocked by the runner guard. It posts once wh
 previous run's conclusion as state. Healthchecks.io remains the external
 heartbeat for full host outages.
 
+The [Kaizen watchdog](../.github/workflows/kaizen-watchdog.yaml) runs there every 15 minutes too, and posts
+once when Auto Kaizen's Watcher (due every 20 minutes) has not worked for an hour, and once when it works again.
+The Grafana rule Kaizen Watcher Stopped checks the same from the Beelink, so one of the two warns whether GitHub
+stops starting Kaizen's jobs or the Beelink goes down.
+
 ## What's deployed
 
 | Component | What it does |

@@ -1,0 +1,67 @@
+name: Kaizen watchdog
+
+# Off the Beelink: says on Discord when Auto Kaizen's Watcher, due every 20 minutes, has not worked for an hour.
+# That means GitHub stopped starting Kaizen's jobs or the Beelink, where the Watcher runs, is down.
+# Grafana on the Beelink checks the same thing without GitHub's machines (rules.yaml, Kaizen Watcher Stopped).
+# Free here: this repository is public.
+on:
+  schedule:
+    - cron: "5,20,35,50 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: kaizen-watchdog
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - id: kaizen-key
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.KAIZEN_APP_ID }}
+          private-key: ${{ secrets.KAIZEN_APP_KEY }}
+          owner: ColinCee
+          repositories: auto-kaizen
+          permission-actions: read
+
+      # Posts once when the Watcher stops and once when it works again. The state is this workflow's last finished
+      # run: failed while Kaizen is stopped and Colin has been told, passed otherwise. A run that cannot check, or
+      # cannot post, keeps the state it found, so the next run tries again.
+      - env:
+          GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
+          HOMELAB_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+        run: |
+          before=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w kaizen-watchdog.yaml -s completed -L 10 \
+            --json conclusion --jq '[.[] | select(.conclusion == "success" or .conclusion == "failure")][0].conclusion // empty')
+          keep() { echo "::warning::$1"; [ "$before" != failure ]; exit; }
+          tell() { jq -n --arg c "$1" '{content: $c, allowed_mentions: {parse: []}}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL" > /dev/null; }
+          [ -n "$GH_TOKEN" ] || keep "no key for Auto Kaizen, so it could not check"
+          last=$(gh api "repos/ColinCee/auto-kaizen/actions/workflows/watch.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].updated_at // empty') || keep "could not read Auto Kaizen's runs"
+          if [ -n "$last" ]; then
+            minutes=$(( ($(date +%s) - $(date -d "$last" +%s)) / 60 ))
+            echo "The Watcher last worked $minutes minutes ago."
+            gap="its Watcher has not worked for $minutes minutes"
+          else
+            minutes=99999
+            gap="its Watcher has never worked"
+          fi
+          if [ "$minutes" -gt 60 ]; then
+            if [ "$before" != failure ]; then
+              tell "🚨 **Auto Kaizen has stopped**: $gap. GitHub is not starting its jobs, or the Beelink is down." \
+                || keep "could not post to Discord"
+            fi
+            exit 1
+          fi
+          if [ "$before" = failure ]; then
+            tell "✅ **Auto Kaizen is running again**: its Watcher worked $minutes minutes ago." || keep "could not post to Discord"
+          fi
