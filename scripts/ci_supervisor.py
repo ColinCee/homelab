@@ -581,17 +581,20 @@ def session_event(raw: bytes) -> bytes | None:
         return None
     try:
         return match[1] if isinstance(json.loads(match[1]), dict) else None
-    except ValueError:
+    except (ValueError, RecursionError):  # deep nesting raises the second
         return None
 
 
 def save_event(path: Path, event: bytes) -> None:
-    """Append one event, unless the file has reached SESSION_MAX_BYTES."""
+    """Append one event in one write, so it never lands half; none once the file has
+    reached SESSION_MAX_BYTES."""
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o640)
-    with os.fdopen(fd, "ab") as f:
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o640)
+    try:
         if os.fstat(fd).st_size + len(event) < SESSION_MAX_BYTES:
-            f.write(event + b"\n")
+            os.write(fd, event + b"\n")
+    finally:
+        os.close(fd)
 
 
 def read_console(
@@ -609,12 +612,13 @@ def read_console(
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
             if keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
-            elif session and fits and (event := session_event(chunk)):
+            elif session and fits:
                 try:
-                    save_event(session, event)
-                except OSError as e:
+                    if event := session_event(chunk):
+                        save_event(session, event)
+                except Exception as e:  # anything, even a bug: the reader must outlive the VM
                     if not failed:
-                        log(f"could not save to {session}: {e}")
+                        log(f"could not save to {session}: {type(e).__name__}: {e}")
                     failed = True
             too_long = not whole
 
@@ -622,8 +626,11 @@ def read_console(
 def prune_sessions(folder: Path, now: float) -> None:
     """Delete session files not written to for SESSION_KEEP_SECONDS."""
     for path in folder.glob("*.jsonl"):
-        if path.stat().st_mtime < now - SESSION_KEEP_SECONDS:
-            path.unlink(missing_ok=True)
+        try:
+            if path.stat().st_mtime < now - SESSION_KEEP_SECONDS:
+                path.unlink(missing_ok=True)
+        except OSError:
+            continue  # gone meanwhile, or tried again next poll
 
 
 def vm_size(running: int) -> tuple[int, int]:

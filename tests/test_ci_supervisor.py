@@ -685,6 +685,15 @@ def test_a_failed_save_never_stops_the_console_reader(tmp_path) -> None:
     assert console.closed
 
 
+def test_a_deeply_nested_line_is_dropped_and_reading_goes_on(tmp_path) -> None:
+    # Deep enough for Python 3.12's JSON parser, the Beelink's, to give up with RecursionError.
+    deep = b"KAIZEN-SESSION 1 {" + b'"a":' + b"[" * 2000 + b"]" * 2000 + b"}" + bytes([10])
+    session = tmp_path / "s.jsonl"
+    kept: list[dict] = []
+    sup.read_console(io.BytesIO(deep + LIVE), kept.append, session)
+    assert len(kept) == 1
+
+
 def test_session_files_go_after_thirty_days(tmp_path) -> None:
     old, new = tmp_path / "old.jsonl", tmp_path / "new.jsonl"
     for path in (old, new):
