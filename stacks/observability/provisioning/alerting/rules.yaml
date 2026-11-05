@@ -342,7 +342,7 @@ groups:
             datasourceUid: prometheus
             model:
               # Minutes since Auto Kaizen's Watcher, due every 20 minutes, last worked (served by the Control room).
-              # Needs neither GitHub's machines nor the Watcher: on 5 Nov GitHub refused every Kaizen job for 7 hours
+              # Needs neither GitHub's machines nor the Watcher: on 5 Nov GitHub did not start Kaizen's jobs for hours
               # and nothing warned. Only while the Control room read GitHub in the last 10 minutes.
               expr: >-
                 (time() - max(max_over_time(kaizen_watcher_success_timestamp_seconds{job="kaizen"}[2m]))) / 60
