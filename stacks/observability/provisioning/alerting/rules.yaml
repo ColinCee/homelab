@@ -330,3 +330,46 @@ groups:
           action: "Open the Control room (http://beelink.tail4f465e.ts.net:8090) and Grafana Home; look for a failing step or held change."
         labels:
           severity: warning
+
+      - uid: kaizen-watcher-stopped
+        title: Kaizen Watcher Stopped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Minutes since Auto Kaizen's Watcher, due every 20 minutes, last worked (served by the Control room).
+              # Needs neither GitHub's machines nor the Watcher: on 5 Nov GitHub refused every Kaizen job for 7 hours
+              # and nothing warned. Only while the Control room read GitHub in the last 10 minutes.
+              expr: >-
+                (time() - max(max_over_time(kaizen_watcher_success_timestamp_seconds{job="kaizen"}[2m]))) / 60
+                and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [60]
+              refId: C
+        # No number yet (a Control room older than the metric): quiet; the off-host Kaizen watchdog still checks.
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Minutes since Auto Kaizen's Watcher last worked"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} minutes{{ end }}"
+          description: "Threshold: the Watcher, due every 20 minutes, has not worked for an hour, so GitHub is not starting Kaizen's jobs."
+          action: "Open github.com/ColinCee/auto-kaizen/actions: a refused job names the cause (billing, an outage, no machine)."
+        labels:
+          severity: warning

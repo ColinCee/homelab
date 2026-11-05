@@ -1,0 +1,52 @@
+name: Kaizen watchdog
+
+# Off the Beelink: says on Discord when Auto Kaizen's Watcher, due every 20 minutes, has not worked for an hour.
+# That means GitHub stopped starting Kaizen's jobs (5 Nov: refused for 7 hours, unheard) or the Beelink is down.
+# Grafana on the Beelink checks the same thing without GitHub's machines (rules.yaml, Kaizen Watcher Stopped).
+# Free here: this repository is public.
+on:
+  schedule:
+    - cron: "5,20,35,50 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: kaizen-watchdog
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - id: kaizen-key
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.KAIZEN_APP_ID }}
+          private-key: ${{ secrets.KAIZEN_APP_KEY }}
+          owner: ColinCee
+          repositories: auto-kaizen
+          permission-actions: read
+
+      # Posts once when the Watcher stops and once when it works again, using this workflow's last run as state.
+      - env:
+          GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
+          HOMELAB_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+        run: |
+          last=$(gh api "repos/ColinCee/auto-kaizen/actions/workflows/watch.yml/runs?status=success&per_page=1" \
+            --jq '.workflow_runs[0].updated_at // empty')
+          minutes=$(( ($(date +%s) - $(date -d "${last:-1970-01-01T00:00:00Z}" +%s)) / 60 ))
+          echo "The Watcher last worked $minutes minutes ago."
+          before=$(GH_TOKEN=$HOMELAB_TOKEN gh run list -R "$GITHUB_REPOSITORY" -w kaizen-watchdog.yaml -s completed -L 1 \
+            --json conclusion --jq '.[0].conclusion // empty')
+          tell() { jq -n --arg c "$1" '{content: $c, allowed_mentions: {parse: []}}' \
+            | curl -fsS -H 'Content-Type: application/json' -d @- "$DISCORD_WEBHOOK_URL"; }
+          if [ "$minutes" -gt 60 ]; then
+            stopped="🚨 **Auto Kaizen has stopped**: its Watcher has not worked for $minutes minutes."
+            [ "$before" = failure ] || tell "$stopped GitHub may be refusing its jobs (billing, an outage) or the Beelink is down."
+            exit 1
+          fi
+          [ "$before" != failure ] || tell "✅ **Auto Kaizen is running again**: its Watcher worked $minutes minutes ago."
