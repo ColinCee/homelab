@@ -12,13 +12,17 @@ cow_dir=/var/lib/homelab-ci/cow
 # make a device node for it at NODE (root's, 0600; the caller hands it over).
 attach_disk() {
   local dm="ci-slot$1-$2" image=$3 node=$4 cow base cowdev sectors mm
+  if dmsetup info "$dm" >/dev/null 2>&1; then
+    echo "$dm is still there from an earlier VM and cannot be removed" >&2
+    return 1
+  fi
   install -d -o root -g root -m 0700 "$cow_dir"
   cow=$(mktemp "$cow_dir/slot$1-$2.XXXXXX")
   # As big as the image, so it can hold every block the VM writes; sparse, so it only
   # takes what is written. The page cache keeps one copy of the image for all VMs.
   truncate -s $((($(stat -c %s "$image") + 511) / 512 * 512)) "$cow"
   base=$(losetup --find --show --read-only "$image")
-  cowdev=$(losetup --find --show "$cow")
+  cowdev=$(losetup --find --show "$cow") || { losetup -d "$base"; return 1; }
   rm -f "$cow"
   sectors=$(blockdev --getsz "$base")
   # Non-persistent (N), 4 KiB chunks: the ext4 block size.
@@ -39,7 +43,10 @@ detach_disks() {
   for dm in $(dmsetup ls | awk -v p="$prefix" 'index($1, p) == 1 && $1 ~ /^ci-slot[0-9]+-/ {print $1}'); do
     dmsetup remove --retry "$dm" || status=1
   done
-  # A write file left when a run died before deleting it.
+  # A write file, or a loop device on one, left when a run died before the snapshot
+  # took them over.
+  losetup -nO NAME,BACK-FILE | awk -v p="$cow_dir/slot${1:+$1-}" 'index($2, p) == 1 {print $1}' |
+    xargs -r losetup -d
   rm -f "$cow_dir/slot${1:+$1-}"*
   return $status
 }

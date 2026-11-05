@@ -79,7 +79,7 @@ for ((n = 0; n < SLOTS; n++)); do
   "$run_vm" "$n" "$tmp/metadata.json" $((seconds + 120)) > "$tmp/vm$n.log" 2>&1 &
   pids+=($!)
 done
-# Time the services from the start, so the image copies before boot count too.
+# Time the services from the start, so VM start-up counts too.
 sample "$tmp/loaded" $((seconds - 5))
 for ((n = 0; n < SLOTS; n++)); do
   status=0

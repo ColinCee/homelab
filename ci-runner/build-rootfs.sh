@@ -45,6 +45,7 @@ rm -f "$tmp/root/.dockerenv"
 install -d -o root -g root -m 0755 /var/lib/homelab-ci "$images"
 truncate -s "$size" "$tmp/rootfs.ext4"
 mkfs.ext4 -q -F -L rootfs -d "$tmp/root" "$tmp/rootfs.ext4"
+# install replaces the file (a new inode): running VMs keep reading the old one.
 install -o root -g root -m 0644 "$tmp/rootfs.ext4" "$images/rootfs.ext4"
 install -o root -g root -m 0644 "/boot/vmlinuz-$(uname -r)" "$images/vmlinuz"
 
