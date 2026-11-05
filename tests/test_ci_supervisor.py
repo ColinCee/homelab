@@ -100,17 +100,19 @@ def test_finds_queued_jobs_for_us_only() -> None:
 @pytest.mark.parametrize(
     ("queued", "booting", "free", "starts"),
     [
-        ({"a/x": 1}, {}, 2, ["a/x"]),
-        ({"a/x": 3}, {}, 2, ["a/x", "a/x"]),
-        ({"a/x": 2}, {"a/x": 1}, 2, ["a/x"]),  # one VM is already booting for it
-        ({"a/x": 1}, {"a/x": 1}, 2, []),
-        ({"a/x": 1, "b/y": 1}, {}, 1, ["a/x"]),
-        ({}, {}, 2, []),
-        ({"a/x": 1}, {}, 0, []),
+        (["a/x"], {}, 2, ["a/x"]),
+        (["a/x"] * 3, {}, 2, ["a/x", "a/x"]),
+        (["a/x"] * 2, {"a/x": 1}, 2, ["a/x"]),  # one VM is already booting for it
+        (["a/x"], {"a/x": 1}, 2, []),
+        (["a/x", "b/y"], {}, 1, ["a/x"]),
+        (["b/y", "a/x"], {}, 1, ["b/y"]),  # the oldest job first, whatever its name
+        (["a/x", "b/y", "a/x"], {"a/x": 1}, 1, ["b/y"]),  # a booting VM covers the oldest
+        ([], {}, 2, []),
+        (["a/x"], {}, 0, []),
     ],
 )
-def test_plans_one_vm_per_uncovered_job_within_free_slots(
-    queued: dict[str, int], booting: dict[str, int], free: int, starts: list[str]
+def test_plans_one_vm_per_uncovered_job_oldest_first(
+    queued: list[str], booting: dict[str, int], free: int, starts: list[str]
 ) -> None:
     assert sup.plan(queued, booting, free) == starts
 
@@ -271,7 +273,7 @@ def test_keeps_jobs_with_different_cache_labels_apart() -> None:
     assert labelled.want == ("octo/agent", "fc-cache-octo--widgets")
 
     # A standby (or booting VM) without the label does not cover the labelled job.
-    starts = sup.plan({plain.want: 1, labelled.want: 1}, {plain.want: 1}, 2)
+    starts = sup.plan([plain.want, labelled.want], {plain.want: 1}, 2)
 
     assert starts == [labelled.want]
 

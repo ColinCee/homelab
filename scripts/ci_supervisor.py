@@ -230,14 +230,16 @@ def queued_jobs(
     return jobs
 
 
-def plan(queued: Mapping[Want, int], booting: Mapping[Want, int], free_slots: int) -> list[Want]:
-    """Which VMs start now: one per queued job not already covered by a booting VM."""
+def plan(oldest_first: Iterable[Want], booting: Mapping[Want, int], free_slots: int) -> list[Want]:
+    """Which VMs start now: one per queued job (each given by its want, oldest job first)
+    not already covered by a booting VM. Oldest first, so a job wanting a rarer cache is
+    not starved by a stream of newer ones (5 Nov: one sorted last waited 1h45)."""
+    cover = Counter(booting)
     starts: list[Want] = []
-    for want in sorted(queued):
-        need = max(0, queued[want] - booting.get(want, 0))
-        for _ in range(need):
-            if len(starts) == free_slots:
-                return starts
+    for want in oldest_first:
+        if cover[want] > 0:
+            cover[want] -= 1
+        elif len(starts) < free_slots:
             starts.append(want)
     return starts
 
@@ -891,7 +893,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         if run.standby or now < run.covers_until or now - run.started < BOOT_GRACE_SECONDS
     )
     free = [slot for slot in range(state.slots) if slot not in state.launches]
-    starts = plan(queued, booting, len(free))
+    # GitHub's job ids only grow, so the smallest is the oldest.
+    oldest_first = [w for _, w in sorted((i, w) for w, ids in job_ids.items() for i in ids)]
+    starts = plan(oldest_first, booting, len(free))
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them.
     room = mem_available_mib() - memory_reserve_mib()
