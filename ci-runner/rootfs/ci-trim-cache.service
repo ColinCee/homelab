@@ -5,6 +5,7 @@ DefaultDependencies=no
 
 [Service]
 ExecStart=/usr/local/sbin/ci-trim-cache
+Restart=always
 
 [Install]
 WantedBy=multi-user.target

@@ -40,7 +40,10 @@ cleanup() {
     echo 1 > "$cgroup/cgroup.kill" 2>/dev/null || true
     for _ in $(seq 1 50); do rmdir "$cgroup" 2>/dev/null && break; sleep 0.1; done
   fi
-  [[ -n ${sampler:-} ]] && kill "$sampler" 2>/dev/null
+  if [[ -n ${sampler:-} ]]; then
+    kill "$sampler" 2>/dev/null
+    echo "slot $slot: VM ended ($status), its memory peaked at $(($(<"$peak_file") / 1048576)) MiB of $MEM_MIB" >&2
+  fi
   rm -f "$peak_file"
   detach_disks "$slot" || true
   rm -rf "${base:?}/firecracker/$id"
@@ -104,11 +107,11 @@ fi
 mkdir -p "${cgroup%/*}"
 echo 20 > "${cgroup%/*}/cpu.weight"
 # The VM's largest use of its own memory (anon in its cgroup: not the host's file cache),
-# sampled every 5 s and printed when it ends, to size VMs by kind of job. It stops with this
+# sampled every 2 s and printed when it ends (cleanup), to size VMs by kind of job. It stops with this
 # script, and holds neither the slot lock nor the console pipe.
 echo 0 > "$peak_file"
 (
-  while sleep 5 && kill -0 $$ 2>/dev/null; do
+  while sleep 2 && kill -0 $$ 2>/dev/null; do
     anon=$(awk '$1 == "anon" {print $2}' "$cgroup/memory.stat" 2>/dev/null) || continue
     [[ -n $anon ]] && ((anon > $(<"$peak_file"))) && echo "$anon" > "$peak_file"
   done
@@ -117,11 +120,10 @@ sampler=$!
 
 # Memory capped a little above the guest's.
 # The lock stays with this script: if it dies, the next run kills the orphan.
-status=0
+status="stopped"
 timeout --kill-after=10 "$timeout" /usr/local/bin/jailer \
   --id "$id" --exec-file /usr/local/bin/firecracker \
   --uid "$uid" --gid "$gid" --chroot-base-dir "$base" \
   --cgroup-version 2 --cgroup "cpu.weight=20" --cgroup "memory.max=$(((MEM_MIB + 256) * 1024 * 1024))" \
-  -- --config-file vm.json --no-api --metadata metadata.json --level Warning </dev/null 9>&- || status=$?
-echo "slot $slot: VM ended (exit $status), its memory peaked at $(($(<"$peak_file") / 1048576)) MiB of $MEM_MIB" >&2
-exit "$status"
+  -- --config-file vm.json --no-api --metadata metadata.json --level Warning </dev/null 9>&- && status="exit 0" || status="exit $?"
+exit "${status#exit }"
