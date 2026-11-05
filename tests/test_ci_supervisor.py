@@ -5,6 +5,7 @@ import json
 import os
 import tarfile
 import threading
+from pathlib import Path
 from typing import ClassVar
 
 import pytest
@@ -555,6 +556,8 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "github_ok": True,
         "mem_available_mib": 9000,
         "held_for_memory": 1,
+        "restarting_since": None,
+        "restart_reason": "",
     }
 
 
@@ -590,6 +593,65 @@ def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:
     monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: slots.append(slot))
     sup.tick(None, sup.State(slots=5), ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert slots == [0, 1, 2, 3, 4]
+
+
+def test_a_restarting_supervisor_starts_nothing_and_lets_a_standby_go(caches, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(
+        sup,
+        "find_queued",
+        lambda gh, repo: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
+    )
+    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    started: list[int] = []
+    monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: started.append(slot))
+    stopped: list[str] = []
+    monkeypatch.setattr(
+        sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(run.runner_name)
+    )
+
+    class Running:
+        def poll(self) -> None:
+            return None
+
+    state = sup.State(slots=5)
+    state.launches[0] = sup.Launch(0, "o/ok", 1, "fc-0", 0.0, Running(), Path("m"), standby=True)  # type: ignore[arg-type]
+    state.launches[1] = sup.Launch(1, "o/ok", 2, "fc-1", 0.0, Running(), Path("m"))  # type: ignore[arg-type]
+    state.restarting_since = 100.0
+
+    sup.tick(None, state, ["o/ok"], 200.0)  # type: ignore[arg-type]
+
+    assert started == []
+    assert stopped == ["fc-0"]  # the standby goes; the job VM finishes
+
+
+def test_a_restart_waits_for_running_jobs_then_goes_ahead(monkeypatch) -> None:
+    class Running:
+        def poll(self) -> None:
+            return None
+
+    state = sup.State(slots=5)
+    assert not sup.finished_restarting(state, 0.0)  # not restarting
+    state.restarting_since = 100.0
+    state.launches[1] = sup.Launch(1, "o/ok", 2, "fc-1", 0.0, Running(), Path("m"))  # type: ignore[arg-type]
+    assert not sup.finished_restarting(state, 100.0 + 60)  # a job still runs
+    assert sup.finished_restarting(state, 100.0 + sup.RESTART_WAIT_SECONDS)  # waited long enough
+    state.launches.clear()
+    assert sup.finished_restarting(state, 101.0)  # every job finished
+
+
+def test_the_status_says_when_a_restart_waits_and_why(monkeypatch, tmp_path) -> None:
+    reason = tmp_path / "restart-reason"
+    reason.write_text("session X: VM memory fix\n")
+    monkeypatch.setattr(sup, "RESTART_REASON_FILE", reason)
+    state = sup.State(slots=5)
+    assert sup.status(state, 0.0, True, 1000)["restarting_since"] is None
+    state.restarting_since = 123.4
+    shown = sup.status(state, 200.0, True, 1000)
+    assert shown["restarting_since"] == 123
+    assert shown["restart_reason"] == "session X: VM memory fix"
 
 
 def test_the_status_file_is_replaced_whole_and_readable_by_all(tmp_path) -> None:
