@@ -41,7 +41,7 @@ jobs:
       - name: Back up now
         if: inputs.backup_now
         # Same as the runbook: output goes to the container log, where the
-        # report below reads it. Success also clears Backup Missed.
+        # report below reads it. Success also clears Nightly backup didn't run.
         run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
 
       - name: Send test alert to Kaizen

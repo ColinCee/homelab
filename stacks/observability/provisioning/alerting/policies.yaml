@@ -11,4 +11,4 @@ policies:
     routes:
       - receiver: Discord Private
         object_matchers:
-          - ['alertname', '=~', 'Kaizen Watcher Stopped|Kaizen Control Room Down|DatasourceNoData|DatasourceError']
+          - ["alertname", "=~", "Kaizen's Watcher stopped running|Kaizen Control room unreachable|DatasourceNoData|DatasourceError"]

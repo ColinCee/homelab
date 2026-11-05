@@ -7,7 +7,7 @@ groups:
     interval: 1m
     rules:
       - uid: high-cpu
-        title: High CPU Usage
+        title: Beelink CPU maxed out
         condition: C
         data:
           - refId: A
@@ -45,6 +45,13 @@ groups:
         for: 20m
         annotations:
           summary: "Beelink CPU usage"
+          measure: "CPU use"
+          trigger: "over 80% for 20 min"
+          chart: |
+            (
+              sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
+              - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
+            ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 20 minutes (5-minute CPU average)."
           action: "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
@@ -52,7 +59,7 @@ groups:
           severity: warning
 
       - uid: high-ram
-        title: High RAM Usage
+        title: Beelink running out of memory
         condition: C
         data:
           - refId: A
@@ -82,6 +89,10 @@ groups:
         for: 5m
         annotations:
           summary: "Beelink RAM usage"
+          measure: "Memory use"
+          trigger: "over 90% for 5 min"
+          chart: |
+            1 - (node_memory_MemAvailable_bytes{job="integrations/unix"} / node_memory_MemTotal_bytes{job="integrations/unix"})
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 90% for 5 minutes."
           action: "Check the memory chart on Home (containers, CI VMs and the rest), then its Containers section."
@@ -89,7 +100,7 @@ groups:
           severity: warning
 
       - uid: high-disk
-        title: High Disk Usage
+        title: Beelink disk filling up
         condition: C
         data:
           - refId: A
@@ -121,6 +132,11 @@ groups:
         for: 10m
         annotations:
           summary: "Beelink root disk usage"
+          measure: "Disk use"
+          trigger: "over 80% for 10 min"
+          chart: >-
+            1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+            / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: above 80% for 10 minutes."
           action: "Inspect root filesystem usage before removing files; preserve Docker volumes."
@@ -128,7 +144,7 @@ groups:
           severity: critical
 
       - uid: backup-missed
-        title: Backup Missed
+        title: Nightly backup didn't run
         condition: C
         data:
           - refId: A
@@ -159,14 +175,16 @@ groups:
         for: 30m
         annotations:
           summary: "Beelink off-site backup"
-          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}{{ end }} hours since the last successful backup"
+          measure: "Last good backup"
+          trigger: "over 26 h ago"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} h ago{{ end }}"
           description: "Threshold: no successful restic backup to R2 in the last 26 hours."
           action: "Check `docker logs backup`; see docs/runbooks/backups.md."
         labels:
           severity: critical
 
       - uid: backup-storage-high
-        title: Backup Storage High
+        title: Backup storage nearly full
         condition: C
         data:
           - refId: A
@@ -199,6 +217,8 @@ groups:
         for: 5m
         annotations:
           summary: "Beelink backup storage in R2"
+          measure: "Backup storage"
+          trigger: "over 5 GB"
           value: "{{ with $values.A }}{{ humanize1024 .Value }}B{{ end }}"
           description: "Threshold: above 5 GB. Uploads stop at 8 GB; R2 bills past 10 GB."
           action: "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
@@ -206,7 +226,7 @@ groups:
           severity: warning
 
       - uid: flight-tracker-down
-        title: Flight Tracker Down
+        title: Flight Tracker site down
         condition: C
         data:
           - refId: A
@@ -236,7 +256,9 @@ groups:
         for: 10m
         annotations:
           summary: "Flight tracker live radar"
-          value: "{{ with $values.A }}{{ .Value }}{{ end }} (1 = live, 0 = down)"
+          measure: "Live radar"
+          trigger: "down for 10 min"
+          value: "{{ with $values.A }}{{ if eq .Value 0.0 }}down{{ else }}live{{ end }}{{ end }}"
           description: "Threshold: https://api.colincheung.dev/aircraft not serving live aircraft for 10 minutes."
           action: "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
         labels:
@@ -249,7 +271,7 @@ groups:
     interval: 1m
     rules:
       - uid: kaizen-machine-wait
-        title: Kaizen Waiting For A Machine
+        title: Kaizen tasks stuck waiting for a test VM
         condition: C
         data:
           - refId: A
@@ -284,14 +306,19 @@ groups:
         for: 1m
         annotations:
           summary: "Longest Kaizen wait for a homelab machine"
-          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} minutes{{ end }}"
+          measure: "Longest wait for a VM"
+          trigger: "over 20 min"
+          chart: >-
+            max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
+            and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
           description: "Threshold: a task has waited over 20 minutes for a homelab CI machine."
           action: "Check `journalctl -u homelab-ci-supervisor` on the Beelink and the job's runner labels; see docs/runbooks/ci-runner.md."
         labels:
           severity: warning
 
       - uid: kaizen-not-merging
-        title: Kaizen Not Merging
+        title: Kaizen hasn't merged anything in 3 hours
         condition: C
         data:
           - refId: A
@@ -325,14 +352,16 @@ groups:
         for: 15m
         annotations:
           summary: "Time since Kaizen last merged, with tasks queued"
-          value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} hours{{ end }}"
+          measure: "Since last merge"
+          trigger: "over 3 h with tasks queued"
+          value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} h{{ end }}"
           description: "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
           action: "Open the Control room (http://beelink.tail4f465e.ts.net:8090) and Grafana Home; look for a failing step or held change."
         labels:
           severity: warning
 
       - uid: kaizen-watcher-stopped
-        title: Kaizen Watcher Stopped
+        title: Kaizen's Watcher stopped running
         condition: C
         data:
           - refId: A
@@ -368,14 +397,16 @@ groups:
         for: 5m
         annotations:
           summary: "Minutes since Auto Kaizen's Watcher last worked"
-          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} minutes{{ end }}"
+          measure: "Since the Watcher last ran"
+          trigger: "over 60 min"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
           description: "Threshold: the Watcher, due every 20 minutes, has not worked for an hour, so GitHub is not starting Kaizen's jobs."
           action: "Open github.com/ColinCee/auto-kaizen/actions: a refused job names the cause (billing, an outage, no machine)."
         labels:
           severity: warning
 
       - uid: kaizen-control-room-down
-        title: Kaizen Control Room Down
+        title: Kaizen Control room unreachable
         condition: C
         data:
           - refId: A
@@ -406,6 +437,8 @@ groups:
         for: 5m
         annotations:
           summary: "Kaizen Control room scrape"
+          measure: "Control room"
+          trigger: "down for 5 min"
           value: "{{ with $values.A }}{{ if eq .Value 0.0 }}down{{ else }}up{{ end }}{{ end }}"
           description: "Threshold: Prometheus could not reach the Control room for 5 minutes, so alerts are not reaching the #alerts forum."
           action: "On the Beelink: docker ps -a | grep control-room, then docker logs on it."
