@@ -12,10 +12,16 @@ shift 2
 max_unpacked=6442450944
 max_zip=2147483648
 
+# The cache disk holds the last cache's workspace paths at the same place (web/ for
+# web/node_modules): pack the job's fresh ones, not both, or every cache would carry
+# all earlier copies too.
+tops=" "
+for path in "$@"; do tops+="${path%%/*} "; done
+
 members=() folders=()
 for path in "$cache_dir"/*/; do
   name=$(basename "$path")
-  [[ $name == lost+found || ! -r $path || ! -x $path ]] && continue
+  [[ $name == lost+found || $tops == *" $name "* || ! -r $path || ! -x $path ]] && continue
   folders+=("$name")
 done
 ((${#folders[@]})) && members+=(-C "$cache_dir" "${folders[@]}")

@@ -230,6 +230,57 @@ def test_the_cache_unpacker_refuses_an_archive_that_unpacks_too_big(tmp_path) ->
         check(big, str(tmp_path))
 
 
+def _tar(*members: tuple[str, bytes | str]) -> bytes:
+    """A tar of files (bytes content) and hard links (str target), in order."""
+    out = io.BytesIO()
+    with tarfile.open(fileobj=out, mode="w") as tar:
+        for name, body in members:
+            info = tarfile.TarInfo(name)
+            if isinstance(body, str):
+                info.type, info.linkname = tarfile.LNKTYPE, body
+                tar.addfile(info)
+            else:
+                info.size = len(body)
+                tar.addfile(info, io.BytesIO(body))
+    return out.getvalue()
+
+
+def test_the_cache_unpacker_takes_the_later_entry_of_a_path_held_twice(tmp_path) -> None:
+    # servo's cache, 5 Nov: web/node_modules twice, the second time with a hard link onto
+    # a file the first had unpacked, and tarfile tried to seek back in the stream.
+    archive = _tar(
+        ("web/esbuild/bin/esbuild", b"js shim"),
+        ("web/linux-x64/esbuild", b"binary"),
+        ("web/esbuild/bin/esbuild", "web/linux-x64/esbuild"),
+    )
+
+    sup.unpack_cache(io.BytesIO(archive), tmp_path)
+
+    assert (tmp_path / "web/esbuild/bin/esbuild").read_bytes() == b"binary"
+
+
+def test_a_cache_artifact_that_fails_to_unpack_is_not_tried_again(caches, monkeypatch) -> None:
+    artifact = _artifact(7, "main", "2026-11-05T09:56:00Z")
+    artifact["workflow_run"]["id"] = 70
+    run = {"id": 70, "status": "completed", "event": "push", "conclusion": "success"}
+    run["head_branch"] = "main"
+    downloads: list[str] = []
+
+    class FakeGitHub:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            return {"artifacts": [artifact]} if "artifacts?" in path else run
+
+        def download(self, path: str, dest, limit: int) -> None:
+            downloads.append(path)
+            dest.write_bytes(b"not a zip")
+
+    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
+    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
+
+    assert len(downloads) == 1
+    assert not sup.cache_image("octo/broken").exists()
+
+
 def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
     assert sup.wants_standby(["a/x"], ["a/x"], [True], 1, wanted=2) is True
     assert sup.wants_standby(["a/x"], ["a/x"], [True, True], 0, wanted=2) is False

@@ -771,18 +771,30 @@ def size_capped(limit: int) -> Callable[[tarfile.TarInfo, str], tarfile.TarInfo 
     return check
 
 
+def unpack_cache(stream: IO[bytes], root: Path) -> None:
+    """Unpack a cache tar into root through size_capped. A path the archive holds twice
+    takes its later entry, as tar does; tarfile would instead seek back for a hard link
+    onto a file already there, which a stream cannot (servo's cache, 5 Nov)."""
+    check = size_capped(CACHE_MAX_UNPACKED_BYTES)
+    with tarfile.open(fileobj=stream, mode="r|") as tar:
+        for member in tar:
+            safe = check(member, str(root))  # the path is inside root, symlinks resolved
+            if safe is None:
+                continue
+            dest = root / safe.name
+            if not safe.isdir() and os.path.lexists(dest) and not os.path.isdir(dest):
+                dest.unlink()
+            tar.extract(safe, root, filter="fully_trusted")
+
+
 def build_cache_image(zip_path: Path, image: Path) -> None:
     """Artifact zip -> cache.tar -> a folder -> an ext4 image, owned by the VM's runner user.
     Runs as root on the host and never executes anything from the artifact."""
     with tempfile.TemporaryDirectory(dir=CACHE_DIR) as tmp:
         root = Path(tmp) / "root"
         root.mkdir()
-        with (
-            zipfile.ZipFile(zip_path) as z,
-            z.open("cache.tar") as raw,
-            tarfile.open(fileobj=raw, mode="r|") as tar,
-        ):
-            tar.extractall(root, filter=size_capped(CACHE_MAX_UNPACKED_BYTES))
+        with zipfile.ZipFile(zip_path) as z, z.open("cache.tar") as raw:
+            unpack_cache(raw, root)
         # Owned by the VM's runner user, so the job can write through its throwaway layer.
         # The folder is in a root-only temporary directory, so no host user reaches it.
         subprocess.run(["chown", "-R", f"{RUNNER_UID}:{RUNNER_UID}", str(root)], check=True)
@@ -820,7 +832,7 @@ def refresh_cache(gh: GitHub, repo: str, branch: str) -> None:
     if artifact is None:
         return
     known = json.loads(seen.read_text()) if seen.exists() else {}
-    if known.get("artifact") == artifact["id"]:
+    if artifact["id"] in (known.get("artifact"), known.get("failed")):
         return
     run = gh.request("GET", f"/repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
     if run.get("status") != "completed":
@@ -842,7 +854,14 @@ def refresh_cache(gh: GitHub, repo: str, branch: str) -> None:
         gh.download(
             f"/repos/{repo}/actions/artifacts/{artifact['id']}/zip", zip_path, CACHE_MAX_BYTES
         )
-        build_cache_image(zip_path, image)
+        try:
+            build_cache_image(zip_path, image)
+        except (OSError, subprocess.SubprocessError, tarfile.TarError, zipfile.BadZipFile) as e:
+            # The same artifact fails the same way: wait for a newer one rather than
+            # download and unpack it again every minute.
+            seen.write_text(json.dumps({**known, "failed": artifact["id"]}))
+            log(f"cache for {repo}: artifact {artifact['id']} failed to unpack, {e}; ignored")
+            return
     seen.write_text(
         json.dumps({"artifact": artifact["id"], "run": run["id"], "sha": run.get("head_sha", "")})
     )
@@ -864,9 +883,10 @@ def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: floa
     def work() -> None:
         try:
             for repo in due:
-                refresh_cache(own, repo, branches[repo])
-        except Exception as e:
-            log(f"cache refresh failed: {type(e).__name__}: {e}")
+                try:
+                    refresh_cache(own, repo, branches[repo])
+                except Exception as e:  # one repo's failure must not hold up the rest
+                    log(f"cache refresh for {repo} failed: {type(e).__name__}: {e}")
         finally:
             state.cache_busy.release()
 
