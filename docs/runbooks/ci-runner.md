@@ -105,8 +105,13 @@ merge waiting on CI never takes the slot that CI needs. Builds get memory first.
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
 services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
-touches far less than its size, so this counts what is really free, not the
-sizes added up. A job without the memory stays queued and is tried again on the
+touches far less than its size, and gives back file cache it no longer needs: once
+its cache passes a quarter of its memory, `ci-trim-cache` in the VM drops it, and
+the balloon device's free page reporting returns the freed pages to the host. So
+this counts what is really free, not the sizes added up. Without that, each VM
+grew to its full size and the host swapped (5 Nov). When a VM ends, the journal
+says how much of its memory it used at most (`slot N: VM ended (exit 0), its
+memory peaked at X MiB of Y`), to size VMs by kind of job. A job without the memory stays queued and is tried again on the
 next poll; the log says so once per job. A standby gives way first: none boots
 while a job waits for memory, and one waiting for another repo is stopped to
 make room.
