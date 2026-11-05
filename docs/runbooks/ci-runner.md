@@ -236,7 +236,8 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "cache_disks": ["ColinCee/example"], "github_ok": true,
- "mem_available_mib": 9216, "held_for_memory": 0}
+ "mem_available_mib": 9216, "held_for_memory": 0,
+ "restarting_since": null, "restart_reason": ""}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
@@ -244,7 +245,9 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve. A failed write is logged
+jobs not started because that memory would have dipped into the services' reserve. While a restart waits for
+running jobs, `restarting_since` is when it was asked for and `restart_reason` who asked and why (see
+[Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)). A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
 Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
@@ -287,7 +290,7 @@ re-run `install-host.sh`, `build-rootfs.sh` and the audit.
   mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`) as the runner user with the job's `PATH`,
   then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
   Run it after `build-rootfs.sh`, with the supervisor stopped
-  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished: it boots
+  (`sudo systemctl stop homelab-ci-supervisor`, which waits for running jobs) and its VMs finished: it boots
   in slot 0, and fails with "slot 0 is busy" while a job holds it.
 - **`test-load.sh`** boots a VM in every slot (the count in
   `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
@@ -325,13 +328,16 @@ thought it had stopped it.
   Anything still running after 20 minutes is cut off, and the log says how many
   (`restarting after Ns: N jobs cut off`).
 - **One at a time:** a second `install-host.sh` waits for the first and names it.
-- **Seen:** `machines.json` carries `restarting_since` and `restart_reason`, which the
-  Control room shows while the restart waits.
+- **Seen:** the Control room shows the restart and its reason while it waits
+  (from `machines.json`, above).
+- **The first install of this** finds a supervisor that cannot wait yet: it waits for
+  a moment with no job running before the restart. A host shutdown or reboot does not
+  wait for jobs.
 
 ## Changing the number of slots
 
-With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
-its VMs finished:
+With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`, which
+waits up to 20 minutes for running jobs to finish) and its VMs finished:
 
 1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
    makes that many slot users and taps.

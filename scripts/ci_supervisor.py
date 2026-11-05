@@ -1084,7 +1084,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
         mem = next_size(state, False)[1]
-        if mem > room:
+        if mem > room or state.restarting_since is not None:
             break
         launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
         room -= mem
@@ -1211,6 +1211,27 @@ def restart_reason() -> str:
         return RESTART_REASON_FILE.read_text().strip()[:200]
     except OSError:
         return ""
+
+
+def shutting_down() -> bool:
+    """The host itself is stopping (a reboot or shutdown), not just this service."""
+    try:
+        state = subprocess.run(
+            ["systemctl", "is-system-running"], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return state == "stopping"
+
+
+def reap_while_restarting(gh: GitHub, state: State) -> None:
+    """A poll that failed still clears finished VMs while a restart waits for them."""
+    if state.restarting_since is None:
+        return
+    try:
+        reap(gh, state, time.time())
+    except Exception as e:
+        log(f"reap failed: {type(e).__name__}: {e}")
 
 
 def finished_restarting(state: State, now: float) -> bool:
@@ -1351,16 +1372,23 @@ def main(argv: list[str] | None = None) -> int:
     status_error = ""
     log(f"{state.slots} slots; serving private repos the token can see")
 
+    # Only sets the time: the loop logs it (printing from a signal handler can interrupt a print).
     def restarting(signum: int, frame: object) -> None:
         if state.restarting_since is None:
             state.restarting_since = time.time()
-            jobs = sum(not run.standby for run in state.launches.values())
-            log(f"restarting: no new VMs; waiting for {jobs} running jobs to finish")
 
     signal.signal(signal.SIGTERM, restarting)
+    told = False
     while True:
         wait: float = POLL_SECONDS
         github_ok = False
+        if state.restarting_since is not None and not told:
+            told = True
+            if shutting_down():
+                # The host is going down: no 20-minute wait to hold the shutdown up.
+                state.restarting_since -= RESTART_WAIT_SECONDS
+            jobs = sum(not run.standby for run in state.launches.values())
+            log(f"restarting: no new VMs; waiting for {jobs} running jobs to finish")
         # Any failure is logged and retried; exiting would kill the running jobs.
         try:
             if listing is None and time.time() - listed >= REPOS_EVERY:
@@ -1402,8 +1430,10 @@ def main(argv: list[str] | None = None) -> int:
         except RateLimited as e:
             log(str(e))
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
+            reap_while_restarting(gh, state)
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
+            reap_while_restarting(gh, state)
             failures += 1
             # Without GitHub nothing re-checks privacy, so no VM is left waiting meanwhile.
             if failures == 5:
@@ -1421,7 +1451,12 @@ def main(argv: list[str] | None = None) -> int:
                 log(f"could not write the status file: {why}")
             status_error = why
         if finished_restarting(state, time.time()):
-            return 0
+            # Not `return`: that waits for the request threads, and a hung request would
+            # hold the restart up.
+            sys.stdout.flush()
+            os._exit(0)
+        if state.restarting_since is not None:
+            wait = POLL_SECONDS
         if args.once:
             while state.launches:
                 time.sleep(POLL_SECONDS)
