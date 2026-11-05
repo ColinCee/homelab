@@ -14,6 +14,7 @@ from scripts import ci_supervisor as sup
 
 # The real readers, kept before plenty_of_memory replaces them.
 READ_MEMORY, READ_RESERVE = sup.mem_available_mib, sup.memory_reserve_mib
+READ_DISK_WAIT = sup.disk_wait_percent
 
 
 @pytest.fixture(autouse=True)
@@ -22,6 +23,7 @@ def plenty_of_memory(monkeypatch):
     test says so."""
     monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
     monkeypatch.setattr(sup, "memory_reserve_mib", lambda: sup.DEFAULT_MEMORY_RESERVE_MIB)
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
 
 
 class Repos:
@@ -810,6 +812,33 @@ def test_a_job_waits_queued_when_memory_is_short_and_is_logged_once(host, monkey
     sup.tick(None, state, ["o/ok"], 4.0)  # type: ignore[arg-type]
     assert started[-1] == ("o/ok", 2048, False)
     assert state.held == {}
+
+
+def test_no_vm_starts_while_the_disk_is_busy(host, tmp_path, monkeypatch) -> None:
+    # The Beelink's /proc/pressure/io at 21:28 on 5 Nov, with 9 VMs and Grafana failing.
+    pressure = tmp_path / "io"
+    pressure.write_text(
+        "some avg10=92.99 avg60=90.49 avg300=86.69 total=53934832649\n"
+        "full avg10=27.79 avg60=26.06 avg300=27.47 total=33010242903\n"
+    )
+    monkeypatch.setattr(sup, "IO_PRESSURE", pressure)
+    monkeypatch.setattr(sup, "disk_wait_percent", READ_DISK_WAIT)
+    queue, started, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    queue(jobs=1, free_mib=1 << 20)
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [] and state.held == {0: "o/ok"}
+    assert lines[-1] == "job 0 in o/ok waits for a busy disk"
+
+    pressure.write_text("some avg10=12.00 avg60=13.63 avg300=13.00 total=1\n")
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert started[0][0] == "o/ok" and state.held == {}
+
+
+def test_an_unreadable_pressure_file_does_not_hold_vms(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "IO_PRESSURE", tmp_path / "missing")
+    assert READ_DISK_WAIT() == 0.0
 
 
 def test_a_held_job_in_a_repo_not_polled_this_time_stays_held(host) -> None:

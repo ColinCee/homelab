@@ -154,6 +154,13 @@ CONSOLE_LINE_MAX = 4096
 MEMINFO = Path("/proc/meminfo")
 MEMORY_RESERVE_FILE = Path("/etc/homelab-ci/memory-reserve-mib")
 DEFAULT_MEMORY_RESERVE_MIB = 3 * 1024
+# No VM starts while tasks waited on the disk for more than this share of the last
+# minute (`some avg60` in /proc/pressure/io); running VMs carry on. VM disks and swap
+# share the host's one SSD with Grafana's database: on 5 Nov 9 VMs kept it at 70-95%,
+# Grafana's checks failed on a locked database and posted false alerts. Busy CI hours
+# that hurt nothing stay under 50%.
+IO_PRESSURE = Path("/proc/pressure/io")
+DISK_WAIT_LIMIT = 50.0
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -787,6 +794,15 @@ def mem_available_mib() -> int:
     raise ValueError(f"no MemAvailable in {MEMINFO}")
 
 
+def disk_wait_percent() -> float:
+    """How much of the last minute some task waited on the disk, in percent (0 if unknown)."""
+    try:
+        some = IO_PRESSURE.read_text().splitlines()[0].split()
+        return float(dict(f.split("=") for f in some[1:])["avg60"])
+    except (OSError, IndexError, KeyError, ValueError):
+        return 0.0
+
+
 def memory_reserve_mib() -> int:
     try:
         return max(0, int(MEMORY_RESERVE_FILE.read_text().strip()))
@@ -1202,6 +1218,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them. Builds first, then light jobs.
     room = mem_available_mib() - memory_reserve_mib()
+    disk_busy = disk_wait_percent() > DISK_WAIT_LIMIT
+    if disk_busy:
+        room = min(room, 0)
     started = 0
     for slot, (repo, label) in zip(free, starts, strict=False):
         mem = next_size(state, False)[1]
@@ -1225,6 +1244,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         starts[started:] + light_starts[light_started:],
         job_ids,
         booting + Counter(launched),
+        "a busy disk" if disk_busy else "memory",
     )
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
@@ -1259,8 +1279,9 @@ def hold_for_memory(
     held: list[Want],
     job_ids: Mapping[Want, list[int]],
     covered: Mapping[Want, int],
+    why: str = "memory",
 ) -> None:
-    """Note the queued jobs left waiting for memory, logging each once. They stay queued
+    """Note the queued jobs left waiting for memory or the disk, logging each once. They stay queued
     and are tried again next poll. Jobs of repos not polled this time keep their mark."""
     now_held: dict[int, str] = {}
     for want, n in Counter(held).items():
@@ -1268,7 +1289,7 @@ def hold_for_memory(
         for job_id in sorted(job_ids.get(want, []))[skip : skip + n]:
             now_held[job_id] = want[0]
             if job_id not in state.held:
-                log(f"job {job_id} in {want[0]} waits for memory")
+                log(f"job {job_id} in {want[0]} waits for {why}")
     state.held = {i: r for i, r in state.held.items() if r not in repos} | now_held
 
 
