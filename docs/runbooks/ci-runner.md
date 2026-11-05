@@ -21,7 +21,8 @@ jobs:
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm and the docker CLI with its compose
+`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
+(`bwrap`), socat and the docker CLI with its compose
 plugin (no daemon, so `docker compose config` works but containers do not)
 already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
 needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
@@ -29,7 +30,8 @@ Chromium needs are installed too, so a job runs `playwright install chromium`
 and needs no `install-deps` step. The actions the CI repos use
 (`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
 does not download them; a tag that has moved on is downloaded as usual until
-the list is refreshed and the image rebuilt.
+the list is refreshed and the image rebuilt. A change to the image's tools or
+actions reaches jobs only once `build-rootfs.sh` is re-run on the host.
 
 The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
 checkout, then one step that runs `uv sync --locked --no-install-project` and

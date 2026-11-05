@@ -9,6 +9,7 @@ RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd systemd-sysv udev iproute2 ca-certificates curl jq netcat-openbsd iputils-ping \
       git sudo unzip xz-utils zstd build-essential python3 python-is-python3 shellcheck file \
+      bubblewrap socat \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && systemctl mask systemd-resolved.service systemd-networkd.service \
       systemd-timesyncd.service apt-daily.timer apt-daily-upgrade.timer \
@@ -77,9 +78,9 @@ RUN v=${JDK_VERSION} \
  && mkdir /opt/jdk && tar -xzf /tmp/jdk.tgz --strip-components 1 -C /opt/jdk && rm /tmp/jdk.tgz \
  && echo 'JAVA_HOME=/opt/jdk' >> /opt/runner/.env
 
-# mise (it installs the tools a repo's mise.toml lists), bun, pnpm, and the
-# docker CLI with the compose plugin but no daemon (enough for `docker compose
-# config`), all under /usr/local, already on the jobs' PATH.
+# mise (it installs the tools a repo's mise.toml lists), bun, pnpm, the GitHub
+# CLI, gitleaks, and the docker CLI with the compose plugin but no daemon (enough
+# for `docker compose config`), all under /usr/local, already on the jobs' PATH.
 ARG MISE_VERSION
 ARG MISE_SHA256
 ARG BUN_VERSION
@@ -90,6 +91,10 @@ ARG DOCKER_VERSION
 ARG DOCKER_SHA256
 ARG COMPOSE_VERSION
 ARG COMPOSE_SHA256
+ARG GH_VERSION
+ARG GH_SHA256
+ARG GITLEAKS_VERSION
+ARG GITLEAKS_SHA256
 RUN curl -fsSL -o /usr/local/bin/mise \
       "https://github.com/jdx/mise/releases/download/${MISE_VERSION}/mise-${MISE_VERSION}-linux-x64" \
  && echo "${MISE_SHA256}  /usr/local/bin/mise" | sha256sum -c --quiet \
@@ -107,7 +112,17 @@ RUN curl -fsSL -o /usr/local/bin/mise \
  && curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
       "https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
  && echo "${COMPOSE_SHA256}  /usr/local/lib/docker/cli-plugins/docker-compose" | sha256sum -c --quiet \
- && chmod 0755 /usr/local/bin/mise /usr/local/bin/bun /usr/local/lib/docker/cli-plugins/docker-compose
+ && v=${GH_VERSION#v} \
+ && curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v$v/gh_${v}_linux_amd64.tar.gz" \
+ && echo "${GH_SHA256}  /tmp/gh.tgz" | sha256sum -c --quiet \
+ && tar -xzf /tmp/gh.tgz --strip-components 2 -C /usr/local/bin "gh_${v}_linux_amd64/bin/gh" && rm /tmp/gh.tgz \
+ && v=${GITLEAKS_VERSION#v} \
+ && curl -fsSL -o /tmp/gitleaks.tgz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" \
+ && echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c --quiet \
+ && tar -xzf /tmp/gitleaks.tgz -C /usr/local/bin gitleaks && rm /tmp/gitleaks.tgz \
+ && chmod 0755 /usr/local/bin/mise /usr/local/bin/bun /usr/local/bin/gh /usr/local/bin/gitleaks \
+      /usr/local/lib/docker/cli-plugins/docker-compose
 
 # Actions the CI repos use, unpacked where the runner looks before downloading
 # (<owner>_<repo>/<commit>/<the archive's own folder>), and Node and the JDK on the

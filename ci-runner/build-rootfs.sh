@@ -31,6 +31,8 @@ docker build -q -t homelab-ci-rootfs \
   --build-arg "PNPM_VERSION=$PNPM_VERSION" --build-arg "PNPM_SHA256=$PNPM_SHA256" \
   --build-arg "DOCKER_VERSION=$DOCKER_VERSION" --build-arg "DOCKER_SHA256=$DOCKER_SHA256" \
   --build-arg "COMPOSE_VERSION=$COMPOSE_VERSION" --build-arg "COMPOSE_SHA256=$COMPOSE_SHA256" \
+  --build-arg "GH_VERSION=$GH_VERSION" --build-arg "GH_SHA256=$GH_SHA256" \
+  --build-arg "GITLEAKS_VERSION=$GITLEAKS_VERSION" --build-arg "GITLEAKS_SHA256=$GITLEAKS_SHA256" \
   --build-arg "PYTHON_VERSION=$PYTHON_VERSION" --build-arg "CACHED_ACTIONS=$CACHED_ACTIONS" \
   "$here/rootfs" >/dev/null
 cid=$(docker create homelab-ci-rootfs)
