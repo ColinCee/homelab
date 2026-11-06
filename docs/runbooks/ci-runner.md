@@ -164,8 +164,7 @@ what is really free, not the sizes added up. When a VM ends, the journal says ho
 much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
 MiB of Y`), to size VMs by kind of job. No VM starts either while tasks waited on the disk for
 over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
-a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. The SSD is trimmed hourly, not
-weekly, since the VMs' write files churn about 0.5 TB a day (`systemd/fstrim-hourly.conf`). A job without the memory
+a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
 or the disk stays queued and is tried again on the
 next poll; the log says so once per job. A standby gives way first: none boots
 while a job waits, and one waiting for another repo is stopped to
@@ -263,6 +262,9 @@ sudo ci-runner/tests/audit.sh    # must pass before the supervisor runs
 sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -t homelab-ci-vm -f
 ```
+
+`install-host.sh` also trims the SSD hourly instead of weekly: the VMs' throwaway write files churn about
+0.5 TB a day, and untrimmed they slow every write (`systemd/fstrim-hourly.conf`).
 
 `/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
 missing or not a number). `install-host.sh` writes it, keeping its value unless
