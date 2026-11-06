@@ -202,6 +202,12 @@ DEFAULT_MEMORY_RESERVE_MIB = 3 * 1024
 IO_PRESSURE = Path("/proc/pressure/io")
 DISK_WAIT_LIMIT = 50.0
 DISK_PACE_SECONDS = 60.0
+# A queued job not started is logged with why (slots, memory, disk, labels) when it starts
+# waiting and then every this many seconds, to explain a long wait.
+WAIT_LOG_SECONDS = 180.0
+# A job a VM is booting for (or a standby waits ready for) is logged only once it has
+# waited WAIT_LOG_SECONDS, so every job's few seconds of boot are not logged.
+BOOTING = "a VM booting or waiting ready for it"
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -215,6 +221,8 @@ class Job:
     id: int
     name: str
     labels: tuple[str, ...]
+    # False for a job asking for our label with others no VM of ours has: it never starts.
+    ours: bool = True
 
     @property
     def want(self) -> Want:
@@ -298,6 +306,15 @@ class State:
     held: dict[int, str] = field(default_factory=dict)
     # While the disk is half busy, no VM starts before this time (see DISK_PACE_SECONDS).
     disk_paced_until: float = 0.0
+    # Queued jobs not started, with why (see WAIT_LOG_SECONDS).
+    waits: dict[int, Wait] = field(default_factory=dict)
+
+
+@dataclass
+class Wait:
+    repo: str
+    since: float
+    logged: float | None = None
 
 
 def log(message: str) -> None:
@@ -335,8 +352,12 @@ def queued_jobs(
     for run in runs:
         for job in get_jobs(int(run["id"])):
             labels = tuple(str(label) for label in job.get("labels", []))
-            if job.get("status") == "queued" and wants_us(labels):
-                jobs.append(Job(repo, int(job["id"]), str(job.get("name", "")), labels))
+            if job.get("status") != "queued":
+                continue
+            ours = wants_us(labels)
+            # One asking for our label with another we lack is kept, to log why it waits.
+            if ours or {LABEL, LIGHT_LABEL} & {label.lower() for label in labels}:
+                jobs.append(Job(repo, int(job["id"]), str(job.get("name", "")), labels, ours))
     return jobs
 
 
@@ -1557,6 +1578,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     job_ids: dict[Want, list[int]] = {}
     private: list[str] = []
     spent: dict[str, float] = {}
+    # Why each queued job not started this poll waits: (repo, why).
+    reasons: dict[int, tuple[str, str]] = {}
     # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
     answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
     for repo, (jobs, took) in zip(repos, answers, strict=True):
@@ -1564,8 +1587,11 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         if jobs is None:
             continue
         private.append(repo)
-        queued.update(job.want for job in jobs)
         for job in jobs:
+            if not job.ours:
+                reasons[job.id] = (repo, f"no VM has its labels ({', '.join(job.labels)})")
+                continue
+            queued[job.want] += 1
             job_ids.setdefault(job.want, []).append(job.id)
     reap(gh, state, now, queued, private)
     maybe_take_outboxes(gh, state, now)
@@ -1586,13 +1612,21 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     light_starts = plan([w for w in oldest_first if w[1] == LIGHT_LABEL], booting, len(light_free))
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them.
-    room = mem_available_mib() - memory_reserve_mib()
+    reserve = memory_reserve_mib()
+    room = mem_available_mib() - reserve
     disk_wait = disk_wait_percent()
     disk_paced = disk_wait > DISK_WAIT_LIMIT / 2
     disk_busy = disk_wait > DISK_WAIT_LIMIT or (disk_paced and now < state.disk_paced_until)
     if disk_busy:
         room = min(room, 0)
-    why = "a busy disk" if disk_busy or disk_paced else "memory"
+
+    def why(need: int) -> str:
+        """Why a job needing `need` MiB is held: the disk or memory."""
+        if disk_busy or disk_paced:
+            return f"the disk (tasks waited on it {disk_wait:.0f}% of the last minute)"
+        return (
+            f"memory ({max(room, 0)} MiB free above the {reserve} MiB reserve, a VM needs {need})"
+        )
 
     def pace() -> None:
         """One VM a minute while the disk is half busy: no more room after this start."""
@@ -1615,7 +1649,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             if oldest_held_build is not None or mem > room:
                 if oldest_held_build is None:
                     oldest_held_build = job_id
-                held[job_id] = (repo, why)
+                held[job_id] = (repo, why(mem))
                 continue
             launch(
                 gh,
@@ -1629,7 +1663,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             room -= mem
             started += 1
         elif LIGHT_SIZE[1] > room:
-            held[job_id] = (repo, why)
+            held[job_id] = (repo, why(LIGHT_SIZE[1]))
             continue
         elif oldest_held_build is not None:
             held[job_id] = (repo, "an older build waiting for memory")
@@ -1641,6 +1675,21 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         pace()
     launched = starts[:started] + light_starts[:light_started]
     hold_for_memory(state, repos, held)
+    # The rest of each want's jobs: the oldest are covered by VMs on their way, the next
+    # were planned (started or held above), and the rest found no free slot.
+    planned = {job_id for job_id, _ in builds + lights}
+    for want, ids in job_ids.items():
+        kind, slots = (
+            ("light", state.light_slots) if want[1] == LIGHT_LABEL else ("build", state.slots)
+        )
+        for n, job_id in enumerate(sorted(ids)):
+            if job_id in held:
+                reasons[job_id] = held[job_id]
+            elif n < booting[want]:
+                reasons[job_id] = (want[0], BOOTING)
+            elif job_id not in planned:
+                reasons[job_id] = (want[0], f"all {slots} {kind} slots in use")
+    note_waits(state, private, reasons, now)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
     # memory, if the standby cannot take it. A light job never uses a build slot.
@@ -1711,15 +1760,38 @@ def with_job_ids(
 
 
 def hold_for_memory(state: State, repos: list[str], held: Mapping[int, tuple[str, str]]) -> None:
-    """Note the queued jobs left waiting (job id: its repo and why), logging each once. They
-    stay queued and are tried again next poll. Jobs of repos not polled this time keep their
-    mark."""
-    for job_id, (repo, why) in sorted(held.items()):
-        if job_id not in state.held:
-            log(f"job {job_id} in {repo} waits for {why}")
+    """Note the queued jobs left waiting for memory or the disk (job id: its repo and why).
+    They stay queued and are tried again next poll; note_waits logs them. Jobs of repos not
+    polled this time keep their mark."""
     state.held = {i: r for i, r in state.held.items() if r not in repos} | {
         i: repo for i, (repo, _) in held.items()
     }
+
+
+def duration(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+def note_waits(
+    state: State, repos: list[str], reasons: Mapping[int, tuple[str, str]], now: float
+) -> None:
+    """Log each queued job not started, with why and how long it has waited here: when it
+    starts waiting and every WAIT_LOG_SECONDS. A job that was logged gets one more line when
+    it stops waiting. Jobs of repos not polled this time are left as they are."""
+    for job_id, wait in list(state.waits.items()):
+        if job_id not in reasons and wait.repo in repos:
+            del state.waits[job_id]
+            if wait.logged is not None:
+                waited = duration(now - wait.since)
+                log(f"job {job_id} in {wait.repo} stopped waiting after {waited}")
+    for job_id, (repo, why) in sorted(reasons.items()):
+        wait = state.waits.setdefault(job_id, Wait(repo, now))
+        waited = now - wait.since
+        quiet = why == BOOTING and waited < WAIT_LOG_SECONDS
+        if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):
+            log(f"job {job_id} in {repo} has waited {duration(waited)} here: {why}")
+            wait.logged = now
 
 
 def wants_standby(

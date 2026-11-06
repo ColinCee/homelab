@@ -935,7 +935,10 @@ def test_a_job_waits_queued_when_memory_is_short_and_is_logged_once(host, monkey
     queue(jobs=2, free_mib=3072 + 2047)  # still short, the first job's VM is still booting
     sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
     assert started == [("o/ok", 4096, False)]
-    assert [line for line in lines if "memory" in line] == ["job 1 in o/ok waits for memory"]
+    assert [line for line in lines if "memory" in line] == [
+        "job 1 in o/ok has waited 0m00s here: memory"
+        " (2047 MiB free above the 3072 MiB reserve, a VM needs 2048)"
+    ]
     status = sup.status(state, 2.0, github_ok=True, mem_available=5119)
     assert status["held_for_memory"] == 1 and status["mem_available_mib"] == 5119
 
@@ -960,7 +963,9 @@ def test_no_vm_starts_while_the_disk_is_busy(host, tmp_path, monkeypatch) -> Non
     state = sup.State()
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert started == [] and state.held == {0: "o/ok"}
-    assert lines[-1] == "job 0 in o/ok waits for a busy disk"
+    assert lines[-1] == (
+        "job 0 in o/ok has waited 0m00s here: the disk (tasks waited on it 90% of the last minute)"
+    )
 
     pressure.write_text("some avg10=12.00 avg60=13.63 avg300=13.00 total=1\n")
     sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
@@ -975,11 +980,61 @@ def test_a_half_busy_disk_starts_one_vm_a_minute(host, monkeypatch) -> None:
     state = sup.State()
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert len(started) == 1
-    assert "job 1 in o/ok waits for a busy disk" in lines
+    assert (
+        "job 1 in o/ok has waited 0m00s here: the disk (tasks waited on it 40% of the last minute)"
+    ) in lines
     sup.tick(None, state, ["o/ok"], 30.0)  # type: ignore[arg-type]
     assert len(started) == 1  # the first VM's load has not shown yet
     sup.tick(None, state, ["o/ok"], 61.0)  # type: ignore[arg-type]
     assert len(started) == 2
+
+
+def test_a_job_with_no_free_slot_is_logged_with_its_wait_every_few_minutes(host, monkeypatch):
+    queue, started, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: False)  # the first VM has its job
+    queue(jobs=2, free_mib=1 << 20)
+    state = sup.State(slots=1)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    second = [sup.Job("o/ok", 1, "j", tuple(sup.RUNNER_LABELS))]  # the first has its VM
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: second if repo == "o/ok" else [])
+    for now in (2.0, 179.0, 200.0):
+        sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
+    assert len(started) == 1
+    assert lines == [
+        "job 1 in o/ok has waited 0m00s here: all 1 build slots in use",
+        "job 1 in o/ok has waited 3m20s here: all 1 build slots in use",
+    ]
+    queue(jobs=0, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], 230.0)  # type: ignore[arg-type]
+    assert lines[-1] == "job 1 in o/ok stopped waiting after 3m50s"
+
+
+def test_a_job_whose_vm_is_booting_is_logged_only_after_a_long_wait(host, monkeypatch):
+    queue, started, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: True)  # GitHub never gives it the job
+    queue(jobs=1, free_mib=1 << 20)
+    state = sup.State()
+    for now in (0.0, 2.0, 100.0):
+        sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
+    assert len(started) == 1 and lines == []
+    sup.tick(None, state, ["o/ok"], 182.0)  # type: ignore[arg-type]
+    assert lines == [f"job 0 in o/ok has waited 3m00s here: {sup.BOOTING}"]
+
+
+def test_a_job_asking_for_a_label_no_vm_has_is_logged_and_never_started(host, monkeypatch):
+    _, started, lines = host
+    runs = [{"id": 1}]
+    jobs = {1: [{"id": 7, "name": "gpu", "status": "queued", "labels": ["homelab-fc", "gpu"]}]}
+    found = sup.queued_jobs("o/ok", runs, jobs.__getitem__)
+    assert [(job.id, job.ours) for job in found] == [(7, False)]
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: found if repo == "o/ok" else [])
+    sup.tick(None, sup.State(), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == []
+    assert lines == ["job 7 in o/ok has waited 0m00s here: no VM has its labels (homelab-fc, gpu)"]
 
 
 def test_an_unreadable_pressure_file_does_not_hold_vms(tmp_path, monkeypatch) -> None:
@@ -1514,7 +1569,10 @@ def test_an_older_light_job_starts_while_a_newer_build_waits_for_memory(pools, m
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert started == [(1, sup.LIGHT_LABEL)]  # room for the small VM, not the build's
     assert state.held == {2: "o/ok"}
-    assert lines == ["job 2 in o/ok waits for memory"]
+    assert lines == [
+        "job 2 in o/ok has waited 0m00s here:"
+        " memory (952 MiB free above the 3072 MiB reserve, a VM needs 4096)"
+    ]
 
 
 def test_a_newer_light_job_waits_behind_an_older_build_held_for_memory(pools, monkeypatch) -> None:
@@ -1527,8 +1585,9 @@ def test_a_newer_light_job_waits_behind_an_older_build_held_for_memory(pools, mo
     assert started == []
     assert state.held == {1: "o/ok", 2: "o/ok"}
     assert lines == [  # logged once each
-        "job 1 in o/ok waits for memory",
-        "job 2 in o/ok waits for an older build waiting for memory",
+        "job 1 in o/ok has waited 0m00s here:"
+        " memory (3000 MiB free above the 3072 MiB reserve, a VM needs 4096)",
+        "job 2 in o/ok has waited 0m00s here: an older build waiting for memory",
     ]
 
 
@@ -1539,7 +1598,8 @@ def test_neither_kind_starts_while_the_disk_is_busy(pools, monkeypatch) -> None:
     state = sup.State(slots=1, light_slots=1)
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert started == []
-    assert lines == ["job 1 in o/ok waits for a busy disk", "job 2 in o/ok waits for a busy disk"]
+    disk = "the disk (tasks waited on it 90% of the last minute)"
+    assert lines == [f"job {n} in o/ok has waited 0m00s here: {disk}" for n in (1, 2)]
 
 
 def test_the_light_standby_keeps_its_memory_for_its_older_light_job(host, monkeypatch) -> None:
