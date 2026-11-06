@@ -35,9 +35,14 @@ find_disk() {
   return 1
 }
 
+# What the supervisor takes (ci_supervisor.py, HANDOFF_ITEM, HANDOFF_JOB, HANDOFF_MAX_WAIT_SECONDS).
+item_name='^[a-z0-9][a-z0-9-]{0,63}$'
+job_name='^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$'
+
 put() {
   local name=$1 path=$2 readers=$3 later=$4 days=$5
-  local stage=$RUNNER_TEMP/handoff-out outer=$RUNNER_TEMP/handoff-out.tar disk
+  local stage=$RUNNER_TEMP/handoff-out outer=$RUNNER_TEMP/handoff-out.tar disk room
+  [[ $name =~ $item_name ]] || { echo "::warning::handoff: $name is not an item name (a-z, 0-9, -)"; return 1; }
   mkdir -p "$stage"
   if [[ -d $path && -n $(ls -A "$path") ]]; then
     tar -C "$path" -cf "$stage/$name.tar" .
@@ -55,6 +60,12 @@ put() {
     echo "::warning::handoff: no outbox disk in this VM, $name not put"
     return 1
   }
+  if [[ -b $disk ]]; then room=$(lsblk -bndo SIZE "$disk"); else room=$(stat -c %s "$disk"); fi
+  if (($(stat -c %s "$outer") > room - 512)); then
+    rm -f "$stage/$name.tar" "$stage/$name.json" "$outer"
+    echo "::warning::handoff: $name does not fit on the outbox; the job's earlier items stay"
+    return 1
+  fi
   # The header goes first and last: a put cut short leaves no header over a half-written tar.
   echo homelab-ci-outbox | as "$disk" w dd of="$disk" conv=notrunc,fsync status=none
   as "$disk" w dd if="$outer" of="$disk" bs=1M seek=512 oflag=seek_bytes conv=notrunc,fsync status=none
@@ -65,7 +76,12 @@ put() {
 }
 
 get() {
-  local name=$1 job=$2 run=$3 path=$4 wait=$5 disk nonce line header deadline
+  local name=$1 job=$2 run=$3 path=$4 wait=$5 disk nonce line deadline
+  [[ $name =~ $item_name && $job =~ $job_name && $run =~ ^[0-9]{1,20}$ && $wait =~ ^[0-9]{1,4}$ ]] || {
+    echo "::error::handoff: get needs an item name, a job name with no spaces, a run id and a wait in seconds"
+    return 1
+  }
+  ((wait <= 1800)) || wait=1800
   disk=$(find_disk homelab-ci-inbox) || {
     echo "::error::handoff: no inbox disk in this VM, so no $name"
     return 1

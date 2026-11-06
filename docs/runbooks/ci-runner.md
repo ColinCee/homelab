@@ -125,13 +125,19 @@ is not there, or not for this job:
    under `/var/lib/homelab-ci/handoff/<owner>__<repo>/<run>/<job>/`, with the job
    name GitHub shows for that VM's runner, whatever the job's result: no job can put
    under another's name. It is deleted after its `days`; past 20 GiB a repo's new
-   items are dropped. A job puts handoffs or a cache, not both.
+   items are dropped. A job puts handoffs or a cache, not both, and only a build
+   VM's cache is taken, never a light one's.
 2. `get` prints an ask on the console. The VM's console reader asks GitHub which job
    runs on that VM, and answers on the VM's read-only **inbox** disk (the item after
    512 bytes, then a header): the item if that job is one of its `readers` (same run)
    or `later` readers, `none` once the job that would put it has finished and its
    outbox is filed, else it waits up to `wait` seconds. A VM still cannot open any
-   connection to the Beelink.
+   connection to the Beelink. `wait` is at most 1800 seconds. `later` readers
+   are honoured only for a run of the default branch that is not a pull request's,
+   and a VM gets at most 50 answers.
+3. Item names are `a-z`, `0-9` and `-`; job names need no spaces, so a matrix or
+   called workflow's job (`build (3.12)`, `call / build`) cannot put or be named in
+   `from`. Handoffs are root's alone on the Beelink (`0700`).
 
 There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
 Operating). Auto Kaizen runs no more tasks at once than this number, set in its

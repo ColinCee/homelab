@@ -53,13 +53,23 @@ class GitHub:
                 {"name": "land", "runner_name": LANDER, "status": "in_progress", "conclusion": None}
             ],
         }
+        for jobs in self.jobs.values():
+            for job in jobs:
+                job["run_attempt"] = 1
+        # Run 72 is a pull request's.
+        self.runs = {70: ("issues", "main"), 71: ("issues", "main"), 72: ("pull_request", "x")}
         self.asked: list[str] = []
 
     def request(self, method: str, path: str, body: object = None) -> dict:
         self.asked.append(path)
+        if path == f"/repos/{REPO}":
+            return {"default_branch": "main"}
         prefix = f"/repos/{REPO}/actions/runs/"
         assert path.startswith(prefix)
         run = int(path.removeprefix(prefix).split("/")[0])
+        if "/jobs" not in path:
+            event, branch = self.runs[run]
+            return {"event": event, "head_branch": branch}
         return {"jobs": self.jobs.get(run, [])}
 
 
@@ -298,3 +308,75 @@ def test_get_reads_the_answer_off_the_inbox(tmp_path, folders) -> None:
 def test_the_action_never_uploads_to_github() -> None:
     action = yaml.safe_load((ACTION / "action.yml").read_text())
     assert all("uses" not in step for step in action["runs"]["steps"])
+
+
+def test_a_pull_requests_run_never_reads_other_runs(folders) -> None:
+    github = GitHub()
+    github.jobs[72] = [{"name": "land", "runner_name": "fc-8-8", "status": "in_progress"}]
+    file_item(folders, 70, "build", "builder", [], ["land"])
+
+    assert answer("fc-8-8", ask(72, 70, "build", "builder"), github)[0] == "denied"
+
+
+def test_a_vm_asking_as_another_run_is_denied_without_asking_github(folders) -> None:
+    github = GitHub()
+    inbox = sup.OUTBOX_DIR / f"{REVIEWER}.inbox"
+    inbox.write_bytes(sup.INBOX_EMPTY.ljust(1 << 20, b"\0"))
+    known: dict = {}
+    sup.answer_ask(github, REPO, REVIEWER, inbox, ask(70, 70, "build", "x"), known)
+    asked = len(github.asked)
+
+    assert (
+        sup.answer_ask(github, REPO, REVIEWER, inbox, ask(71, 71, "land", "x"), known) == "denied"
+    )
+    assert len(github.asked) == asked
+
+
+def test_a_rerun_waits_for_its_own_attempts_item(folders) -> None:
+    github = GitHub()
+    github.jobs[70][0]["run_attempt"] = 2  # build ran again; its VM's outbox is not filed yet
+    (sup.OUTBOX_DIR / f"{BUILDER}.json").write_text("{}")
+    file_item(folders, 70, "build", "builder", ["review"], [])  # attempt 1's
+    clock = [0.0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+        if clock[0] >= 20:
+            meta = folders / "octo__app" / "70" / "build" / "builder.json"
+            meta.write_text(json.dumps({"attempt": 2, "readers": ["review"]}))
+            (sup.OUTBOX_DIR / f"{BUILDER}.json").unlink()
+
+    verdict, _ = answer(
+        REVIEWER, ask(70, 70, "build", "builder", 600), github, clock=lambda: clock[0], sleep=sleep
+    )
+
+    assert verdict == "ok" and clock[0] >= 20
+
+
+def test_a_sparse_member_is_never_unpacked(tmp_path, folders) -> None:
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w", format=tarfile.GNU_FORMAT) as t:
+        info = tarfile.TarInfo("big.tar")
+        info.type = tarfile.GNUTYPE_SPARSE
+        info.size = 0
+        t.addfile(info)
+    assert sup.unpack_handoffs(io.BytesIO(payload.getvalue()), tmp_path, 10) == {}
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_items_past_the_repos_limit_are_dropped(tmp_path) -> None:
+    payload = io.BytesIO()
+    with tarfile.open(fileobj=payload, mode="w") as t:
+        info = tarfile.TarInfo("builder.tar")
+        info.size = 100
+        t.addfile(info, io.BytesIO(b"x" * 100))
+    with pytest.raises(sup.BadCache):
+        sup.unpack_handoffs(io.BytesIO(payload.getvalue()), tmp_path, 50)
+
+
+def test_a_light_vms_outbox_never_replaces_the_cache(tmp_path) -> None:
+    tar = sup.OUTBOX_DIR / "fc-9-9.tar"
+    tar.write_bytes(b"homelab-ci-cache v1 run=70 attempt=1\n".ljust(1024, b"\0"))
+    (sup.OUTBOX_DIR / "fc-9-9.json").write_text(json.dumps({"repo": REPO, "light": True}))
+
+    assert sup.take_outbox(GitHub(), tar, {REPO: "main"}, 0.0) is False
