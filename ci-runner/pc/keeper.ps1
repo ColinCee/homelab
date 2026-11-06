@@ -4,7 +4,9 @@
 $ErrorActionPreference = 'Continue'
 $root = 'D:\kaizen-ci'
 $vm = 'kaizen-ci'
-$guest = @('-i', "$root\ssh\id_ed25519", '-o', "UserKnownHostsFile=$root\ssh\known_hosts", '-o', 'ConnectTimeout=10', 'kaizen@192.168.250.10')
+# A hung ssh would stop the loop and its lease renewals: no prompts, no input, and given up after 15 s of silence.
+$guest = @('-n', '-i', "$root\ssh\id_ed25519", '-o', "UserKnownHostsFile=$root\ssh\known_hosts", '-o', 'ConnectTimeout=10',
+    '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=3', 'kaizen@192.168.250.10')
 $repo = 'ColinCee/auto-kaizen'
 $beelinkSlots = 5
 # GPU busy: over this utilisation for 3 samples in a row (15 s). Back to full after 5 quiet minutes.
