@@ -165,7 +165,9 @@ fi
 door_conf=/etc/ssh/sshd_config.d/60-ci-peer.conf door_keys=/etc/ssh/ci-peer_authorized_keys
 # Its own port on the Tailscale address: Tailscale SSH answers port 22 there and would skip
 # the forced command. sshd is socket-activated here, so the port is the socket's.
-door_socket=/etc/systemd/system/ssh.socket.d/60-ci-peer.conf door_port=2222
+# Named to sort after every other drop-in: each starts with `ListenStream=`, which drops the
+# ports set before it (Ubuntu's generator writes addresses.conf, and the Beelink has listen.conf).
+door_socket=/etc/systemd/system/ssh.socket.d/zz-ci-peer.conf door_port=2222
 if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub && -f /etc/homelab-ci/peer-from ]]; then
   command -v socat >/dev/null || apt-get install -y -qq socat >/dev/null
   from=$(tr -d '[:space:]' < /etc/homelab-ci/peer-from)
@@ -199,6 +201,7 @@ EOF
     sshd -t && systemctl daemon-reload && systemctl restart ssh.socket
   fi
   rm -f "$door_socket.new"
+  ss -Hltn "sport = :$door_port" | grep -q . || { echo "the door is not listening on $door_port" >&2; exit 1; }
   door="door open to $from on $address:$door_port"
 else
   if [[ -f $door_conf || -f $door_socket ]]; then

@@ -1791,7 +1791,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # Nor while one of the PC's ready runners waits: it is the standby.
     if (
         not state.held
-        and not any(n for (_, label), n in pc_ready.items() if label not in LIGHT_SIZES)
+        and not (
+            repos and pc_ready[(repos[0], state.last_label if repos[0] == state.last_repo else "")]
+        )
         and next_size(state, True)[1] <= room
         and wants_standby(
             repos, private, [not r.light for r in standbys], len(free), standby_count()
@@ -2126,6 +2128,26 @@ def peer_door_installed() -> bool:
     return True
 
 
+# The door's threads and the sweep each change one field of a record: under this lock, on the
+# record as it is now, so none loses another's change (the asks count is a limit).
+PEER_RECORDS = threading.Lock()
+
+
+def update_peer(runner: str, **changes: Any) -> dict[str, Any] | None:
+    """Set fields on a PC runner's record (None drops one); the record after, or None."""
+    with PEER_RECORDS:
+        fields = read_peer(runner)
+        if fields is None:
+            return None
+        for key, value in changes.items():
+            if value is None:
+                fields.pop(key, None)
+            else:
+                fields[key] = value
+        write_status(peer_record(runner), fields)
+        return fields
+
+
 def peer_record(runner: str) -> Path:
     return PEER_DIR / f"{runner}.json"
 
@@ -2311,7 +2333,7 @@ def peer_drop(gh: GitHub, runner: str, fields: dict[str, Any]) -> bool:
     if not delete_runner(gh, str(fields["repo"]), int(fields["runner_id"]), runner):
         return False
     fields["gone"] = int(time.time())
-    write_status(peer_record(runner), fields)
+    update_peer(runner, gone=fields["gone"])
     return True
 
 
@@ -2341,9 +2363,11 @@ def peer_vm(
                     writer.write(chunk)
                     size -= len(chunk)
             writer.flush()
-            if latest := read_peer(runner):
-                latest["asks"] = int(latest.get("asks", 0)) + 1
-                write_status(peer_record(runner), latest)
+            with PEER_RECORDS:
+                latest = read_peer(runner)
+                if latest:
+                    latest["asks"] = int(latest.get("asks", 0)) + 1
+                    write_status(peer_record(runner), latest)
 
         def hand_on(ask: re.Match[bytes]) -> None:
             with contextlib.suppress(queue.Full):
@@ -2482,17 +2506,12 @@ def sweep_peer(gh: GitHub, peer: Peer, now: float) -> None:
             )
         except urllib.error.HTTPError as e:
             if e.code == 404:  # its job is done and it removed itself
-                fields["gone"] = int(now)
-                write_status(path, fields)
+                update_peer(runner, gone=int(now))
             continue
         age = now - float(fields["issued"])
         offline = runner_data.get("status") != "online"
         idle = not offline and runner_data.get("busy") is False
-        if idle:
-            fields["idle_at"] = int(now)
-        else:
-            fields.pop("idle_at", None)
-        write_status(path, fields)
+        fields = update_peer(runner, idle_at=int(now) if idle else None) or fields
         label = str(fields.get("label", ""))
         others = {w for w in peer.wants if w[0] == fields["repo"] and w[1] != label}
         if (
@@ -2825,7 +2844,7 @@ def pc_main(argv: list[str]) -> int:
                 shipping.start()
             # Never while gaming: the copies cross Windows' network.
             fresh = all(pc_cache_image(n).exists() for n in wanted)
-            due = now - cache_checked > PC_CACHE_EVERY or not fresh
+            due = now - cache_checked > (PC_CACHE_EVERY if fresh else 60)
             if slots and due and wanted and not fetching.is_alive():
                 cache_checked = now
                 fetching = threading.Thread(target=fetch_caches, args=(set(wanted),), daemon=True)
