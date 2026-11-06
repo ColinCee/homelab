@@ -46,12 +46,21 @@ RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 # waiting on CI never takes the slot that CI needs. A light VM registers without LABEL,
 # so GitHub never gives it a build job.
 LIGHT_LABEL = "homelab-fc-light"
-LIGHT_RUNNER_LABELS = ("self-hosted", "linux", "x64", LIGHT_LABEL)
+# Light jobs that run no agent ask for this instead and get half the memory: they peak
+# under 700 MiB, so more of them fit beside the builds.
+SMALL_LABEL = "homelab-fc-small"
 LIGHT_SLOTS_FILE = Path("/etc/homelab-ci/light-slots")
 # None until install-host.sh writes the file, as it also makes their users and taps.
 DEFAULT_LIGHT_SLOTS = 0
-# One core, as they mostly wait; 2 GiB, as the merge job runs Claude Code with no swap.
-LIGHT_SIZE = (1, 2048)
+# vCPUs and MiB by label. One core, as they mostly wait; 2 GiB for jobs running Claude
+# Code with no swap.
+LIGHT_SIZES = {LIGHT_LABEL: (1, 2048), SMALL_LABEL: (1, 1024)}
+
+
+def light_runner_labels(label: str) -> tuple[str, ...]:
+    return ("self-hosted", "linux", "x64", label)
+
+
 # A merge job waits for a pull request's CI, two rounds at most.
 LIGHT_TIMEOUT_SECONDS = 3 * 3600
 # How many light VMs wait ready for the last light job's repo, so a task's first and last
@@ -226,8 +235,9 @@ class Job:
 
     @property
     def want(self) -> Want:
-        if LIGHT_LABEL in {label.lower() for label in self.labels}:
-            return (self.repo, LIGHT_LABEL)
+        light = LIGHT_SIZES.keys() & {label.lower() for label in self.labels}
+        if light:
+            return (self.repo, min(light))
         return (self.repo, cache_label(self.labels))
 
 
@@ -266,7 +276,7 @@ class Launch:
 
     @property
     def light(self) -> bool:
-        return self.label == LIGHT_LABEL
+        return self.label in LIGHT_SIZES
 
 
 @dataclass
@@ -295,8 +305,9 @@ class State:
     # boots for the same, so the next such job (a task's Builder, then its Reviewer) takes it.
     last_repo: str = ""
     last_label: str = ""
-    # The repository of the last light job: the light standby boots for it.
+    # The repository and label of the last light job: the light standby boots for them.
     last_light_repo: str = ""
+    last_light_label: str = LIGHT_LABEL
     # Repos that have had a job here (or have a cache disk): polled every poll, the rest
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
@@ -339,8 +350,9 @@ def wants_us(labels: Iterable[str]) -> bool:
     """A job is ours if it asks for our label and nothing our VMs do not have,
     apart from at most one cache label."""
     asked = {label.lower() for label in labels}
-    if LIGHT_LABEL in asked:
-        return asked <= set(LIGHT_RUNNER_LABELS)
+    light = LIGHT_SIZES.keys() & asked
+    if light:
+        return len(light) == 1 and asked <= set(light_runner_labels(*light))
     extra = asked - set(RUNNER_LABELS)
     return LABEL in asked and len(extra) <= 1 and all(map(cache_label_repo, extra))
 
@@ -356,7 +368,7 @@ def queued_jobs(
                 continue
             ours = wants_us(labels)
             # One asking for our label with another we lack is kept, to log why it waits.
-            if ours or {LABEL, LIGHT_LABEL} & {label.lower() for label in labels}:
+            if ours or {LABEL, *LIGHT_SIZES} & {label.lower() for label in labels}:
                 jobs.append(Job(repo, int(job["id"]), str(job.get("name", "")), labels, ours))
     return jobs
 
@@ -550,10 +562,10 @@ def launch(
     standby: bool = False,
 ) -> None:
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
-    light = label == LIGHT_LABEL
+    light = label in LIGHT_SIZES
     # The cache label is registered too, so a job asking for it runs only on such a VM.
     if light:
-        labels = list(LIGHT_RUNNER_LABELS)
+        labels = list(light_runner_labels(label))
     else:
         labels = [*RUNNER_LABELS, label] if label else list(RUNNER_LABELS)
     registration = gh.request(
@@ -563,7 +575,7 @@ def launch(
     )
     runner_id = int(registration["runner"]["id"])
     metadata = STATE_DIR / f"metadata-slot{slot}.json"
-    vcpus, mem_mib = LIGHT_SIZE if light else next_size(state, standby)
+    vcpus, mem_mib = LIGHT_SIZES[label] if light else next_size(state, standby)
     timeout = (
         LIGHT_TIMEOUT_SECONDS
         if light
@@ -598,9 +610,9 @@ def launch(
     if not standby and not light and (repo, label) != (state.last_repo, state.last_label):
         state.last_repo, state.last_label = repo, label
         remember_last_job(repo, label)
-    if light and not standby and repo != state.last_light_repo:
-        state.last_light_repo = repo
-        remember(LAST_LIGHT_REPO_FILE, f"{repo}\n")
+    if light and not standby and (repo, label) != (state.last_light_repo, state.last_light_label):
+        state.last_light_repo, state.last_light_label = repo, label
+        remember(LAST_LIGHT_REPO_FILE, f"{repo}\n{label}\n")
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
@@ -618,11 +630,14 @@ def remember(path: Path, text: str) -> None:
         log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
 
 
-def recalled_last_light_repo() -> str:
+def recalled_last_light_job() -> Want:
+    """The last light job's repo and label (the 2 GiB one from an older file)."""
     try:
-        return LAST_LIGHT_REPO_FILE.read_text().strip()
+        lines = LAST_LIGHT_REPO_FILE.read_text().split()
     except OSError:
-        return ""
+        return ("", LIGHT_LABEL)
+    label = lines[1] if len(lines) > 1 and lines[1] in LIGHT_SIZES else LIGHT_LABEL
+    return (lines[0] if lines else "", label)
 
 
 def recalled_last_job() -> Want:
@@ -1608,8 +1623,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     ]
     # GitHub's job ids only grow, so the smallest is the oldest.
     oldest_first = [w for _, w in sorted((i, w) for w, ids in job_ids.items() for i in ids)]
-    starts = plan([w for w in oldest_first if w[1] != LIGHT_LABEL], booting, len(free))
-    light_starts = plan([w for w in oldest_first if w[1] == LIGHT_LABEL], booting, len(light_free))
+    starts = plan([w for w in oldest_first if w[1] not in LIGHT_SIZES], booting, len(free))
+    light_starts = plan([w for w in oldest_first if w[1] in LIGHT_SIZES], booting, len(light_free))
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them.
     reserve = memory_reserve_mib()
@@ -1642,9 +1657,10 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     lights = with_job_ids(light_starts, job_ids, booting)
     held: dict[int, tuple[str, str]] = {}
     oldest_held_build: int | None = None
+    oldest_held_light = False
     started = light_started = 0
     for job_id, (repo, label) in sorted(builds + lights):
-        if label != LIGHT_LABEL:
+        if label not in LIGHT_SIZES:
             mem = next_size(state, False)[1]
             if oldest_held_build is not None or mem > room:
                 if oldest_held_build is None:
@@ -1662,15 +1678,20 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             )
             room -= mem
             started += 1
-        elif LIGHT_SIZE[1] > room:
-            held[job_id] = (repo, why(LIGHT_SIZE[1]))
+        elif LIGHT_SIZES[label][1] > room:
+            held[job_id] = (repo, why(LIGHT_SIZES[label][1]))
+            # Small VMs fit where a 2 GiB one does not: a stream of them would starve it.
+            oldest_held_light = True
             continue
         elif oldest_held_build is not None:
             held[job_id] = (repo, "an older build waiting for memory")
             continue
+        elif oldest_held_light:
+            held[job_id] = (repo, "an older light job waiting for memory")
+            continue
         else:
             launch(gh, state, repo, light_free[light_started], now, label=label, cache=None)
-            room -= LIGHT_SIZE[1]
+            room -= LIGHT_SIZES[label][1]
             light_started += 1
         pace()
     launched = starts[:started] + light_starts[:light_started]
@@ -1680,7 +1701,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     planned = {job_id for job_id, _ in builds + lights}
     for want, ids in job_ids.items():
         kind, slots = (
-            ("light", state.light_slots) if want[1] == LIGHT_LABEL else ("build", state.slots)
+            ("light", state.light_slots) if want[1] in LIGHT_SIZES else ("build", state.slots)
         )
         for n, job_id in enumerate(sorted(ids)):
             if job_id in held:
@@ -1697,7 +1718,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     waiting.subtract(launched)
     for run in list(state.launches.values()):
         if run.standby and any(
-            n > 0 and want != run.want and (want[1] == LIGHT_LABEL) == run.light
+            n > 0 and want != run.want and (want[1] in LIGHT_SIZES) == run.light
             for want, n in waiting.items()
         ):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
@@ -1731,7 +1752,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     light_free = light_free[light_started:]
     if (
         not state.held
-        and LIGHT_SIZE[1] <= room
+        and LIGHT_SIZES[state.last_light_label][1] <= room
         and wants_standby(
             [state.last_light_repo] if state.last_light_repo else [],
             private,
@@ -1741,7 +1762,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         )
     ):
         repo = state.last_light_repo
-        launch(gh, state, repo, light_free[0], now, label=LIGHT_LABEL, cache=None, standby=True)
+        label = state.last_light_label
+        launch(gh, state, repo, light_free[0], now, label=label, cache=None, standby=True)
         pace()
     return spent
 
@@ -1993,7 +2015,7 @@ def main(argv: list[str] | None = None) -> int:
     state.last_repo, state.last_label = recalled_last_job()
     if state.last_repo:
         state.used.add(state.last_repo)
-    state.last_light_repo = recalled_last_light_repo()
+    state.last_light_repo, state.last_light_label = recalled_last_light_job()
     # The repo listing runs beside the poll, on its own client (the request cache is not
     # shared between threads).
     lister = ThreadPoolExecutor(max_workers=1)
