@@ -152,7 +152,8 @@ process, not the VM.
 Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's gate, merge and Watcher). They run in five light slots of their own, numbered after the
 build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, 2 GiB, no cache disk, a 3-hour
 timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
-merge waiting on CI never takes the slot that CI needs. Builds get memory first.
+merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
+build waiting for memory holds back only the light jobs queued after it, and the log says why each one waits.
 
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
@@ -216,7 +217,7 @@ GitHub-hosted runners and take it off the token's repository access.
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
   first and last steps start in seconds. It gives way first: none boots while a job
   waits for memory or the disk, and an idle one is stopped for another repo's light job with no
-  light slot free or for a build job waiting for memory. It is replaced every 45
+  light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
@@ -271,7 +272,7 @@ and taps; the supervisor reads it when it starts, and `setup-net.sh` and
 works the same way (`LIGHT_SLOTS`, 5 by default; the supervisor counts none until the file exists), and the users
 and taps cover both. Change either only through `install-host.sh`, so the network always has a tap for every slot.
 With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 2 GiB per light slot (22 GiB for
-5 + 5); light VMs mostly wait and builds get memory first. A job touches far less
+5 + 5); light VMs mostly wait and the oldest job gets memory first. A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
 and the memory check above holds a VM back before the services' reserve is
 reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
