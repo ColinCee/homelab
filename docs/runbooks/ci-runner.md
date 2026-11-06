@@ -153,7 +153,7 @@ Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto K
 build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, 2 GiB, no cache disk, a 3-hour
 timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
 merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
-build waiting for memory holds back only the light jobs queued after it, and the log says why each one waits.
+build waiting for memory holds back only the light jobs queued after it (see [Why a job waits](#why-a-job-waits)).
 
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
@@ -168,7 +168,7 @@ the host's cache of its disk, which goes first (`run-vm.sh`). No VM starts eithe
 over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
 a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
 or the disk stays queued and is tried again on the
-next poll; the log says so once per job. A standby gives way first: none boots
+next poll (see [Why a job waits](#why-a-job-waits)). A standby gives way first: none boots
 while a job waits, and one waiting for another repo is stopped to
 make room.
 
@@ -340,6 +340,30 @@ Re-run `build-rootfs.sh` after a change under `ci-runner/rootfs/` and after a ke
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
 re-run `install-host.sh`, `build-rootfs.sh` and the audit.
+
+### Why a job waits
+
+The supervisor's journal logs each queued job it has not started, when it first waits
+and then every 3 minutes, with how long it has waited since the supervisor first saw it
+(a restart starts the count again) and why:
+
+| Line ends with | Means |
+|---|---|
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs |
+| `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
+| `an older build waiting for memory` | A light job queued after a build that is held for memory |
+| `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
+| `a VM booting or waiting ready for it` | A VM is up for it but GitHub has not given it the job; logged only after 3 minutes |
+| `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |
+
+A job that was logged gets `stopped waiting after Xm` once its VM starts or it is cancelled.
+To see why jobs waited, say after a "stuck waiting for a test VM" alert:
+
+```bash
+journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
+```
+
+Tune slots, the reserve or the alert's limit from what these lines show.
 
 ## Checks
 
