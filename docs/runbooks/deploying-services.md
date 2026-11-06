@@ -184,7 +184,9 @@ therefore redundant and is no longer installed. A new image requires updating
 the digest in Git; Git and Renovate own that update path.
 
 Do not copy the image-polling pattern for new services. User timers require
-`loginctl enable-linger colin` on the host to run without a login session.
+`loginctl enable-linger colin` on the host to run without a login session, and
+`sudo chown colin: /var/lib/homelab-metrics` once to write the `*.prom` files
+Alloy reads there.
 
 ### One-time retirement of the old flight-tracker timer
 

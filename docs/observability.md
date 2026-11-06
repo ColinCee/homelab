@@ -173,6 +173,10 @@ The shipped rules cover host-level pressure such as:
 - **Unknown container started**: a container whose name was not seen in the week
   before has run for 15 minutes, as one planted by an intruder would; redeploys
   keep their names and quick `docker run` checks stop sooner, so neither fires
+- **New Tailscale device**: a device visible to the Beelink was added to the
+  tailnet in the last hour, as an intruder's would be; a 5-minute timer records
+  each device's added time, and **Tailscale device check stopped** fires when it
+  has not for 15 minutes. Policy file changes are not covered
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3

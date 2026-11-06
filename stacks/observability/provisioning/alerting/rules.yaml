@@ -321,6 +321,91 @@ groups:
         labels:
           severity: warning
 
+      - uid: new-tailnet-device
+        title: New Tailscale device
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Seconds since each device visible to the Beelink was added to the
+              # tailnet (stacks/observability/systemd/observability-tailnet.service).
+              expr: time() - max by (name, os) (homelab_tailnet_device_created_timestamp_seconds)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [3600]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "New Tailscale device"
+          measure: "Device"
+          trigger: "added to the tailnet in the last hour"
+          value: "{{ $labels.name }}"
+          description: "{{ $labels.name }} ({{ $labels.os }}) was added to the tailnet and is visible to the Beelink."
+          action: >-
+            Expected if you just signed in a new device. Otherwise remove it at
+            https://login.tailscale.com/admin/machines and rotate any secret it could reach.
+        labels:
+          severity: warning
+
+      - uid: tailnet-check-stale
+        title: Tailscale device check stopped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Without fresh data, New Tailscale device stays quiet.
+              expr: (time() - max(node_textfile_mtime_seconds{file=~".*/tailnet.prom"})) / 60
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [15]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Tailscale device check stopped"
+          measure: "Last check"
+          trigger: "over 15 min ago"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min ago{{ else }}never{{ end }}"
+          description: "The device list behind New Tailscale device has not been written for over 15 minutes, so new devices would go unnoticed."
+          action: >-
+            Check `systemctl --user status observability-tailnet.service` and
+            `tailscale status` on the Beelink, and that colin owns /var/lib/homelab-metrics.
+        labels:
+          severity: warning
+
   - orgId: 1
     name: Kaizen
     # Grafana keeps alert rules in a folder; this one holds no dashboards.
