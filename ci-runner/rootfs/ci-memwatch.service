@@ -1,0 +1,14 @@
+[Unit]
+Description=Report the job's memory need and out-of-memory kills to the host
+After=local-fs.target
+DefaultDependencies=no
+
+[Service]
+ExecStart=/usr/local/sbin/ci-memwatch
+Restart=always
+StandardOutput=console
+# It reports the out-of-memory kills, so it must not be one of them.
+OOMScoreAdjust=-900
+
+[Install]
+WantedBy=multi-user.target

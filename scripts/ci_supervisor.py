@@ -197,6 +197,13 @@ SESSION_LINE = re.compile(rb"KAIZEN-SESSION 1 (\{[ -~]*\})")
 SESSION_MAX_BYTES = 30 * 1024**2
 SESSION_KEEP_SECONDS = 30 * 24 * 3600
 CONSOLE_LINE_MAX = 4096
+# What the job really needed (cache left out), the VM's memory and the kernel's out-of-memory
+# kills, from the VM's ci-memwatch. A job can print it too: it only skews the counts.
+MEM_LINE = re.compile(rb"HOMELAB-MEM 1 ([0-9]{1,7}) ([0-9]{1,7}) ([0-9]{1,9})")
+# Counts by kind of VM for Grafana (Alloy's textfile collector), and the share of its memory a
+# job may need before its kind counts as near full.
+MEMORY_METRICS = Path("/var/lib/homelab-metrics/ci-vm-memory.prom")
+NEAR_FULL = 0.8
 # A VM starts only if the host's available memory, less the VM's size, still leaves this
 # much for the home's own services (the host's 16 GiB are shared with them). A booted VM
 # touches far less than its size, so the check uses what is really free, not the sum of
@@ -272,6 +279,15 @@ class Launch:
     def live_file(self) -> Path:
         """Its latest live line, written by its console reader (`vm` mode)."""
         return VMS_DIR / f"{self.runner_name}.live"
+
+    @property
+    def memory_file(self) -> Path:
+        """Its latest memory line, written by its console reader."""
+        return self.live_file.with_suffix(".mem")
+
+    @property
+    def kind(self) -> str:
+        return {SMALL_LABEL: "small", LIGHT_LABEL: "light"}.get(self.label, "build")
 
     @property
     def want(self) -> Want:
@@ -688,14 +704,17 @@ def record(run: Launch) -> dict[str, Any]:
 
 def start_vm(run: Launch, timeout: int, env: Mapping[str, str], peer: bool = False) -> None:
     """Start the VM as a systemd unit of its own, so a restart of this supervisor leaves it
-    running. Its console goes through this script's `vm` mode, which keeps the live lines and
-    sessions of auto-kaizen's VMs only, so a product's VM cannot put a line on a task. The
+    running. Its console goes through this script's `vm` mode, which keeps every VM's memory
+    line, and the live lines and sessions of auto-kaizen's VMs only, so a product's VM cannot put
+    a line on a task. The
     unit stops before the CI network does, at shutdown."""
     vm = [str(run.slot), str(run.metadata), str(timeout)]
     vm += ["--repo", run.repo, "--runner", run.runner_name]
     if peer:
         vm.append("--peer")
-    elif run.repo.lower() == LIVE_REPO.lower():
+    else:
+        vm += ["--memory", str(run.memory_file)]
+    if not peer and run.repo.lower() == LIVE_REPO.lower():
         session = SESSIONS_DIR / f"{run.runner_name}.jsonl"
         vm += ["--live", str(run.live_file), "--session", str(session)]
     subprocess.run(
@@ -744,9 +763,58 @@ def running_vms() -> set[str] | None:
 
 
 def forget(run: Launch) -> None:
-    """A VM's files, once it has ended."""
-    for path in (run.record, run.live_file, run.metadata):
+    """A VM's files, once it has ended, its memory counted first."""
+    count_memory(run)
+    for path in (run.record, run.live_file, run.memory_file, run.metadata):
         path.unlink(missing_ok=True)
+
+
+# Ended job VMs, near-full ones and out-of-memory kills, by kind; every kind from 0, so the
+# first kill after a restart still shows as an increase.
+MEMORY_COUNTS: dict[str, list[int]] = {kind: [0, 0, 0] for kind in ("build", "light", "small")}
+
+
+def count_memory(run: Launch) -> None:
+    """Log and count what an ended job VM needed. A standby that never took a job, or a VM
+    whose console said nothing, is left out."""
+    try:
+        seen = json.loads(run.memory_file.read_text())
+        peak, total, kills = int(seen["peak"]), int(seen["total"]), int(seen["kills"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if run.standby or total <= 0:
+        return
+    log(
+        f"slot {run.slot}: {run.runner_name} ({run.kind}) needed at least {peak} MiB of"
+        f" {total}, {kills} out-of-memory kills"
+    )
+    counts = MEMORY_COUNTS[run.kind]
+    counts[0] += 1
+    counts[1] += peak > NEAR_FULL * total
+    counts[2] += kills
+    write_memory_metrics()
+
+
+def write_memory_metrics() -> None:
+    """Replace the textfile whole; a failed write only leaves the last counts."""
+    names = (
+        "homelab_ci_vms_ended_total",
+        "homelab_ci_vms_near_full_total",
+        "homelab_ci_vm_oom_kills_total",
+    )
+    lines = [
+        f'{name}{{kind="{kind}"}} {counts[i]}'
+        for i, name in enumerate(names)
+        for kind, counts in MEMORY_COUNTS.items()
+    ]
+    try:
+        # Not *.prom, or the collector could read it half written.
+        tmp = MEMORY_METRICS.with_name(f".{MEMORY_METRICS.stem}.tmp")
+        tmp.write_text("\n".join(lines) + "\n")
+        tmp.chmod(0o644)
+        os.replace(tmp, MEMORY_METRICS)
+    except OSError as e:
+        log(f"could not write {MEMORY_METRICS}: {type(e).__name__}: {e}")
 
 
 def adopt(state: State) -> None:
@@ -784,16 +852,18 @@ def adopt(state: State) -> None:
 
 
 def vm_main(argv: list[str]) -> int:
-    """`vm SLOT METADATA TIMEOUT [--live FILE --session FILE] [--repo R --runner N]`: run-vm.sh's
-    console reader, the main process of the VM's unit. It reads the console to the end (a full
-    pipe would stall the VM), keeps the latest live line in FILE and the session events, hands
-    handoff asks to a worker that answers them on the VM's inbox, and exits with run-vm.sh's
-    code."""
+    """`vm SLOT METADATA TIMEOUT [--memory FILE] [--live FILE --session FILE]
+    [--repo R --runner N]`: run-vm.sh's console reader, the main process of the VM's unit. It
+    reads the console to the end (a full pipe would stall the VM), keeps the latest memory line
+    and live line in their FILEs and the session events, hands handoff asks to a worker that
+    answers them on the VM's inbox, and exits with run-vm.sh's code."""
     parser = argparse.ArgumentParser(prog="ci_supervisor.py vm")
     parser.add_argument("slot")
     parser.add_argument("metadata")
     parser.add_argument("timeout")
     parser.add_argument("--live", type=Path)
+    # Every VM's memory line, whatever its repo.
+    parser.add_argument("--memory", type=Path)
     parser.add_argument("--session", type=Path)
     # Whose VM it is, to answer its handoff asks.
     parser.add_argument("--repo")
@@ -811,6 +881,7 @@ def vm_main(argv: list[str]) -> int:
     )
     assert process.stdout is not None
     keep = (lambda line: write_status(args.live, line)) if args.live else None
+    memory = (lambda seen: write_status(args.memory, seen)) if args.memory else None
     asks: queue.Queue[re.Match[bytes] | None] = queue.Queue(HANDOFF_MAX_ASKS)
 
     def hand_on(ask: re.Match[bytes]) -> None:
@@ -832,12 +903,22 @@ def vm_main(argv: list[str]) -> int:
             target=answer_asks, args=(gh, args.repo, args.runner, inbox, asks), daemon=True
         ).start()
     try:
-        read_console(process.stdout, keep, args.session, hand_on if args.runner else None)
+        read_console(
+            process.stdout, keep, args.session, hand_on if args.runner else None, memory=memory
+        )
         return process.wait()
     finally:
         with contextlib.suppress(queue.Full):
             asks.put_nowait(None)
         inbox.unlink(missing_ok=True)
+
+
+def memory_line(raw: bytes) -> dict[str, int] | None:
+    """One console line as ci-memwatch's report, or None unless it is exactly that."""
+    match = MEM_LINE.fullmatch(raw.removesuffix(b"\n").removesuffix(b"\r"))
+    if not match:
+        return None
+    return {"peak": int(match[1]), "total": int(match[2]), "kills": int(match[3])}
 
 
 def session_event(raw: bytes) -> bytes | None:
@@ -869,6 +950,7 @@ def read_console(
     session: Path | None = None,
     ask: Callable[[re.Match[bytes]], None] | None = None,
     forward: Callable[[bytes], None] | None = None,
+    memory: Callable[[dict[str, int]], None] | None = None,
 ) -> None:
     """Read a VM's console until it ends, keeping each valid live line and saving each
     session event to `session`, or, on the PC, handing each line that may be one of them
@@ -887,6 +969,8 @@ def read_console(
                 ask(asked)
             elif keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
+            elif memory and fits and (seen := memory_line(chunk)):
+                memory(seen)
             elif session and fits:
                 try:
                     if event := session_event(chunk):
@@ -2892,6 +2976,7 @@ def main(argv: list[str] | None = None) -> int:
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
     state = State(slots=slot_count(), light_slots=light_slot_count())
+    write_memory_metrics()
     # The standby waits where the last job before the restart ran, not on the first repo
     # listed (4 Nov: it booted for a repo with no work, for 45 minutes).
     state.last_repo, state.last_label = recalled_last_job()

@@ -150,6 +150,103 @@ groups:
         labels:
           severity: warning
 
+      - uid: ci-vm-out-of-memory
+        title: A Kaizen job ran out of memory
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # From each VM's ci-memwatch, counted by the CI supervisor when the VM ends.
+              expr: sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job="integrations/unix"}[15m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0m
+        annotations:
+          summary: "Out-of-memory kills in {{ $labels.kind }} VMs"
+          measure: "Kills in the last 15 min"
+          trigger: "any"
+          chart: |
+            sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job="integrations/unix"}[15m]))
+          chart_line: "0"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}{{ end }}"
+          description: "A {{ $labels.kind }} VM's kernel killed a process for lack of memory: its job failed or ran short."
+          action: >-
+            Find the VM in the supervisor's log (`journalctl -u homelab-ci-supervisor -g "out-of-memory kills"`), map its
+            runner name to the job, and give that job a bigger VM (LIGHT_SIZES in scripts/ci_supervisor.py) or trim it.
+        labels:
+          severity: critical
+
+      - uid: ci-vms-near-full
+        title: Kaizen jobs need nearly all their VM's memory
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 21600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # The share of a kind's job VMs whose need passed 80% of their memory, once at least 8 ended in 6 h.
+              expr: >-
+                (sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
+                / sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
+                and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.25]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "{{ $labels.kind }} VMs near full"
+          measure: "Job VMs over 80% of their memory, last 6 h"
+          trigger: "over a quarter, for 30 min"
+          chart: |
+            (sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
+            / sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
+            and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8
+          chart_line: "0.25"
+          value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
+          description: >-
+            Over a quarter of {{ $labels.kind }} job VMs needed more than 80% of their memory in 6 hours: the next
+            bigger job may be killed.
+          action: >-
+            List the near-full VMs (`journalctl -u homelab-ci-supervisor -g "needed at least"`), see which jobs they ran, and
+            give that kind more memory (LIGHT_SIZES or vm_size in scripts/ci_supervisor.py) or trim the job.
+        labels:
+          severity: warning
+
       - uid: beelink-disk-stalled
         title: Beelink disk too slow for Kaizen's VMs
         condition: C
