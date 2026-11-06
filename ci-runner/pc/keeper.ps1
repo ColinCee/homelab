@@ -42,12 +42,18 @@ function GpuBusy {
 }
 
 # What the lease band above Claude's prompt shows after kaizen-ci: the PC's runners busy/online, from
-# GitHub, or ‖ while paused for the GPU.
+# GitHub (the PC registers all its runners on auto-kaizen), or ‖ while paused for the GPU. Given up
+# after 20 s, so a hung call cannot stop the lease renewals.
 function Status($paused) {
     if ($paused) { return '‖' }
-    $pc = & gh api "repos/$repo/actions/runners?per_page=100" --jq '[.runners[] | select((.name | startswith("pc-")) and .status == "online")] | "\(map(select(.busy)) | length)/\(length)"' 2>$null
-    if ($pc -match '^\d+/\d+$') { return $pc }
-    return '?'
+    $out = "$rootunners.json"
+    Remove-Item $out -ErrorAction SilentlyContinue
+    $call = Start-Process gh -ArgumentList "api repos/$repo/actions/runners?per_page=100" -RedirectStandardOutput $out -WindowStyle Hidden -PassThru
+    Wait-Process -InputObject $call -Timeout 20 -ErrorAction SilentlyContinue
+    if (-not $call.HasExited) { Stop-Process -InputObject $call -Force; return '?' }
+    try { $pc = (Get-Content $out -Raw | ConvertFrom-Json).runners | Where-Object { $_.name -like 'pc-*' -and $_.status -eq 'online' } }
+    catch { return '?' }
+    return "$(@($pc | Where-Object { $_.busy }).Count)/$(@($pc).Count)"
 }
 
 function SetGuestSlots($n) {
@@ -98,7 +104,11 @@ while ($true) {
             if ($LASTEXITCODE -eq 0) { $leaseGb = $gb }
         } else {
             & lease renew --name $vm --pid $PID --status $status | Out-Null
-            if ($LASTEXITCODE -eq 3) {
+            if ($LASTEXITCODE -eq 2) {
+                # An error, such as a lease command too old for --status: take it again next time.
+                Say 'lease renew failed: taking it again'
+                $leaseGb = 0
+            } elseif ($LASTEXITCODE -eq 3) {
                 Say 'lease freed: powering the guest off'
                 & ssh @guest 'sudo poweroff'
                 Set-Content "$root\capacity.txt" 'off'

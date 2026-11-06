@@ -483,7 +483,8 @@ Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his;
 3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the
    guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
    `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).
-4. On Windows: `ci-runner/pc/keeper.ps1` and `kaizen-pc.ps1` copied to `D:\kaizen-ci`, a Startup-folder shortcut
+4. On Windows: the `lease` command from ColinCee/agents (`npm run install-lease`, a version with `--status`),
+   `ci-runner/pc/keeper.ps1` and `kaizen-pc.ps1` copied to `D:\kaizen-ci`, a Startup-folder shortcut
    running `pwsh -WindowStyle Hidden -File D:\kaizen-ci\keeper.ps1`, `gh` signed in as Colin, then
    `kaizen-pc.ps1 <slots>`. Check `pc-*` runners show online in auto-kaizen's runner list before trusting the cap.
 
