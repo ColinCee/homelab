@@ -28,10 +28,9 @@ stops starting Kaizen's jobs or the Beelink goes down.
 | Component | What it does |
 |-----------|---------------|
 | **Grafana** | Dashboards, Explore, and alert routing |
-| **Prometheus** | Metrics storage for host, containers, CI VMs, CrowdSec, Auto Kaizen's Control room and the flight-tracker probe |
+| **Prometheus** | Metrics storage for host, containers, CI VMs, Auto Kaizen's Control room and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
-| **CrowdSec** | Security detections and firewall decisions, also exported as metrics |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
@@ -49,9 +48,9 @@ Add panels to it rather than adding dashboards. From the top:
 - **Kaizen:** working, waiting, merged and cost, tasks by state, and the
   longest wait for a machine
 - **Containers:** a bar per container for CPU and for memory
-- **Security and backups:** one line of numbers each
-- **Collapsed sections**, which load only when opened: containers, CI VMs,
-  CrowdSec and backups over time, with their logs
+- **Backups:** one line of numbers
+- **Collapsed sections**, which load only when opened: alerts, containers,
+  CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
@@ -109,7 +108,6 @@ Prometheus receives metrics from:
   only while it runs a VM, so counting them counts running VMs, the ones
   waiting ready included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`.
-- **CrowdSec:** direct scrape (`job="crowdsec"`)
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
@@ -128,14 +126,12 @@ Useful checks:
 
 ```bash
 curl -sf http://beelink.tail4f465e.ts.net:3001/api/health
-curl -sf http://beelink.tail4f465e.ts.net:6060/metrics >/dev/null
 ```
 
 Useful PromQL:
 
 ```promql
 max by (name) (container_last_seen{job="docker", name!=""})
-max(crowdsec_acquisition_source_hits_total{job="crowdsec"})
 ```
 
 ## Alerts
@@ -174,6 +170,9 @@ The shipped rules cover host-level pressure such as:
 - high RAM
 - high disk usage
 - **Flight Tracker site down**: the live-data probe has failed for 10 minutes
+- **Unknown container started**: a container whose name was not seen in the week
+  before has run for 15 minutes, as one planted by an intruder would; redeploys
+  keep their names and quick `docker run` checks stop sooner, so neither fires
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3

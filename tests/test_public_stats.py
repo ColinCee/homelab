@@ -14,7 +14,6 @@ def results(running: tuple[str, ...] = STACKS) -> dict:
             {"metric": {"container_label_com_docker_compose_project": s}, "value": [NOW, "1"]}
             for s in running
         ],
-        "blocked": [{"metric": {}, "value": [NOW, "1212"]}],
     }
 
 
@@ -30,7 +29,7 @@ def test_body_holds_only_named_numbers() -> None:
     assert build_body(results(), KPIS, NOW) == {
         "at": int(NOW),
         "allUp": True,
-        "blocked": 1212,
+        "blocked": None,
         "tracking": 237,
         "londonHour": 107,
     }
@@ -63,16 +62,7 @@ def test_stale_flight_data_is_not_shown_as_live() -> None:
 )
 def test_odd_flight_data_leaves_the_flight_numbers_empty(kpis: dict | None) -> None:
     body = build_body(results(), kpis, NOW)
-    assert body["blocked"] == 1212
     assert body["tracking"] in (None, 237)
-
-
-@pytest.mark.parametrize("value", [[], [{"metric": {}, "value": [NOW, "+Inf"]}]])
-def test_no_crowdsec_count_skips_the_push(value: list) -> None:
-    odd = results()
-    odd["blocked"] = value
-    with pytest.raises(StatsError):
-        build_body(odd, KPIS, NOW)
 
 
 def test_the_signature_covers_exactly_the_bytes_sent() -> None:

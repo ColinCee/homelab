@@ -273,6 +273,54 @@ groups:
         labels:
           severity: critical
 
+      - uid: new-container
+        title: Unknown container started
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # A container whose name was not seen in the week before its last hour.
+              # Compose keeps names across deploys, so redeploys don't fire. Quick
+              # `docker run` checks by people and agents get random names but stop
+              # within minutes, so `for: 15m` lets them pass (30 days to 6 Nov: 35 new
+              # names, 32 such checks; the 3 that ran on were new stacks).
+              expr: >-
+                count by (name) (container_last_seen{job="docker",name!=""})
+                unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 15m
+        annotations:
+          summary: "Unknown container running"
+          measure: "Container"
+          trigger: "a name not seen in the week before, running 15 min"
+          value: "{{ $labels.name }}"
+          description: "Container {{ $labels.name }} has run on the Beelink for 15 minutes and was not seen in the week before."
+          action: >-
+            Expected if you just added a stack or ran one by hand. Otherwise check
+            `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command.
+        labels:
+          severity: warning
+
   - orgId: 1
     name: Kaizen
     # Grafana keeps alert rules in a folder; this one holds no dashboards.

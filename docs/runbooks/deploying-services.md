@@ -138,7 +138,7 @@ On Beelink, select the intended checkout yourself, then:
 cd /home/colin/code/homelab
 scripts/deploy.sh                              # Discover and deploy all stacks
 scripts/deploy.sh observability                 # Deploy one stack
-scripts/deploy.sh observability crowdsec        # Deploy selected stacks
+scripts/deploy.sh observability backup          # Deploy selected stacks
 scripts/deploy.sh --readiness-timeout 180 observability
 ```
 
@@ -234,7 +234,6 @@ services with their existing `.env` and named volumes:
 ```bash
 docker compose --env-file stacks/observability/.env \
   -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana
-docker compose -f stacks/crowdsec/compose.yaml up -d --force-recreate
 ```
 
 ## Remove a service

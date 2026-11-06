@@ -12,10 +12,9 @@ access; Cloudflare Tunnel exposes the flight tracker.
 - Hosts the [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend behind Cloudflare Tunnel
 - Collects metrics and logs with Grafana, Prometheus, Loki, and Alloy; alerts go to Auto Kaizen's responder, with one post per alert in a Discord forum
 - Backs up nightly with encrypted restic snapshots to Cloudflare R2
-- Detects intrusions with CrowdSec, paired with the host firewall bouncer. It
-  sees little: admin logins arrive through Tailscale SSH, which it does not
-  parse, and the public API sits behind Cloudflare Tunnel, so filtering for that
-  belongs at Cloudflare
+- Accepts no connections from the internet: admin access is over Tailscale
+  only, and the public API leaves through Cloudflare Tunnel, so filtering for
+  it belongs at Cloudflare. An alert fires when an unknown container keeps running
 
 ## Stack
 
@@ -25,7 +24,7 @@ access; Cloudflare Tunnel exposes the flight tracker.
 | Access | Tailscale (admin), Cloudflare Tunnel (public) |
 | Observability | Grafana, Prometheus, Loki, Alloy |
 | Backups | restic to Cloudflare R2 |
-| Security | CrowdSec |
+| Security | Tailscale-only access, UFW, unknown-container alert |
 | Automation | GitHub Actions (self-hosted runner for deploys), Renovate |
 | Tooling | mise, uv, Python, ruff, ty, shellcheck, yamllint, actionlint |
 
@@ -67,7 +66,6 @@ automatically. Non-major versions can still break behavior, especially before
 |-------|---------|
 | `stacks/home-assistant/` | Home automation, with host networking for mDNS; Bluetooth is off |
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
-| `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/kaizen-control-room/` | Auto Kaizen's Control room: a live view of Kaizen's work, on Tailscale only |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
