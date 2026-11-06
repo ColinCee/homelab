@@ -5,6 +5,7 @@ import json
 import os
 import tarfile
 import threading
+import urllib.error
 from pathlib import Path
 from typing import ClassVar
 
@@ -316,7 +317,11 @@ def test_builds_the_cache_disk_from_a_green_default_branch_jobs_outbox(
     assert sup.take_outbox(Runs(), tar, {"octo/app": "main"}, 0.0) is False  # done with it
 
     assert built == [["uv/wheel"]]
-    assert json.loads((caches / "octo__app.json").read_text()) == {"run": 70, "sha": "abc"}
+    assert json.loads((caches / "octo__app.json").read_text()) == {
+        "run": 70,
+        "attempt": 1,
+        "sha": "abc",
+    }
 
 
 @pytest.mark.parametrize(
@@ -388,6 +393,31 @@ def test_judges_only_the_outboxes_of_vms_that_ended(outbox_dir) -> None:
     state.cache_checked["fc-2-3"] = 100.0  # tried 30 s ago
 
     assert sup.ended_outboxes(state, 130.0) == [outbox_dir / "fc-1-2.tar"]
+
+
+class Failing:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
+    def request(self, method: str, path: str, body: object = None) -> dict:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "kept"),
+    [
+        (urllib.error.HTTPError("u", 404, "Not Found", email.message.Message(), None), False),
+        (urllib.error.HTTPError("u", 502, "Bad Gateway", email.message.Message(), None), True),
+        (sup.RateLimited(0.0), True),
+    ],
+)
+def test_keeps_an_outbox_only_while_github_may_answer_later(
+    error: Exception, kept: bool, outbox_dir, built
+) -> None:
+    tar = _outbox(outbox_dir, GREEN)
+
+    assert sup.judge_outbox(Failing(error), tar, {"octo/app": "main"}, tar.stat().st_mtime) is kept
+    assert tar.exists() is kept and tar.with_suffix(".json").exists() is kept
 
 
 def test_a_cache_tar_that_fails_to_unpack_is_dropped(outbox_dir, caches) -> None:

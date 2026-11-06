@@ -128,8 +128,8 @@ CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 # Each build VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json),
-# kept after the VM until judged. Not through GitHub: 249 cache artifacts filled the
-# account's artifact storage on 5 Nov and every build's upload failed.
+# kept after the VM until judged. Not through GitHub artifacts: they count against the
+# account's storage quota, and once it is full every upload fails.
 OUTBOX_DIR = Path("/var/lib/homelab-ci/outbox")
 # What the fc-cache action writes last, once the tar after it is complete.
 OUTBOX_HEADER = re.compile(rb"homelab-ci-cache v1 run=([0-9]{1,20}) attempt=([0-9]{1,5})\n")
@@ -1109,8 +1109,8 @@ def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) 
     image = cache_image(repo)
     seen = image.with_suffix(".json")
     known = json.loads(seen.read_text()) if seen.exists() else {}
-    if run_id <= int(known.get("run", 0)):
-        return False  # older than the run the disk came from
+    if (run_id, attempt) <= (int(known.get("run", 0)), int(known.get("attempt", 0))):
+        return False  # not newer than the run the disk came from
     path = f"/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}"
     run = gh.request("GET", path)
     jobs = gh.request("GET", f"{path}/jobs?per_page=100").get("jobs", [])
@@ -1131,9 +1131,25 @@ def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) 
         except BadCache as e:
             log(f"cache for {repo}: outbox of {runner} failed to unpack, {e}; ignored")
             return False
-    seen.write_text(json.dumps({"run": run_id, "sha": run.get("head_sha", "")}))
+    seen.write_text(json.dumps({"run": run_id, "attempt": attempt, "sha": run.get("head_sha", "")}))
     log(f"cache for {repo}: built from run {run_id} in {time.time() - started:.0f}s")
     return False
+
+
+def judge_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) -> bool:
+    """take_outbox, deleting the outbox unless it is kept for another try. Only a failure that
+    may clear (GitHub down or rate limited) keeps it: a VM could name a run that does not
+    exist, and its 6 GiB would stay an hour."""
+    try:
+        keep = take_outbox(gh, tar, branches, now)
+    except Exception as e:
+        log(f"outbox {tar.name} failed: {type(e).__name__}: {e}")
+        gone = isinstance(e, urllib.error.HTTPError) and e.code in (400, 404, 410, 422)
+        keep = not gone and now - tar.stat().st_mtime < OUTBOX_WAIT_SECONDS
+    if not keep:
+        tar.unlink(missing_ok=True)
+        tar.with_suffix(".json").unlink(missing_ok=True)
+    return keep
 
 
 def ended_outboxes(state: State, now: float) -> list[Path]:
@@ -1163,14 +1179,7 @@ def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
     def work() -> None:
         try:
             for tar in due:
-                try:
-                    keep = take_outbox(own, tar, branches, now)
-                except Exception as e:  # GitHub may answer on a later try
-                    log(f"outbox {tar.name} failed: {type(e).__name__}: {e}")
-                    keep = now - tar.stat().st_mtime < OUTBOX_WAIT_SECONDS
-                if not keep:
-                    tar.unlink(missing_ok=True)
-                    tar.with_suffix(".json").unlink(missing_ok=True)
+                if not judge_outbox(own, tar, branches, now):
                     state.cache_checked.pop(tar.stem, None)
         finally:
             state.cache_busy.release()

@@ -67,8 +67,8 @@ How it is made, without the host running any of the repo's code:
    one a given path starts with: the disk holds the last copy of `web/` there)
    and the given paths, then writes a header naming its run. It never fails the
    job: a cache it cannot save (too big, a path missing) is a warning, and the
-   next jobs start from the last one. Nothing goes through GitHub: its artifact
-   storage, where this used to go, filled up on 5 Nov and failed every build.
+   next jobs start from the last one. Nothing goes through GitHub, whose artifact
+   storage has a quota that, once full, fails every upload.
 2. Once the VM has ended, the supervisor reads the header and asks GitHub about
    that run: it takes the tar only if the run was a push to the default branch and
    its job on this VM's runner passed (it waits up to an hour for GitHub to show the
