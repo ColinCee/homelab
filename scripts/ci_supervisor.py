@@ -2071,6 +2071,8 @@ PEER_DIR = Path("/var/lib/homelab-ci/peer")
 # the door is closed.
 PEER_SLOTS_FILE = Path("/etc/homelab-ci/peer-slots-max")
 PEER_LINE_MAX = 256
+# A reply line can carry a runner's one-job registration (several KB of base64).
+PEER_REPLY_MAX = 64 * 1024
 PEER_HELLO_SECONDS = 10
 PEER_SWEEP_SECONDS = 60
 # A PC runner still offline this long after it was registered is deleted (the PC is off).
@@ -2528,6 +2530,7 @@ def sweep_peer(gh: GitHub, peer: Peer, now: float) -> None:
 def peer_ssh() -> list[str]:
     return [
         "ssh",
+        "-T",
         "-i",
         str(PEER_KEY),
         "-o",
@@ -2552,7 +2555,7 @@ def peer_call(line: str, timeout: float = 60) -> str:
         try:
             link.stdin.write(f"{line}\n".encode())
             link.stdin.flush()
-            reply = link.stdout.readline(PEER_LINE_MAX)
+            reply = link.stdout.readline(PEER_REPLY_MAX)
             link.stdin.close()
         except OSError:
             reply = b""

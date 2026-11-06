@@ -3,6 +3,7 @@
 import io
 import json
 import socket
+import sys
 import threading
 import time
 import urllib.error
@@ -294,3 +295,10 @@ def test_idle_pc_runners_cover_young_jobs_and_a_new_label_replaces_an_idle_one(f
     sup.sweep_peer(gh, door, issued + sup.PEER_RELABEL_SECONDS + 1)
     assert sup.read_peer(name)["gone"]  # type: ignore[index]
     assert sup.peer_ready(issued + sup.PEER_RELABEL_SECONDS + 2) == {}
+
+
+def test_a_registration_reply_comes_back_whole(monkeypatch) -> None:
+    jit = "J" * 6000  # a real one-job registration is several KB of base64
+    script = f"import sys; sys.stdin.readline(); print('ok pc-0-1793990000 - {jit}')"
+    monkeypatch.setattr(sup, "peer_ssh", lambda: [sys.executable, "-c", script])
+    assert sup.peer_call("register 0 octo/app").split()[3] == jit

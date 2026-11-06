@@ -105,7 +105,7 @@ changed() { ! cmp -s "$1" "$2"; }
 restart=false
 # The door's user before any restart: the supervisor opens the door at start only if it exists.
 if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub ]] && ! id ci-peer >/dev/null 2>&1; then
-  useradd --system --user-group --home-dir /nonexistent --shell /bin/sh ci-peer
+  useradd --system --user-group --home-dir / --shell /bin/sh ci-peer
   restart=true
 fi
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
