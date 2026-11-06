@@ -198,12 +198,14 @@ EOF
   address=$(tailscale ip -4 | head -n 1)
   [[ $address =~ ^[0-9.]+$ ]] || { echo "no Tailscale address for the door" >&2; exit 1; }
   printf '[Socket]\nListenStream=%s:%s\n' "$address" "$door_port" > "$door_socket.new"
-  if ! cmp -s "$door_socket.new" "$door_socket"; then
+  listening() { ss -Hltn "sport = :$door_port" | grep -q .; }
+  # Also when the port is not up yet: a run cut off after writing the file never restarted it.
+  if ! cmp -s "$door_socket.new" "$door_socket" || ! listening; then
     install -D -m 0644 "$door_socket.new" "$door_socket"
     sshd -t && systemctl daemon-reload && systemctl restart ssh.socket
   fi
   rm -f "$door_socket.new"
-  ss -Hltn "sport = :$door_port" | grep -q . || { echo "the door is not listening on $door_port" >&2; exit 1; }
+  listening || { echo "the door is not listening on $door_port" >&2; exit 1; }
   door="door open to $from on $address:$door_port"
 else
   if [[ -f $door_conf || -f $door_socket ]]; then
