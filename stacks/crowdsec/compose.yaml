@@ -16,7 +16,6 @@ services:
       - crowdsec-config:/etc/crowdsec
       - crowdsec-data:/var/lib/crowdsec/data
       - /var/log:/var/log:ro
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
       - ./acquis.yaml:/etc/crowdsec/acquis.yaml:ro
     ports:
       # CrowdSec API for bouncers

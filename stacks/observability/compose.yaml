@@ -93,6 +93,9 @@ services:
       - prometheus
       - loki
       - docker-socket-proxy
+    networks:
+      - default
+      - docker-api
 
   # Read-only Docker API for Alloy; a raw socket mount would be root-equivalent.
   docker-socket-proxy:
@@ -112,6 +115,10 @@ services:
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Only Alloy can reach it: container inspect shows every container's
+    # environment, secrets included.
+    networks:
+      - docker-api
 
   # Pushes a few numbers to the blog's home page; nothing connects in. See
   # docs/public-stats.md for what it publishes.
@@ -158,6 +165,8 @@ services:
       - prometheus
 
 networks:
+  docker-api:
+    internal: true
   public-stats:
   kaizen-prometheus:
     external: true
