@@ -14,6 +14,8 @@ timeout=${3:-3600}
 
 VCPUS=${VCPUS:-2}
 MEM_MIB=${MEM_MIB:-2048}
+# 6 GiB for the tar (CACHE_MAX_UNPACKED_BYTES in ci_supervisor.py) and its header.
+OUTBOX_BYTES=$((6 * 1024 * 1024 * 1024 + 1024 * 1024))
 images=/var/lib/homelab-ci/images
 base=/srv/jailer
 id="ci-slot$slot"
@@ -68,6 +70,24 @@ if [[ -n "${CACHE_IMAGE:-}" && -f "$CACHE_IMAGE" ]]; then
   attach_disk "$slot" cache "$CACHE_IMAGE" "$chroot/cache.ext4"
   cache_drive=', {"drive_id": "cache", "path_on_host": "cache.ext4", "is_root_device": false, "is_read_only": false}'
 fi
+# The outbox, if the supervisor names one: a raw disk, last in the VM's list, where a green
+# default-branch job leaves its new cache (fc-cache action). It is not a snapshot: the file
+# stays after the VM, for the supervisor to judge and turn into the next cache disk. Its
+# first block says it is empty, so the action can tell it from any other disk.
+outbox_drive=""
+if [[ -n "${CACHE_OUT:-}" ]]; then
+  install -o root -g root -m 0600 /dev/null "$CACHE_OUT"
+  echo homelab-ci-outbox > "$CACHE_OUT"
+  truncate -s "$OUTBOX_BYTES" "$CACHE_OUT"  # sparse: takes only what is written
+  # A link, not a copy: the chroot and the outbox folder are on one filesystem. If not,
+  # the VM goes without an outbox and its cache is simply not saved.
+  if ln "$CACHE_OUT" "$chroot/outbox.img"; then
+    outbox_drive=', {"drive_id": "outbox", "path_on_host": "outbox.img", "is_root_device": false, "is_read_only": false}'
+  else
+    echo "slot $slot: no outbox, $CACHE_OUT cannot be linked into the chroot" >&2
+    rm -f "$CACHE_OUT"
+  fi
+fi
 
 # Extra guest kernel arguments, for experiments: root-only file, plain words only.
 guest_args=""
@@ -85,7 +105,7 @@ cat > "$chroot/vm.json" <<EOF
     "boot_args": "console=ttyS0 reboot=k panic=1 quiet loglevel=3 ci.ip=10.200.$slot.2/30 ci.gw=10.200.$slot.1$guest_args"
   },
   "drives": [
-    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive
+    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive$outbox_drive
   ],
   "network-interfaces": [
     {"iface_id": "eth0", "guest_mac": "$mac", "host_dev_name": "fc-tap$slot"}
@@ -100,6 +120,9 @@ chown -h "$uid:$gid" "$chroot/rootfs.ext4" "$chroot/vmlinuz" "$chroot/metadata.j
 if [[ -n "$cache_drive" ]]; then
   chmod 0600 "$chroot/cache.ext4"
   chown -h "$uid:$gid" "$chroot/cache.ext4"
+fi
+if [[ -n "$outbox_drive" ]]; then
+  chown "$uid:$gid" "$chroot/outbox.img"
 fi
 
 # Below the services in CPU priority. cpu.weight only ranks a cgroup against its
