@@ -169,6 +169,10 @@ The shipped rules cover host-level pressure such as:
 - high CPU
 - high RAM
 - high disk usage
+- **Beelink swapping, slowing Kaizen's VMs**: over 1 MB/s swapped out for 30 minutes; swap
+  shares the SSD with every CI VM's disk
+- **Beelink disk too slow for Kaizen's VMs**: tasks waited on the disk over 60% of the time for
+  30 minutes; over half holds new CI VMs back
 - **Flight Tracker site down**: the live-data probe has failed for 10 minutes
 - **Unknown container started**: a container whose name was not seen in the week
   before has run for 15 minutes, as one planted by an intruder would; redeploys
