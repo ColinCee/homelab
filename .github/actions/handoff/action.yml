@@ -1,0 +1,70 @@
+name: Hand files to later jobs
+description: >-
+  Puts or gets files a job hands to later jobs, through the Beelink instead of GitHub
+  artifacts, for jobs on homelab-fc VMs. The CI supervisor files what a job puts under the
+  job name GitHub shows for that VM, and gives an item only to the jobs it names as readers.
+  See docs/runbooks/ci-runner.md, Handoffs.
+inputs:
+  put:
+    description: The item's name (a-z, 0-9, -) to put PATH under. Never fails the job.
+    required: false
+    default: ""
+  get:
+    description: The item's name to get into PATH. Fails if it is not there, or not for this job.
+    required: false
+    default: ""
+  path:
+    description: The file or folder to put, or the folder to get into.
+    required: false
+    default: ""
+  readers:
+    description: For put, the jobs of this run that may get it, separated by spaces.
+    required: false
+    default: ""
+  later:
+    description: For put, the jobs of any run (this one included) that may get it, separated by spaces.
+    required: false
+    default: ""
+  days:
+    description: For put, how many days it is kept (at most 90).
+    required: false
+    default: "90"
+  from:
+    description: For get, the name of the job that put it.
+    required: false
+    default: ""
+  run:
+    description: For get, the run that put it (default this one).
+    required: false
+    default: ""
+  wait:
+    description: For get, the seconds to wait for a job still running to put it.
+    required: false
+    default: "600"
+  prepare:
+    description: Hand the disks and console to the runner user, before a job drops sudo.
+    required: false
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        PUT: ${{ inputs.put }}
+        GET: ${{ inputs.get }}
+        HANDOFF_PATH: ${{ inputs.path }}
+        READERS: ${{ inputs.readers }}
+        LATER: ${{ inputs.later }}
+        DAYS: ${{ inputs.days }}
+        FROM: ${{ inputs.from }}
+        RUN: ${{ inputs.run || github.run_id }}
+        WAIT: ${{ inputs.wait }}
+        PREPARE: ${{ inputs.prepare }}
+      # Through bash: a script's run permission is easily lost on a Windows checkout.
+      run: |
+        h="$GITHUB_ACTION_PATH/handoff.sh"
+        if [ "$PREPARE" = true ]; then bash "$h" prepare; fi
+        if [ -n "$PUT" ]; then
+          bash "$h" put "$PUT" "$HANDOFF_PATH" "$READERS" "$LATER" "$DAYS" || echo "::warning::handoff: $PUT was not put"
+        fi
+        if [ -n "$GET" ]; then bash "$h" get "$GET" "$FROM" "$RUN" "$HANDOFF_PATH" "$WAIT"; fi

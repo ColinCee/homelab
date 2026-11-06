@@ -16,10 +16,12 @@ Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervis
 from __future__ import annotations
 
 import argparse
+import contextlib
 import http.client
 import io
 import json
 import os
+import queue
 import re
 import signal
 import subprocess
@@ -127,16 +129,40 @@ RUNNER_PREFIX = "fc-"
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
-# Each build VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json),
-# kept after the VM until judged. Not through GitHub artifacts: they count against the
-# account's storage quota, and once it is full every upload fails.
+# Each VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json), kept
+# after the VM until judged, and its inbox (<runner name>.inbox). Not through GitHub
+# artifacts: they count against the account's storage quota, and once it is full every
+# upload fails.
 OUTBOX_DIR = Path("/var/lib/homelab-ci/outbox")
 # What the fc-cache action writes last, once the tar after it is complete.
 OUTBOX_HEADER = re.compile(rb"homelab-ci-cache v1 run=([0-9]{1,20}) attempt=([0-9]{1,5})\n")
 # An outbox whose job GitHub does not show finished yet is tried again a minute later,
-# for up to an hour.
+# for up to an hour; one with handoffs a few seconds later, since the next job waits on it.
 OUTBOX_RETRY_SECONDS = 60
+HANDOFF_RETRY_SECONDS = 5
 OUTBOX_WAIT_SECONDS = 3600
+# Files a job hands to later jobs (the handoff action, see ci-runner.md):
+# <owner>__<name>/<run>/<job>/<item>.tar and .json, filed under the job name GitHub reports
+# for the VM that wrote them, so no job can write as another.
+HANDOFF_DIR = Path("/var/lib/homelab-ci/handoff")
+# What the handoff action writes last on the outbox: its tar holds <item>.tar and <item>.json.
+HANDOFF_HEADER = re.compile(rb"homelab-ci-handoff v1 run=([0-9]{1,20}) attempt=([0-9]{1,5})\n")
+HANDOFF_ITEM = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+HANDOFF_JOB = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}")
+HANDOFF_MAX_DAYS = 90
+# All of one repo's handoffs: past this, new ones are dropped (the disk is shared).
+HANDOFF_REPO_MAX_BYTES = 20 * 1024**3
+HANDOFF_SWEEP_SECONDS = 3600
+# A job asks for a handoff with a console line; its VM's console reader writes the answer
+# on the VM's read-only inbox disk: the item's tar after 512 bytes, then the header.
+HANDOFF_ASK = re.compile(
+    rb"HOMELAB-HANDOFF 1 ([a-z0-9]{8,32}) ([0-9]{1,20}) ([0-9]{1,5}) ([0-9]{1,20}) "
+    rb"(\S{1,100}) (\S{1,64}) ([0-9]{1,4})\r?\n?"
+)
+HANDOFF_MAX_WAIT_SECONDS = 1800
+# How often a waiting ask looks for the item, and asks GitHub whether it can still come.
+HANDOFF_LOOK_SECONDS = 2
+HANDOFF_STATE_SECONDS = 15
 RUNNER_UID = 1001  # the runner user inside the VM image
 # What the CI runner is doing, for the Control room: rewritten after every poll, readable
 # by anyone on the host. Nothing secret goes in it (see status()).
@@ -249,6 +275,7 @@ class State:
     privacy: dict[str, Privacy] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
     cache_busy: threading.Lock = field(default_factory=threading.Lock)
+    handoff_busy: threading.Lock = field(default_factory=threading.Lock)
     # The threads that ask the polled repos for queued jobs at once, kept so each keeps
     # its open connection to GitHub.
     askers: ThreadPoolExecutor = field(
@@ -529,9 +556,9 @@ def launch(
         # The record first: a supervisor that dies right after starting the VM still finds it.
         write_status(run.record, record(run))
         env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
-        if not light:
-            (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
-            env["CACHE_OUT"] = str(OUTBOX_DIR / f"{name}.tar")
+        (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
+        env["CACHE_OUT"] = str(OUTBOX_DIR / f"{name}.tar")
+        env["INBOX"] = str(OUTBOX_DIR / f"{name}.inbox")
         start_vm(run, timeout, env)
     except BaseException:
         # It may have started anyway (systemd-run timing out, say).
@@ -624,6 +651,7 @@ def start_vm(run: Launch, timeout: int, env: Mapping[str, str]) -> None:
     sessions of auto-kaizen's VMs only, so a product's VM cannot put a line on a task. The
     unit stops before the CI network does, at shutdown."""
     vm = [str(run.slot), str(run.metadata), str(timeout)]
+    vm += ["--repo", run.repo, "--runner", run.runner_name]
     if run.repo.lower() == LIVE_REPO.lower():
         session = SESSIONS_DIR / f"{run.runner_name}.jsonl"
         vm += ["--live", str(run.live_file), "--session", str(session)]
@@ -713,16 +741,20 @@ def adopt(state: State) -> None:
 
 
 def vm_main(argv: list[str]) -> int:
-    """`vm SLOT METADATA TIMEOUT [--live FILE --session FILE]`: run-vm.sh's console reader,
-    the main process of the VM's unit. It reads the console to the end (a full pipe would
-    stall the VM), keeps the latest live line in FILE and the session events, and exits with
-    run-vm.sh's code."""
+    """`vm SLOT METADATA TIMEOUT [--live FILE --session FILE] [--repo R --runner N]`: run-vm.sh's
+    console reader, the main process of the VM's unit. It reads the console to the end (a full
+    pipe would stall the VM), keeps the latest live line in FILE and the session events, hands
+    handoff asks to a worker that answers them on the VM's inbox, and exits with run-vm.sh's
+    code."""
     parser = argparse.ArgumentParser(prog="ci_supervisor.py vm")
     parser.add_argument("slot")
     parser.add_argument("metadata")
     parser.add_argument("timeout")
     parser.add_argument("--live", type=Path)
     parser.add_argument("--session", type=Path)
+    # Whose VM it is, to answer its handoff asks.
+    parser.add_argument("--repo")
+    parser.add_argument("--runner")
     args = parser.parse_args(argv)
     # Stopping the unit signals every process in it: run-vm.sh cleans up on its own, and this
     # reader keeps reading until it has (a closed pipe would cut its cleanup short).
@@ -734,8 +766,19 @@ def vm_main(argv: list[str]) -> int:
     )
     assert process.stdout is not None
     keep = (lambda line: write_status(args.live, line)) if args.live else None
-    read_console(process.stdout, keep, args.session)
-    return process.wait()
+    asks: queue.Queue[re.Match[bytes] | None] = queue.Queue()
+    inbox = OUTBOX_DIR / f"{args.runner}.inbox"
+    if args.repo and args.runner:
+        gh = GitHub(TOKEN_FILE.read_text().strip())
+        threading.Thread(
+            target=answer_asks, args=(gh, args.repo, args.runner, inbox, asks), daemon=True
+        ).start()
+    try:
+        read_console(process.stdout, keep, args.session, asks.put if args.runner else None)
+        return process.wait()
+    finally:
+        asks.put(None)
+        inbox.unlink(missing_ok=True)
 
 
 def session_event(raw: bytes) -> bytes | None:
@@ -762,7 +805,10 @@ def save_event(path: Path, event: bytes) -> None:
 
 
 def read_console(
-    stream: IO[bytes], keep: Callable[[dict[str, Any]], None] | None, session: Path | None = None
+    stream: IO[bytes],
+    keep: Callable[[dict[str, Any]], None] | None,
+    session: Path | None = None,
+    ask: Callable[[re.Match[bytes]], None] | None = None,
 ) -> None:
     """Read a VM's console until it ends, keeping each valid live line and saving each
     session event to `session`. It must never stop early: once the pipe fills, the VM's
@@ -774,7 +820,9 @@ def read_console(
         while chunk := stream.readline(CONSOLE_LINE_MAX):
             whole = chunk.endswith(b"\n")
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
-            if keep and fits and (line := live_line(chunk, time.time())):
+            if ask and fits and (asked := HANDOFF_ASK.fullmatch(chunk)):
+                ask(asked)
+            elif keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
             elif session and fits:
                 try:
@@ -1088,7 +1136,8 @@ def build_cache_image(stream: IO[bytes], image: Path) -> None:
 
 
 def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) -> bool:
-    """Turn an ended VM's outbox into its repo's cache disk if the job that VM ran passed on
+    """File an ended VM's handoffs (take_handoffs), or turn its outbox into its repo's cache
+    disk if the job that VM ran passed on
     a push to the default branch, so a branch or pull request cannot replace the cache. The
     header only says which run to ask about; GitHub's job list must name this VM's runner.
     Returns True to keep it for another try (GitHub does not show the job finished yet)."""
@@ -1096,9 +1145,12 @@ def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) 
     try:
         repo = str(json.loads(tar.with_suffix(".json").read_text())["repo"])
         with tar.open("rb") as f:
-            header = OUTBOX_HEADER.match(f.read(512))
+            first = f.read(512)
     except (OSError, ValueError, KeyError, TypeError):
         return False
+    if handoff := HANDOFF_HEADER.match(first):
+        return take_handoffs(gh, tar, repo, int(handoff[1]), int(handoff[2]), now)
+    header = OUTBOX_HEADER.match(first)
     if not header:
         return False  # nothing saved: most VMs end so
     branch = branches.get(repo)
@@ -1152,39 +1204,281 @@ def judge_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float)
     return keep
 
 
-def ended_outboxes(state: State, now: float) -> list[Path]:
+def holds_handoffs(tar: Path) -> bool:
+    try:
+        with tar.open("rb") as f:
+            return bool(HANDOFF_HEADER.match(f.read(512)))
+    except OSError:
+        return False
+
+
+def ended_outboxes(state: State, now: float) -> tuple[list[Path], list[Path]]:
     """The outboxes of VMs that have ended (each has its .json from launch), not tried in
-    the last OUTBOX_RETRY_SECONDS."""
+    the last OUTBOX_RETRY_SECONDS (HANDOFF_RETRY_SECONDS for handoffs): (handoffs, rest)."""
     running = {run.runner_name for run in state.launches.values()}
-    return [
-        record.with_suffix(".tar")
-        for record in OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.json")
-        if record.stem not in running
-        and now - state.cache_checked.get(record.stem, 0) >= OUTBOX_RETRY_SECONDS
-    ]
+    handoffs: list[Path] = []
+    rest: list[Path] = []
+    for record in OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.json"):
+        if record.stem in running:
+            continue
+        tar = record.with_suffix(".tar")
+        handoff = holds_handoffs(tar)
+        wait = HANDOFF_RETRY_SECONDS if handoff else OUTBOX_RETRY_SECONDS
+        if now - state.cache_checked.get(record.stem, 0) >= wait:
+            (handoffs if handoff else rest).append(tar)
+    return handoffs, rest
 
 
 def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
     """Judge ended VMs' outboxes one at a time in the background, so polling never waits on
-    a build. Each is deleted once judged; one GitHub cannot answer for is kept an hour."""
-    due = ended_outboxes(state, now)
-    if not due or not state.cache_busy.acquire(blocking=False):
-        return
-    for tar in due:
-        state.cache_checked[tar.stem] = now
-    # Its own client: the request cache is not shared between threads.
-    own = gh.clone()
+    a build; handoffs in a lane of their own, so the next job never waits behind a cache
+    build. Each is deleted once judged; one GitHub cannot answer for is kept an hour."""
+    handoffs, rest = ended_outboxes(state, now)
     branches = {r: p.default_branch for r, p in state.privacy.items() if p.private}
+    for due, busy in ((handoffs, state.handoff_busy), (rest, state.cache_busy)):
+        if not due or not busy.acquire(blocking=False):
+            continue
+        for tar in due:
+            state.cache_checked[tar.stem] = now
+        # Its own client: the request cache is not shared between threads.
+        own = gh.clone()
 
-    def work() -> None:
+        def work(due: list[Path] = due, busy: threading.Lock = busy, own: GitHub = own) -> None:
+            try:
+                for tar in due:
+                    if not judge_outbox(own, tar, branches, now):
+                        state.cache_checked.pop(tar.stem, None)
+            finally:
+                busy.release()
+
+        threading.Thread(target=work, daemon=True).start()
+
+
+def repo_handoffs(repo: str) -> Path:
+    return HANDOFF_DIR / repo.replace("/", "__")
+
+
+def take_handoffs(gh: GitHub, tar: Path, repo: str, run_id: int, attempt: int, now: float) -> bool:
+    """File an ended VM's handoffs under the job GitHub shows that VM ran, whatever its
+    result (a failed Builder's session is what its next try resumes). The header only says
+    which run to ask about. Returns True to keep the outbox for another try."""
+    runner = tar.stem
+    path = f"/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+    jobs = gh.request("GET", path).get("jobs", [])
+    job = next((j for j in jobs if j.get("runner_name") == runner), None)
+    if not job:
+        log(f"handoff for {repo}: outbox of {runner} names run {run_id}, not its own; ignored")
+        return False
+    if job.get("status") != "completed":
+        return now - tar.stat().st_mtime < OUTBOX_WAIT_SECONDS
+    name = str(job.get("name", ""))
+    if not HANDOFF_JOB.fullmatch(name):
+        log(f"handoff for {repo}: job name {name!r} cannot be a folder; ignored")
+        return False
+    folder = repo_handoffs(repo) / str(run_id) / name
+    folder.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{runner}-", dir=repo_handoffs(repo)))
+    try:
+        with tar.open("rb") as f:
+            f.seek(512)
+            items = unpack_handoffs(f, staging)
+        size = sum((staging / f"{item}.tar").stat().st_size for item in items)
+        used = sum(p.stat().st_size for p in repo_handoffs(repo).rglob("*.tar"))
+        if used + size > HANDOFF_REPO_MAX_BYTES:
+            log(f"handoff for {repo}: {size} bytes from {runner} pass the repo's limit; dropped")
+            return False
+        folder.mkdir(mode=0o755, exist_ok=True)
+        for item, wants in items.items():
+            meta = folder / f"{item}.json"
+            if meta.exists() and int(json.loads(meta.read_text()).get("attempt", 0)) > attempt:
+                continue  # a later attempt's already here
+            (staging / f"{item}.tar").replace(folder / f"{item}.tar")
+            fields = {
+                "attempt": attempt,
+                "conclusion": job.get("conclusion"),
+                "saved": int(now),
+                "expires": int(now + wants["days"] * 86400),
+                "readers": wants["readers"],
+                "later": wants["later"],
+            }
+            staged = staging / f"{item}.meta"
+            staged.write_text(json.dumps(fields))
+            staged.replace(meta)
+        log(f"handoff for {repo}: run {run_id} {name} saved {', '.join(items) or 'nothing'}")
+    except BadCache as e:
+        log(f"handoff for {repo}: outbox of {runner} unreadable, {e}; ignored")
+    finally:
+        subprocess.run(["rm", "-rf", "--one-file-system", str(staging)], check=False)
+    return False
+
+
+def unpack_handoffs(stream: IO[bytes], staging: Path) -> dict[str, dict[str, Any]]:
+    """The outbox's <item>.tar and <item>.json files, into staging; returns each item's
+    readers, later readers and days. Names and the JSON are the VM's: checked, never trusted."""
+    wants: dict[str, dict[str, Any]] = {}
+    found: set[str] = set()
+    try:
+        with tarfile.open(fileobj=stream, mode="r|") as tar:
+            for member in tar:
+                name = member.name.removeprefix("./")
+                item, _, kind = name.rpartition(".")
+                ours = HANDOFF_ITEM.fullmatch(item) and kind in ("tar", "json")
+                if not (member.isfile() and ours):
+                    continue
+                source = tar.extractfile(member)
+                if source is None:
+                    continue
+                if kind == "json":
+                    wants[item] = handoff_wants(source.read(65536))
+                    continue
+                with (staging / name).open("wb") as out:
+                    while chunk := source.read(1024**2):
+                        out.write(chunk)
+                found.add(item)
+    except (tarfile.TarError, OSError, ValueError, TypeError, AttributeError) as e:
+        raise BadCache(f"{type(e).__name__}: {e}") from e
+    return {item: wants[item] for item in sorted(found & wants.keys())}
+
+
+def handoff_wants(raw: bytes) -> dict[str, Any]:
+    fields = json.loads(raw)
+    names = [
+        [str(n) for n in fields.get(key, []) if HANDOFF_JOB.fullmatch(str(n))][:20]
+        for key in ("readers", "later")
+    ]
+    days = min(max(int(fields.get("days", HANDOFF_MAX_DAYS)), 1), HANDOFF_MAX_DAYS)
+    return {"readers": names[0], "later": names[1], "days": days}
+
+
+def sweep_handoffs(now: float) -> None:
+    """Delete handoffs past their days, and staging left by a supervisor that was killed."""
+    for meta in HANDOFF_DIR.glob("*/*/*/*.json"):
         try:
-            for tar in due:
-                if not judge_outbox(own, tar, branches, now):
-                    state.cache_checked.pop(tar.stem, None)
-        finally:
-            state.cache_busy.release()
+            if json.loads(meta.read_text()).get("expires", 0) < now:
+                meta.with_suffix(".tar").unlink(missing_ok=True)
+                meta.unlink(missing_ok=True)
+        except (OSError, ValueError, AttributeError):
+            continue
+    for folder in sorted(HANDOFF_DIR.glob("*/*/*"), reverse=True) + sorted(HANDOFF_DIR.glob("*/*")):
+        if folder.name.startswith("."):
+            if now - folder.stat().st_mtime > OUTBOX_WAIT_SECONDS:
+                subprocess.run(["rm", "-rf", "--one-file-system", str(folder)], check=False)
+            continue
+        with contextlib.suppress(OSError):
+            folder.rmdir()  # only when empty
 
-    threading.Thread(target=work, daemon=True).start()
+
+INBOX_EMPTY = b"homelab-ci-inbox-empty\n"
+
+
+def write_inbox(inbox: Path, nonce: str, verdict: str, item: Path | None = None) -> None:
+    """Answer an ask on the VM's inbox: blank the header, write the item's tar after 512
+    bytes, then the header, so the job never reads a half-written tar as an answer."""
+    with inbox.open("r+b") as f:
+        f.write(INBOX_EMPTY.ljust(512, b"\0"))
+        f.flush()
+        os.fsync(f.fileno())
+        size = 0
+        if item is not None:
+            f.seek(512)
+            with item.open("rb") as source:
+                while chunk := source.read(1024**2):
+                    f.write(chunk)
+                    size += len(chunk)
+            f.flush()
+            os.fsync(f.fileno())
+        f.seek(0)
+        f.write(f"homelab-ci-inbox v1 {nonce} {verdict} {size}\n".encode().ljust(512, b"\0"))
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def asking_job(gh: GitHub, repo: str, runner: str, run_id: int, attempt: int) -> str | None:
+    """The name of the job running on this runner in that run attempt, as GitHub shows it."""
+    path = f"/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
+    jobs = gh.request("GET", path).get("jobs", [])
+    job = next((j for j in jobs if j.get("runner_name") == runner), None)
+    return str(job["name"]) if job and job.get("status") == "in_progress" else None
+
+
+def may_still_come(gh: GitHub, repo: str, run_id: int, job_name: str) -> bool:
+    """False once the job that would write the item has finished and its outbox is judged."""
+    path = f"/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
+    jobs = gh.request("GET", path).get("jobs", [])
+    job = next((j for j in jobs if j.get("name") == job_name), None)
+    if not job:
+        return False
+    if job.get("status") != "completed":
+        return True
+    return (OUTBOX_DIR / f"{job.get('runner_name')}.json").exists()
+
+
+def answer_ask(
+    gh: GitHub,
+    repo: str,
+    runner: str,
+    inbox: Path,
+    ask: re.Match[bytes],
+    known: dict[tuple[int, int], str],
+    clock: Callable[[], float] = time.time,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    """Answer one ask on the inbox: ok (the item), none (it is not there and will not come
+    within the wait) or denied (the asking job is not one the item names as a reader).
+    Returns the verdict."""
+    nonce = ask[1].decode()
+    own = (int(ask[2]), int(ask[3]))
+    run_id, job_name, item = int(ask[4]), ask[5].decode(), ask[6].decode()
+    wait = min(int(ask[7]), HANDOFF_MAX_WAIT_SECONDS)
+    if not (HANDOFF_JOB.fullmatch(job_name) and HANDOFF_ITEM.fullmatch(item)):
+        write_inbox(inbox, nonce, "denied")
+        return "denied"
+    if own not in known and (me := asking_job(gh, repo, runner, *own)):
+        known[own] = me
+    me = known.get(own)
+    if me is None:
+        write_inbox(inbox, nonce, "denied")
+        return "denied"
+    meta = repo_handoffs(repo) / str(run_id) / job_name / f"{item}.json"
+    deadline = clock() + wait
+    checked = 0.0
+    while True:
+        if meta.exists():
+            fields = json.loads(meta.read_text())
+            readers = fields.get("later", []) + (
+                fields.get("readers", []) if run_id == own[0] else []
+            )
+            if me in readers:
+                write_inbox(inbox, nonce, "ok", meta.with_suffix(".tar"))
+                return "ok"
+            write_inbox(inbox, nonce, "denied")
+            return "denied"
+        now = clock()
+        gone = False
+        if now >= deadline:
+            gone = True
+        elif now - checked >= HANDOFF_STATE_SECONDS:
+            checked = now
+            gone = not may_still_come(gh, repo, run_id, job_name)
+        if gone and not meta.exists():
+            write_inbox(inbox, nonce, "none")
+            return "none"
+        if not gone:
+            sleep(HANDOFF_LOOK_SECONDS)
+
+
+def answer_asks(gh: GitHub, repo: str, runner: str, inbox: Path, asks: Any) -> None:
+    """The VM's ask worker: one ask at a time, off the console reader, which must never wait."""
+    known: dict[tuple[int, int], str] = {}
+    while (ask := asks.get()) is not None:
+        try:
+            verdict = answer_ask(gh, repo, runner, inbox, ask, known)
+            what = f"{ask[5].decode()}/{ask[6].decode()} of run {int(ask[4])}"
+            log(f"handoff for {repo}: {runner} asked for {what}: {verdict}")
+        except Exception as e:  # anything: the job waits on an answer
+            log(f"handoff for {repo}: ask from {runner} failed: {type(e).__name__}: {e}")
+            with contextlib.suppress(OSError):
+                write_inbox(inbox, ask[1].decode(), "none")
 
 
 def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
@@ -1548,6 +1842,8 @@ def main(argv: list[str] | None = None) -> int:
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     CACHE_DIR.mkdir(mode=0o755, exist_ok=True)
     OUTBOX_DIR.mkdir(mode=0o700, exist_ok=True)
+    HANDOFF_DIR.mkdir(mode=0o755, exist_ok=True)
+    swept = 0.0
     # Half-built caches from a supervisor that was killed mid-build.
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
@@ -1628,6 +1924,9 @@ def main(argv: list[str] | None = None) -> int:
             write_status(STATUS_FILE, status(state, time.time(), github_ok, mem_available_mib()))
             write_status(LIVE_FILE, live(state, time.time()))
             prune_sessions(SESSIONS_DIR, time.time())
+            if time.time() - swept > HANDOFF_SWEEP_SECONDS:
+                swept = time.time()
+                sweep_handoffs(swept)
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"

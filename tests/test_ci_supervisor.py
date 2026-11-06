@@ -392,7 +392,7 @@ def test_judges_only_the_outboxes_of_vms_that_ended(outbox_dir) -> None:
     state.launches[0] = sup.Launch(0, "o/r", 1, "fc-0-1", 0.0, Path("m"))
     state.cache_checked["fc-2-3"] = 100.0  # tried 30 s ago
 
-    assert sup.ended_outboxes(state, 130.0) == [outbox_dir / "fc-1-2.tar"]
+    assert sup.ended_outboxes(state, 130.0) == ([], [outbox_dir / "fc-1-2.tar"])
 
 
 class Failing:
