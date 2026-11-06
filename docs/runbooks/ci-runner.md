@@ -465,7 +465,8 @@ Light jobs stay on the Beelink.
 - **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
   off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
   set once in Hyper-V for the most slots it will give.
-- **Gaming:** `keeper.ps1` (Colin's Startup folder) gives 0 slots while the GPU is over 30% for 15 s or a `gpu`
+- **Gaming:** `keeper.ps1`, run by `keeper-tray.pyw` (an icon in the Windows notification area: green busy, amber
+  paused, grey off, red restarting; its menu sets the slots) from Colin's Startup folder, gives 0 slots while the GPU is over 30% for 15 s or a `gpu`
   lease is held, caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
   runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
   trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, shown after
@@ -488,12 +489,13 @@ Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his;
    guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
    `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).
 4. On Windows: the `lease` command from ColinCee/agents (`npm run install-lease`, a version with `--status`),
-   `ci-runner/pc/keeper.ps1` and `kaizen-pc.ps1` copied to `D:\kaizen-ci`, a Startup-folder shortcut
-   running `pwsh -WindowStyle Hidden -File D:\kaizen-ci\keeper.ps1`, `gh` signed in as Colin, then
+   `ci-runner/pc/keeper.ps1`, `kaizen-pc.ps1` and `keeper-tray.pyw` copied to `D:\kaizen-ci`, a Startup-folder
+   `kaizen-ci-keeper.vbs` with `CreateObject("WScript.Shell").Run "uvw run --no-project --quiet --with pystray
+   --with pillow D:\kaizen-ci\keeper-tray.pyw", 0`, `gh` signed in as Colin, then
    `kaizen-pc.ps1 <slots>`. Check `pc-*` runners show online in auto-kaizen's runner list before trusting the cap.
 
-Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off, remove the keeper from the Startup
-folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink (closes the door), and set the task cap to 5.
+Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off, quit the tray icon, remove
+`kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink (closes the door), and set the task cap to 5.
 
 ## Review
 
