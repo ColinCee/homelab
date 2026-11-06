@@ -1770,7 +1770,13 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     if PEER:
         builds_waiting = (w for w in oldest_first if w[1] not in LIGHT_SIZES and waiting[w] > 0)
         PEER.wants = tuple(dict.fromkeys(builds_waiting))
-        PEER.last = (state.last_repo, state.last_label)
+        # The newest queued Auto Kaizen build's, kept until another is queued: the label a
+        # ready PC runner most likely needs next (each task's build asks for its product's).
+        ours = [
+            w for w in oldest_first if w[1] not in LIGHT_SIZES and w[0].lower() == LIVE_REPO.lower()
+        ]
+        if ours:
+            PEER.last = ours[-1]
     for run in list(state.launches.values()):
         if run.standby and any(
             n > 0 and want != run.want and (want[1] in LIGHT_SIZES) == run.light
@@ -2184,7 +2190,7 @@ class Peer:
     served: frozenset[str] = frozenset()
     caches: frozenset[str] = frozenset()
     # Build wants (repo, cache label) still waiting after this poll's plan, oldest first, and
-    # the last build's: a new PC runner is registered for the first that fits.
+    # the newest Auto Kaizen build queued: a new PC runner is registered for the first that fits.
     wants: tuple[tuple[str, str], ...] = ()
     last: tuple[str, str] = ("", "")
     # Each PC VM's open stream: a new one for the same runner (the PC reconnected) ends the old.
@@ -2271,8 +2277,8 @@ def peer_cache_repo(peer: Peer, named: str) -> str:
 
 
 def peer_wanted_label(peer: Peer, repo: str) -> str:
-    """The cache label for a new PC runner: the oldest waiting build's, else the last build's
-    (as the Beelink's standby is chosen), so a ready runner fits what comes next."""
+    """The cache label for a new PC runner: the oldest waiting build's, else the newest queued
+    one's, so a ready runner fits what comes next."""
     for want_repo, label in (*peer.wants, peer.last):
         if want_repo.lower() == repo.lower() and (not label or cache_label_repo(label)):
             return label
