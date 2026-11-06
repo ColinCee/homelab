@@ -164,8 +164,12 @@ touches far less than its size and gives file cache back: `ci-trim-cache` in the
 VM drops its cache once it passes a quarter of its memory, and the balloon
 device's free page reporting returns the freed pages to the host. So this counts
 what is really free, not the sizes added up. When a VM ends, the journal says how
-much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
-MiB of Y`), to size VMs by kind of job. A VM never swaps: its memory cap (guest RAM plus 256 MiB) also counts
+much host memory it touched at most, cache included (`slot N: VM ended (exit 0), its memory peaked at X
+MiB of Y`), and what its job needed, cache left out, with the kernel's out-of-memory kills
+(`slot N: <runner> (<kind>) needed at least X MiB of Y, K out-of-memory kills`, from `ci-memwatch` in the VM).
+The second sizes VMs by kind of job: its counts go to Grafana (`homelab_ci_vms_ended_total`,
+`homelab_ci_vms_near_full_total` and `homelab_ci_vm_oom_kills_total` by kind), which alerts on any kill and on a
+kind whose jobs often need over 80% of their memory. A VM never swaps: its memory cap (guest RAM plus 256 MiB) also counts
 the host's cache of its disk, which goes first (`run-vm.sh`). No VM starts either while tasks waited on the disk for
 over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
 a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory

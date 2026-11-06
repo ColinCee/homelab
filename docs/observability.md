@@ -107,7 +107,8 @@ Prometheus receives metrics from:
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
   only while it runs a VM, so counting them counts running VMs, the ones
   waiting ready included. Its relabel keeps only those series, so there is no
-  `up{job="ci-vms"}`.
+  `up{job="ci-vms"}`. What each job needed inside its VM, and its out-of-memory kills, come
+  through the host's textfile collector (`homelab_ci_vm*`, see the ci-runner runbook).
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
@@ -173,6 +174,9 @@ The shipped rules cover host-level pressure such as:
   shares the SSD with every CI VM's disk
 - **Beelink disk too slow for Kaizen's VMs**: tasks waited on the disk over 60% of the time for
   30 minutes; over half holds new CI VMs back
+- **A Kaizen job ran out of memory**: a CI VM's kernel killed a process for lack of memory
+- **Kaizen jobs need nearly all their VM's memory**: over a quarter of one kind's job VMs
+  needed over 80% of their memory in 6 hours (at least 8 VMs)
 - **Flight Tracker site down**: the live-data probe has failed for 10 minutes
 - **Unknown container started**: a container whose name was not seen in the week
   before has run for 15 minutes, as one planted by an intruder would; redeploys

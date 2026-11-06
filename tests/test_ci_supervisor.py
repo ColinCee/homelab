@@ -840,7 +840,7 @@ def test_session_files_go_after_thirty_days(tmp_path) -> None:
     assert [p.name for p in tmp_path.iterdir()] == ["new.jsonl"]
 
 
-def test_only_auto_kaizen_vms_get_a_live_line(monkeypatch) -> None:
+def test_only_auto_kaizen_vms_get_a_live_line_but_every_vm_reports_memory(monkeypatch) -> None:
     started: list[list[str]] = []
     monkeypatch.setattr(sup.subprocess, "run", lambda cmd, **k: started.append(cmd))
     ours = sup.Launch(0, "ColinCee/auto-kaizen", 1, "fc-0", 0.0, Path("m0"))
@@ -848,6 +848,7 @@ def test_only_auto_kaizen_vms_get_a_live_line(monkeypatch) -> None:
     for run in (ours, product):
         START_VM(run, 60, {})
     assert "--live" in started[0] and "--live" not in started[1]
+    assert all("--memory" in cmd for cmd in started)
 
     # Its console reader keeps the latest line in its live file; the supervisor reads it.
     line = sup.live_line(LIVE, 1793000000.0)
@@ -1689,3 +1690,55 @@ def test_the_pc_door_learns_the_newest_auto_kaizen_builds_label(host, monkeypatc
     monkeypatch.setattr(sup, "PEER", sup.Peer("token"))
     sup.tick(None, sup.State(), [sup.LIVE_REPO], 0.0)  # type: ignore[arg-type]
     assert sup.PEER.last == (sup.LIVE_REPO, label)  # type: ignore[union-attr]
+
+
+def test_the_console_reader_keeps_only_exact_memory_lines() -> None:
+    seen: list[dict[str, int]] = []
+    console = io.BytesIO(
+        b"\nHOMELAB-MEM 1 812 1985 0\n"
+        b"noise HOMELAB-MEM 1 9999 1985 0\n"
+        b"HOMELAB-MEM 1 -5 1985 0\n"
+        b"\nHOMELAB-MEM 1 990 1985 2\r\n"
+    )
+    sup.read_console(console, None, memory=seen.append)
+    assert seen == [
+        {"peak": 812, "total": 1985, "kills": 0},
+        {"peak": 990, "total": 1985, "kills": 2},
+    ]
+
+
+@pytest.fixture
+def memory(monkeypatch, tmp_path):
+    """Fresh counts, a temporary textfile, and the log lines."""
+    monkeypatch.setattr(sup, "MEMORY_COUNTS", {k: [0, 0, 0] for k in ("build", "light", "small")})
+    monkeypatch.setattr(sup, "MEMORY_METRICS", tmp_path / "ci-vm-memory.prom")
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    return lines
+
+
+def _ended(vms: Path, label: str, peak: int, kills: int, standby: bool = False) -> sup.Launch:
+    run = sup.Launch(6, "o/ok", 7, "fc-6-1", 0.0, vms / "m", standby, label=label)
+    sup.write_status(run.memory_file, {"peak": peak, "total": 1000, "kills": kills})
+    return run
+
+
+def test_an_ended_vm_is_counted_by_kind_and_its_memory_file_removed(vms, memory) -> None:
+    sup.write_memory_metrics()
+    assert 'homelab_ci_vm_oom_kills_total{kind="small"} 0' in sup.MEMORY_METRICS.read_text()
+    run = _ended(vms, sup.SMALL_LABEL, peak=850, kills=1)
+    sup.forget(run)
+    text = sup.MEMORY_METRICS.read_text()
+    assert 'homelab_ci_vms_ended_total{kind="small"} 1' in text
+    assert 'homelab_ci_vms_near_full_total{kind="small"} 1' in text  # 850 of 1000 is over 80%
+    assert 'homelab_ci_vm_oom_kills_total{kind="small"} 1' in text
+    assert memory == [
+        "slot 6: fc-6-1 (small) needed at least 850 MiB of 1000, 1 out-of-memory kills"
+    ]
+    assert not run.memory_file.exists()
+
+
+def test_a_standby_that_never_took_a_job_or_a_silent_vm_is_not_counted(vms, memory) -> None:
+    sup.forget(_ended(vms, sup.LIGHT_LABEL, peak=300, kills=0, standby=True))
+    sup.forget(sup.Launch(5, "o/ok", 7, "fc-5-1", 0.0, vms / "m"))  # no memory line came
+    assert memory == [] and sup.MEMORY_COUNTS["light"] == [0, 0, 0]
