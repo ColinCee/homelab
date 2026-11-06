@@ -263,6 +263,9 @@ sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -t homelab-ci-vm -f
 ```
 
+`install-host.sh` also trims the SSD hourly instead of weekly: the VMs' throwaway write files churn about
+0.5 TB a day, and untrimmed they slow every write (`systemd/fstrim-hourly.conf`).
+
 `/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
 missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
