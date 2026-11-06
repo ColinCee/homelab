@@ -46,7 +46,8 @@ exclude = ["shots"]                               # names left out below a folde
 own backup, sent with Taildrop. No SSH key or extra sign-in. On Beelink the
 `backup-pc-receive` timer collects them every 15 minutes into `~/pc-backups`, which the nightly
 restic run backs up with everything else, and writes the newest file's time to
-`homelab_pc_backup_newest_timestamp_seconds`.
+`homelab_pc_backup_newest_timestamp_seconds`; **PC backup stopped arriving** fires
+when that is over 50 hours old.
 
 One-time setup on Beelink: `sudo tailscale set --operator=colin`, so the user timer may receive
 files. On the PC, `python scripts\pc_backup.py --dry-run` packs without sending; the last run is in

@@ -174,9 +174,12 @@ The shipped rules cover host-level pressure such as:
   before has run for 15 minutes, as one planted by an intruder would; redeploys
   keep their names and quick `docker run` checks stop sooner, so neither fires
 - **New Tailscale device**: a device visible to the Beelink was added to the
-  tailnet in the last hour, as an intruder's would be; a 5-minute timer records
-  each device's added time, and **Tailscale device check stopped** fires when it
-  has not for 15 minutes. Policy file changes are not covered
+  tailnet after the approved-before time in the rule, as an intruder's would be.
+  It stays on until the device is removed or approved by moving that time past
+  it. A 5-minute timer records each device's added time, and **Tailscale device
+  check stopped** fires when it has not for 15 minutes. Policy file changes are
+  not covered
+- **PC backup stopped arriving**: no file from the Windows PC in 50 hours
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
