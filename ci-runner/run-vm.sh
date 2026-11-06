@@ -89,6 +89,22 @@ if [[ -n "${CACHE_OUT:-}" ]]; then
   fi
 fi
 
+# The inbox, if the supervisor names one: a raw read-only disk, after the outbox, where the
+# VM's console reader answers the job's handoff asks (handoff action). Its first block says
+# it is empty, so the action can tell it from any other disk.
+inbox_drive=""
+if [[ -n "${INBOX:-}" ]]; then
+  install -o root -g root -m 0600 /dev/null "$INBOX"
+  echo homelab-ci-inbox-empty > "$INBOX"
+  truncate -s "$OUTBOX_BYTES" "$INBOX"
+  if ln "$INBOX" "$chroot/inbox.img"; then
+    inbox_drive=', {"drive_id": "inbox", "path_on_host": "inbox.img", "is_root_device": false, "is_read_only": true}'
+  else
+    echo "slot $slot: no inbox, $INBOX cannot be linked into the chroot" >&2
+    rm -f "$INBOX"
+  fi
+fi
+
 # Extra guest kernel arguments, for experiments: root-only file, plain words only.
 guest_args=""
 if [[ -f /etc/homelab-ci/guest-args ]]; then
@@ -105,7 +121,7 @@ cat > "$chroot/vm.json" <<EOF
     "boot_args": "console=ttyS0 reboot=k panic=1 quiet loglevel=3 ci.ip=10.200.$slot.2/30 ci.gw=10.200.$slot.1$guest_args"
   },
   "drives": [
-    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive$outbox_drive
+    {"drive_id": "rootfs", "path_on_host": "rootfs.ext4", "is_root_device": true, "is_read_only": false}$cache_drive$outbox_drive$inbox_drive
   ],
   "network-interfaces": [
     {"iface_id": "eth0", "guest_mac": "$mac", "host_dev_name": "fc-tap$slot"}
@@ -123,6 +139,9 @@ if [[ -n "$cache_drive" ]]; then
 fi
 if [[ -n "$outbox_drive" ]]; then
   chown "$uid:$gid" "$chroot/outbox.img"
+fi
+if [[ -n "$inbox_drive" ]]; then
+  chown "$uid:$gid" "$chroot/inbox.img"
 fi
 
 # Below the services in CPU priority. cpu.weight only ranks a cgroup against its

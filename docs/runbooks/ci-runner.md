@@ -52,7 +52,7 @@ at it, so `uv sync` and `npm ci` find almost everything in place.
 
 How it is made, without the host running any of the repo's code:
 
-1. Every build VM gets an empty **outbox**: a raw disk, last in its list, kept on
+1. Every VM gets an empty **outbox**: a raw disk, after its other disks, kept on
    the host after the VM as `/var/lib/homelab-ci/outbox/<runner name>.tar`. A green
    push to the default branch tars `/cache` onto it with the shared action, the
    job's last step, which does nothing on any other event:
@@ -97,6 +97,47 @@ A job should not restore GitHub's caches as well. Without a cache disk yet,
 also puts `node_modules` and its `package-lock.json` on the disk (the action's
 `paths`), copied rather than linked so TypeScript's incremental build info
 stays valid.
+
+### Handoffs
+
+Files a job hands to later jobs, in place of GitHub artifacts (whose storage quota,
+once full, fails every upload). `put` never fails the job; `get` fails if the item
+is not there, or not for this job:
+
+```yaml
+- uses: ColinCee/homelab/.github/actions/handoff@main
+  with:
+    put: builder          # a-z, 0-9, -
+    path: out/            # a file or folder
+    readers: review land  # jobs of this run that may get it
+    later: line           # jobs of any run that may get it
+    days: 90              # at most 90
+- uses: ColinCee/homelab/.github/actions/handoff@main
+  with:
+    get: builder
+    from: build           # the job that put it
+    run: ${{ needs.line.outputs.held_run }}  # default this run
+    path: ${{ runner.temp }}/in
+```
+
+1. `put` writes every item the job has put so far onto the VM's outbox (as the
+   cache does, header last). Once the VM has ended, the supervisor files each item
+   under `/var/lib/homelab-ci/handoff/<owner>__<repo>/<run>/<job>/`, with the job
+   name GitHub shows for that VM's runner, whatever the job's result: no job can put
+   under another's name. It is deleted after its `days`; past 20 GiB a repo's new
+   items are dropped. A job puts handoffs or a cache, not both, and only a build
+   VM's cache is taken, never a light one's.
+2. `get` prints an ask on the console. The VM's console reader asks GitHub which job
+   runs on that VM, and answers on the VM's read-only **inbox** disk (the item after
+   512 bytes, then a header): the item if that job is one of its `readers` (same run)
+   or `later` readers, `none` once the job that would put it has finished and its
+   outbox is filed, else it waits up to `wait` seconds. A VM still cannot open any
+   connection to the Beelink. `wait` is at most 1800 seconds. `later` readers
+   are honoured only for a run of the default branch that is not a pull request's,
+   and a VM gets at most 50 answers.
+3. Item names are `a-z`, `0-9` and `-`; job names need no spaces, so a matrix or
+   called workflow's job (`build (3.12)`, `call / build`) cannot put or be named in
+   `from`. Handoffs are root's alone on the Beelink (`0700`).
 
 There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
 Operating). Auto Kaizen runs no more tasks at once than this number, set in its

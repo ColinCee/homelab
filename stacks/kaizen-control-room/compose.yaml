@@ -11,9 +11,13 @@ services:
       # The CI runner's status file (docs/runbooks/ci-runner.md); empty until the
       # supervisor writes it.
       - /var/lib/homelab-ci/status:/machines:ro
+      # What Kaizen's runs hand on (the handoff action, docs/runbooks/ci-runner.md): held changes, asks'
+      # pictures, the factory manager's answers.
+      - /var/lib/homelab-ci/handoff/ColinCee__auto-kaizen:/handoffs:ro
     environment:
       KAIZEN_APP_ID: ${KAIZEN_APP_ID:?}
       KAIZEN_MACHINES_FILE: /machines/machines.json
+      KAIZEN_HANDOFFS: /handoffs
       KAIZEN_APP_KEY_FILE: /run/secrets/kaizen_app_key
       # Grafana's alerts come in on /alert with this secret (auto-kaizen src/kaizen/alert.py).
       KAIZEN_ALERT_SECRET_FILE: /run/secrets/kaizen_alert_secret
