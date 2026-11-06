@@ -11,7 +11,10 @@ moves only when every selected stack deploys, so a failed deploy is retried next
 time. A changed GitHub secret reaches a stack only when that stack next deploys:
 run `scripts/deploy.sh <stack>` by hand, or delete the marker so the next push
 deploys everything. Compose leaves unchanged containers running. CI and deployment are separate workflows;
-require CI on pull requests before merging.
+require CI on pull requests before merging. A pull request that only moves
+`image:` pins to new `name:tag@sha256:` digests in existing `compose.yaml` files
+gets only Compose validation in the `check` job
+([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run ci`.
 
 A deploy that changes the Control room's pinned image also reports how many
 seconds passed from its auto-kaizen merge to the new version answering, split
