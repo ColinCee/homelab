@@ -193,6 +193,8 @@ Match User ci-peer
     ClientAliveCountMax 3
 EOF
   mv "$door_conf.new" "$door_conf"
+  # sshd -t needs this; socket activation makes it only when a connection comes.
+  install -d -m 0755 /run/sshd
   address=$(tailscale ip -4 | head -n 1)
   [[ $address =~ ^[0-9.]+$ ]] || { echo "no Tailscale address for the door" >&2; exit 1; }
   printf '[Socket]\nListenStream=%s:%s\n' "$address" "$door_port" > "$door_socket.new"
