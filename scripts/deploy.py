@@ -11,7 +11,8 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
@@ -37,6 +38,8 @@ class DeploymentReport:
 
     completed: tuple[str, ...]
     failed: Mapping[str, str]
+    # When each completed stack's `up --wait` returned, as ISO UTC times.
+    ready_at: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def partial(self) -> bool:
@@ -112,6 +115,13 @@ def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None
     know the commit, or shared deploy files changed. Deleted stacks are left
     out, as deploys never remove a stack.
     """
+    paths = _changed_paths(repo_root, since)
+    if paths is None or any(path.startswith(SHARED_PATHS) for path in paths):
+        return None
+    return _stacks_in(repo_root, paths)
+
+
+def _changed_paths(repo_root: Path, since: str | None) -> list[str] | None:
     if not since:
         return None
     listed = subprocess.run(
@@ -121,17 +131,80 @@ def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None
         text=True,
         check=False,
     )
-    if listed.returncode != 0:
-        return None
-    paths = listed.stdout.splitlines()
-    if any(path.startswith(SHARED_PATHS) for path in paths):
-        return None
+    return listed.stdout.splitlines() if listed.returncode == 0 else None
+
+
+def _stacks_in(repo_root: Path, paths: Sequence[str]) -> tuple[str, ...]:
     names = {
         path.split("/")[1] for path in paths if path.startswith("stacks/") and path.count("/") >= 2
     }
     return tuple(
         sorted(name for name in names if (repo_root / "stacks" / name / "compose.yaml").is_file())
     )
+
+
+def changed_first(
+    repo_root: Path,
+    plans: Sequence[StackPlan],
+    since: str | None,
+    *,
+    runner: CommandRunner = subprocess.run,
+) -> tuple[StackPlan, ...]:
+    """Move the stacks changed since ``since`` to the front, so the push's change goes live first.
+
+    A changed stack still comes after any stack that creates a network or volume it uses as
+    external, so a fresh host can create it first. The old order stays when git does not know
+    ``since`` or Compose cannot describe a stack.
+    """
+    paths = _changed_paths(repo_root, since)
+    changed = set(_stacks_in(repo_root, paths)) if paths is not None else set()
+    if not changed & {plan.name for plan in plans}:
+        return tuple(plans)
+    try:
+        resources = {plan.name: _shared_resources(repo_root, plan, runner) for plan in plans}
+    except (OSError, ValueError, subprocess.CalledProcessError):
+        return tuple(plans)
+
+    ordered: list[str] = []
+
+    def place(name: str, waiting: frozenset[str]) -> None:
+        if name in ordered or name in waiting:
+            return
+        uses = resources[name][1]
+        for other in resources:
+            if other != name and uses & resources[other][0]:
+                place(other, waiting | {name})
+        ordered.append(name)
+
+    for plan in plans:
+        if plan.name in changed:
+            place(plan.name, frozenset())
+    by_name = {plan.name: plan for plan in plans}
+    return tuple(by_name[name] for name in ordered) + tuple(
+        plan for plan in plans if plan.name not in ordered
+    )
+
+
+def _shared_resources(
+    repo_root: Path, plan: StackPlan, runner: CommandRunner
+) -> tuple[set[str], set[str]]:
+    """The network and volume names a stack creates, and the external ones it needs."""
+    described = runner(
+        compose_command(plan, "config", "--format", "json"),
+        cwd=repo_root,
+        env=_compose_environment(),
+        check=True,
+        capture_output=True,
+    )
+    config = json.loads(described.stdout)
+    creates: set[str] = set()
+    uses: set[str] = set()
+    for kind in ("networks", "volumes"):
+        for key, resource in (config.get(kind) or {}).items():
+            resource = resource or {}
+            name = resource.get("name") or key
+            (uses if resource.get("external") else creates).add(name)
+    return creates, uses
 
 
 def head_commit(repo_root: Path) -> str:
@@ -206,6 +279,7 @@ def deploy(
     validate_plans(repo_root, plans, runner=runner)
     completed: list[str] = []
     failed: dict[str, str] = {}
+    ready_at: dict[str, str] = {}
 
     for plan in plans:
         environment = _compose_environment()
@@ -231,6 +305,7 @@ def deploy(
                 env=environment,
                 check=True,
             )
+            ready = datetime.now(UTC).isoformat()
             install_systemd_units(plan.timers, unit_dir=unit_dir, runner=runner)
         except (OSError, subprocess.CalledProcessError) as exc:
             reason = _failure_reason(exc)
@@ -239,9 +314,10 @@ def deploy(
             continue
 
         completed.append(plan.name)
-        print(f"Deployed: {plan.name}")
+        ready_at[plan.name] = ready
+        print(f"Deployed: {plan.name}", flush=True)
 
-    report = DeploymentReport(tuple(completed), failed)
+    report = DeploymentReport(tuple(completed), failed, ready_at)
     if report.partial:
         print(
             "Partial deployment: completed "
@@ -414,6 +490,12 @@ def main() -> int:
         " it (all when unknown or shared deploy files changed), and record HEAD there"
         " once every selected stack deploys",
     )
+    parser.add_argument(
+        "--first-changed-since",
+        metavar="COMMIT",
+        help="deploy the stacks changed since COMMIT first, after any stack creating a network"
+        " or volume they use; the usual name order when git does not know COMMIT",
+    )
     parser.add_argument("stacks", nargs="*", help="stack names (default: all discovered stacks)")
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
@@ -422,6 +504,7 @@ def main() -> int:
         tuple(args.stacks),
         readiness_timeout=args.readiness_timeout,
         last_deployed=args.last_deployed,
+        first_changed_since=args.first_changed_since,
     )
 
 
@@ -431,6 +514,7 @@ def run(
     *,
     readiness_timeout: int = 120,
     last_deployed: Path | None = None,
+    first_changed_since: str | None = None,
     runner: CommandRunner = subprocess.run,
 ) -> int:
     """Deploy the given, changed or all stacks; exit code 0 ok, 1 failed, 2 bad input."""
@@ -446,6 +530,9 @@ def run(
 
     try:
         plans = discover_stack_plans(repo_root, selected) if selected != () else ()
+        if first_changed_since and plans:
+            plans = changed_first(repo_root, plans, first_changed_since, runner=runner)
+            print("In order: " + ", ".join(plan.name for plan in plans), flush=True)
         report = (
             deploy(repo_root, plans, readiness_timeout=readiness_timeout, runner=runner)
             if plans
@@ -458,6 +545,7 @@ def run(
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as file:
             file.write(f"deployed={json.dumps(list(report.completed))}\n")
+            file.write(f"ready_at={json.dumps(dict(report.ready_at))}\n")
     if report.failed:
         return 1
     if head and last_deployed is not None:

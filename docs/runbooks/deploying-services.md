@@ -8,7 +8,9 @@ stacks whose files changed since the last full deploy. A change to `scripts/`
 or the deploy workflow, or an unknown last deploy, deploys every stack. The
 last fully deployed commit is kept in `~/.local/state/homelab/last-deployed` and
 moves only when every selected stack deploys, so a failed deploy is retried next
-time. A changed GitHub secret reaches a stack only when that stack next deploys:
+time. Stacks deploy in name order, except that the push's own changed stacks go
+first, each after any stack that creates a network or volume it uses as
+external (read from `docker compose config`), so a fresh host still works. A changed GitHub secret reaches a stack only when that stack next deploys:
 run `scripts/deploy.sh <stack>` by hand, or delete the marker so the next push
 deploys everything. Compose leaves unchanged containers running. CI and deployment are separate workflows;
 require CI on pull requests before merging. A pull request that only moves
@@ -17,11 +19,14 @@ gets only Compose validation in the `check` job
 ([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
 
 A deploy that changes the Control room's pinned image also reports how many
-seconds passed from its auto-kaizen merge to the new version answering, split
+seconds passed from its auto-kaizen merge to the new version going live, split
 into the image build, the homelab pull request and the deploy, as a "Control
 room live" notice and a table in the run's summary
-([`control_room_timing.py`](../../scripts/control_room_timing.py)). It only
-measures, and a measuring failure never fails the deploy.
+([`control_room_timing.py`](../../scripts/control_room_timing.py)). Live is the
+first `/state` answer naming the commit baked into the pinned image, at or after
+the Control room stack came up (its `ready_at` from the deploy step); a watcher
+logs `/state` from before the deploy, so stacks deployed after it do not count.
+It only measures, and a measuring failure never fails the deploy.
 
 ## Ownership and deployment contract
 
