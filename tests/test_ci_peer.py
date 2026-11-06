@@ -241,6 +241,8 @@ def test_an_outbox_is_sent_up_to_its_first_hole_and_only_with_a_header(folders) 
     tar = folders / "out.tar"
     tar.write_bytes(b"homelab-ci-outbox\n")
     assert sup.outbox_end(tar) == 0
+    tar.write_bytes(b"homelab-ci-cache v1 run=70 attempt=1\n".ljust(8192, b"x"))
+    assert sup.outbox_end(tar) == 0  # the Beelink keeps no cache from a PC VM
     with tar.open("wb") as f:
         f.write(b"homelab-ci-handoff v1 run=70 attempt=1\n".ljust(8192, b"x"))
         f.truncate(sup.OUTBOX_BYTES)
