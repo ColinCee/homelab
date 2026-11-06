@@ -16,13 +16,16 @@ services:
     volumes:
       - ./config:/config
       - /etc/localtime:/etc/localtime:ro
-      - /run/dbus:/run/dbus:ro # Required for Bluetooth communication
     environment:
       - TZ=Europe/London
     restart: unless-stopped
-    cap_add:
-      - NET_ADMIN # Required for Bluetooth management
-      - NET_RAW # Required for Bluetooth management
+    # Bluetooth is off: no D-Bus mount, no NET_ADMIN, and NET_RAW (a Docker
+    # default) dropped, so on the host network it can neither change the
+    # firewall nor capture other containers' traffic. Add them back only if
+    # Bluetooth devices are wanted.
+    cap_drop:
+      - NET_RAW
     security_opt:
-      - apparmor:unconfined # Required for host device access
+      - no-new-privileges:true
+    # mDNS and other local discovery.
     network_mode: host
