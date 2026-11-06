@@ -29,6 +29,6 @@ run = "uv run python -m pytest tests/ -q"
 description = "Validate Compose without changing local secrets"
 run = "scripts/validate-compose.sh"
 
-[tasks.ci]
+[tasks.check]
 description = "Run CI checks"
 depends = ["lint", "typecheck", "test", "validate:compose"]
