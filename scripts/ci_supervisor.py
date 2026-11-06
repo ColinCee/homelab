@@ -1611,7 +1611,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     starts = plan([w for w in oldest_first if w[1] != LIGHT_LABEL], booting, len(free))
     light_starts = plan([w for w in oldest_first if w[1] == LIGHT_LABEL], booting, len(light_free))
     # The VMs started this poll are counted by their size: they have touched almost
-    # nothing yet, so MemAvailable does not show them. Builds first, then light jobs.
+    # nothing yet, so MemAvailable does not show them.
     reserve = memory_reserve_mib()
     room = mem_available_mib() - reserve
     disk_wait = disk_wait_percent()
@@ -1620,6 +1620,14 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     if disk_busy:
         room = min(room, 0)
 
+    def why(need: int) -> str:
+        """Why a job needing `need` MiB is held: the disk or memory."""
+        if disk_busy or disk_paced:
+            return f"the disk (tasks waited on it {disk_wait:.0f}% of the last minute)"
+        return (
+            f"memory ({max(room, 0)} MiB free above the {reserve} MiB reserve, a VM needs {need})"
+        )
+
     def pace() -> None:
         """One VM a minute while the disk is half busy: no more room after this start."""
         nonlocal room
@@ -1627,47 +1635,60 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             state.disk_paced_until = now + DISK_PACE_SECONDS
             room = min(room, 0)
 
-    started = 0
-    for slot, (repo, label) in zip(free, starts, strict=False):
-        mem = next_size(state, False)[1]
-        if mem > room:
-            break
-        launch(gh, state, repo, slot, now, label=label, cache=cache_for(repo, label, private))
-        room -= mem
-        started += 1
-        pace()
-    light_started = 0
-    for slot, (repo, label) in zip(light_free, light_starts, strict=False):
-        # A build held for memory goes first: no light VM takes the memory it waits for.
-        if started < len(starts) or LIGHT_SIZE[1] > room:
-            break
-        launch(gh, state, repo, slot, now, label=label, cache=None)
-        room -= LIGHT_SIZE[1]
-        light_started += 1
+    # Oldest job first across both kinds: a build held for memory holds back only the
+    # light jobs queued after it, so a task's quick gate or merge step queued before it
+    # still starts when there is room for its small VM, and neither kind starves the other.
+    builds = with_job_ids(starts, job_ids, booting)
+    lights = with_job_ids(light_starts, job_ids, booting)
+    held: dict[int, tuple[str, str]] = {}
+    oldest_held_build: int | None = None
+    started = light_started = 0
+    for job_id, (repo, label) in sorted(builds + lights):
+        if label != LIGHT_LABEL:
+            mem = next_size(state, False)[1]
+            if oldest_held_build is not None or mem > room:
+                if oldest_held_build is None:
+                    oldest_held_build = job_id
+                held[job_id] = (repo, why(mem))
+                continue
+            launch(
+                gh,
+                state,
+                repo,
+                free[started],
+                now,
+                label=label,
+                cache=cache_for(repo, label, private),
+            )
+            room -= mem
+            started += 1
+        elif LIGHT_SIZE[1] > room:
+            held[job_id] = (repo, why(LIGHT_SIZE[1]))
+            continue
+        elif oldest_held_build is not None:
+            held[job_id] = (repo, "an older build waiting for memory")
+            continue
+        else:
+            launch(gh, state, repo, light_free[light_started], now, label=label, cache=None)
+            room -= LIGHT_SIZE[1]
+            light_started += 1
         pace()
     launched = starts[:started] + light_starts[:light_started]
-    held = starts[started:] + light_starts[light_started:]
-    hold_for_memory(state, repos, held, job_ids, booting + Counter(launched))
-    # Per want, as plan() takes them: the oldest jobs are covered by booting VMs, the next
-    # started, then held for memory or the disk, and the rest found no free slot.
+    hold_for_memory(state, repos, held)
+    # The rest of each want's jobs: the oldest are covered by VMs on their way, the next
+    # were planned (started or held above), and the rest found no free slot.
+    planned = {job_id for job_id, _ in builds + lights}
     for want, ids in job_ids.items():
-        light = want[1] == LIGHT_LABEL
-        kind, slots = ("light", state.light_slots) if light else ("build", state.slots)
-        if disk_busy or disk_paced:
-            hold = f"the disk (tasks waited on it {disk_wait:.0f}% of the last minute)"
-        else:
-            need = LIGHT_SIZE[1] if light else next_size(state, False)[1]
-            free_mib = max(room, 0)
-            hold = (
-                f"memory ({free_mib} MiB free above the {reserve} MiB reserve, a VM needs {need})"
-            )
-        order: list[str | None] = (
-            [BOOTING] * booting[want] + [None] * launched.count(want) + [hold] * held.count(want)
+        kind, slots = (
+            ("light", state.light_slots) if want[1] == LIGHT_LABEL else ("build", state.slots)
         )
-        for i, job_id in enumerate(sorted(ids)):
-            reason = order[i] if i < len(order) else f"all {slots} {kind} slots in use"
-            if reason:
-                reasons[job_id] = (want[0], reason)
+        for n, job_id in enumerate(sorted(ids)):
+            if job_id in held:
+                reasons[job_id] = held[job_id]
+            elif n < booting[want]:
+                reasons[job_id] = (want[0], BOOTING)
+            elif job_id not in planned:
+                reasons[job_id] = (want[0], f"all {slots} {kind} slots in use")
     note_waits(state, private, reasons, now)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
@@ -1680,8 +1701,14 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             for want, n in waiting.items()
         ):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
-        # The light standby also gives its memory to a build job waiting for it.
-        elif run.standby and run.light and started < len(starts):
+        # The light standby also gives its memory to a build job waiting for it, unless
+        # light jobs it would serve were queued before that build.
+        elif (
+            run.standby
+            and run.light
+            and oldest_held_build is not None
+            and all(oldest_held_build < i for i in job_ids.get(run.want, []))
+        ):
             stop_if_still_idle(gh, run, "is in the way of a job waiting for memory")
     standbys = [r for r in state.launches.values() if r.standby]
     # A standby is the first thing given up: never booted while a job waits for memory.
@@ -1719,21 +1746,26 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     return spent
 
 
-def hold_for_memory(
-    state: State,
-    repos: list[str],
-    held: list[Want],
-    job_ids: Mapping[Want, list[int]],
-    covered: Mapping[Want, int],
-) -> None:
-    """Note the queued jobs left waiting for memory or the disk. They stay queued and are
-    tried again next poll. Jobs of repos not polled this time keep their mark."""
-    now_held: dict[int, str] = {}
-    for want, n in Counter(held).items():
-        skip = covered.get(want, 0)
-        for job_id in sorted(job_ids.get(want, []))[skip : skip + n]:
-            now_held[job_id] = want[0]
-    state.held = {i: r for i, r in state.held.items() if r not in repos} | now_held
+def with_job_ids(
+    starts: list[Want], job_ids: Mapping[Want, list[int]], covered: Mapping[Want, int]
+) -> list[tuple[int, Want]]:
+    """Each planned start with the id of the job it is for: a want's oldest jobs not
+    covered by a VM already on its way, in order."""
+    taken = Counter(covered)
+    paired: list[tuple[int, Want]] = []
+    for want in starts:
+        paired.append((sorted(job_ids[want])[taken[want]], want))
+        taken[want] += 1
+    return paired
+
+
+def hold_for_memory(state: State, repos: list[str], held: Mapping[int, tuple[str, str]]) -> None:
+    """Note the queued jobs left waiting for memory or the disk (job id: its repo and why).
+    They stay queued and are tried again next poll; note_waits logs them. Jobs of repos not
+    polled this time keep their mark."""
+    state.held = {i: r for i, r in state.held.items() if r not in repos} | {
+        i: repo for i, (repo, _) in held.items()
+    }
 
 
 def duration(seconds: float) -> str:
@@ -1753,7 +1785,7 @@ def note_waits(
             if wait.logged is not None:
                 waited = duration(now - wait.since)
                 log(f"job {job_id} in {wait.repo} stopped waiting after {waited}")
-    for job_id, (repo, why) in reasons.items():
+    for job_id, (repo, why) in sorted(reasons.items()):
         wait = state.waits.setdefault(job_id, Wait(repo, now))
         waited = now - wait.since
         quiet = why == BOOTING and waited < WAIT_LOG_SECONDS

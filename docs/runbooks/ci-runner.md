@@ -152,7 +152,8 @@ process, not the VM.
 Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's gate, merge and Watcher). They run in five light slots of their own, numbered after the
 build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, 2 GiB, no cache disk, a 3-hour
 timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
-merge waiting on CI never takes the slot that CI needs. Builds get memory first.
+merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
+build waiting for memory holds back only the light jobs queued after it (see [Why a job waits](#why-a-job-waits)).
 
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
@@ -162,7 +163,8 @@ VM drops its cache once it passes a quarter of its memory, and the balloon
 device's free page reporting returns the freed pages to the host. So this counts
 what is really free, not the sizes added up. When a VM ends, the journal says how
 much memory it used at most (`slot N: VM ended (exit 0), its memory peaked at X
-MiB of Y`), to size VMs by kind of job. No VM starts either while tasks waited on the disk for
+MiB of Y`), to size VMs by kind of job. A VM never swaps: its memory cap (guest RAM plus 256 MiB) also counts
+the host's cache of its disk, which goes first (`run-vm.sh`). No VM starts either while tasks waited on the disk for
 over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
 a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
 or the disk stays queued and is tried again on the
@@ -216,7 +218,7 @@ GitHub-hosted runners and take it off the token's repository access.
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
   first and last steps start in seconds. It gives way first: none boots while a job
   waits for memory or the disk, and an idle one is stopped for another repo's light job with no
-  light slot free or for a build job waiting for memory. It is replaced every 45
+  light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
@@ -263,6 +265,9 @@ sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -t homelab-ci-vm -f
 ```
 
+`install-host.sh` also trims the SSD hourly instead of weekly: the VMs' throwaway write files churn about
+0.5 TB a day, and untrimmed they slow every write (`systemd/fstrim-hourly.conf`).
+
 `/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
 missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
@@ -271,7 +276,7 @@ and taps; the supervisor reads it when it starts, and `setup-net.sh` and
 works the same way (`LIGHT_SLOTS`, 5 by default; the supervisor counts none until the file exists), and the users
 and taps cover both. Change either only through `install-host.sh`, so the network always has a tap for every slot.
 With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 2 GiB per light slot (22 GiB for
-5 + 5); light VMs mostly wait and builds get memory first. A job touches far less
+5 + 5); light VMs mostly wait and the oldest job gets memory first. A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
 and the memory check above holds a VM back before the services' reserve is
 reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
@@ -346,6 +351,7 @@ and then every 3 minutes, with how long it has waited since the supervisor first
 |---|---|
 | `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
+| `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
 | `a VM booting or waiting ready for it` | A VM is up for it but GitHub has not given it the job; logged only after 3 minutes |
 | `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |

@@ -78,6 +78,14 @@ install_vm_files() {
 # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 install -d -o root -g root -m 0700 /var/lib/homelab-ci/outbox
+# The SSD is trimmed hourly (the reason is in the file). Restarted only when it changes, as a restart
+# can run a trim missed under the weekly schedule at once.
+trim=/etc/systemd/system/fstrim.timer.d/hourly.conf
+if ! cmp -s "$here/systemd/fstrim-hourly.conf" "$trim"; then
+  install -D -o root -g root -m 0644 "$here/systemd/fstrim-hourly.conf" "$trim"
+  systemctl daemon-reload
+  systemctl restart fstrim.timer
+fi
 
 # The supervisor, the network rules and the slot counts take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the
