@@ -39,6 +39,15 @@ function GpuBusy {
     return ($held -or (($use -match '^\d+$') -and [int]$use -gt $busyPercent))
 }
 
+# What the lease band above Claude's prompt shows after kaizen-ci: the PC's runners busy/online, from
+# GitHub, or ‖ while paused for the GPU.
+function Status($paused) {
+    if ($paused) { return '‖' }
+    $pc = & gh api "repos/$repo/actions/runners?per_page=100" --jq '[.runners[] | select((.name | startswith("pc-")) and .status == "online")] | "\(map(select(.busy)) | length)/\(length)"' 2>$null
+    if ($pc -match '^\d+/\d+$') { return $pc }
+    return '?'
+}
+
 function SetGuestSlots($n) {
     & ssh @guest "echo $n | sudo tee /etc/homelab-ci/pc-slots >/dev/null"
     return $LASTEXITCODE -eq 0
@@ -55,6 +64,7 @@ $capSet = [int](& gh variable get KAIZEN_TASK_SLOTS -R $repo 2>$null | Select-Ob
 if ($capSet -le 0) { $capSet = $beelinkSlots }
 $given = -1; $slotsSaid = [datetime]::MinValue; $capSince = Get-Date; $capTried = [datetime]::MinValue; $busyRuns = 0; $lastBusy = [datetime]::MinValue; $capped = $false
 $leaseGb = 0
+$status = '?'; $statusAsked = [datetime]::MinValue
 while ($true) {
     $want = Wanted
     if (GpuBusy) { $busyRuns++ } else { $busyRuns = 0 }
@@ -76,13 +86,16 @@ while ($true) {
         $leaseGb = 0
     }
     if ($running) {
+        if ($gaming -ne ($status -eq '‖') -or ((Get-Date) - $statusAsked).TotalSeconds -ge 60) {
+            $status = Status $gaming; $statusAsked = Get-Date
+        }
         $gb = 12
         try { $gb = [int]((Get-VM -Name $vm -ErrorAction Stop).MemoryStartup / 1GB) } catch { }
         if ($leaseGb -eq 0) {
-            & lease take --name $vm --res "ram:$gb" --pid $PID --note 'kaizen-ci Hyper-V VM (Auto Kaizen builds)' | Out-Null
+            & lease take --name $vm --res "ram:$gb" --pid $PID --note 'kaizen-ci Hyper-V VM (Auto Kaizen builds)' --status $status | Out-Null
             if ($LASTEXITCODE -eq 0) { $leaseGb = $gb }
         } else {
-            & lease renew --name $vm --pid $PID | Out-Null
+            & lease renew --name $vm --pid $PID --status $status | Out-Null
             if ($LASTEXITCODE -eq 3) {
                 Say 'lease freed: powering the guest off'
                 & ssh @guest 'sudo poweroff'

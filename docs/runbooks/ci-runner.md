@@ -464,7 +464,8 @@ Light jobs stay on the Beelink.
 - **Gaming:** `keeper.ps1` (Colin's Startup folder) gives 0 slots while the GPU is over 30% for 15 s or a `gpu`
   lease is held, caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
   runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
-  trouble. `lease free --force --name kaizen-ci` powers the guest off at once.
+  trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, shown after
+  `kaizen-ci` in the band above Claude's prompt, is the PC runners busy/online (`‖` while paused).
 - **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` (with Colin's `gh`) to 5 plus the PC VMs up (down
   at once, up after 10 minutes). If the PC dies with it raised, extra tasks wait for a machine; `gh variable set KAIZEN_TASK_SLOTS
   --body 5 -R ColinCee/auto-kaizen` sets it back.
