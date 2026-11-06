@@ -144,7 +144,9 @@ groups:
           chart_line: "1"
           value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} MB/s{{ end }}"
           description: "Threshold: over 1 MB/s swapped out for 30 minutes."
-          action: "Check which VMs or containers hold swap (VmSwap in /proc/*/status) and the CI memory notes in docs/runbooks/ci-runner.md."
+          action: >-
+            Check which VMs or containers hold swap (VmSwap in /proc/*/status) and the CI memory
+            notes in docs/runbooks/ci-runner.md.
         labels:
           severity: warning
 
@@ -190,7 +192,9 @@ groups:
           chart_line: "60"
           value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
           description: "Threshold: tasks waited on the disk over 60% of the time for 30 minutes."
-          action: "Check write rate and latency (iostat -dx nvme0n1), when the SSD was last trimmed (journalctl -u fstrim) and the CI disk notes in docs/runbooks/ci-runner.md."
+          action: >-
+            Check write rate and latency (iostat -dx nvme0n1), when the SSD was last trimmed
+            (journalctl -u fstrim) and the CI disk notes in docs/runbooks/ci-runner.md.
         labels:
           severity: warning
 
