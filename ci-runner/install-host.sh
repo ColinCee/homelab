@@ -40,7 +40,8 @@ echo 'w /sys/kernel/mm/ksm/run - - - - 0' > /etc/tmpfiles.d/homelab-ci-ksm.conf
 echo 0 > /sys/kernel/mm/ksm/run
 
 # Firecracker and jailer, pinned and checked against the hash in versions.env.
-if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${FIRECRACKER_VERSION}\$"; then
+if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${FIRECRACKER_VERSION}\$" ||
+  ! /usr/local/bin/jailer --version 2>/dev/null | grep -q "Jailer ${FIRECRACKER_VERSION}\$"; then
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
   tgz="firecracker-${FIRECRACKER_VERSION}-x86_64.tgz"
