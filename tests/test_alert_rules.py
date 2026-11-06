@@ -1,5 +1,5 @@
 """Grafana's alert rules carry what Auto Kaizen's #alerts posts show: a plain name, the
-measure, when it triggers and, for number alerts, the chart's query (the rule's own)."""
+measure, when a measured one triggers and, for number alerts, the chart's query (the rule's own)."""
 
 import re
 from pathlib import Path
@@ -11,10 +11,13 @@ GROUPS = yaml.safe_load((ALERTING / "rules.yaml").read_text(encoding="utf-8"))["
 RULES = [r for g in GROUPS for r in g["rules"]]
 
 
-def test_every_rule_names_its_measure_and_trigger() -> None:
+def test_every_rule_names_its_measure_and_a_measured_one_its_trigger() -> None:
     for rule in RULES:
         notes = rule["annotations"]
-        assert notes.get("measure") and notes.get("trigger"), rule["uid"]
+        assert notes.get("measure"), rule["uid"]
+        # A rule that names a thing (a new device) has no threshold, so no Triggers at box.
+        measured = "$values" in notes.get("value", "")
+        assert bool(notes.get("trigger")) == measured, rule["uid"]
         assert len(rule["title"].split()) <= 8, f"{rule['uid']}: say the symptom in a few words"
 
 

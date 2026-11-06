@@ -312,7 +312,6 @@ groups:
         annotations:
           summary: "Unknown container running"
           measure: "Container"
-          trigger: "a name not seen in the week before, running 15 min"
           value: "{{ $labels.name }}"
           description: "Container {{ $labels.name }} has run on the Beelink for 15 minutes and was not seen in the week before."
           action: >-
@@ -331,9 +330,9 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              # Seconds since each device visible to the Beelink was added to the
-              # tailnet (stacks/observability/systemd/observability-tailnet.service).
-              expr: time() - max by (name, os) (homelab_tailnet_device_created_timestamp_seconds)
+              # When each device visible to the Beelink was added to the tailnet
+              # (stacks/observability/systemd/observability-tailnet.service).
+              expr: max by (name, os) (homelab_tailnet_device_created_timestamp_seconds)
               instant: true
               refId: A
           - refId: C
@@ -345,9 +344,11 @@ groups:
               type: threshold
               expression: A
               conditions:
+                # Devices added before this time are approved. The alert stays on
+                # until the device leaves the tailnet or this moves past its added time.
                 - evaluator:
-                    type: lt
-                    params: [3600]
+                    type: gt
+                    params: [1793962000]  # 6 Nov 2026 10:46 UTC
               refId: C
         noDataState: OK
         execErrState: Error
@@ -355,12 +356,15 @@ groups:
         annotations:
           summary: "New Tailscale device"
           measure: "Device"
-          trigger: "added to the tailnet in the last hour"
-          value: "{{ $labels.name }}"
+          value: "{{ reReplaceAll \"[.].*\" \"\" $labels.name }} ({{ $labels.os }})"
           description: "{{ $labels.name }} ({{ $labels.os }}) was added to the tailnet and is visible to the Beelink."
           action: >-
-            Expected if you just signed in a new device. Otherwise remove it at
-            https://login.tailscale.com/admin/machines and rotate any secret it could reach.
+            Ask Colin whether it is his. If yes, approve it by raising this rule's
+            threshold in stacks/observability/provisioning/alerting/rules.yaml to
+            {{ with $values.A }}{{ printf "%.0f" .Value }}{{ end }}; that approves every device
+            added before it too, so first check none of the other firing devices is unknown.
+            If not his, he removes it at https://login.tailscale.com/admin/machines and rotates
+            any secret it could reach.
         labels:
           severity: warning
 
@@ -403,6 +407,49 @@ groups:
           action: >-
             Check `systemctl --user status observability-tailnet.service` and
             `tailscale status` on the Beelink, and that colin owns /var/lib/homelab-metrics.
+        labels:
+          severity: warning
+
+      - uid: pc-backup-stale
+        title: PC backup stopped arriving
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Newest file the PC sent (stacks/backup/systemd/backup-pc-receive.service).
+              # 50 h lets one night pass with the PC off.
+              expr: (time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [50]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 30m
+        annotations:
+          summary: "PC backup"
+          measure: "Newest PC backup"
+          trigger: "over 50 h old"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} h old{{ else }}never{{ end }}"
+          description: "No backup file has arrived from the Windows PC in over 50 hours."
+          action: >-
+            Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then
+            `systemctl --user status backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
         labels:
           severity: warning
 
