@@ -161,12 +161,14 @@ echo 0 > "$peak_file"
 ) </dev/null >/dev/null 2>&1 9>&- &
 sampler=$!
 
-# Memory capped a little above the guest's.
+# Memory capped a little above the guest's, with no swap: the cap also counts the host's cache of
+# the VM's own disk, and at the cap the kernel swapped guest RAM out rather than drop that cache.
+# Guest RAM plus Firecracker's own (under 100 MiB) fits in the cap, so only the cache goes.
 # The lock stays with this script: if it dies, the next run kills the orphan.
 status="stopped"
 timeout --kill-after=10 "$timeout" /usr/local/bin/jailer \
   --id "$id" --exec-file /usr/local/bin/firecracker \
   --uid "$uid" --gid "$gid" --chroot-base-dir "$base" \
-  --cgroup-version 2 --cgroup "cpu.weight=20" --cgroup "memory.max=$(((MEM_MIB + 256) * 1024 * 1024))" \
+  --cgroup-version 2 --cgroup "cpu.weight=20" --cgroup "memory.max=$(((MEM_MIB + 256) * 1024 * 1024))" --cgroup "memory.swap.max=0" \
   -- --config-file vm.json --no-api --metadata metadata.json --level Warning </dev/null 9>&- && status="exit 0" || status="exit $?"
 exit "${status#exit }"
