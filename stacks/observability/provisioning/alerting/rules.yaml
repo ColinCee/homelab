@@ -321,6 +321,49 @@ groups:
         labels:
           severity: warning
 
+      - uid: new-tailnet-device
+        title: New Tailscale device
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Seconds since each device the Beelink can reach was added to the
+              # tailnet (stacks/observability/systemd/observability-tailnet.service).
+              expr: time() - max by (name, os) (homelab_tailnet_device_created_timestamp_seconds)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [3600]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "New Tailscale device"
+          measure: "Device"
+          trigger: "added to the tailnet in the last hour"
+          value: "{{ $labels.name }}"
+          description: "{{ $labels.name }} ({{ $labels.os }}) was added to the tailnet and can reach the Beelink."
+          action: >-
+            Expected if you just signed in a new device. Otherwise remove it at
+            https://login.tailscale.com/admin/machines and rotate any secret it could reach.
+        labels:
+          severity: warning
+
   - orgId: 1
     name: Kaizen
     # Grafana keeps alert rules in a folder; this one holds no dashboards.
