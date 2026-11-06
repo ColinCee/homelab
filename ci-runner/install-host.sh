@@ -21,6 +21,17 @@ if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else
 LIGHT_SLOTS=${LIGHT_SLOTS:-$(cat /etc/homelab-ci/light-slots 2>/dev/null || true)}
 LIGHT_SLOTS=${LIGHT_SLOTS//[[:space:]]/}
 if [[ $LIGHT_SLOTS =~ ^[0-9]+$ ]]; then LIGHT_SLOTS=$((10#$LIGHT_SLOTS)); else LIGHT_SLOTS=5; fi
+# ROLE=pc on the PC's Hyper-V guest: ready runners registered through the Beelink's door
+# (ci_supervisor.py pc), no GitHub token, no light slots. Kept in /etc/homelab-ci/role.
+ROLE=${ROLE:-$(cat /etc/homelab-ci/role 2>/dev/null || echo beelink)}
+[[ $ROLE == beelink || $ROLE == pc ]] || { echo "ROLE is beelink or pc" >&2; exit 2; }
+service=homelab-ci-supervisor.service
+if [[ $ROLE == pc ]]; then LIGHT_SLOTS=0 service=homelab-ci-pc.service; fi
+# On the Beelink, the door for the PC's slots ("PC build slots" in ci-runner.md): at most
+# PEER_SLOTS runners, else /etc/homelab-ci/peer-slots-max, else 0 (closed).
+PEER_SLOTS=${PEER_SLOTS:-$(cat /etc/homelab-ci/peer-slots-max 2>/dev/null || true)}
+PEER_SLOTS=${PEER_SLOTS//[[:space:]]/}
+[[ $PEER_SLOTS =~ ^[0-9]+$ && $ROLE == beelink ]] && PEER_SLOTS=$((10#$PEER_SLOTS)) || PEER_SLOTS=0
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between
@@ -60,8 +71,8 @@ was_running=false
 # However this ends, the reason goes and a supervisor that was running runs again.
 finish() {
   rm -f /run/homelab-ci/restart-reason
-  if $was_running && ! systemctl is-active --quiet homelab-ci-supervisor.service; then
-    systemctl start homelab-ci-supervisor.service || true
+  if $was_running && ! systemctl is-active --quiet "$service"; then
+    systemctl start "$service" || true
   fi
 }
 trap finish EXIT
@@ -95,24 +106,26 @@ restart=false
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
   "net/homelab-ci.nft:$dest/net/homelab-ci.nft" "net/setup-net.sh:$dest/net/setup-net.sh" \
   "systemd/homelab-ci-net.service:/etc/systemd/system/homelab-ci-net.service" \
-  "systemd/homelab-ci-supervisor.service:/etc/systemd/system/homelab-ci-supervisor.service"; do
+  "systemd/$service:/etc/systemd/system/$service"; do
   if changed "$here/${pair%%:*}" "${pair#*:}"; then restart=true; fi
 done
-[[ "$(cat /etc/homelab-ci/slots 2>/dev/null)" == "$SLOTS" && "$(cat /etc/homelab-ci/light-slots 2>/dev/null)" == "$LIGHT_SLOTS" ]] || restart=true
-systemctl is-active --quiet homelab-ci-supervisor.service || restart=true
+for setting in "slots:$SLOTS" "light-slots:$LIGHT_SLOTS" "role:$ROLE" "peer-slots-max:$PEER_SLOTS"; do
+  [[ "$(cat "/etc/homelab-ci/${setting%%:*}" 2>/dev/null)" == "${setting#*:}" ]] || restart=true
+done
+systemctl is-active --quiet "$service" || restart=true
 
 if ! $restart; then
   install_vm_files
   how="installed while jobs ran, no restart needed"
 else
-  if systemctl is-active --quiet homelab-ci-supervisor.service; then
+  if systemctl is-active --quiet "$service"; then
     was_running=true
     # A supervisor from before VMs ran as their own units owns its VMs: stopping it waits
     # for their jobs (up to 20 minutes) instead of cutting them off.
     if ! grep -q UNIT_PREFIX "$dest/ci_supervisor.py"; then
       echo "The running supervisor owns its VMs: waiting for their jobs to finish (up to 20 minutes)."
     fi
-    systemctl stop homelab-ci-supervisor.service
+    systemctl stop "$service"
   fi
 
   # Host-side settings, never in the repo: the slot count, and the GitHub token
@@ -121,23 +134,61 @@ else
   install -d -o root -g root -m 0700 /etc/homelab-ci
   echo "$SLOTS" > /etc/homelab-ci/slots
   echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
+  echo "$ROLE" > /etc/homelab-ci/role
+  echo "$PEER_SLOTS" > /etc/homelab-ci/peer-slots-max
 
   install_vm_files
   install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
   install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
   install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
   install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
-  install -o root -g root -m 0644 "$here/systemd/homelab-ci-supervisor.service" /etc/systemd/system/homelab-ci-supervisor.service
+  install -o root -g root -m 0644 "$here/systemd/$service" "/etc/systemd/system/$service"
   systemctl daemon-reload
   systemctl enable --now homelab-ci-net.service
   # Apply rule changes in place; restarting the unit would remove the taps.
   "$dest/net/setup-net.sh" up
-  if $was_running; then
-    systemctl start homelab-ci-supervisor.service
+  if $was_running || [[ $ROLE == pc ]]; then
+    systemctl enable --now "$service"
     how="network up, supervisor restarted"
   else
     how="network up, supervisor not running"
   fi
 fi
 
-echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, $how."
+# The PC's door: user ci-peer may only reach the supervisor's socket, with the PC guest's
+# key (/etc/homelab-ci/peer.pub) from the PC's address (/etc/homelab-ci/peer-from).
+door_conf=/etc/ssh/sshd_config.d/60-ci-peer.conf door_keys=/etc/ssh/ci-peer_authorized_keys
+if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub && -f /etc/homelab-ci/peer-from ]]; then
+  command -v socat >/dev/null || apt-get install -y -qq socat >/dev/null
+  id ci-peer >/dev/null 2>&1 ||
+    useradd --system --user-group --home-dir /nonexistent --shell /bin/sh ci-peer
+  from=$(tr -d '[:space:]' < /etc/homelab-ci/peer-from)
+  [[ $from =~ ^[0-9.]+$ ]] || { echo "peer-from is not an address" >&2; exit 2; }
+  socat_cmd="/usr/bin/socat STDIO UNIX-CONNECT:/run/homelab-ci-peer/peer.sock"
+  echo "from=\"$from\",restrict,command=\"$socat_cmd\" $(head -n 1 /etc/homelab-ci/peer.pub)" > "$door_keys.new"
+  chmod 0644 "$door_keys.new"
+  mv "$door_keys.new" "$door_keys"
+  cat > "$door_conf.new" <<EOF
+Match User ci-peer
+    AuthorizedKeysFile $door_keys
+    AuthenticationMethods publickey
+    ForceCommand $socat_cmd
+    AllowTcpForwarding no
+    AllowAgentForwarding no
+    AllowStreamLocalForwarding no
+    X11Forwarding no
+    PermitTTY no
+    PermitTunnel no
+    MaxSessions 1
+    ClientAliveInterval 30
+    ClientAliveCountMax 3
+EOF
+  mv "$door_conf.new" "$door_conf"
+  sshd -t && systemctl reload ssh
+  door="door open to $from"
+else
+  if [[ -f $door_conf ]]; then rm -f "$door_conf" "$door_keys"; sshd -t && systemctl reload ssh; fi
+  door="door closed"
+fi
+
+echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots ($ROLE), $how; $door."

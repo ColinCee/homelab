@@ -1,0 +1,15 @@
+[Unit]
+Description=Keep ready Firecracker runners for Auto Kaizen's build jobs on Colin's PC
+After=homelab-ci-net.service network-online.target
+Requires=homelab-ci-net.service
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py pc
+Restart=always
+RestartSec=30
+# Each VM is a unit of its own (homelab-ci-vm-pc-*): a restart leaves running VMs alone.
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

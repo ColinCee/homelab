@@ -441,6 +441,33 @@ If the load test fails, go back to the old number with
 `sudo SLOTS=3 ci-runner/install-host.sh` (your old count), start the
 supervisor, and try 4.
 
+## PC build slots
+
+Colin's gaming PC gives Auto Kaizen extra build slots from a Hyper-V Ubuntu VM, `kaizen-ci` (VHDX on D:, nested
+virtualisation, its own NAT switch 192.168.250.0/24, no shared folders or guest file copy). It runs the same
+Firecracker VMs and network rules as the Beelink, `install-host.sh` with `ROLE=pc`, and keeps ready runners: one
+idle registered VM per slot it gives, so GitHub hands a build job (`homelab-fc`) to whichever idle runner it picks.
+Light jobs stay on the Beelink.
+
+- **No GitHub key on the PC.** The guest reaches the Beelink only as `ci-peer` over SSH (from the PC's Tailscale
+  address), forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). There the Beelink
+  registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`), reads its VM's live lines,
+  sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
+  changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes.
+- **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
+  off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
+  set once in Hyper-V for the most slots it will give.
+- **Gaming:** `keeper.ps1` (Colin's Startup folder) gives 0 slots while the GPU is over 30% for 15 s or a `gpu`
+  lease is held, caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
+  runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
+  trouble. `lease free --force --name kaizen-ci` powers the guest off at once.
+- **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` to 5 plus the slots given (down at once, up after
+  10 minutes). If the PC dies with it raised, extra tasks wait for a machine; `gh variable set KAIZEN_TASK_SLOTS
+  --body 5 -R ColinCee/auto-kaizen` sets it back.
+
+Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off, remove the keeper from the Startup
+folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink (closes the door), and set the task cap to 5.
+
 ## Review
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run

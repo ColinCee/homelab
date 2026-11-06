@@ -17,13 +17,16 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import grp
 import http.client
 import io
 import json
 import os
 import queue
 import re
+import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tarfile
@@ -683,14 +686,16 @@ def record(run: Launch) -> dict[str, Any]:
     }
 
 
-def start_vm(run: Launch, timeout: int, env: Mapping[str, str]) -> None:
+def start_vm(run: Launch, timeout: int, env: Mapping[str, str], peer: bool = False) -> None:
     """Start the VM as a systemd unit of its own, so a restart of this supervisor leaves it
     running. Its console goes through this script's `vm` mode, which keeps the live lines and
     sessions of auto-kaizen's VMs only, so a product's VM cannot put a line on a task. The
     unit stops before the CI network does, at shutdown."""
     vm = [str(run.slot), str(run.metadata), str(timeout)]
     vm += ["--repo", run.repo, "--runner", run.runner_name]
-    if run.repo.lower() == LIVE_REPO.lower():
+    if peer:
+        vm.append("--peer")
+    elif run.repo.lower() == LIVE_REPO.lower():
         session = SESSIONS_DIR / f"{run.runner_name}.jsonl"
         vm += ["--live", str(run.live_file), "--session", str(session)]
     subprocess.run(
@@ -793,6 +798,8 @@ def vm_main(argv: list[str]) -> int:
     # Whose VM it is, to answer its handoff asks.
     parser.add_argument("--repo")
     parser.add_argument("--runner")
+    # On the PC: the lines and asks go to the Beelink (PeerStream), which holds the token.
+    parser.add_argument("--peer", action="store_true")
     args = parser.parse_args(argv)
     # Stopping the unit signals every process in it: run-vm.sh cleans up on its own, and this
     # reader keeps reading until it has (a closed pipe would cut its cleanup short).
@@ -811,6 +818,14 @@ def vm_main(argv: list[str]) -> int:
             asks.put_nowait(ask)
 
     inbox = OUTBOX_DIR / f"{args.runner}.inbox"
+    if args.peer:
+        stream = PeerStream(args.runner, inbox)
+        try:
+            read_console(process.stdout, None, forward=stream.put)
+            return process.wait()
+        finally:
+            stream.close()
+            inbox.unlink(missing_ok=True)
     if args.repo and args.runner:
         gh = GitHub(TOKEN_FILE.read_text().strip())
         threading.Thread(
@@ -853,18 +868,22 @@ def read_console(
     keep: Callable[[dict[str, Any]], None] | None,
     session: Path | None = None,
     ask: Callable[[re.Match[bytes]], None] | None = None,
+    forward: Callable[[bytes], None] | None = None,
 ) -> None:
     """Read a VM's console until it ends, keeping each valid live line and saving each
-    session event to `session`. It must never stop early: once the pipe fills, the VM's
-    console, and with it the job, would stall; so a failed save is logged once and reading
-    goes on. A line over CONSOLE_LINE_MAX bytes is dropped, to its end, without being held
-    in memory."""
+    session event to `session`, or, on the PC, handing each line that may be one of them
+    or an ask to `forward` (the Beelink checks them again). It must never stop early: once
+    the pipe fills, the VM's console, and with it the job, would stall; so a failed save is
+    logged once and reading goes on. A line over CONSOLE_LINE_MAX bytes is dropped, to its
+    end, without being held in memory."""
     with stream:
         too_long, failed = False, False
         while chunk := stream.readline(CONSOLE_LINE_MAX):
             whole = chunk.endswith(b"\n")
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
-            if ask and fits and (asked := HANDOFF_ASK.fullmatch(chunk)):
+            if forward and fits and whole and chunk.startswith(FORWARDED):
+                forward(chunk)
+            elif ask and fits and (asked := HANDOFF_ASK.fullmatch(chunk)):
                 ask(asked)
             elif keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
@@ -1269,10 +1288,15 @@ def ended_outboxes(state: State, now: float) -> tuple[list[Path], list[Path]]:
     for inbox in OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.inbox"):
         if inbox.stem not in running:
             inbox.unlink(missing_ok=True)
-    for record in OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.json"):
+    records = [*OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.json"), *OUTBOX_DIR.glob(f"{PEER_PREFIX}*.json")]
+    for record in records:
         if record.stem in running:
             continue
         tar = record.with_suffix(".tar")
+        # A PC VM's record stands from its registration (writer_state reads it as "its items
+        # may still come") until its outbox is uploaded, or sweep_peer gives up on it.
+        if record.name.startswith(PEER_PREFIX) and not tar.exists():
+            continue
         handoff = holds_handoffs(tar)
         wait = HANDOFF_RETRY_SECONDS if handoff else OUTBOX_RETRY_SECONDS
         if now - state.cache_checked.get(record.stem, 0) >= wait:
@@ -1537,12 +1561,20 @@ def answer_ask(
         sleep(HANDOFF_LOOK_SECONDS)
 
 
-def answer_asks(gh: GitHub, repo: str, runner: str, inbox: Path, asks: Any) -> None:
+def answer_asks(
+    gh: GitHub,
+    repo: str,
+    runner: str,
+    inbox: Path,
+    asks: Any,
+    count: int = 0,
+    answered: Callable[[], None] | None = None,
+) -> None:
     """The VM's ask worker: one ask at a time, off the console reader, which must never wait.
     A job asks a few times; past HANDOFF_MAX_ASKS it is denied without asking GitHub, so a
-    VM cannot spend the token the supervisor polls with."""
+    VM cannot spend the token the supervisor polls with. `count` is the asks it has made
+    already (a PC VM's stream may reconnect); `answered` runs after each answer."""
     known: dict[tuple[int, int], Asker | None] = {}
-    count = 0
     while (ask := asks.get()) is not None:
         count += 1
         try:
@@ -1556,6 +1588,8 @@ def answer_asks(gh: GitHub, repo: str, runner: str, inbox: Path, asks: Any) -> N
             log(f"handoff for {repo}: ask from {runner} failed: {type(e).__name__}: {e}")
             with contextlib.suppress(OSError):
                 write_inbox(inbox, ask[1].decode(), "none")
+        if answered:
+            answered()
 
 
 def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
@@ -1893,7 +1927,7 @@ def read_live(run: Launch) -> dict[str, Any] | None:
 def live(state: State, now: float) -> dict[str, Any]:
     """The latest live line of each running VM that has sent one."""
     lines = [line for _, run in sorted(state.launches.items()) if (line := read_live(run))]
-    return {"updated": int(now), "lines": lines}
+    return {"updated": int(now), "lines": lines + peer_live(now)}
 
 
 def write_status(path: Path, data: Mapping[str, Any]) -> None:
@@ -1989,10 +2023,648 @@ def standby_first(repos: list[str], last: str) -> list[str]:
     return [last, *(r for r in repos if r != last)] if last in repos else repos
 
 
+# The PC's build slots. The PC keeps ready runners: idle VMs registered and online, one per
+# free slot, so GitHub hands a build job to whichever idle runner it picks and nothing races.
+# The PC holds no GitHub key: through one door (ssh ci-peer@beelink, forced to `socat` into
+# PEER_SOCKET, served by this supervisor) it asks the Beelink to register each runner, and
+# sends up its VMs' console lines, asks and outboxes, which the Beelink checks and files with
+# the same code as its own. See docs/runbooks/ci-runner.md, "PC build slots".
+PEER_PREFIX = "pc-"
+PEER_RUNNER = re.compile(r"pc-([0-9]{1,2})-([0-9]{10})")
+# Not under STATE_DIR, which only root may enter: ci-peer's socat must reach the socket.
+PEER_SOCKET = Path("/run/homelab-ci-peer/peer.sock")
+PEER_GROUP = "ci-peer"
+# Each runner the Beelink registered for the PC: repo, runner id, slot, when, asks made.
+PEER_DIR = Path("/var/lib/homelab-ci/peer")
+# The most PC slots the Beelink registers runners for, whatever the PC says; 0 or no file:
+# the door is closed.
+PEER_SLOTS_FILE = Path("/etc/homelab-ci/peer-slots-max")
+PEER_LINE_MAX = 256
+PEER_HELLO_SECONDS = 10
+PEER_SWEEP_SECONDS = 60
+# A PC runner still offline this long after it was registered is deleted (the PC is off).
+PEER_OFFLINE_SECONDS = 600
+# A PC VM's live line counts as its latest for this long after it was heard.
+PEER_LIVE_SECONDS = 120
+# An upload must leave this much of the Beelink's disk free.
+PEER_FREE_DISK_BYTES = 20 * 1024**3
+# All PC VMs' session files together; past it, new ones are not kept.
+PEER_SESSIONS_MAX_BYTES = 3 * 1024**3
+# A slot gets a new registration at most this often, so the PC cannot spend the token.
+PEER_REGISTER_EVERY = 30
+# run-vm.sh's outbox: 6 GiB for the tar and its header.
+OUTBOX_BYTES = 6 * 1024**3 + 1024**2
+# Lines the PC's console reader sends up; read_console checks them again on the Beelink.
+FORWARDED = (b"KAIZEN-LIVE ", b"KAIZEN-SESSION ", b"HOMELAB-HANDOFF ")
+# On the PC: the door, its key, the slots given now (written by the keeper on Windows, at most
+# the slots installed), each VM's size.
+PEER_HOST_FILE = Path("/etc/homelab-ci/peer")
+PEER_KEY = Path("/etc/homelab-ci/peer-key")
+PC_SLOTS_FILE = Path("/etc/homelab-ci/pc-slots")
+PC_SIZE = (4, 4096)
+PC_POLL_SECONDS = 5
+# A job still running on a slot the count no longer has (Colin games) is stopped after this;
+# the Watcher reruns it as machine trouble.
+PC_DRAIN_SECONDS = 20 * 60
+PC_CACHE_EVERY = 600
+
+
+def peer_slots() -> int:
+    try:
+        text = PEER_SLOTS_FILE.read_text().strip()
+    except OSError:
+        return 0
+    return int(text) if text.isdecimal() else 0
+
+
+def peer_door_installed() -> bool:
+    try:
+        grp.getgrnam(PEER_GROUP)
+    except KeyError:
+        return False
+    return True
+
+
+def peer_record(runner: str) -> Path:
+    return PEER_DIR / f"{runner}.json"
+
+
+def read_peer(runner: str) -> dict[str, Any] | None:
+    """The record of a runner registered for the PC, or None for any other name."""
+    if not PEER_RUNNER.fullmatch(runner):
+        return None
+    try:
+        fields = json.loads(peer_record(runner).read_text())
+    except (OSError, ValueError):
+        return None
+    return fields if isinstance(fields, dict) else None
+
+
+def peer_cache_version(repo: str) -> str:
+    """The run and attempt the repo's cache disk came from, or "" if it has none."""
+    try:
+        seen = json.loads(cache_image(repo).with_suffix(".json").read_text())
+        return f"{int(seen['run'])}.{int(seen['attempt'])}"
+    except (OSError, ValueError, KeyError, TypeError):
+        return ""
+
+
+def peer_label(repo: str) -> str:
+    owner, _, name = repo.lower().partition("/")
+    return f"{CACHE_LABEL_PREFIX}{owner}--{name}"
+
+
+@dataclass
+class Peer:
+    """What the door's threads share with the main loop."""
+
+    token: str
+    # The repos served, replaced whole by the main loop on each listing.
+    served: frozenset[str] = frozenset()
+    streaming: set[str] = field(default_factory=set)
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    connections: threading.BoundedSemaphore = field(
+        default_factory=lambda: threading.BoundedSemaphore(2 * max(peer_slots(), 1) + 4)
+    )
+
+
+def serve_peer(peer: Peer) -> None:
+    """The door's socket: one thread per connection, at most Peer.connections at once."""
+    PEER_SOCKET.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    os.chown(PEER_SOCKET.parent, 0, grp.getgrnam(PEER_GROUP).gr_gid)
+    PEER_SOCKET.unlink(missing_ok=True)
+    server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    server.bind(str(PEER_SOCKET))
+    os.chmod(PEER_SOCKET, 0o660)
+    os.chown(PEER_SOCKET, 0, grp.getgrnam(PEER_GROUP).gr_gid)
+    server.listen(8)
+    log(f"PC door open for {peer_slots()} slots")
+    while True:
+        conn, _ = server.accept()
+        if not peer.connections.acquire(blocking=False):
+            conn.close()
+            continue
+        threading.Thread(target=peer_connection, args=(peer, conn), daemon=True).start()
+
+
+def peer_connection(peer: Peer, conn: socket.socket) -> None:
+    try:
+        conn.settimeout(PEER_HELLO_SECONDS)
+        reader, writer = conn.makefile("rb"), conn.makefile("wb")
+        words = reader.readline(PEER_LINE_MAX).decode("ascii", "replace").split()
+        gh = GitHub(peer.token)
+        reply = peer_answer(peer, gh, words, reader, writer, conn)
+        if reply:
+            writer.write(f"{reply}\n".encode())
+            writer.flush()
+    except Exception as e:  # anything the PC sends: logged, never the supervisor's end
+        log(f"PC door: {type(e).__name__}: {e}")
+    finally:
+        conn.close()
+        peer.connections.release()
+
+
+def peer_answer(
+    peer: Peer,
+    gh: GitHub,
+    words: list[str],
+    reader: IO[bytes],
+    writer: IO[bytes],
+    conn: socket.socket,
+) -> str:
+    """One request through the door (words: its first line); returns the reply line."""
+    match words:
+        case ["register", slot, repo, have]:
+            return peer_register(peer, gh, slot, repo, have)
+        case ["vm", runner] if read_peer(runner):
+            conn.settimeout(None)  # as long as the VM runs; ssh's keepalives end a dead link
+            peer_vm(peer, gh, runner, reader, writer)
+            return ""
+        case ["outbox", runner, size] if read_peer(runner) and size.isdecimal():
+            return peer_outbox(runner, int(size), reader, writer, conn)
+        case ["release", runner] if fields := read_peer(runner):
+            return "gone" if peer_drop(gh, runner, fields) else "busy"
+        case ["cache", repo, have] if repo in peer.served:
+            conn.settimeout(300)
+            return peer_cache(repo, have, writer)
+    return "no"
+
+
+def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> str:
+    """A one-job runner for a PC slot, with the build labels, and the repo's cache label
+    only if the PC holds the Beelink's current cache disk."""
+    if not (slot.isdecimal() and int(slot) < peer_slots() and repo in peer.served):
+        return "no"
+    now = time.time()
+    for old in PEER_DIR.glob(f"{PEER_PREFIX}{int(slot)}-*.json"):
+        fields = read_peer(old.stem)
+        if not fields:
+            continue
+        if now - float(fields.get("issued", 0)) < PEER_REGISTER_EVERY:
+            return "no"
+        if not fields.get("gone") and not peer_drop(gh, old.stem, fields):
+            return "no"  # its last runner still has a job
+    labels = list(RUNNER_LABELS)
+    version = peer_cache_version(repo)
+    label = peer_label(repo) if version and have == version else ""
+    if label:
+        labels.append(label)
+    name = f"{PEER_PREFIX}{int(slot)}-{int(now)}"
+    registration = gh.request(
+        "POST",
+        f"/repos/{repo}/actions/runners/generate-jitconfig",
+        {"name": name, "runner_group_id": 1, "labels": labels, "work_folder": "_work"},
+    )
+    fields = {
+        "repo": repo,
+        "runner_id": int(registration["runner"]["id"]),
+        "issued": int(now),
+        "asks": 0,
+    }
+    PEER_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    write_status(peer_record(name), fields)
+    # Until its outbox is uploaded, its job's items may still come (writer_state).
+    (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo, "light": False}))
+    log(f"PC slot {slot}: registered {name} for {repo}{f', {label}' if label else ''}")
+    return f"ok {name} {label or '-'} {registration['encoded_jit_config']}"
+
+
+def peer_drop(gh: GitHub, runner: str, fields: dict[str, Any]) -> bool:
+    """Delete a PC runner's registration unless it has a job; True once it is gone."""
+    if fields.get("gone"):
+        return True
+    if not delete_runner(gh, str(fields["repo"]), int(fields["runner_id"]), runner):
+        return False
+    fields["gone"] = int(time.time())
+    write_status(peer_record(runner), fields)
+    return True
+
+
+def peer_vm(peer: Peer, gh: GitHub, runner: str, reader: IO[bytes], writer: IO[bytes]) -> None:
+    """A PC VM's console lines, read as a local VM's are; each ask is answered on an inbox
+    here and the inbox sent down: `inbox <bytes>`, then its header block and item."""
+    with peer.lock:
+        if runner in peer.streaming:
+            return
+        peer.streaming.add(runner)
+    fields = read_peer(runner) or {}
+    repo = str(fields.get("repo", ""))
+    inbox = OUTBOX_DIR / f"{runner}.inbox"
+    asks: queue.Queue[re.Match[bytes] | None] = queue.Queue(HANDOFF_MAX_ASKS)
+    try:
+        inbox.write_bytes(INBOX_EMPTY.ljust(512, b"\0"))
+
+        def answered() -> None:
+            with inbox.open("rb") as f:
+                header = f.read(512)
+                size = int(header.split(b"\0", 1)[0].split()[-1])
+                writer.write(f"inbox {512 + size}\n".encode() + header)
+                while size > 0 and (chunk := f.read(min(size, 1024**2))):
+                    writer.write(chunk)
+                    size -= len(chunk)
+            writer.flush()
+            if latest := read_peer(runner):
+                latest["asks"] = int(latest.get("asks", 0)) + 1
+                write_status(peer_record(runner), latest)
+
+        def hand_on(ask: re.Match[bytes]) -> None:
+            with contextlib.suppress(queue.Full):
+                asks.put_nowait(ask)
+
+        worker = threading.Thread(
+            target=answer_asks,
+            args=(gh, repo, runner, inbox, asks, int(fields.get("asks", 0)), answered),
+            daemon=True,
+        )
+        worker.start()
+        kept = sum(p.stat().st_size for p in SESSIONS_DIR.glob(f"{PEER_PREFIX}*.jsonl"))
+        ours = repo.lower() == LIVE_REPO.lower() and kept < PEER_SESSIONS_MAX_BYTES
+        session = SESSIONS_DIR / f"{runner}.jsonl" if ours else None
+        read_console(
+            reader, lambda line: write_status(PEER_DIR / f"{runner}.live", line), session, hand_on
+        )
+    finally:
+        with contextlib.suppress(queue.Full):
+            asks.put_nowait(None)
+        inbox.unlink(missing_ok=True)
+        with peer.lock:
+            peer.streaming.discard(runner)
+
+
+def peer_live(now: float) -> list[dict[str, Any]]:
+    """The PC VMs' latest live lines heard in the last PEER_LIVE_SECONDS."""
+    lines = []
+    for path in sorted(PEER_DIR.glob(f"{PEER_PREFIX}*.live")):
+        try:
+            line = json.loads(path.read_text())
+        except (OSError, ValueError):
+            continue
+        if isinstance(line, dict) and now - float(line.get("heard", 0)) < PEER_LIVE_SECONDS:
+            lines.append(line)
+    return lines
+
+
+def peer_outbox(
+    runner: str, size: int, reader: IO[bytes], writer: IO[bytes], conn: socket.socket
+) -> str:
+    """An ended PC VM's outbox, written beside the Beelink's own for maybe_take_outboxes to
+    file; size 0 says it left nothing, and its record goes."""
+    record, tar = OUTBOX_DIR / f"{runner}.json", OUTBOX_DIR / f"{runner}.tar"
+    if size == 0:
+        if not tar.exists():
+            record.unlink(missing_ok=True)
+        return "saved"
+    if not record.exists() or tar.exists():
+        return "saved"  # filed already, or given up on
+    if size > OUTBOX_BYTES or shutil.disk_usage(OUTBOX_DIR).free < size + PEER_FREE_DISK_BYTES:
+        return "no"
+    part = OUTBOX_DIR / f".{runner}.part"
+    part.unlink(missing_ok=True)
+    conn.settimeout(120)
+    writer.write(b"send\n")
+    writer.flush()
+    left = size
+    fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            while left > 0 and (chunk := reader.read(min(left, 1024**2))):
+                out.write(chunk)
+                left -= len(chunk)
+        if left:
+            return "no"
+        part.replace(tar)
+        log(f"PC outbox of {runner} uploaded ({size} bytes)")
+        return "saved"
+    finally:
+        part.unlink(missing_ok=True)
+
+
+def peer_cache(repo: str, have: str, writer: IO[bytes]) -> str:
+    """The repo's cache disk, when the PC's is not the current one."""
+    version = peer_cache_version(repo)
+    if not version or version == have:
+        return "same"
+    with cache_image(repo).open("rb") as f:
+        size = os.fstat(f.fileno()).st_size
+        writer.write(f"image {size} {version}\n".encode())
+        shutil.copyfileobj(f, writer, 1024**2)
+    writer.flush()
+    return ""
+
+
+def sweep_peer(gh: GitHub, now: float) -> None:
+    """PC runners: forget those gone an hour (and the outbox record of one that never sent
+    its outbox), delete one still offline PEER_OFFLINE_SECONDS after it was registered (the
+    PC is off) and an idle one older than a standby lives (a fresh registration replaces it)."""
+    for path in PEER_DIR.glob(f"{PEER_PREFIX}*.json"):
+        runner = path.stem
+        fields = read_peer(runner)
+        if fields is None:
+            continue
+        if fields.get("gone"):
+            if now - float(fields["gone"]) > OUTBOX_WAIT_SECONDS:
+                if not (OUTBOX_DIR / f"{runner}.tar").exists():
+                    (OUTBOX_DIR / f"{runner}.json").unlink(missing_ok=True)
+                (PEER_DIR / f"{runner}.live").unlink(missing_ok=True)
+                path.unlink(missing_ok=True)
+            continue
+        try:
+            runner_data = gh.request(
+                "GET", f"/repos/{fields['repo']}/actions/runners/{fields['runner_id']}"
+            )
+        except urllib.error.HTTPError as e:
+            if e.code == 404:  # its job is done and it removed itself
+                fields["gone"] = int(now)
+                write_status(path, fields)
+            continue
+        age = now - float(fields["issued"])
+        offline = runner_data.get("status") != "online"
+        if (offline and age > PEER_OFFLINE_SECONDS) or (
+            not offline and runner_data.get("busy") is False and age > STANDBY_RECYCLE_SECONDS
+        ):
+            peer_drop(gh, runner, fields)
+
+
+# The PC side: `pc` mode, the guest's own service (homelab-ci-pc.service).
+
+
+def peer_ssh() -> list[str]:
+    return [
+        "ssh",
+        "-i",
+        str(PEER_KEY),
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        "-o",
+        "ServerAliveInterval=15",
+        "-o",
+        "ServerAliveCountMax=4",
+        PEER_HOST_FILE.read_text().strip(),
+    ]
+
+
+def peer_call(line: str, timeout: float = 60) -> str:
+    """One short request through the door; its reply line ("" if the door gave none)."""
+    done = subprocess.run(
+        peer_ssh(), input=f"{line}\n".encode(), capture_output=True, timeout=timeout, check=False
+    )
+    return done.stdout.decode("ascii", "replace").strip()
+
+
+class PeerStream:
+    """A PC VM's console lines and asks, sent up the door as they come; inbox answers come
+    back and are written on the VM's inbox as the Beelink wrote them: the item first, the
+    header last. The console reader never waits: past a full queue, lines are dropped. A
+    dropped link reconnects and sends the unanswered ask again."""
+
+    def __init__(self, runner: str, inbox: Path) -> None:
+        self.runner, self.inbox = runner, inbox
+        self.lines: queue.Queue[bytes | None] = queue.Queue(512)
+        self.ask: bytes | None = None
+        self.done = threading.Event()
+        self.thread = threading.Thread(target=self.run, daemon=True)
+        self.thread.start()
+
+    def put(self, line: bytes) -> None:
+        if line.startswith(b"HOMELAB-HANDOFF "):
+            self.ask = line
+        with contextlib.suppress(queue.Full):
+            self.lines.put_nowait(line)
+
+    def close(self) -> None:
+        self.done.set()
+        with contextlib.suppress(queue.Full):
+            self.lines.put_nowait(None)
+        self.thread.join(timeout=10)
+
+    def run(self) -> None:
+        while not self.done.is_set():
+            try:
+                link = subprocess.Popen(peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+                assert link.stdin is not None and link.stdout is not None
+                threading.Thread(target=self.answers, args=(link.stdout,), daemon=True).start()
+                link.stdin.write(f"vm {self.runner}\n".encode())
+                if self.ask:
+                    link.stdin.write(self.ask)
+                link.stdin.flush()
+                while (line := self.lines.get()) is not None:
+                    link.stdin.write(line)
+                    link.stdin.flush()
+                link.stdin.close()
+                link.wait(timeout=10)
+                return
+            except (OSError, ValueError, subprocess.SubprocessError) as e:
+                log(f"{self.runner}: link to the Beelink lost ({type(e).__name__}), again in 5 s")
+                with contextlib.suppress(Exception):
+                    link.kill()
+                time.sleep(5)
+
+    def answers(self, stream: IO[bytes]) -> None:
+        with contextlib.suppress(OSError, ValueError):
+            while line := stream.readline(PEER_LINE_MAX):
+                words = line.split()
+                if len(words) != 2 or words[0] != b"inbox" or not words[1].isdigit():
+                    return
+                size = int(words[1])
+                if not 512 <= size <= OUTBOX_BYTES:
+                    return
+                header = stream.read(512)
+                with self.inbox.open("r+b") as f:
+                    f.write(INBOX_EMPTY.ljust(512, b"\0"))
+                    f.flush()
+                    os.fsync(f.fileno())
+                    left = size - 512
+                    while left > 0 and (chunk := stream.read(min(left, 1024**2))):
+                        f.write(chunk)
+                        left -= len(chunk)
+                    f.flush()
+                    os.fsync(f.fileno())
+                    f.seek(0)
+                    f.write(header)
+                    f.flush()
+                    os.fsync(f.fileno())
+                self.ask = None
+
+
+def pc_slot_count() -> int:
+    """The slots the PC gives now, set by the keeper: 0 (gaming, off) up to the slots
+    installed; 0 if unreadable."""
+    try:
+        text = PC_SLOTS_FILE.read_text().strip()
+    except OSError:
+        return 0
+    return min(int(text), slot_count()) if text.isdecimal() else 0
+
+
+def pc_cache_version(repo: str) -> str:
+    """The version of the cache disk the PC holds for the repo, "-" for none."""
+    try:
+        return cache_image(repo).with_suffix(".version").read_text().strip() or "-"
+    except OSError:
+        return "-"
+
+
+def start_pc_vm(repo: str, slot: int) -> bool:
+    """Register a ready runner for the slot through the door and boot its VM."""
+    have = pc_cache_version(repo)
+    reply = peer_call(f"register {slot} {repo} {have}").split()
+    if len(reply) != 4 or reply[0] != "ok" or not PEER_RUNNER.fullmatch(reply[1]):
+        log(f"PC slot {slot}: not registered ({' '.join(reply[:1]) or 'no reply'})")
+        return False
+    _, name, label, jit = reply
+    metadata = STATE_DIR / f"metadata-slot{slot}.json"
+    fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"task": "runner", "jitconfig": jit}, f)
+    run = Launch(slot, repo, 0, name, time.time(), metadata, standby=True, label=label)
+    cache = cache_image(repo) if label != "-" else None
+    (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
+    env = {
+        "VCPUS": str(PC_SIZE[0]),
+        "MEM_MIB": str(PC_SIZE[1]),
+        "CACHE_IMAGE": str(cache or ""),
+        "CACHE_OUT": str(OUTBOX_DIR / f"{name}.tar"),
+        "INBOX": str(OUTBOX_DIR / f"{name}.inbox"),
+    }
+    start_vm(run, STANDBY_TIMEOUT_SECONDS, env, peer=True)
+    log(f"PC slot {slot}: ready runner {name} started")
+    return True
+
+
+def outbox_end(tar: Path) -> int:
+    """How much of a sparse outbox to send: up to its first hole (0 if it holds no header)."""
+    try:
+        with tar.open("rb") as f:
+            first = f.read(512)
+            if not (HANDOFF_HEADER.match(first) or OUTBOX_HEADER.match(first)):
+                return 0
+            return min(os.lseek(f.fileno(), 0, os.SEEK_HOLE), OUTBOX_BYTES)
+    except OSError:
+        return 0
+
+
+def ship_outboxes(running: set[str], tried: dict[str, float], now: float) -> None:
+    """Send each ended PC VM's outbox up the door, once; a refusal is tried again later."""
+    for record in OUTBOX_DIR.glob(f"{PEER_PREFIX}*.json"):
+        runner = record.stem
+        if f"{UNIT_PREFIX}{runner}" in running or now - tried.get(runner, 0) < OUTBOX_RETRY_SECONDS:
+            continue
+        tried[runner] = now
+        tar = record.with_suffix(".tar")
+        size = outbox_end(tar)
+        try:
+            with subprocess.Popen(
+                peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE
+            ) as link:
+                assert link.stdin is not None and link.stdout is not None
+                link.stdin.write(f"outbox {runner} {size}\n".encode())
+                link.stdin.flush()
+                reply = link.stdout.readline(PEER_LINE_MAX).strip()
+                if reply == b"send":
+                    with tar.open("rb") as f:
+                        left = size
+                        while left > 0 and (chunk := f.read(min(left, 1024**2))):
+                            link.stdin.write(chunk)
+                            left -= len(chunk)
+                    link.stdin.flush()
+                    reply = link.stdout.readline(PEER_LINE_MAX).strip()
+                link.stdin.close()
+        except (OSError, ValueError, subprocess.SubprocessError) as e:
+            log(f"outbox of {runner}: {type(e).__name__}: {e}")
+            continue
+        if reply == b"saved":
+            tar.unlink(missing_ok=True)
+            record.unlink(missing_ok=True)
+            tried.pop(runner, None)
+
+
+def refresh_cache(repo: str) -> None:
+    """Fetch the Beelink's cache disk for the repo when it is newer than the PC's."""
+    image = cache_image(repo)
+    version_file, have = image.with_suffix(".version"), pc_cache_version(repo)
+    staged = image.with_suffix(".part")
+    with subprocess.Popen(peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE) as link:
+        assert link.stdin is not None and link.stdout is not None
+        link.stdin.write(f"cache {repo} {have}\n".encode())
+        link.stdin.flush()
+        words = link.stdout.readline(PEER_LINE_MAX).split()
+        if len(words) != 3 or words[0] != b"image" or not words[1].isdigit():
+            return
+        size, version = int(words[1]), words[2].decode("ascii")
+        left = size
+        with staged.open("wb") as out:
+            while left > 0 and (chunk := link.stdout.read(min(left, 1024**2))):
+                out.write(chunk)
+                left -= len(chunk)
+    if left:
+        staged.unlink(missing_ok=True)
+        return
+    staged.replace(image)  # VMs already booted keep the disk they opened
+    version_file.write_text(f"{version}\n")
+    log(f"cache for {repo}: fetched {version} ({size} bytes)")
+
+
+def pc_main(argv: list[str]) -> int:
+    """`pc`: the PC guest's service. Keeps a ready runner per free slot, stops runners on
+    slots the count no longer has (at once if idle, else after PC_DRAIN_SECONDS), and ships
+    ended VMs' outboxes. Holds no GitHub key."""
+    argparse.ArgumentParser(prog="ci_supervisor.py pc").parse_args(argv)
+    repo = LIVE_REPO
+    for folder in (STATE_DIR, OUTBOX_DIR, CACHE_DIR):
+        folder.mkdir(mode=0o700, parents=True, exist_ok=True)
+    over: dict[str, float] = {}
+    tried: dict[str, float] = {}
+    pause_until = cache_checked = 0.0
+    fetching = threading.Thread()
+    log("PC slots: keeping ready runners")
+    while True:
+        now = time.time()
+        try:
+            running = running_vms()
+            if running is None:
+                raise RuntimeError("cannot list the running VMs")
+            slots = pc_slot_count()
+            by_slot = {}
+            for unit in running:
+                if match := PEER_RUNNER.fullmatch(unit.removeprefix(UNIT_PREFIX)):
+                    by_slot[int(match[1])] = match[0]
+            for slot, runner in by_slot.items():
+                if slot < slots:
+                    over.pop(runner, None)
+                    continue
+                since = over.setdefault(runner, now)
+                if now - since > PC_DRAIN_SECONDS or peer_call(f"release {runner}") == "gone":
+                    log(f"PC slot {slot}: {runner} stopped, the PC gives {slots} slots")
+                    subprocess.run(
+                        ["systemctl", "stop", "--no-block", f"{UNIT_PREFIX}{runner}"], check=False
+                    )
+            ship_outboxes(running, tried, now)
+            if now - cache_checked > PC_CACHE_EVERY and not fetching.is_alive():
+                cache_checked = now
+                fetching = threading.Thread(target=refresh_cache, args=(repo,), daemon=True)
+                fetching.start()
+            if now >= pause_until:
+                for slot in range(slots):
+                    room = mem_available_mib() - memory_reserve_mib()
+                    if slot in by_slot or room < PC_SIZE[1] + 256:
+                        continue
+                    if not start_pc_vm(repo, slot):
+                        pause_until = now + 30
+                        break
+        except Exception as e:
+            log(f"PC poll failed: {type(e).__name__}: {e}")
+            pause_until = now + 30
+        time.sleep(PC_POLL_SECONDS)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["vm"]:
         return vm_main(argv[1:])
+    if argv[:1] == ["pc"]:
+        return pc_main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="one poll, for testing")
     args = parser.parse_args(argv)
@@ -2029,6 +2701,11 @@ def main(argv: list[str] | None = None) -> int:
     log(f"{state.slots} slots; serving private repos the token can see")
     # VMs started before a restart are still running: take them back before anything else.
     adopt(state)
+    peer = Peer(gh._token) if peer_slots() and peer_door_installed() else None
+    if peer:
+        threading.Thread(target=serve_peer, args=(peer,), daemon=True).start()
+    peer_swept = 0.0
+    peer_sweeper = threading.Thread()
     while True:
         wait: float = POLL_SECONDS
         github_ok = False
@@ -2058,6 +2735,8 @@ def main(argv: list[str] | None = None) -> int:
                         r for r in found if r not in repos
                     ]
                     repos = found
+                if peer:
+                    peer.served = frozenset(repos)
             started, asked, waited = time.monotonic(), gh.requests, gh.seconds
             if unclean:
                 running = [run.runner_name for run in state.launches.values()]
@@ -2089,6 +2768,16 @@ def main(argv: list[str] | None = None) -> int:
             if time.time() - swept > HANDOFF_SWEEP_SECONDS:
                 swept = time.time()
                 sweep_handoffs(swept)
+            if (
+                peer
+                and time.time() - peer_swept > PEER_SWEEP_SECONDS
+                and not peer_sweeper.is_alive()
+            ):
+                peer_swept = time.time()
+                peer_sweeper = threading.Thread(
+                    target=sweep_peer, args=(gh.clone(), peer_swept), daemon=True
+                )
+                peer_sweeper.start()
             status_error = ""
         except Exception as e:
             why = f"{type(e).__name__}: {e}"
