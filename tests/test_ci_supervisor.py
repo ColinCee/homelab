@@ -1677,3 +1677,15 @@ def test_an_idle_pc_runner_covers_a_young_job_and_stands_in_for_the_standby(
     queue(jobs=1, free_mib=1 << 20)
     sup.tick(None, state, ["o/ok"], float(sup.PEER_COVER_SECONDS))  # type: ignore[arg-type]
     assert started == [("o/ok", 4096, False)]
+
+
+def test_the_pc_door_learns_the_newest_auto_kaizen_builds_label(host, monkeypatch) -> None:
+    label = "fc-cache-colincee--servo"
+    monkeypatch.setattr(
+        sup,
+        "find_queued",
+        lambda gh, repo: [sup.Job(repo, 7, "build", (*sup.RUNNER_LABELS, label))],
+    )
+    monkeypatch.setattr(sup, "PEER", sup.Peer("token"))
+    sup.tick(None, sup.State(), [sup.LIVE_REPO], 0.0)  # type: ignore[arg-type]
+    assert sup.PEER.last == (sup.LIVE_REPO, label)  # type: ignore[union-attr]
