@@ -22,7 +22,6 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
 STACKS = (
     "backup",
-    "crowdsec",
     "flight-tracker",
     "home-assistant",
     "kaizen-control-room",
@@ -41,7 +40,6 @@ QUERIES = {
     # Stacks with a container seen running in the last minute.
     "running": "count by (container_label_com_docker_compose_project) "
     '(time() - container_last_seen{container_label_com_docker_compose_project!=""} < 60)',
-    "blocked": "sum(cs_active_decisions)",
 }
 
 
@@ -61,10 +59,6 @@ def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     if body.get("status") != "success":
         raise StatsError(f"prometheus: {body.get('error', 'query failed')}")
     return body["data"]["result"]
-
-
-def scalar(result: list[dict[str, Any]]) -> float | None:
-    return float(result[0]["value"][1]) if result else None
 
 
 def whole(value: object) -> int | None:
@@ -87,16 +81,14 @@ def build_body(
     if not running:
         # cAdvisor or Prometheus is not reporting; publishing "all down" would be a lie.
         raise StatsError("no running containers reported")
-    blocked = whole(scalar(results["blocked"]))
-    if blocked is None:
-        # A blank count would single out CrowdSec; let the last numbers age.
-        raise StatsError("no CrowdSec decisions reported")
     if not isinstance(kpis, dict) or kpis.get("apiHealth") != "live":
         kpis = {}
     return {
         "at": int(now),
         "allUp": all(stack in running for stack in STACKS),
-        "blocked": blocked,
+        # CrowdSec is gone and the blog no longer shows it, but its Worker
+        # still requires the key.
+        "blocked": None,
         "tracking": whole(kpis.get("trackedAircraft")),
         "londonHour": whole(kpis.get("throughputLast60Min")),
     }

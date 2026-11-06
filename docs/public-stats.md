@@ -1,8 +1,7 @@
 # Public stats
 
 The home page of colincheung.dev shows a few live numbers about this server:
-whether its stacks are up, how many addresses CrowdSec blocks, how many aircraft
-the flight tracker follows. This page says how they get there and what that exposes.
+whether its stacks are up and how many aircraft the flight tracker follows. This page says how they get there and what that exposes.
 
 ## How it works
 
@@ -30,19 +29,18 @@ Only these fields; the Worker rejects a body with any other key or type:
 |---|---|---|
 | `at` | when the numbers were gathered (Unix seconds) | the container's clock |
 | `allUp` | every stack has a running container | `container_last_seen` within the last minute |
-| `blocked` | addresses on CrowdSec's blocklist | `cs_active_decisions` |
+| `blocked` | always `null`: CrowdSec is gone, and the Worker still requires the key | none |
 | `tracking` | aircraft in the tracker's London box now | `/aircraft` KPIs |
 | `londonHour` | aircraft headed for London seen in the past hour | the same KPIs |
 
 They are coarse on purpose: one flag for all stacks, not one each, so a stopped
-CrowdSec is not announced. Anyone can poll the endpoint and keep a history, so
+stack is not announced. Anyone can poll the endpoint and keep a history, so
 Home Assistant's uptime and whether the last backup ran are left out: over time
 they would show restart and failed-backup windows. What still shows is when
 pushes stop (`at` ages), as during a power or internet outage. No hostnames, addresses, container IDs or versions leave the host:
 the body is built from named numbers, never by forwarding a Prometheus response.
-When Prometheus reports no containers at all, or no CrowdSec count, the script
-skips the push rather than publish "all down" or a blank that singles out
-CrowdSec; the last numbers age instead. After a failed push it tries again in
+When Prometheus reports no containers at all, the script skips the push rather
+than publish "all down"; the last numbers age instead. After a failed push it tries again in
 15 seconds, so a deploy's readiness wait sees the container healthy. The flight numbers are `null` unless the tracker's data
 is live.
 

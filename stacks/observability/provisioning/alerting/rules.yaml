@@ -273,6 +273,50 @@ groups:
         labels:
           severity: critical
 
+      - uid: new-container
+        title: Unknown container started
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # A container name not seen in the week before: a foothold usually starts
+              # one. Compose keeps names across deploys, so redeploys don't fire; a new
+              # stack fires once, for about 5 minutes.
+              expr: >-
+                count by (name) (container_last_seen{job="docker",name!=""})
+                unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 10m))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "New container {{ $labels.name }}"
+          measure: "Container"
+          trigger: "a name not seen in the last 7 days"
+          value: "{{ $labels.name }}"
+          description: "Container {{ $labels.name }} is running on the Beelink and was not seen in the 7 days before."
+          action: "Expected if you just added a stack or ran one by hand. Otherwise check `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command."
+        labels:
+          severity: warning
+
   - orgId: 1
     name: Kaizen
     # Grafana keeps alert rules in a folder; this one holds no dashboards.

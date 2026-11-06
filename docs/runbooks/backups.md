@@ -12,7 +12,6 @@ disposable.
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
 | Grafana volume | Users and UI-made changes (`grafana.db`). Dashboards are in Git. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
-| CrowdSec config volume | Bouncer registration and local settings. |
 | Control room volume | The last state Auto Kaizen's Control room read. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
