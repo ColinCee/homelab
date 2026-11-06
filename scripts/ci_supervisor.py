@@ -2713,11 +2713,11 @@ def start_pc_vm(repo: str, slot: int, wanted: set[str]) -> bool:
 
 
 def outbox_end(tar: Path) -> int:
-    """How much of a sparse outbox to send: up to its first hole (0 if it holds no header)."""
+    """How much of a sparse outbox to send: up to its first hole, and only handoffs (the
+    Beelink makes cache disks from its own VMs alone)."""
     try:
         with tar.open("rb") as f:
-            first = f.read(512)
-            if not (HANDOFF_HEADER.match(first) or OUTBOX_HEADER.match(first)):
+            if not HANDOFF_HEADER.match(f.read(512)):
                 return 0
             return min(os.lseek(f.fileno(), 0, os.SEEK_HOLE), OUTBOX_BYTES)
     except OSError:
