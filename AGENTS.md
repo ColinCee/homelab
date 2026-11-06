@@ -4,7 +4,7 @@ Single Beelink host running Docker Compose stacks. See `README.md` for services
 and how to run them locally, `docs/` for architecture and runbooks, and
 `docs/runbooks/deploying-services.md` for deployment.
 
-Checks: `mise run ci`
+Checks: `mise run check`
 
 That runs what CI's check job runs: lint, typecheck, test and validate:compose
 (Compose validation needs Docker). Run it before pushing.
