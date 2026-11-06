@@ -52,9 +52,10 @@ at it, so `uv sync` and `npm ci` find almost everything in place.
 
 How it is made, without the host running any of the repo's code:
 
-1. A green push to the default branch tars `/cache` and uploads it as the
-   artifact `homelab-fc-cache`. The job's last step does both with the shared
-   action, which does nothing on any other event:
+1. Every build VM gets an empty **outbox**: a raw disk, last in its list, kept on
+   the host after the VM as `/var/lib/homelab-ci/outbox/<runner name>.tar`. A green
+   push to the default branch tars `/cache` onto it with the shared action, the
+   job's last step, which does nothing on any other event:
 
    ```yaml
    - uses: ColinCee/homelab/.github/actions/fc-cache@main
@@ -64,15 +65,18 @@ How it is made, without the host running any of the repo's code:
 
    It tars every readable top-level folder of `/cache` (not `lost+found`, nor
    one a given path starts with: the disk holds the last copy of `web/` there)
-   and the given paths, and fails the job rather than upload an archive bigger than
-   the supervisor takes.
-2. The supervisor checks for a newer one every minute, takes it only if its run
-   was a successful push to the default branch, unpacks it (plain files,
-   folders and links only, nothing outside the folder; a file or link held
-   twice takes its later entry) and builds
+   and the given paths, then writes a header naming its run. It never fails the
+   job: a cache it cannot save (too big, a path missing) is a warning, and the
+   next jobs start from the last one. Nothing goes through GitHub: its artifact
+   storage, where this used to go, filled up on 5 Nov and failed every build.
+2. Once the VM has ended, the supervisor reads the header and asks GitHub about
+   that run: it takes the tar only if the run was a push to the default branch and
+   its job on this VM's runner passed (it waits up to an hour for GitHub to show the
+   job finished), and only if the run is newer than the disk's. It unpacks it
+   (plain files, folders and links only, nothing outside the folder; a file or link
+   held twice takes its later entry) and builds
    `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
-   to others. VMs started after that use it. An artifact that fails to unpack
-   is skipped until a newer one comes.
+   to others. VMs started after that use it. Every outbox is deleted once judged.
 
 A job working on another served repo's code can ask for that repo's disk with
 one extra label, `fc-cache-<owner>--<name>` in lowercase:

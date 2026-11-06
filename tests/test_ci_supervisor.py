@@ -26,6 +26,13 @@ def plenty_of_memory(monkeypatch):
     monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
 
 
+@pytest.fixture(autouse=True)
+def outbox_dir(tmp_path_factory, monkeypatch) -> Path:
+    path = tmp_path_factory.mktemp("outbox")
+    monkeypatch.setattr(sup, "OUTBOX_DIR", path)
+    return path
+
+
 class Repos:
     def __init__(self, page: list[dict]) -> None:
         self.page = page
@@ -181,33 +188,6 @@ def test_keeps_one_standby_vm_for_the_first_private_repo(
     assert sup.wants_standby(repos, private, standbys, free) is wanted
 
 
-def _artifact(
-    id: int, branch: str, created: str, name: str = "homelab-fc-cache", expired: bool = False
-) -> dict:
-    return {
-        "id": id,
-        "name": name,
-        "expired": expired,
-        "created_at": created,
-        "workflow_run": {"id": id * 10, "head_branch": branch},
-    }
-
-
-def test_takes_the_newest_cache_artifact_from_the_default_branch_only() -> None:
-    artifacts = [
-        _artifact(1, "master", "2026-10-15T10:00:00Z"),
-        _artifact(2, "master", "2026-10-15T12:00:00Z"),
-        _artifact(3, "evil-branch", "2026-10-15T13:00:00Z"),  # a branch cannot replace the cache
-        _artifact(4, "master", "2026-10-15T14:00:00Z", expired=True),
-        _artifact(5, "master", "2026-10-15T15:00:00Z", name="something-else"),
-    ]
-
-    picked = sup.pick_cache_artifact(artifacts, "master")
-
-    assert picked is not None and picked["id"] == 2
-    assert sup.pick_cache_artifact(artifacts, "main") is None
-
-
 @pytest.mark.parametrize("kind", [tarfile.CHRTYPE, tarfile.BLKTYPE, tarfile.FIFOTYPE])
 def test_the_cache_unpacker_refuses_device_files(kind: bytes, tmp_path) -> None:
     member = tarfile.TarInfo("cache/dev")
@@ -276,26 +256,146 @@ def test_the_cache_unpacker_takes_the_later_entry_of_a_path_held_twice(tmp_path)
     assert (tmp_path / "web/esbuild/bin/esbuild").read_bytes() == b"binary"
 
 
-def test_a_cache_artifact_that_fails_to_unpack_is_not_tried_again(caches, monkeypatch) -> None:
-    artifact = _artifact(7, "main", "2026-11-05T09:56:00Z")
-    artifact["workflow_run"]["id"] = 70
-    run = {"id": 70, "status": "completed", "event": "push", "conclusion": "success"}
-    run["head_branch"] = "main"
-    downloads: list[str] = []
+RUNNER = "fc-1-1762400000"
 
-    class FakeGitHub:
-        def request(self, method: str, path: str, body: object = None) -> dict:
-            return {"artifacts": [artifact]} if "artifacts?" in path else run
 
-        def download(self, path: str, dest, limit: int) -> None:
-            downloads.append(path)
-            dest.write_bytes(b"not a zip")
+def _outbox(directory: Path, header: bytes, repo: str = "octo/app") -> Path:
+    """An ended VM's outbox as the fc-cache action leaves it: a header, then a tar."""
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w") as tar:
+        member = tarfile.TarInfo("uv/wheel")
+        member.size = 1
+        tar.addfile(member, io.BytesIO(b"w"))
+    tar_path = directory / f"{RUNNER}.tar"
+    tar_path.write_bytes(header.ljust(512, b"\0") + archive.getvalue())
+    (directory / f"{RUNNER}.json").write_text(json.dumps({"repo": repo}))
+    return tar_path
 
-    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
-    sup.refresh_cache(FakeGitHub(), "octo/broken", "main")
 
-    assert len(downloads) == 1
-    assert not sup.cache_image("octo/broken").exists()
+class Runs:
+    """GitHub's answers about run 70, attempt 1."""
+
+    def __init__(self, event: str = "push", branch: str = "main", job: dict | None = None):
+        self.run = {"id": 70, "event": event, "head_branch": branch, "head_sha": "abc"}
+        default = {"runner_name": RUNNER, "status": "completed", "conclusion": "success"}
+        self.jobs = [{"runner_name": "other", "status": "completed", "conclusion": "success"}]
+        self.jobs.append(default if job is None else job)
+        self.asked: list[str] = []
+
+    def request(self, method: str, path: str, body: object = None) -> dict:
+        self.asked.append(path)
+        if path.endswith("/jobs?per_page=100"):
+            assert path.startswith("/repos/octo/app/actions/runs/70/attempts/1/")
+            return {"jobs": self.jobs}
+        assert path == "/repos/octo/app/actions/runs/70/attempts/1"
+        return self.run
+
+
+GREEN = b"homelab-ci-cache v1 run=70 attempt=1\n"
+
+
+@pytest.fixture
+def built(caches, monkeypatch) -> list[list[str]]:
+    """What each cache disk build would have held."""
+    names: list[list[str]] = []
+
+    def build(stream, image) -> None:
+        with tarfile.open(fileobj=stream, mode="r|") as tar:
+            names.append([m.name for m in tar])
+        image.touch()
+
+    monkeypatch.setattr(sup, "build_cache_image", build)
+    return names
+
+
+def test_builds_the_cache_disk_from_a_green_default_branch_jobs_outbox(
+    outbox_dir, built, caches
+) -> None:
+    tar = _outbox(outbox_dir, GREEN)
+
+    assert sup.take_outbox(Runs(), tar, {"octo/app": "main"}, 0.0) is False  # done with it
+
+    assert built == [["uv/wheel"]]
+    assert json.loads((caches / "octo__app.json").read_text()) == {"run": 70, "sha": "abc"}
+
+
+@pytest.mark.parametrize(
+    "github",
+    [
+        Runs(event="pull_request"),
+        Runs(branch="evil-branch"),  # a branch cannot replace the cache
+        # A pull request's job naming a green main run: that run's jobs ran elsewhere.
+        Runs(job={"runner_name": "fc-2-1", "status": "completed", "conclusion": "success"}),
+        Runs(job={"runner_name": RUNNER, "status": "completed", "conclusion": "failure"}),
+    ],
+)
+def test_takes_only_the_outbox_of_a_passed_job_on_a_push_to_the_default_branch(
+    github, outbox_dir, built
+) -> None:
+    tar = _outbox(outbox_dir, GREEN)
+
+    assert sup.take_outbox(github, tar, {"octo/app": "main"}, 0.0) is False
+    assert built == []
+
+
+def test_keeps_an_outbox_until_github_shows_its_job_finished(outbox_dir, built) -> None:
+    tar = _outbox(outbox_dir, GREEN)
+    running = Runs(job={"runner_name": RUNNER, "status": "in_progress", "conclusion": None})
+    made = tar.stat().st_mtime
+
+    assert sup.take_outbox(running, tar, {"octo/app": "main"}, made + 60) is True
+    assert sup.take_outbox(running, tar, {"octo/app": "main"}, made + 3601) is False
+    assert built == []
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        b"homelab-ci-outbox\n",  # nothing saved: most VMs end so
+        b"\0" * 64,
+        b"homelab-ci-cache v1 run=70 attempt=1 ; rm -rf /\n",
+        b"homelab-ci-cache v1 run=/../70 attempt=1\n",
+    ],
+)
+def test_an_outbox_without_the_actions_header_asks_github_nothing(
+    header: bytes, outbox_dir, built
+) -> None:
+    github = Runs()
+
+    assert sup.take_outbox(github, _outbox(outbox_dir, header), {"octo/app": "main"}, 0.0) is False
+    assert github.asked == [] and built == []
+
+
+def test_an_outbox_older_than_the_disks_run_is_not_taken(outbox_dir, built, caches) -> None:
+    (caches / "octo__app.json").write_text(json.dumps({"run": 71, "sha": "def"}))
+
+    assert sup.take_outbox(Runs(), _outbox(outbox_dir, GREEN), {"octo/app": "main"}, 0.0) is False
+    assert built == []
+
+
+def test_an_outbox_of_a_repo_no_longer_served_is_not_taken(outbox_dir, built) -> None:
+    github = Runs()
+
+    assert sup.take_outbox(github, _outbox(outbox_dir, GREEN), {}, 0.0) is False
+    assert github.asked == [] and built == []
+
+
+def test_judges_only_the_outboxes_of_vms_that_ended(outbox_dir) -> None:
+    for name in ("fc-0-1", "fc-1-2", "fc-2-3"):
+        (outbox_dir / f"{name}.json").write_text("{}")
+    state = sup.State()
+    state.launches[0] = sup.Launch(0, "o/r", 1, "fc-0-1", 0.0, Path("m"))
+    state.cache_checked["fc-2-3"] = 100.0  # tried 30 s ago
+
+    assert sup.ended_outboxes(state, 130.0) == [outbox_dir / "fc-1-2.tar"]
+
+
+def test_a_cache_tar_that_fails_to_unpack_is_dropped(outbox_dir, caches) -> None:
+    tar = _outbox(outbox_dir, GREEN)
+    tar.write_bytes(GREEN.ljust(512, b"\0") + b"not a tar")
+
+    assert sup.take_outbox(Runs(), tar, {"octo/app": "main"}, 0.0) is False
+    assert not sup.cache_image("octo/app").exists()
 
 
 def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
@@ -425,7 +525,7 @@ def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: 
         ),
     )
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     launched: list[str] = []
     monkeypatch.setattr(
@@ -588,7 +688,7 @@ def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:
         lambda gh, repo: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
     )
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     slots: list[int] = []
     monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: slots.append(slot))
@@ -753,7 +853,7 @@ def host(caches, monkeypatch):
     monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "has_job", lambda gh, run: False)  # VMs are still starting
     lines: list[str] = []
     monkeypatch.setattr(sup, "log", lines.append)
@@ -914,7 +1014,7 @@ def test_the_polled_repos_are_asked_at_once(monkeypatch) -> None:
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "find_queued", find)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     launched: list[str] = []
     monkeypatch.setattr(
@@ -1016,7 +1116,7 @@ def pools(caches, monkeypatch):
     monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     started: list[tuple[int, str]] = []
 
@@ -1110,7 +1210,7 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     for name in ("check_private", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_refresh_caches", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 1)
     monkeypatch.setattr(sup, "STATE_DIR", caches)
     monkeypatch.setattr(sup, "LAST_REPO_FILE", caches / "last-repo")

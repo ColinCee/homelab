@@ -30,7 +30,6 @@ import threading
 import time
 import urllib.error
 import urllib.request
-import zipfile
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -123,14 +122,21 @@ STANDBY_TIMEOUT_SECONDS = 2 * 3600
 # Checked every poll: conditional requests make an unchanged answer free.
 PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
-# Each repo's read-only cache disk: its package caches and installs, built from
-# an artifact that a green push to its default branch uploads (see ci-runner.md).
+# Each repo's read-only cache disk: its package caches and installs, built from what a
+# green push to its default branch leaves on its VM's outbox disk (see ci-runner.md).
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
-CACHE_ARTIFACT = "homelab-fc-cache"
-CACHE_CHECK_SECONDS = 60
-CACHE_MAX_BYTES = 2 * 1024**3
-# Unpacked: a zip can expand far beyond its own size, and / is shared with everything.
+# / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
+# Each build VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json),
+# kept after the VM until judged. Not through GitHub: 249 cache artifacts filled the
+# account's artifact storage on 5 Nov and every build's upload failed.
+OUTBOX_DIR = Path("/var/lib/homelab-ci/outbox")
+# What the fc-cache action writes last, once the tar after it is complete.
+OUTBOX_HEADER = re.compile(rb"homelab-ci-cache v1 run=([0-9]{1,20}) attempt=([0-9]{1,5})\n")
+# An outbox whose job GitHub does not show finished yet is tried again a minute later,
+# for up to an hour.
+OUTBOX_RETRY_SECONDS = 60
+OUTBOX_WAIT_SECONDS = 3600
 RUNNER_UID = 1001  # the runner user inside the VM image
 # What the CI runner is doing, for the Control room: rewritten after every poll, readable
 # by anyone on the host. Nothing secret goes in it (see status()).
@@ -414,19 +420,6 @@ class GitHub:
                 self._cache[path] = (etag, result)
         return result
 
-    def download(self, path: str, dest: Path, limit: int) -> None:
-        """Stream a binary answer to a file; GitHub redirects to signed storage, which
-        does not get the token (unredirected header)."""
-        req = urllib.request.Request(f"{API}{path}")
-        req.add_unredirected_header("Authorization", f"Bearer {self._token}")
-        with urllib.request.urlopen(req, timeout=120) as response, dest.open("wb") as f:
-            got = 0
-            while chunk := response.read(1 << 20):
-                got += len(chunk)
-                if got > limit:
-                    raise ValueError(f"download over {limit} bytes")
-                f.write(chunk)
-
     def clone(self) -> GitHub:
         return GitHub(self._token)
 
@@ -536,6 +529,9 @@ def launch(
         # The record first: a supervisor that dies right after starting the VM still finds it.
         write_status(run.record, record(run))
         env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
+        if not light:
+            (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
+            env["CACHE_OUT"] = str(OUTBOX_DIR / f"{name}.tar")
         start_vm(run, timeout, env)
     except BaseException:
         # It may have started anyway (systemd-run timing out, say).
@@ -1002,20 +998,6 @@ def cache_for(repo: str, label: str, private: Iterable[str]) -> Path | None:
     return image if image and image.exists() else None
 
 
-def pick_cache_artifact(
-    artifacts: Iterable[Mapping[str, Any]], branch: str
-) -> Mapping[str, Any] | None:
-    """The newest unexpired cache artifact made on the default branch."""
-    made_there = [
-        a
-        for a in artifacts
-        if a.get("name") == CACHE_ARTIFACT
-        and a.get("expired") is False
-        and (a.get("workflow_run") or {}).get("head_branch") == branch
-    ]
-    return max(made_there, key=lambda a: str(a.get("created_at", "")), default=None)
-
-
 def safe_member(member: tarfile.TarInfo, dest: str) -> tarfile.TarInfo | None:
     """Plain files, folders and links only, nothing outside the folder (tar filter),
     and no device or sparse files: the host only unpacks this into a disk image."""
@@ -1064,21 +1046,20 @@ def unpack_cache(stream: IO[bytes], root: Path) -> None:
             tar.extract(safe, root, filter="fully_trusted")
 
 
-class BadArtifact(Exception):
-    """The artifact itself cannot be unpacked; trying it again would fail the same way."""
+class BadCache(Exception):
+    """The tar itself cannot be unpacked; trying it again would fail the same way."""
 
 
-def build_cache_image(zip_path: Path, image: Path) -> None:
-    """Artifact zip -> cache.tar -> a folder -> an ext4 image, owned by the VM's runner user.
-    Runs as root on the host and never executes anything from the artifact."""
+def build_cache_image(stream: IO[bytes], image: Path) -> None:
+    """Cache tar -> a folder -> an ext4 image, owned by the VM's runner user.
+    Runs as root on the host and never executes anything from the tar."""
     with tempfile.TemporaryDirectory(dir=CACHE_DIR) as tmp:
         root = Path(tmp) / "root"
         root.mkdir()
         try:
-            with zipfile.ZipFile(zip_path) as z, z.open("cache.tar") as raw:
-                unpack_cache(raw, root)
+            unpack_cache(stream, root)
         except Exception as e:
-            raise BadArtifact(f"{type(e).__name__}: {e}") from e
+            raise BadCache(f"{type(e).__name__}: {e}") from e
         # Owned by the VM's runner user, so the job can write through its throwaway layer.
         # The folder is in a root-only temporary directory, so no host user reaches it.
         subprocess.run(["chown", "-R", f"{RUNNER_UID}:{RUNNER_UID}", str(root)], check=True)
@@ -1106,71 +1087,91 @@ def build_cache_image(zip_path: Path, image: Path) -> None:
         staged.replace(image)
 
 
-def refresh_cache(gh: GitHub, repo: str, branch: str) -> None:
-    """Rebuild the repo's cache disk when a newer artifact from a green push to its
-    default branch exists. A branch cannot replace it: only those runs count."""
+def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) -> bool:
+    """Turn an ended VM's outbox into its repo's cache disk if the job that VM ran passed on
+    a push to the default branch, so a branch or pull request cannot replace the cache. The
+    header only says which run to ask about; GitHub's job list must name this VM's runner.
+    Returns True to keep it for another try (GitHub does not show the job finished yet)."""
+    runner = tar.stem
+    try:
+        repo = str(json.loads(tar.with_suffix(".json").read_text())["repo"])
+        with tar.open("rb") as f:
+            header = OUTBOX_HEADER.match(f.read(512))
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    if not header:
+        return False  # nothing saved: most VMs end so
+    branch = branches.get(repo)
+    if not branch:
+        log(f"cache for {repo}: outbox of {runner} dropped, the repo is not served")
+        return False
+    run_id, attempt = int(header[1]), int(header[2])
     image = cache_image(repo)
     seen = image.with_suffix(".json")
-    page = gh.request("GET", f"/repos/{repo}/actions/artifacts?name={CACHE_ARTIFACT}&per_page=20")
-    artifact = pick_cache_artifact(page.get("artifacts", []), branch)
-    if artifact is None:
-        return
     known = json.loads(seen.read_text()) if seen.exists() else {}
-    if artifact["id"] in (known.get("artifact"), known.get("failed")):
-        return
-    run = gh.request("GET", f"/repos/{repo}/actions/runs/{artifact['workflow_run']['id']}")
-    if run.get("status") != "completed":
-        return  # uploaded before its run finished: judge it on a later check
-    if not (
-        run.get("event") == "push"
-        and run.get("conclusion") == "success"
-        and run.get("head_branch") == branch
-    ):
-        seen.write_text(json.dumps({**known, "artifact": artifact["id"], "refused": True}))
-        log(f"cache for {repo}: artifact {artifact['id']} is not from a green push; ignored")
-        return
-    if int(artifact.get("size_in_bytes", 0)) > CACHE_MAX_BYTES:
-        log(f"cache for {repo}: artifact {artifact['id']} is too big; ignored")
-        return
+    if run_id <= int(known.get("run", 0)):
+        return False  # older than the run the disk came from
+    path = f"/repos/{repo}/actions/runs/{run_id}/attempts/{attempt}"
+    run = gh.request("GET", path)
+    jobs = gh.request("GET", f"{path}/jobs?per_page=100").get("jobs", [])
+    job = next((j for j in jobs if j.get("runner_name") == runner), None)
+    if not (job and run.get("event") == "push" and run.get("head_branch") == branch):
+        log(f"cache for {repo}: outbox of {runner} is not from a push to {branch}; ignored")
+        return False
+    if job.get("status") != "completed":
+        return now - tar.stat().st_mtime < OUTBOX_WAIT_SECONDS
+    if job.get("conclusion") != "success":
+        log(f"cache for {repo}: outbox of {runner} is from a job that did not pass; ignored")
+        return False
     started = time.time()
-    with tempfile.TemporaryDirectory(dir=CACHE_DIR) as tmp:
-        zip_path = Path(tmp) / "artifact.zip"
-        gh.download(
-            f"/repos/{repo}/actions/artifacts/{artifact['id']}/zip", zip_path, CACHE_MAX_BYTES
-        )
+    with tar.open("rb") as f:
+        f.seek(512)
         try:
-            build_cache_image(zip_path, image)
-        except BadArtifact as e:
-            # The same artifact fails the same way: wait for a newer one rather than
-            # download and unpack it again every minute.
-            seen.write_text(json.dumps({**known, "failed": artifact["id"]}))
-            log(f"cache for {repo}: artifact {artifact['id']} failed to unpack, {e}; ignored")
-            return
-    seen.write_text(
-        json.dumps({"artifact": artifact["id"], "run": run["id"], "sha": run.get("head_sha", "")})
-    )
-    log(f"cache for {repo}: built from run {run['id']} in {time.time() - started:.0f}s")
+            build_cache_image(f, image)
+        except BadCache as e:
+            log(f"cache for {repo}: outbox of {runner} failed to unpack, {e}; ignored")
+            return False
+    seen.write_text(json.dumps({"run": run_id, "sha": run.get("head_sha", "")}))
+    log(f"cache for {repo}: built from run {run_id} in {time.time() - started:.0f}s")
+    return False
 
 
-def maybe_refresh_caches(gh: GitHub, state: State, private: list[str], now: float) -> None:
-    """At most one rebuild at a time, in the background, so polling never waits on it."""
-    due = [r for r in private if now - state.cache_checked.get(r, 0) >= CACHE_CHECK_SECONDS]
+def ended_outboxes(state: State, now: float) -> list[Path]:
+    """The outboxes of VMs that have ended (each has its .json from launch), not tried in
+    the last OUTBOX_RETRY_SECONDS."""
+    running = {run.runner_name for run in state.launches.values()}
+    return [
+        record.with_suffix(".tar")
+        for record in OUTBOX_DIR.glob(f"{RUNNER_PREFIX}*.json")
+        if record.stem not in running
+        and now - state.cache_checked.get(record.stem, 0) >= OUTBOX_RETRY_SECONDS
+    ]
+
+
+def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
+    """Judge ended VMs' outboxes one at a time in the background, so polling never waits on
+    a build. Each is deleted once judged; one GitHub cannot answer for is kept an hour."""
+    due = ended_outboxes(state, now)
     if not due or not state.cache_busy.acquire(blocking=False):
         return
-    for repo in due:
-        state.cache_checked[repo] = now
-
+    for tar in due:
+        state.cache_checked[tar.stem] = now
     # Its own client: the request cache is not shared between threads.
     own = gh.clone()
-    branches = {repo: state.privacy[repo].default_branch for repo in due}
+    branches = {r: p.default_branch for r, p in state.privacy.items() if p.private}
 
     def work() -> None:
         try:
-            for repo in due:
+            for tar in due:
                 try:
-                    refresh_cache(own, repo, branches[repo])
-                except Exception as e:  # one repo's failure must not hold up the rest
-                    log(f"cache refresh for {repo} failed: {type(e).__name__}: {e}")
+                    keep = take_outbox(own, tar, branches, now)
+                except Exception as e:  # GitHub may answer on a later try
+                    log(f"outbox {tar.name} failed: {type(e).__name__}: {e}")
+                    keep = now - tar.stat().st_mtime < OUTBOX_WAIT_SECONDS
+                if not keep:
+                    tar.unlink(missing_ok=True)
+                    tar.with_suffix(".json").unlink(missing_ok=True)
+                    state.cache_checked.pop(tar.stem, None)
         finally:
             state.cache_busy.release()
 
@@ -1223,10 +1224,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         for job in jobs:
             job_ids.setdefault(job.want, []).append(job.id)
     reap(gh, state, now, queued, private)
-    # Cache disks only for repos that run here; a quiet repo gets checked after its first job.
-    maybe_refresh_caches(
-        gh, state, [r for r in private if r in state.used or cache_image(r).exists()], now
-    )
+    maybe_take_outboxes(gh, state, now)
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
     # with the same repo and cache label (or none).
     booting: Counter[Want] = Counter(
@@ -1540,6 +1538,7 @@ def main(argv: list[str] | None = None) -> int:
     listed = 0.0
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)
     CACHE_DIR.mkdir(mode=0o755, exist_ok=True)
+    OUTBOX_DIR.mkdir(mode=0o700, exist_ok=True)
     # Half-built caches from a supervisor that was killed mid-build.
     for leftover in CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)

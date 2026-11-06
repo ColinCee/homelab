@@ -1,4 +1,4 @@
-"""The shared action that uploads a repo's cache disk (.github/actions/fc-cache)."""
+"""The shared action that saves a repo's cache disk (.github/actions/fc-cache)."""
 
 import os
 import re
@@ -14,33 +14,69 @@ from scripts import ci_supervisor as sup
 ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
 
 
-def test_the_action_uploads_what_the_supervisor_reads() -> None:
+def test_the_action_saves_only_on_the_default_branch_and_never_fails_the_job() -> None:
     action = yaml.safe_load((ACTION / "action.yml").read_text())
-    steps = action["runs"]["steps"]
-    upload = steps[-1]
-    pinned = re.search(
-        r"actions/upload-artifact@\w+",
-        (ACTION.parent.parent.parent / "ci-runner" / "versions.env").read_text(),
-    )
+    (step,) = action["runs"]["steps"]
 
     assert action["runs"]["using"] == "composite"
-    assert pinned is not None and upload["uses"] == pinned.group()
-    assert upload["with"]["name"] == sup.CACHE_ARTIFACT
-    assert upload["with"]["path"] == "${{ runner.temp }}/cache.tar"
-    assert upload["with"]["retention-days"] == 3
-    assert upload["with"]["compression-level"] == 1
-    for step in steps:  # nothing runs off the default branch
-        assert step["if"] == (
-            "github.event_name == 'push' && "
-            "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
-        )
+    assert "uses" not in step  # nothing goes through GitHub's artifact storage
+    assert step["if"] == (
+        "github.event_name == 'push' && "
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
+    )
+    assert "if ! {" in step["run"] and "save.sh" in step["run"]
 
 
-def test_the_pack_script_checks_the_supervisors_size_limits() -> None:
-    script = (ACTION / "pack.sh").read_text()
+def test_the_pack_script_checks_the_supervisors_size_limit() -> None:
+    assert f"max_unpacked={sup.CACHE_MAX_UNPACKED_BYTES}\n" in (ACTION / "pack.sh").read_text()
 
-    assert f"max_unpacked={sup.CACHE_MAX_UNPACKED_BYTES}\n" in script
-    assert f"max_zip={sup.CACHE_MAX_BYTES}\n" in script
+
+def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
+    script = (ACTION.parent.parent.parent / "ci-runner" / "run-vm.sh").read_text()
+    size = re.search(r"OUTBOX_BYTES=\$\(\((.+)\)\)", script)
+
+    assert size is not None
+    assert eval(size.group(1)) >= sup.CACHE_MAX_UNPACKED_BYTES + 512
+
+
+def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
+    env = {**os.environ, "SUDO": "", "GITHUB_RUN_ID": "70", "GITHUB_RUN_ATTEMPT": "2"}
+    return subprocess.run(
+        [str(ACTION / "save.sh"), str(tar), *map(str, disks)],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+
+def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path) -> None:
+    (tmp_path / "cache" / "uv").mkdir(parents=True)
+    (tmp_path / "cache" / "uv" / "wheel").write_text("w")
+    (tmp_path / "work").mkdir()
+    assert pack(tmp_path / "cache", tmp_path / "work").returncode == 0
+    other, outbox = tmp_path / "vdb", tmp_path / "vdc"
+    other.write_bytes(b"\0" * 4096)  # the cache disk: an ext4 starts with zeros
+    outbox.write_bytes(b"homelab-ci-outbox\n".ljust(1 << 20, b"\0"))  # as run-vm.sh makes it
+
+    result = save(tmp_path / "cache.tar", other, outbox)
+
+    assert result.returncode == 0, result.stderr
+    assert other.read_bytes() == b"\0" * 4096
+    with outbox.open("rb") as f:
+        header = sup.OUTBOX_HEADER.match(f.read(512))
+        assert header is not None and (header[1], header[2]) == (b"70", b"2")
+        with tarfile.open(fileobj=f, mode="r|") as tar:
+            assert [m.name for m in tar] == ["uv", "uv/wheel"]
+
+
+def test_fails_without_an_outbox_disk(tmp_path) -> None:
+    (tmp_path / "cache.tar").write_bytes(b"")
+    (tmp_path / "vdb").write_bytes(b"\0" * 4096)
+
+    result = save(tmp_path / "cache.tar", tmp_path / "vdb", tmp_path / "vdz")
+
+    assert result.returncode != 0
+    assert "no outbox disk" in result.stderr
 
 
 def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProcess[str]:

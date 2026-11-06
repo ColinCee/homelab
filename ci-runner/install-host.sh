@@ -74,8 +74,10 @@ install_vm_files() {
   install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
   install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
 }
-# Cache disks the supervisor builds from main-only artifacts; VMs read them, never write.
+# Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
+# Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
+install -d -o root -g root -m 0700 /var/lib/homelab-ci/outbox
 
 # The supervisor, the network rules and the slot counts take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the
