@@ -6,7 +6,6 @@ DefaultDependencies=no
 [Service]
 ExecStart=/usr/local/sbin/ci-memwatch
 Restart=always
-StandardOutput=journal+console
 # It reports the out-of-memory kills, so it must not be one of them.
 OOMScoreAdjust=-900
 

@@ -8,6 +8,8 @@
 # flood the console (ci_supervisor.py reads the line). A line goes out when the peak grows
 # 16 MiB or a kill happens, and every 30 s, on a fresh line in case another writer left one
 # half done.
+# Straight to the console: through the journal each line would gain a timestamp and name.
+exec > /dev/console
 peak=0 said=-16 kills=-1 beat=-30
 while :; do
   while read -r key value _; do
