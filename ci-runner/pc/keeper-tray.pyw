@@ -2,6 +2,7 @@
 unseen. Started at sign-in from the Startup folder (runbook, "PC build slots", has the command).
 """
 
+import contextlib
 import ctypes
 import json
 import os
@@ -14,6 +15,10 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(r"D:\kaizen-ci")
 LOG = ROOT / "keeper.log"
+# Windows' notification state (SHQueryUserNotificationState): busy, full-screen Direct3D, or a
+# full-screen store app means a game (or a full-screen video) has the screen.
+FULLSCREEN = ROOT / "fullscreen.txt"
+FULL_SCREEN_STATES = {2, 3, 7}
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: no console flashes up
 ALREADY_EXISTS = 183
 COLOURS = {"busy": "#3fb950", "paused": "#d29922", "off": "#8b949e", "down": "#f85149"}
@@ -57,6 +62,20 @@ def kaizen_status() -> str:
     except ValueError, KeyError, TypeError:
         return ""
     return next((str(h.get("status") or "") for h in holds if h.get("name") == "kaizen-ci"), "")
+
+
+def full_screen() -> bool:
+    state = ctypes.c_int()
+    if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
+        return False
+    return state.value in FULL_SCREEN_STATES
+
+
+def say_full_screen(stopping: threading.Event) -> None:
+    """Every 5 s, for keeper.ps1, which cannot ask Windows itself (ConstrainedLanguage)."""
+    while not stopping.wait(5):
+        with contextlib.suppress(OSError):
+            FULLSCREEN.write_text("1" if full_screen() else "0")
 
 
 def dot(colour: str) -> Image.Image:
@@ -111,6 +130,7 @@ def main() -> None:
         pystray.MenuItem("Quit", quit_tray),
     )
     threading.Thread(target=watch, daemon=True).start()
+    threading.Thread(target=say_full_screen, args=(stopping,), daemon=True).start()
     icon.run()
 
 

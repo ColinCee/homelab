@@ -9,8 +9,10 @@ $guest = @('-n', '-i', "$root\ssh\id_ed25519", '-o', "UserKnownHostsFile=$root\s
     '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=3', 'kaizen@192.168.250.10')
 $repo = 'ColinCee/auto-kaizen'
 $beelinkSlots = 5
-# GPU busy: over this utilisation for 3 samples in a row (15 s). Back to full after 5 quiet minutes.
-$busyPercent = 30
+# Gaming: a full-screen app (keeper-tray.pyw reads Windows' own flag into $fullscreen every 5 s) or
+# anyone else holding the gpu lease, for 3 samples in a row (15 s). GPU load is no signal: the
+# desktop alone sits near 30% on this card. Back to full after 5 quiet minutes.
+$fullscreen = "$root\fullscreen.txt"
 $quietSeconds = 300
 # The task cap rises only after the slots have held this long, and drops at once.
 $riseSeconds = 600
@@ -35,10 +37,13 @@ function GuestVms {
 }
 
 function GpuBusy {
-    $use = & nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>$null | Select-Object -First 1
     $held = (& lease show --json 2>$null | ConvertFrom-Json).holds |
         Where-Object { $_.name -ne $vm -and ($_.wants | Where-Object { $_.resource -eq 'gpu' }) }
-    return ($held -or (($use -match '^\d+$') -and [int]$use -gt $busyPercent))
+    # Only a fresh answer counts: with the tray gone, nothing says a game runs.
+    $said = Get-Item $fullscreen -ErrorAction SilentlyContinue
+    $full = $said -and ((Get-Date) - $said.LastWriteTime).TotalSeconds -lt 30 -and
+        (Get-Content $fullscreen -ErrorAction SilentlyContinue | Select-Object -First 1) -eq '1'
+    return [bool]($held -or $full)
 }
 
 # What the lease band above Claude's prompt shows after kaizen-ci: the PC's runners busy/online, from
