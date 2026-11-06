@@ -24,7 +24,7 @@ fallback, since those runs are billed and can be refused; a pull-request job use
 no repository secrets.
 
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
-python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
+python3 and `python` (uv's Python, PYTHON_VERSION; Ubuntu's own is not installed), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
 `JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
 (`bwrap`), socat and Docker with its buildx and compose
 plugins (the engine starts on a job's first `docker` call, so `docker build`,

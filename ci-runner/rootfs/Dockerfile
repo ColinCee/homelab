@@ -8,7 +8,7 @@ FROM ubuntu:24.04@sha256:68ee22004a9109b44973313b02ff7b1de250f1de0f5ecb628d73f57
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       systemd systemd-sysv udev iproute2 ca-certificates curl jq netcat-openbsd iputils-ping \
-      git sudo unzip xz-utils zstd build-essential python3 python-is-python3 shellcheck file \
+      git sudo unzip xz-utils zstd build-essential shellcheck file \
       kmod iptables bubblewrap socat \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && systemctl mask systemd-resolved.service systemd-networkd.service \
@@ -18,6 +18,8 @@ RUN apt-get update \
  && useradd --create-home --shell /bin/bash runner \
  && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner
 # Root inside the VM is fine: the VM is the boundary, and it is thrown away.
+# One Python, PYTHON_VERSION (versions.env), as python and python3: Ubuntu's older python3 is not installed, so no
+# job runs on a Python its repo never tested.
 
 ARG RUNNER_VERSION
 ARG RUNNER_SHA256
@@ -64,7 +66,8 @@ RUN v=${NODE_VERSION#v} \
  && mkdir -p "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64" \
  && cp /usr/local/bin/uv /usr/local/bin/uvx "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64/" \
  && touch "/opt/hostedtoolcache/uv/${UV_VERSION}/x86_64.complete" \
- && UV_PYTHON_INSTALL_DIR=/opt/uv-python uv python install "${PYTHON_VERSION}" \
+ && UV_PYTHON_INSTALL_DIR=/opt/uv-python UV_PYTHON_BIN_DIR=/usr/local/bin uv python install --default "${PYTHON_VERSION}" \
+ && python3 --version | grep -q "^Python ${PYTHON_VERSION}" && python --version | grep -q "^Python ${PYTHON_VERSION}" \
  && chown -R runner:runner /opt/hostedtoolcache /opt/uv-python \
  && printf 'RUNNER_TOOL_CACHE=/opt/hostedtoolcache\nUV_PYTHON_INSTALL_DIR=/opt/uv-python\n' >> /opt/runner/.env
 
