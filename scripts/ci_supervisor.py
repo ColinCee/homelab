@@ -704,8 +704,9 @@ def record(run: Launch) -> dict[str, Any]:
 
 def start_vm(run: Launch, timeout: int, env: Mapping[str, str], peer: bool = False) -> None:
     """Start the VM as a systemd unit of its own, so a restart of this supervisor leaves it
-    running. Its console goes through this script's `vm` mode, which keeps the live lines and
-    sessions of auto-kaizen's VMs only, so a product's VM cannot put a line on a task. The
+    running. Its console goes through this script's `vm` mode, which keeps every VM's memory
+    line, and the live lines and sessions of auto-kaizen's VMs only, so a product's VM cannot put
+    a line on a task. The
     unit stops before the CI network does, at shutdown."""
     vm = [str(run.slot), str(run.metadata), str(timeout)]
     vm += ["--repo", run.repo, "--runner", run.runner_name]
@@ -807,7 +808,8 @@ def write_memory_metrics() -> None:
         for kind, counts in MEMORY_COUNTS.items()
     ]
     try:
-        tmp = MEMORY_METRICS.with_name(f".{MEMORY_METRICS.name}")
+        # Not *.prom, or the collector could read it half written.
+        tmp = MEMORY_METRICS.with_name(f".{MEMORY_METRICS.stem}.tmp")
         tmp.write_text("\n".join(lines) + "\n")
         tmp.chmod(0o644)
         os.replace(tmp, MEMORY_METRICS)
@@ -850,8 +852,8 @@ def adopt(state: State) -> None:
 
 
 def vm_main(argv: list[str]) -> int:
-    """`vm SLOT METADATA TIMEOUT [--live FILE --session FILE] [--repo R --runner N]`: run-vm.sh's
-    console reader, the main process of the VM's unit. It reads the console to the end (a full
+    """`vm SLOT METADATA TIMEOUT [--memory FILE] [--live FILE --session FILE]
+    [--repo R --runner N]`: run-vm.sh's console reader, the main process of the VM's unit. It reads the console to the end (a full
     pipe would stall the VM), keeps the latest live line in FILE and the session events, hands
     handoff asks to a worker that answers them on the VM's inbox, and exits with run-vm.sh's
     code."""

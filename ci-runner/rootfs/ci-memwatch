@@ -3,22 +3,25 @@
 # killed anything for lack of it: the host sees only pages the VM touched, its file cache
 # included, and the kernel's own out-of-memory message is below the console's log level.
 # Needed is MemTotal less MemAvailable, so cache the kernel can drop does not count.
-# Shell builtins only: a fork can fail in the very squeeze this reports (ci_supervisor.py
-# reads the line). A line goes out when the peak grows 16 MiB or a kill happens, and every
-# 30 s, on a fresh line in case another writer left one half done.
-peak=0 said=-16 kills=-1 ticks=0
+# /proc is read with shell builtins, as a fork can fail in the very squeeze this reports; only
+# sleep forks, and the 30 s heartbeat is timed from /proc/uptime, so a failing sleep cannot
+# flood the console (ci_supervisor.py reads the line). A line goes out when the peak grows
+# 16 MiB or a kill happens, and every 30 s, on a fresh line in case another writer left one
+# half done.
+peak=0 said=-16 kills=-1 beat=-30
 while :; do
   while read -r key value _; do
     case $key in MemTotal:) total=$((value / 1024)) ;; MemAvailable:) avail=$((value / 1024)) ;; esac
   done < /proc/meminfo
   now=0
   while read -r key value; do [ "$key" = oom_kill ] && now=$value; done < /proc/vmstat
+  read -r up _ < /proc/uptime
+  up=${up%.*}
   used=$((total - avail))
   [ "$used" -gt "$peak" ] && peak=$used
-  if [ $((peak - said)) -ge 16 ] || [ "$now" != "$kills" ] || [ $((ticks % 15)) -eq 0 ]; then
+  if [ $((peak - said)) -ge 16 ] || [ "$now" != "$kills" ] || [ $((up - beat)) -ge 30 ]; then
     printf '\nHOMELAB-MEM 1 %s %s %s\n' "$peak" "$total" "$now"
-    said=$peak kills=$now
+    said=$peak kills=$now beat=$up
   fi
-  ticks=$((ticks + 1))
   sleep 2
 done

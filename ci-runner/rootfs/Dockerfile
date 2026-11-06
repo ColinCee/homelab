@@ -155,4 +155,4 @@ RUN for a in ${CACHED_ACTIONS}; do \
 
 COPY ci-boot ci-trim-cache ci-memwatch /usr/local/sbin/
 COPY ci-boot.service ci-trim-cache.service ci-memwatch.service /etc/systemd/system/
-RUN chmod 0755 /usr/local/sbin/ci-boot /usr/local/sbin/ci-trim-cache /usr/local/sbin/ci-memwatch  && systemctl enable ci-boot.service ci-trim-cache.service ci-memwatch.service
+RUN chmod 0755 /usr/local/sbin/ci-boot /usr/local/sbin/ci-trim-cache /usr/local/sbin/ci-memwatch && systemctl enable ci-boot.service ci-trim-cache.service ci-memwatch.service
