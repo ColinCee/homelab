@@ -162,9 +162,8 @@ echo 0 > "$peak_file"
 sampler=$!
 
 # Memory capped a little above the guest's, with no swap: the cap also counts the host's cache of
-# the VM's own disk, and at the cap the kernel swapped the guest's RAM out rather than drop that
-# cache (6 Nov: VMs hit it thousands of times, up to 300 MiB each in swap). The guest's RAM fits
-# under the cap, so now only that cache is let go.
+# the VM's own disk, and at the cap the kernel swapped guest RAM out rather than drop that cache.
+# Guest RAM plus Firecracker's own (under 100 MiB) fits in the cap, so only the cache goes.
 # The lock stays with this script: if it dies, the next run kills the orphan.
 status="stopped"
 timeout --kill-after=10 "$timeout" /usr/local/bin/jailer \
