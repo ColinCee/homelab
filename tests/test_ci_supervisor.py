@@ -1175,7 +1175,8 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
     assert state.used == {"o/spare", "o/job"}
 
 
-LIGHT = (*sup.LIGHT_RUNNER_LABELS,)
+LIGHT = sup.light_runner_labels(sup.LIGHT_LABEL)
+SMALL = sup.light_runner_labels(sup.SMALL_LABEL)
 
 
 @pytest.mark.parametrize(
@@ -1185,14 +1186,17 @@ LIGHT = (*sup.LIGHT_RUNNER_LABELS,)
         (("self-hosted", "linux", "x64", "HOMELAB-FC-LIGHT"), True),
         ((*LIGHT, "homelab-fc"), False),  # a build VM never has the light label
         ((*LIGHT, "fc-cache-colincee--servo"), False),  # a light VM has no cache disk
+        (SMALL, True),
+        ((*SMALL, sup.LIGHT_LABEL), False),  # no VM has both sizes
     ],
 )
 def test_a_light_job_asks_for_the_light_label_alone(labels, ours) -> None:
     assert sup.wants_us(labels) is ours
 
 
-def test_a_light_jobs_want_is_the_light_label() -> None:
+def test_a_light_jobs_want_is_its_light_label() -> None:
     assert sup.Job("o/ok", 1, "j", LIGHT).want == ("o/ok", sup.LIGHT_LABEL)
+    assert sup.Job("o/ok", 1, "j", SMALL).want == ("o/ok", sup.SMALL_LABEL)
 
 
 @pytest.fixture
@@ -1440,9 +1444,11 @@ def test_the_light_standby_gives_its_memory_to_a_build_and_never_boots_while_one
 def test_the_last_light_jobs_repo_is_kept_and_polled_every_time(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
     monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
-    assert sup.recalled_last_light_repo() == ""
-    sup.remember(sup.LAST_LIGHT_REPO_FILE, "a/k\n")
-    assert sup.recalled_last_light_repo() == "a/k"
+    assert sup.recalled_last_light_job() == ("", sup.LIGHT_LABEL)
+    sup.remember(sup.LAST_LIGHT_REPO_FILE, "a/k\n")  # as an older supervisor kept it
+    assert sup.recalled_last_light_job() == ("a/k", sup.LIGHT_LABEL)
+    sup.remember(sup.LAST_LIGHT_REPO_FILE, f"a/k\n{sup.SMALL_LABEL}\n")
+    assert sup.recalled_last_light_job() == ("a/k", sup.SMALL_LABEL)
     state = sup.State(last_light_repo="a/k", polled={"a/k": 0.0, "a/q": 0.0})
     assert sup.due(["a/k", "a/q"], state, 30.0) == ["a/k"]
 
@@ -1546,6 +1552,41 @@ def test_no_light_standby_boots_while_the_disk_is_busy(pools, monkeypatch) -> No
     monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
     sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
     assert started == [(1, sup.LIGHT_LABEL)]
+
+
+@pytest.mark.parametrize(("light_id", "small_starts"), [(2, True), (1, False)])
+def test_a_small_vm_starts_where_a_light_one_does_not_fit_unless_one_waits_before_it(
+    pools, monkeypatch, light_id, small_starts
+) -> None:
+    _, started = pools
+    jobs = [sup.Job("o/ok", light_id, "l", LIGHT), sup.Job("o/ok", 3 - light_id, "s", SMALL)]
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 1500)
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
+    state = sup.State(slots=1, light_slots=2)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == ([(1, sup.SMALL_LABEL)] if small_starts else [])
+    assert set(state.held) == ({light_id} if small_starts else {1, 2})
+
+
+def test_a_small_vm_registers_its_label_with_half_the_memory(monkeypatch, tmp_path) -> None:
+    labels: list[object] = []
+
+    class Registers:
+        def request(self, method: str, path: str, body: dict) -> dict:
+            labels.append(body["labels"])
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    for name in ("STATE_DIR", "OUTBOX_DIR"):
+        monkeypatch.setattr(sup, name, tmp_path)
+    monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
+    sizes: list[str] = []
+    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: sizes.append(env["MEM_MIB"]))
+    state = sup.State(slots=1, light_slots=1)
+    sup.launch(Registers(), state, "o/ok", 1, 0.0, label=sup.SMALL_LABEL, cache=None)  # type: ignore[arg-type]
+    assert labels == [list(SMALL)] and sizes == ["1024"] and state.launches[1].light
+    assert (state.last_light_repo, state.last_light_label) == ("o/ok", sup.SMALL_LABEL)
 
 
 def _queue_build_and_light(monkeypatch, build_id: int, light_id: int, free_mib: int) -> list[str]:
