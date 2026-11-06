@@ -49,8 +49,8 @@ Add panels to it rather than adding dashboards. From the top:
   longest wait for a machine
 - **Containers:** a bar per container for CPU and for memory
 - **Backups:** one line of numbers
-- **Collapsed sections**, which load only when opened: containers, CI VMs
-  and backups over time, with their logs
+- **Collapsed sections**, which load only when opened: alerts, containers,
+  CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
@@ -170,8 +170,9 @@ The shipped rules cover host-level pressure such as:
 - high RAM
 - high disk usage
 - **Flight Tracker site down**: the live-data probe has failed for 10 minutes
-- **Unknown container started**: a container name not seen in the 7 days before is
-  running, the usual sign of a foothold; redeploys keep their names and don't fire
+- **Unknown container started**: a container whose name was not seen in the week
+  before has run for 15 minutes, as one planted by an intruder would; redeploys
+  keep their names and quick `docker run` checks stop sooner, so neither fires
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
