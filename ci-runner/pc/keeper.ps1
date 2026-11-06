@@ -4,7 +4,9 @@
 $ErrorActionPreference = 'Continue'
 $root = 'D:\kaizen-ci'
 $vm = 'kaizen-ci'
-$guest = @('-i', "$root\ssh\id_ed25519", '-o', "UserKnownHostsFile=$root\ssh\known_hosts", '-o', 'ConnectTimeout=10', 'kaizen@192.168.250.10')
+# A hung ssh would stop the loop and its lease renewals: no prompts, no input, and given up after 15 s of silence.
+$guest = @('-n', '-i', "$root\ssh\id_ed25519", '-o', "UserKnownHostsFile=$root\ssh\known_hosts", '-o', 'ConnectTimeout=10',
+    '-o', 'BatchMode=yes', '-o', 'ServerAliveInterval=5', '-o', 'ServerAliveCountMax=3', 'kaizen@192.168.250.10')
 $repo = 'ColinCee/auto-kaizen'
 $beelinkSlots = 5
 # GPU busy: over this utilisation for 3 samples in a row (15 s). Back to full after 5 quiet minutes.
@@ -39,6 +41,21 @@ function GpuBusy {
     return ($held -or (($use -match '^\d+$') -and [int]$use -gt $busyPercent))
 }
 
+# What the lease band above Claude's prompt shows after kaizen-ci: the PC's runners busy/online, from
+# GitHub (the PC registers all its runners on auto-kaizen), or ‖ while paused for the GPU. Given up
+# after 20 s, so a hung call cannot stop the lease renewals.
+function Status($paused) {
+    if ($paused) { return '‖' }
+    $out = "$root\runners.json"
+    Remove-Item $out -ErrorAction SilentlyContinue
+    $call = Start-Process gh -ArgumentList "api repos/$repo/actions/runners?per_page=100" -RedirectStandardOutput $out -WindowStyle Hidden -PassThru
+    Wait-Process -InputObject $call -Timeout 20 -ErrorAction SilentlyContinue
+    if (-not $call.HasExited) { Stop-Process -InputObject $call -Force; return '?' }
+    try { $pc = (Get-Content $out -Raw | ConvertFrom-Json).runners | Where-Object { $_.name -like 'pc-*' -and $_.status -eq 'online' } }
+    catch { return '?' }
+    return "$(@($pc | Where-Object { $_.busy }).Count)/$(@($pc).Count)"
+}
+
 function SetGuestSlots($n) {
     & ssh @guest "echo $n | sudo tee /etc/homelab-ci/pc-slots >/dev/null"
     return $LASTEXITCODE -eq 0
@@ -55,6 +72,7 @@ $capSet = [int](& gh variable get KAIZEN_TASK_SLOTS -R $repo 2>$null | Select-Ob
 if ($capSet -le 0) { $capSet = $beelinkSlots }
 $given = -1; $slotsSaid = [datetime]::MinValue; $capSince = Get-Date; $capTried = [datetime]::MinValue; $busyRuns = 0; $lastBusy = [datetime]::MinValue; $capped = $false
 $leaseGb = 0
+$status = '?'; $statusAsked = [datetime]::MinValue
 while ($true) {
     $want = Wanted
     if (GpuBusy) { $busyRuns++ } else { $busyRuns = 0 }
@@ -76,14 +94,21 @@ while ($true) {
         $leaseGb = 0
     }
     if ($running) {
+        if ($gaming -ne ($status -eq '‖') -or ((Get-Date) - $statusAsked).TotalSeconds -ge 60) {
+            $status = Status $gaming; $statusAsked = Get-Date
+        }
         $gb = 12
         try { $gb = [int]((Get-VM -Name $vm -ErrorAction Stop).MemoryStartup / 1GB) } catch { }
         if ($leaseGb -eq 0) {
-            & lease take --name $vm --res "ram:$gb" --pid $PID --note 'kaizen-ci Hyper-V VM (Auto Kaizen builds)' | Out-Null
+            & lease take --name $vm --res "ram:$gb" --pid $PID --note 'kaizen-ci Hyper-V VM (Auto Kaizen builds)' --status $status | Out-Null
             if ($LASTEXITCODE -eq 0) { $leaseGb = $gb }
         } else {
-            & lease renew --name $vm --pid $PID | Out-Null
-            if ($LASTEXITCODE -eq 3) {
+            & lease renew --name $vm --pid $PID --status $status | Out-Null
+            if ($LASTEXITCODE -eq 2) {
+                # An error, such as a lease command too old for --status: take it again next time.
+                Say 'lease renew failed: taking it again'
+                $leaseGb = 0
+            } elseif ($LASTEXITCODE -eq 3) {
                 Say 'lease freed: powering the guest off'
                 & ssh @guest 'sudo poweroff'
                 Set-Content "$root\capacity.txt" 'off'
