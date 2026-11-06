@@ -315,7 +315,9 @@ groups:
           trigger: "a name not seen in the week before, running 15 min"
           value: "{{ $labels.name }}"
           description: "Container {{ $labels.name }} has run on the Beelink for 15 minutes and was not seen in the week before."
-          action: "Expected if you just added a stack or ran one by hand. Otherwise check `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command."
+          action: >-
+            Expected if you just added a stack or ran one by hand. Otherwise check
+            `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command.
         labels:
           severity: warning
 
