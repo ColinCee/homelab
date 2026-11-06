@@ -40,7 +40,8 @@ echo 'w /sys/kernel/mm/ksm/run - - - - 0' > /etc/tmpfiles.d/homelab-ci-ksm.conf
 echo 0 > /sys/kernel/mm/ksm/run
 
 # Firecracker and jailer, pinned and checked against the hash in versions.env.
-if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${FIRECRACKER_VERSION}\$"; then
+if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${FIRECRACKER_VERSION}\$" ||
+  ! /usr/local/bin/jailer --version 2>/dev/null | grep -q "Jailer ${FIRECRACKER_VERSION}\$"; then
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
   tgz="firecracker-${FIRECRACKER_VERSION}-x86_64.tgz"
@@ -105,7 +106,7 @@ changed() { ! cmp -s "$1" "$2"; }
 restart=false
 # The door's user before any restart: the supervisor opens the door at start only if it exists.
 if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub ]] && ! id ci-peer >/dev/null 2>&1; then
-  useradd --system --user-group --home-dir /nonexistent --shell /bin/sh ci-peer
+  useradd --system --user-group --home-dir / --shell /bin/sh ci-peer
   restart=true
 fi
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
