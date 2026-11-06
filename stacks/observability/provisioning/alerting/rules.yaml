@@ -105,6 +105,96 @@ groups:
         labels:
           severity: warning
 
+      - uid: beelink-swapping
+        title: Beelink swapping, slowing Kaizen's VMs
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Swap shares the one SSD with every CI VM's disk, so swapping stalls jobs and holds new
+              # VMs back (6 Nov: 2-8 MB/s through most busy hours, held VMs about 10 min per task).
+              expr: rate(node_vmstat_pswpout{job="integrations/unix"}[30m]) * 4096 / 1e6
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Beelink swap writes"
+          measure: "Swapped out"
+          trigger: "over 1 MB/s for 30 min"
+          chart: |
+            rate(node_vmstat_pswpout{job="integrations/unix"}[30m]) * 4096 / 1e6
+          chart_line: "1"
+          value: "{{ with $values.A }}{{ printf \"%.1f\" .Value }} MB/s{{ end }}"
+          description: "Threshold: over 1 MB/s swapped out, averaged over 30 minutes."
+          action: "Check which VMs or containers hold swap (VmSwap in /proc/*/status) and the CI memory notes in docs/runbooks/ci-runner.md."
+        labels:
+          severity: warning
+
+      - uid: beelink-disk-stalled
+        title: Beelink disk too slow for Kaizen's VMs
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 1800
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # The share of time tasks waited on the disk. Over half holds new CI VMs back
+              # (DISK_WAIT_LIMIT in ci_supervisor.py), so a half-hour of it means tasks queue.
+              expr: rate(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[30m])
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.5]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Beelink disk waits"
+          measure: "Time waiting on disk"
+          trigger: "over 50% for 30 min"
+          chart: |
+            100 * (
+              rate(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[30m])
+            )
+          chart_line: "50"
+          value: "{{ with $values.A }}{{ humanizePercentage .Value }}{{ end }}"
+          description: "Threshold: tasks waited on the disk over half the time, averaged over 30 minutes."
+          action: "Check write rate and latency (iostat -dx nvme0n1), when the SSD was last trimmed (journalctl -u fstrim) and the CI disk notes in docs/runbooks/ci-runner.md."
+        labels:
+          severity: warning
+
       - uid: high-disk
         title: Beelink disk filling up
         condition: C
