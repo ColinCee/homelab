@@ -10,9 +10,3 @@ filenames:
   - /var/log/auth.log
 labels:
   type: sshd
----
-# Docker container logs (JSON format)
-filenames:
-  - /var/lib/docker/containers/*/*.log
-labels:
-  type: docker
