@@ -65,7 +65,7 @@ automatically. Non-major versions can still break behavior, especially before
 
 | Stack | Purpose |
 |-------|---------|
-| `stacks/home-assistant/` | Home automation, with host networking for Bluetooth/mDNS |
+| `stacks/home-assistant/` | Home automation, with host networking for mDNS; Bluetooth is off |
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
 | `stacks/crowdsec/` | Intrusion detection, paired with the host firewall bouncer |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
