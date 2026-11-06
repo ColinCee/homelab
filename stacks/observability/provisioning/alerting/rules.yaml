@@ -348,7 +348,7 @@ groups:
                 # until the device leaves the tailnet or this moves past its added time.
                 - evaluator:
                     type: gt
-                    params: [1793962000]
+                    params: [1793962000]  # 6 Nov 2026 10:46 UTC
               refId: C
         noDataState: OK
         execErrState: Error
@@ -361,8 +361,10 @@ groups:
           action: >-
             Ask Colin whether it is his. If yes, approve it by raising this rule's
             threshold in stacks/observability/provisioning/alerting/rules.yaml to
-            {{ with $values.A }}{{ printf "%.0f" .Value }}{{ end }}. If not, he removes it at
-            https://login.tailscale.com/admin/machines and rotates any secret it could reach.
+            {{ with $values.A }}{{ printf "%.0f" .Value }}{{ end }}; that approves every device
+            added before it too, so first check none of the other firing devices is unknown.
+            If not his, he removes it at https://login.tailscale.com/admin/machines and rotates
+            any secret it could reach.
         labels:
           severity: warning
 
@@ -443,7 +445,7 @@ groups:
           summary: "PC backup"
           measure: "Newest PC backup"
           trigger: "over 50 h old"
-          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} h old{{ end }}"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} h old{{ else }}never{{ end }}"
           description: "No backup file has arrived from the Windows PC in over 50 hours."
           action: >-
             Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then

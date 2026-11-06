@@ -5,10 +5,15 @@ policies:
     group_by: ['alertname', 'rulename']
     group_wait: 30s
     group_interval: 5m
-    repeat_interval: 12h
+    # Rare repeats to Kaizen: a firing on an alert issue open over 12 hours reads
+    # as a lost resolve and opens a new issue, and some alerts stay on until
+    # Colin acts (New Tailscale device). 5 days is as long as Grafana keeps its
+    # record of what it sent.
+    repeat_interval: 120h
     # Kaizen posts alerts to Discord itself, so it cannot report its own
     # failure: these also go straight to Discord through the webhook.
     routes:
       - receiver: Discord Private
+        repeat_interval: 12h
         object_matchers:
           - ["alertname", "=~", "Kaizen's Watcher stopped running|Kaizen Control room unreachable|DatasourceNoData|DatasourceError"]
