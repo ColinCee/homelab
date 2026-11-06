@@ -46,7 +46,7 @@ function GpuBusy {
 # after 20 s, so a hung call cannot stop the lease renewals.
 function Status($paused) {
     if ($paused) { return '‖' }
-    $out = "$rootunners.json"
+    $out = "$root\runners.json"
     Remove-Item $out -ErrorAction SilentlyContinue
     $call = Start-Process gh -ArgumentList "api repos/$repo/actions/runners?per_page=100" -RedirectStandardOutput $out -WindowStyle Hidden -PassThru
     Wait-Process -InputObject $call -Timeout 20 -ErrorAction SilentlyContinue
