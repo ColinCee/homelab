@@ -86,8 +86,10 @@ every script.
 
 The runner can execute host-level commands through Docker and workflows.
 Repository write access is therefore privileged, even for private repositories.
-Keep PR CI on GitHub-hosted runners and Beelink deployment restricted to trusted
-`main`. Renovate auto-merges eligible dependency PRs after checks; other changes
+Keep PR CI off the deploy runner: public repositories' CI on GitHub-hosted
+runners, private repositories' CI only in the
+[Firecracker VMs](ci-runner.md), which hold no secrets, deploy access or home
+network. Keep Beelink deployment restricted to trusted `main`. Renovate auto-merges eligible dependency PRs after checks; other changes
 are human-directed. Admins can bypass the ruleset, including via agents using
 their credentials. Renovate has no such bypass. Workflow conditions alone are
 not access controls.

@@ -19,6 +19,10 @@ jobs:
     runs-on: [self-hosted, linux, x64, homelab-fc]
 ```
 
+A private repository's workflow never names a GitHub-hosted runner, not even as a
+fallback, since those runs are billed and can be refused; a pull-request job uses
+no repository secrets.
+
 The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
 python3 (also as `python`), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
 `JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
