@@ -25,7 +25,10 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
 - Prepare Tailscale policy changes, but leave `scripts/tailscale_policy.py`
   credential entry and live approval to the user's own terminal. Never request
   a Bitwarden vault session or run these prompts through an agent tool.
-- CI runs on GitHub-hosted runners; only trusted `main` deploys run on Beelink.
+- Public repositories' CI runs on GitHub-hosted runners; private repositories' CI
+  runs only in the `homelab-fc` Firecracker VMs (docs/runbooks/ci-runner.md), which
+  hold no secrets, deploy access or home network; only trusted `main` deploys run
+  on the deploy runner.
   Unattended agent changes come only through Auto Kaizen's pull requests (its
   Reviewer and risk check decide the merge); do not add another agent here.
   Dependency auto-merge belongs in Renovate.

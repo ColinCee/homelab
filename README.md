@@ -53,7 +53,9 @@ workflow on the host, which renders `.env` files from allowed secrets and
 applies the stacks with one shared command. See
 [Deploy and manage services](docs/runbooks/deploying-services.md).
 
-CI runs on GitHub-hosted runners. Renovate auto-merges non-major dependency
+Public repositories' CI runs on GitHub-hosted runners; private repositories' CI
+runs only in throwaway Firecracker VMs with no secrets, deploy access or home
+network ([CI runner](docs/runbooks/ci-runner.md)). Renovate auto-merges non-major dependency
 updates after checks and the release-age gate pass; major updates remain manual.
 Renovate performs the merge itself so pending checks, including the age gate,
 are not bypassed by GitHub's native auto-merge. Merged service updates deploy
