@@ -853,10 +853,10 @@ def adopt(state: State) -> None:
 
 def vm_main(argv: list[str]) -> int:
     """`vm SLOT METADATA TIMEOUT [--memory FILE] [--live FILE --session FILE]
-    [--repo R --runner N]`: run-vm.sh's console reader, the main process of the VM's unit. It reads the console to the end (a full
-    pipe would stall the VM), keeps the latest live line in FILE and the session events, hands
-    handoff asks to a worker that answers them on the VM's inbox, and exits with run-vm.sh's
-    code."""
+    [--repo R --runner N]`: run-vm.sh's console reader, the main process of the VM's unit. It
+    reads the console to the end (a full pipe would stall the VM), keeps the latest memory line
+    and live line in their FILEs and the session events, hands handoff asks to a worker that
+    answers them on the VM's inbox, and exits with run-vm.sh's code."""
     parser = argparse.ArgumentParser(prog="ci_supervisor.py vm")
     parser.add_argument("slot")
     parser.add_argument("metadata")
