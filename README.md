@@ -36,7 +36,7 @@ mise install
 mise run lint
 mise run typecheck
 mise run test
-mise run ci                 # Also requires Docker for Compose validation
+mise run check              # Also requires Docker for Compose validation
 ```
 
 [`mise.toml`](mise.toml) owns check commands and tool versions; uv owns the

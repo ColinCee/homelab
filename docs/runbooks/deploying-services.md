@@ -14,7 +14,7 @@ deploys everything. Compose leaves unchanged containers running. CI and deployme
 require CI on pull requests before merging. A pull request that only moves
 `image:` pins to new `name:tag@sha256:` digests in existing `compose.yaml` files
 gets only Compose validation in the `check` job
-([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run ci`.
+([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
 
 A deploy that changes the Control room's pinned image also reports how many
 seconds passed from its auto-kaizen merge to the new version answering, split
