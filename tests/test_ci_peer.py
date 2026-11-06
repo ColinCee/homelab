@@ -102,7 +102,7 @@ def test_a_slot_is_registered_again_only_after_a_pause_and_once_its_runner_is_id
     first = registered(gh)[1]
     now[0] += 10
     assert sup.peer_register(peer(), gh, "0", REPO, "-") == "no"  # too soon
-    now[0] += 100
+    now[0] += sup.PEER_REGISTER_EVERY
     gh.busy.add(100)
     assert sup.peer_register(peer(), gh, "0", REPO, "-") == "no"  # it has a job
     gh.busy.clear()
@@ -123,7 +123,7 @@ def upload(runner: str, size: int, body: bytes) -> tuple[str, bytes]:
     near, far = socket.socketpair()
     far.sendall(body)
     far.shutdown(socket.SHUT_WR)
-    reply = sup.peer_outbox(runner, size, near.makefile("rb"), near.makefile("wb"), near)
+    reply = sup.peer_outbox(peer(), runner, size, near.makefile("rb"), near.makefile("wb"), near)
     far.settimeout(0.2)
     try:
         said = far.recv(64)
@@ -260,3 +260,23 @@ def test_the_pc_slot_count_allows_zero(folders, monkeypatch) -> None:
     assert sup.pc_slot_count() == 6
     path.write_text("12\n")
     assert sup.pc_slot_count() == 8
+
+
+def test_a_pc_vm_with_no_job_behind_it_gets_one_github_lookup(folders) -> None:
+    runs = Runs()
+    inbox = folders / "x.inbox"
+    known: dict = {}
+    for own in (80, 81, 82):
+        inbox.write_bytes(sup.INBOX_EMPTY.ljust(1 << 16, b"\0"))
+        line = f"HOMELAB-HANDOFF 1 abcdef12 {own} 1 70 build builder 0\n".encode()
+        ask = sup.HANDOFF_ASK.fullmatch(line)
+        assert sup.answer_ask(runs, REPO, PC_REVIEWER, inbox, ask, known) == "denied"
+    assert len([p for p in runs.asked if "/jobs" in p]) == 1
+
+
+def test_a_pc_vms_outbox_never_becomes_a_cache_disk(folders) -> None:
+    tar = sup.OUTBOX_DIR / f"{PC_REVIEWER}.tar"
+    tar.write_bytes(b"homelab-ci-cache v1 run=70 attempt=1\n".ljust(1024, b"\0"))
+    tar.with_suffix(".json").write_text(json.dumps({"repo": REPO, "light": False}))
+    assert sup.take_outbox(Runs(), tar, {REPO: "main"}, 0) is False
+    assert not sup.cache_image(REPO).exists()

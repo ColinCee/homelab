@@ -1217,8 +1217,9 @@ def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) 
     header = OUTBOX_HEADER.match(first)
     if not header:
         return False  # nothing saved: most VMs end so
-    if fields.get("light"):
-        log(f"cache for {repo}: outbox of light VM {runner} ignored, only build VMs make caches")
+    if fields.get("light") or runner.startswith(PEER_PREFIX):
+        # A PC VM's outbox passed through the PC guest, which could have changed it.
+        log(f"cache for {repo}: outbox of {runner} ignored, only Beelink build VMs make caches")
         return False
     branch = branches.get(repo)
     if not branch:
@@ -1532,8 +1533,10 @@ def answer_ask(
 
     if not (HANDOFF_JOB.fullmatch(job_name) and HANDOFF_ITEM.fullmatch(item)):
         return answer("denied")
-    # A VM runs one job: once GitHub has named it, no other run is looked up.
-    if own not in known and not any(known.values()):
+    # A VM runs one job: once GitHub has named it, no other run is looked up. A PC VM gets one
+    # lookup in all, so a stream from the door with no job behind it costs one request.
+    looked = bool(known) if runner.startswith(PEER_PREFIX) else any(known.values())
+    if own not in known and not looked:
         known[own] = asking_job(gh, repo, runner, *own)
     me = known.get(own)
     if me is None:
@@ -2055,7 +2058,7 @@ PEER_FREE_DISK_BYTES = 20 * 1024**3
 # All PC VMs' session files together; past it, new ones are not kept.
 PEER_SESSIONS_MAX_BYTES = 3 * 1024**3
 # A slot gets a new registration at most this often, so the PC cannot spend the token.
-PEER_REGISTER_EVERY = 30
+PEER_REGISTER_EVERY = 120
 # run-vm.sh's outbox: 6 GiB for the tar and its header.
 OUTBOX_BYTES = 6 * 1024**3 + 1024**2
 # Lines the PC's console reader sends up; read_console checks them again on the Beelink.
@@ -2127,6 +2130,9 @@ class Peer:
     served: frozenset[str] = frozenset()
     # Each PC VM's open stream: a new one for the same runner (the PC reconnected) ends the old.
     streaming: dict[str, socket.socket] = field(default_factory=dict)
+    # Outboxes being uploaded, by runner, with their sizes: the free-disk floor counts them all.
+    uploading: dict[str, int] = field(default_factory=dict)
+    caching: threading.Lock = field(default_factory=threading.Lock)
     lock: threading.Lock = field(default_factory=threading.Lock)
     connections: threading.BoundedSemaphore = field(
         default_factory=lambda: threading.BoundedSemaphore(2 * max(peer_slots(), 1) + 4)
@@ -2186,12 +2192,17 @@ def peer_answer(
             peer_vm(peer, gh, runner, reader, writer, conn)
             return ""
         case ["outbox", runner, size] if read_peer(runner) and size.isdecimal():
-            return peer_outbox(runner, int(size), reader, writer, conn)
+            return peer_outbox(peer, runner, int(size), reader, writer, conn)
         case ["release", runner] if fields := read_peer(runner):
             return "gone" if peer_drop(gh, runner, fields) else "busy"
         case ["cache", repo, have] if repo in peer.served:
             conn.settimeout(300)
-            return peer_cache(repo, have, writer)
+            if not peer.caching.acquire(blocking=False):
+                return "busy"
+            try:
+                return peer_cache(repo, have, writer)
+            finally:
+                peer.caching.release()
     return "no"
 
 
@@ -2316,7 +2327,12 @@ def peer_live(now: float) -> list[dict[str, Any]]:
 
 
 def peer_outbox(
-    runner: str, size: int, reader: IO[bytes], writer: IO[bytes], conn: socket.socket
+    peer: Peer,
+    runner: str,
+    size: int,
+    reader: IO[bytes],
+    writer: IO[bytes],
+    conn: socket.socket,
 ) -> str:
     """An ended PC VM's outbox, written beside the Beelink's own for maybe_take_outboxes to
     file; size 0 says it left nothing, and its record goes."""
@@ -2327,8 +2343,27 @@ def peer_outbox(
         return "saved"
     if not record.exists() or tar.exists():
         return "saved"  # filed already, or given up on
-    if size > OUTBOX_BYTES or shutil.disk_usage(OUTBOX_DIR).free < size + PEER_FREE_DISK_BYTES:
-        return "no"
+    with peer.lock:
+        coming = sum(peer.uploading.values())
+        free = shutil.disk_usage(OUTBOX_DIR).free
+        if (
+            runner in peer.uploading
+            or size > OUTBOX_BYTES
+            or free < coming + size + PEER_FREE_DISK_BYTES
+        ):
+            return "no"
+        peer.uploading[runner] = size
+    try:
+        return receive_outbox(runner, size, reader, writer, conn)
+    finally:
+        with peer.lock:
+            del peer.uploading[runner]
+
+
+def receive_outbox(
+    runner: str, size: int, reader: IO[bytes], writer: IO[bytes], conn: socket.socket
+) -> str:
+    tar = OUTBOX_DIR / f"{runner}.tar"
     part = OUTBOX_DIR / f".{runner}.part"
     part.unlink(missing_ok=True)
     conn.settimeout(120)
@@ -2799,7 +2834,8 @@ def main(argv: list[str] | None = None) -> int:
                     ]
                     repos = found
                 if peer:
-                    peer.served = frozenset(repos)
+                    # The PC runs Auto Kaizen's builds only: no other repo's jobs, items or caches.
+                    peer.served = frozenset(r for r in repos if r.lower() == LIVE_REPO.lower())
             started, asked, waited = time.monotonic(), gh.requests, gh.seconds
             if unclean:
                 running = [run.runner_name for run in state.launches.values()]
