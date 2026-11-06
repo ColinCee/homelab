@@ -21,8 +21,9 @@ runs:
         # A cache that is not saved only leaves the next jobs the last one; it must never
         # fail the check.
         # shellcheck disable=SC2086 # PATHS splits into one argument per path
-        if ! { "$GITHUB_ACTION_PATH/pack.sh" /cache "$RUNNER_TEMP/cache.tar" $PATHS &&
-          "$GITHUB_ACTION_PATH/save.sh" "$RUNNER_TEMP/cache.tar"; }; then
+        # Through bash: a script's run permission is easily lost on a Windows checkout.
+        if ! { bash "$GITHUB_ACTION_PATH/pack.sh" /cache "$RUNNER_TEMP/cache.tar" $PATHS &&
+          bash "$GITHUB_ACTION_PATH/save.sh" "$RUNNER_TEMP/cache.tar"; }; then
           echo "::warning::fc-cache: the cache disk was not saved; the next jobs start from the last one"
         fi
         rm -f "$RUNNER_TEMP/cache.tar"

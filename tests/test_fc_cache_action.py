@@ -42,7 +42,7 @@ def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "SUDO": "", "GITHUB_RUN_ID": "70", "GITHUB_RUN_ATTEMPT": "2"}
     return subprocess.run(
-        [str(ACTION / "save.sh"), str(tar), *map(str, disks)],
+        ["bash", str(ACTION / "save.sh"), str(tar), *map(str, disks)],
         capture_output=True,
         text=True,
         env=env,
@@ -82,7 +82,7 @@ def test_fails_without_an_outbox_disk(tmp_path) -> None:
 def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProcess[str]:
     out = workspace.parent / "cache.tar"
     return subprocess.run(
-        [str(ACTION / "pack.sh"), str(cache), str(out), *paths],
+        ["bash", str(ACTION / "pack.sh"), str(cache), str(out), *paths],
         cwd=workspace,
         capture_output=True,
         text=True,
