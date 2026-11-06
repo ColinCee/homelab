@@ -78,6 +78,10 @@ install_vm_files() {
 # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 install -d -o root -g root -m 0700 /var/lib/homelab-ci/outbox
+# The SSD learns of the VMs' deleted write files hourly (the reason is in the file).
+install -D -o root -g root -m 0644 "$here/systemd/fstrim-hourly.conf" /etc/systemd/system/fstrim.timer.d/hourly.conf
+systemctl daemon-reload
+systemctl enable fstrim.timer && systemctl restart fstrim.timer
 
 # The supervisor, the network rules and the slot counts take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the
