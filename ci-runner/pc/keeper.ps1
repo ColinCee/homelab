@@ -51,7 +51,9 @@ function SetCpuCap($capped) {
     } catch { Say "CPU cap not set (needs Hyper-V Administrators): $_" }
 }
 
-$given = -1; $capSet = 5; $capSince = Get-Date; $busyRuns = 0; $lastBusy = [datetime]::MinValue; $capped = $false
+$capSet = [int](& gh variable get KAIZEN_TASK_SLOTS -R $repo 2>$null | Select-Object -First 1)
+if ($capSet -le 0) { $capSet = $beelinkSlots }
+$given = -1; $slotsSaid = [datetime]::MinValue; $capSince = Get-Date; $capTried = [datetime]::MinValue; $busyRuns = 0; $lastBusy = [datetime]::MinValue; $capped = $false
 $leaseGb = 0
 while ($true) {
     $want = Wanted
@@ -93,14 +95,25 @@ while ($true) {
     }
 
     $slots = if ($gaming -or -not $running) { 0 } else { $want }
-    if ($running -and $slots -ne $given -and (SetGuestSlots $slots)) { $given = $slots; Say "slots: $slots" }
+    # Said again every minute too: a guest that booted since reads an older count as 0.
+    $stale = ((Get-Date) - $slotsSaid).TotalSeconds -ge 60
+    if ($running -and ($slots -ne $given -or $stale) -and (SetGuestSlots $slots)) {
+        if ($slots -ne $given) { Say "slots: $slots" }
+        $given = $slots; $slotsSaid = Get-Date
+    }
 
-    # Auto Kaizen starts at most this many tasks at once (auto-kaizen's start.py).
-    $cap = $beelinkSlots + $(if ($running) { $given } else { 0 })
+    # Auto Kaizen starts at most this many tasks at once (auto-kaizen's start.py): the Beelink's
+    # build slots plus the PC's VMs actually up (ready or busy), so a closed door raises nothing.
+    $up = if ($running) { GuestVms } else { 0 }
+    if ($up -gt $given) { $up = $given }
+    if ($up -lt 0) { $up = 0 }
+    $cap = $beelinkSlots + $up
     if ($cap -ne $capSet) {
-        if ($cap -lt $capSet -or ((Get-Date) - $capSince).TotalSeconds -ge $riseSeconds) {
+        $due = $cap -lt $capSet -or ((Get-Date) - $capSince).TotalSeconds -ge $riseSeconds
+        if ($due -and ((Get-Date) - $capTried).TotalSeconds -ge 60) {
+            $capTried = Get-Date
             & gh variable set KAIZEN_TASK_SLOTS --body "$cap" -R $repo
-            if ($LASTEXITCODE -eq 0) { $capSet = $cap; Say "task cap: $cap" }
+            if ($LASTEXITCODE -eq 0) { $capSet = $cap; Say "task cap: $cap" } else { Say "task cap not set ($cap)" }
         }
     } else { $capSince = Get-Date }
     Start-Sleep 5

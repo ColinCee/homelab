@@ -1589,7 +1589,11 @@ def answer_asks(
             with contextlib.suppress(OSError):
                 write_inbox(inbox, ask[1].decode(), "none")
         if answered:
-            answered()
+            try:
+                answered()
+            except OSError as e:  # the PC's link is gone: it asks again when it is back
+                log(f"handoff for {repo}: answer to {runner} not sent: {e}")
+                return
 
 
 def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
@@ -2121,7 +2125,8 @@ class Peer:
     token: str
     # The repos served, replaced whole by the main loop on each listing.
     served: frozenset[str] = frozenset()
-    streaming: set[str] = field(default_factory=set)
+    # Each PC VM's open stream: a new one for the same runner (the PC reconnected) ends the old.
+    streaming: dict[str, socket.socket] = field(default_factory=dict)
     lock: threading.Lock = field(default_factory=threading.Lock)
     connections: threading.BoundedSemaphore = field(
         default_factory=lambda: threading.BoundedSemaphore(2 * max(peer_slots(), 1) + 4)
@@ -2178,7 +2183,7 @@ def peer_answer(
             return peer_register(peer, gh, slot, repo, have)
         case ["vm", runner] if read_peer(runner):
             conn.settimeout(None)  # as long as the VM runs; ssh's keepalives end a dead link
-            peer_vm(peer, gh, runner, reader, writer)
+            peer_vm(peer, gh, runner, reader, writer, conn)
             return ""
         case ["outbox", runner, size] if read_peer(runner) and size.isdecimal():
             return peer_outbox(runner, int(size), reader, writer, conn)
@@ -2206,7 +2211,9 @@ def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> st
             return "no"  # its last runner still has a job
     labels = list(RUNNER_LABELS)
     version = peer_cache_version(repo)
-    label = peer_label(repo) if version and have == version else ""
+    # Any image the PC holds will do: a merge to main makes a new one, and ready runners
+    # registered before the PC fetches it must still take the builds asking for the label.
+    label = peer_label(repo) if version and have != "-" else ""
     if label:
         labels.append(label)
     name = f"{PEER_PREFIX}{int(slot)}-{int(now)}"
@@ -2240,13 +2247,16 @@ def peer_drop(gh: GitHub, runner: str, fields: dict[str, Any]) -> bool:
     return True
 
 
-def peer_vm(peer: Peer, gh: GitHub, runner: str, reader: IO[bytes], writer: IO[bytes]) -> None:
+def peer_vm(
+    peer: Peer, gh: GitHub, runner: str, reader: IO[bytes], writer: IO[bytes], conn: socket.socket
+) -> None:
     """A PC VM's console lines, read as a local VM's are; each ask is answered on an inbox
     here and the inbox sent down: `inbox <bytes>`, then its header block and item."""
     with peer.lock:
-        if runner in peer.streaming:
-            return
-        peer.streaming.add(runner)
+        if old := peer.streaming.get(runner):
+            with contextlib.suppress(OSError):
+                old.shutdown(socket.SHUT_RDWR)
+        peer.streaming[runner] = conn
     fields = read_peer(runner) or {}
     repo = str(fields.get("repo", ""))
     inbox = OUTBOX_DIR / f"{runner}.inbox"
@@ -2286,9 +2296,10 @@ def peer_vm(peer: Peer, gh: GitHub, runner: str, reader: IO[bytes], writer: IO[b
     finally:
         with contextlib.suppress(queue.Full):
             asks.put_nowait(None)
-        inbox.unlink(missing_ok=True)
         with peer.lock:
-            peer.streaming.discard(runner)
+            if peer.streaming.get(runner) is conn:
+                del peer.streaming[runner]
+                inbox.unlink(missing_ok=True)
 
 
 def peer_live(now: float) -> list[dict[str, Any]]:
@@ -2355,7 +2366,12 @@ def peer_cache(repo: str, have: str, writer: IO[bytes]) -> str:
 def sweep_peer(gh: GitHub, now: float) -> None:
     """PC runners: forget those gone an hour (and the outbox record of one that never sent
     its outbox), delete one still offline PEER_OFFLINE_SECONDS after it was registered (the
-    PC is off) and an idle one older than a standby lives (a fresh registration replaces it)."""
+    PC is off) and an idle one older than a standby lives (a fresh registration replaces it),
+    and uploads cut off midway."""
+    for part in OUTBOX_DIR.glob(f".{PEER_PREFIX}*.part"):
+        with contextlib.suppress(OSError):
+            if now - part.stat().st_mtime > OUTBOX_WAIT_SECONDS:
+                part.unlink()
     for path in PEER_DIR.glob(f"{PEER_PREFIX}*.json"):
         runner = path.stem
         fields = read_peer(runner)
@@ -2406,11 +2422,22 @@ def peer_ssh() -> list[str]:
 
 
 def peer_call(line: str, timeout: float = 60) -> str:
-    """One short request through the door; its reply line ("" if the door gave none)."""
-    done = subprocess.run(
-        peer_ssh(), input=f"{line}\n".encode(), capture_output=True, timeout=timeout, check=False
-    )
-    return done.stdout.decode("ascii", "replace").strip()
+    """One short request through the door; its reply line ("" if the door gave none). Stdin
+    stays open until the reply comes: socat ends the link soon after it closes."""
+    with subprocess.Popen(peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE) as link:
+        assert link.stdin is not None and link.stdout is not None
+        timer = threading.Timer(timeout, link.kill)
+        timer.start()
+        try:
+            link.stdin.write(f"{line}\n".encode())
+            link.stdin.flush()
+            reply = link.stdout.readline(PEER_LINE_MAX)
+            link.stdin.close()
+        except OSError:
+            reply = b""
+        finally:
+            timer.cancel()
+    return reply.decode("ascii", "replace").strip()
 
 
 class PeerStream:
@@ -2423,13 +2450,15 @@ class PeerStream:
         self.runner, self.inbox = runner, inbox
         self.lines: queue.Queue[bytes | None] = queue.Queue(512)
         self.ask: bytes | None = None
+        self.ask_sent = False
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
 
     def put(self, line: bytes) -> None:
         if line.startswith(b"HOMELAB-HANDOFF "):
-            self.ask = line
+            self.ask, self.ask_sent = line, False
+            line = b""  # sent from self.ask, once per link
         with contextlib.suppress(queue.Full):
             self.lines.put_nowait(line)
 
@@ -2446,10 +2475,23 @@ class PeerStream:
                 assert link.stdin is not None and link.stdout is not None
                 threading.Thread(target=self.answers, args=(link.stdout,), daemon=True).start()
                 link.stdin.write(f"vm {self.runner}\n".encode())
-                if self.ask:
-                    link.stdin.write(self.ask)
+                if ask := self.ask:
+                    link.stdin.write(ask)
+                    self.ask_sent = True
                 link.stdin.flush()
-                while (line := self.lines.get()) is not None:
+                while True:
+                    try:
+                        line = self.lines.get(timeout=5)
+                    except queue.Empty:
+                        if link.poll() is not None:
+                            raise OSError("the link ended") from None
+                        continue
+                    if line is None:
+                        break
+                    if not line:
+                        if not (ask := self.ask) or self.ask_sent:
+                            continue
+                        line, self.ask_sent = ask, True
                     link.stdin.write(line)
                     link.stdin.flush()
                 link.stdin.close()
@@ -2490,10 +2532,14 @@ class PeerStream:
 
 def pc_slot_count() -> int:
     """The slots the PC gives now, set by the keeper: 0 (gaming, off) up to the slots
-    installed; 0 if unreadable."""
+    installed; 0 if unreadable or written before the guest booted (the keeper has not
+    spoken since: Colin may be gaming)."""
     try:
         text = PC_SLOTS_FILE.read_text().strip()
-    except OSError:
+        booted = time.time() - float(Path("/proc/uptime").read_text().split()[0])
+        if PC_SLOTS_FILE.stat().st_mtime < booted:
+            return 0
+    except (OSError, ValueError):
         return 0
     return min(int(text), slot_count()) if text.isdecimal() else 0
 
@@ -2606,6 +2652,13 @@ def refresh_cache(repo: str) -> None:
     log(f"cache for {repo}: fetched {version} ({size} bytes)")
 
 
+def fetch_cache(repo: str) -> None:
+    try:
+        refresh_cache(repo)
+    except Exception as e:  # the PC runs without the cache disk until the next try
+        log(f"cache for {repo}: not fetched, {type(e).__name__}: {e}")
+
+
 def pc_main(argv: list[str]) -> int:
     """`pc`: the PC guest's service. Keeps a ready runner per free slot, stops runners on
     slots the count no longer has (at once if idle, else after PC_DRAIN_SECONDS), and ships
@@ -2615,9 +2668,11 @@ def pc_main(argv: list[str]) -> int:
     for folder in (STATE_DIR, OUTBOX_DIR, CACHE_DIR):
         folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     over: dict[str, float] = {}
+    released: dict[str, float] = {}
     tried: dict[str, float] = {}
-    pause_until = cache_checked = 0.0
-    fetching = threading.Thread()
+    slot_paused: dict[int, float] = {}
+    cache_checked = 0.0
+    fetching = shipping = threading.Thread()
     log("PC slots: keeping ready runners")
     while True:
         now = time.time()
@@ -2635,27 +2690,35 @@ def pc_main(argv: list[str]) -> int:
                     over.pop(runner, None)
                     continue
                 since = over.setdefault(runner, now)
-                if now - since > PC_DRAIN_SECONDS or peer_call(f"release {runner}") == "gone":
+                # A busy runner's release is refused: asked again a minute later, not every poll.
+                ask = now - released.get(runner, 0) >= 60
+                if ask:
+                    released[runner] = now
+                gone = ask and peer_call(f"release {runner}") == "gone"
+                if gone or now - since > PC_DRAIN_SECONDS:
                     log(f"PC slot {slot}: {runner} stopped, the PC gives {slots} slots")
                     subprocess.run(
                         ["systemctl", "stop", "--no-block", f"{UNIT_PREFIX}{runner}"], check=False
                     )
-            ship_outboxes(running, tried, now)
+            # Uploads in the background: a 6 GiB one must not hold up a gaming drain.
+            if not shipping.is_alive():
+                shipping = threading.Thread(
+                    target=ship_outboxes, args=(running, tried, now), daemon=True
+                )
+                shipping.start()
             if now - cache_checked > PC_CACHE_EVERY and not fetching.is_alive():
                 cache_checked = now
-                fetching = threading.Thread(target=refresh_cache, args=(repo,), daemon=True)
+                fetching = threading.Thread(target=fetch_cache, args=(repo,), daemon=True)
                 fetching.start()
-            if now >= pause_until:
-                for slot in range(slots):
-                    room = mem_available_mib() - memory_reserve_mib()
-                    if slot in by_slot or room < PC_SIZE[1] + 256:
-                        continue
-                    if not start_pc_vm(repo, slot):
-                        pause_until = now + 30
-                        break
+            # Not before the first cache fetch has ended, so the first runners get the label.
+            for slot in range(slots if cache_checked and not fetching.is_alive() else 0):
+                room = mem_available_mib() - memory_reserve_mib()
+                if slot in by_slot or now < slot_paused.get(slot, 0) or room < PC_SIZE[1] + 256:
+                    continue
+                if not start_pc_vm(repo, slot):
+                    slot_paused[slot] = now + 30
         except Exception as e:
             log(f"PC poll failed: {type(e).__name__}: {e}")
-            pause_until = now + 30
         time.sleep(PC_POLL_SECONDS)
 
 

@@ -83,12 +83,14 @@ def test_registers_a_build_runner_only_for_a_served_repo_and_a_slot_the_beelink_
     assert sup.read_peer(name)["runner_id"] == 100  # type: ignore[index]
 
 
-def test_the_cache_label_needs_the_beelinks_current_cache_disk(folders) -> None:
+def test_the_cache_label_needs_a_cache_disk_on_both_sides(folders) -> None:
+    assert registered(Registrar(), 0, "8.1")[2] == "-"  # the Beelink has none
     image = sup.cache_image(REPO)
     image.write_bytes(b"ext4")
     image.with_suffix(".json").write_text(json.dumps({"run": 9, "attempt": 2}))
-    assert registered(Registrar(), 0, "8.1")[2] == "-"
-    assert registered(Registrar(), 1, "9.2")[2] == "fc-cache-octo--app"
+    assert registered(Registrar(), 1, "-")[2] == "-"  # the PC has none
+    # An older one will do: a merge to main must not strip ready runners of the label.
+    assert registered(Registrar(), 2, "8.1")[2] == "fc-cache-octo--app"
 
 
 def test_a_slot_is_registered_again_only_after_a_pause_and_once_its_runner_is_idle(
@@ -204,7 +206,7 @@ def test_a_pc_vms_lines_are_checked_and_its_ask_answered_down_the_link(folders) 
     near, far = socket.socketpair()
     beelink = threading.Thread(
         target=sup.peer_vm,
-        args=(peer(), runs, PC_REVIEWER, near.makefile("rb"), near.makefile("wb")),
+        args=(peer(), runs, PC_REVIEWER, near.makefile("rb"), near.makefile("wb"), near),
     )
     beelink.start()
     far.sendall(b"".join(forwarded))

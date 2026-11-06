@@ -5,7 +5,8 @@ in about 20 seconds, against 26 to 29 on GitHub's runner for the same commit.
 
 How fast it is, against other sandboxes and GitHub's runners: [CI runner performance](../ci-runner-performance.md).
 
-CI for private repositories runs on the homelab's server, each job in its own throwaway
+CI for private repositories runs on the homelab's server, and Auto Kaizen's builds also on
+Colin's PC when it gives slots ([PC build slots](#pc-build-slots)), each job in its own throwaway
 Firecracker microVM. Public repositories keep using GitHub-hosted runners, and
 the deploy runner is separate (see [Deploying services](deploying-services.md)).
 
@@ -449,11 +450,12 @@ Firecracker VMs and network rules as the Beelink, `install-host.sh` with `ROLE=p
 idle registered VM per slot it gives, so GitHub hands a build job (`homelab-fc`) to whichever idle runner it picks.
 Light jobs stay on the Beelink.
 
-- **No GitHub key on the PC.** The guest reaches the Beelink only as `ci-peer` over SSH (from the PC's Tailscale
+- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH (from the PC's Tailscale
   address), forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). There the Beelink
   registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`), reads its VM's live lines,
   sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
-  changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes.
+  changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
+  are not in `machines.json` yet, so the Control room shows the Beelink's only.
 - **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
   off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
   set once in Hyper-V for the most slots it will give.
@@ -461,9 +463,26 @@ Light jobs stay on the Beelink.
   lease is held, caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
   runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
   trouble. `lease free --force --name kaizen-ci` powers the guest off at once.
-- **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` to 5 plus the slots given (down at once, up after
-  10 minutes). If the PC dies with it raised, extra tasks wait for a machine; `gh variable set KAIZEN_TASK_SLOTS
+- **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` (with Colin's `gh`) to 5 plus the PC VMs up (down
+  at once, up after 10 minutes). If the PC dies with it raised, extra tasks wait for a machine; `gh variable set KAIZEN_TASK_SLOTS
   --body 5 -R ColinCee/auto-kaizen` sets it back.
+
+Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his; the rest an agent does):
+
+1. The guest: Ubuntu 24.04 cloud image as a Gen2 VM with `Set-VMProcessor -ExposeVirtualizationExtensions $true`,
+   static memory of 2 GiB plus 4.25 GiB per slot it will ever give, and Colin in Hyper-V Administrators (the
+   keeper starts it and caps its CPU).
+2. In the guest, from a checkout of `main`: `sudo apt install docker.io`, then
+   `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh` and
+   `sudo ci-runner/build-rootfs.sh`. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the door's
+   address in `/etc/homelab-ci/peer` (`ci-peer@<the Beelink's Tailscale address>`) and the Beelink's host key in
+   root's `known_hosts`.
+3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the
+   guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
+   `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).
+4. On Windows: `ci-runner/pc/keeper.ps1` and `kaizen-pc.ps1` copied to `D:\kaizen-ci`, a Startup-folder shortcut
+   running `pwsh -WindowStyle Hidden -File D:\kaizen-ci\keeper.ps1`, `gh` signed in as Colin, then
+   `kaizen-pc.ps1 <slots>`. Check `pc-*` runners show online in auto-kaizen's runner list before trusting the cap.
 
 Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off, remove the keeper from the Startup
 folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink (closes the door), and set the task cap to 5.

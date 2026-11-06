@@ -103,6 +103,11 @@ fi
 # rules reload in one transaction, so a restart takes seconds and cuts off nothing.
 changed() { ! cmp -s "$1" "$2"; }
 restart=false
+# The door's user before any restart: the supervisor opens the door at start only if it exists.
+if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub ]] && ! id ci-peer >/dev/null 2>&1; then
+  useradd --system --user-group --home-dir /nonexistent --shell /bin/sh ci-peer
+  restart=true
+fi
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
   "net/homelab-ci.nft:$dest/net/homelab-ci.nft" "net/setup-net.sh:$dest/net/setup-net.sh" \
   "systemd/homelab-ci-net.service:/etc/systemd/system/homelab-ci-net.service" \
@@ -160,11 +165,10 @@ fi
 door_conf=/etc/ssh/sshd_config.d/60-ci-peer.conf door_keys=/etc/ssh/ci-peer_authorized_keys
 if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub && -f /etc/homelab-ci/peer-from ]]; then
   command -v socat >/dev/null || apt-get install -y -qq socat >/dev/null
-  id ci-peer >/dev/null 2>&1 ||
-    useradd --system --user-group --home-dir /nonexistent --shell /bin/sh ci-peer
   from=$(tr -d '[:space:]' < /etc/homelab-ci/peer-from)
   [[ $from =~ ^[0-9.]+$ ]] || { echo "peer-from is not an address" >&2; exit 2; }
-  socat_cmd="/usr/bin/socat STDIO UNIX-CONNECT:/run/homelab-ci-peer/peer.sock"
+  # -t: after the PC's side closes, its reply (a GitHub call away) still comes back.
+  socat_cmd="/usr/bin/socat -t 60 STDIO UNIX-CONNECT:/run/homelab-ci-peer/peer.sock"
   echo "from=\"$from\",restrict,command=\"$socat_cmd\" $(head -n 1 /etc/homelab-ci/peer.pub)" > "$door_keys.new"
   chmod 0644 "$door_keys.new"
   mv "$door_keys.new" "$door_keys"
