@@ -163,6 +163,9 @@ fi
 # The PC's door: user ci-peer may only reach the supervisor's socket, with the PC guest's
 # key (/etc/homelab-ci/peer.pub) from the PC's address (/etc/homelab-ci/peer-from).
 door_conf=/etc/ssh/sshd_config.d/60-ci-peer.conf door_keys=/etc/ssh/ci-peer_authorized_keys
+# Its own port on the Tailscale address: Tailscale SSH answers port 22 there and would skip
+# the forced command. sshd is socket-activated here, so the port is the socket's.
+door_socket=/etc/systemd/system/ssh.socket.d/60-ci-peer.conf door_port=2222
 if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub && -f /etc/homelab-ci/peer-from ]]; then
   command -v socat >/dev/null || apt-get install -y -qq socat >/dev/null
   from=$(tr -d '[:space:]' < /etc/homelab-ci/peer-from)
@@ -188,10 +191,20 @@ Match User ci-peer
     ClientAliveCountMax 3
 EOF
   mv "$door_conf.new" "$door_conf"
-  sshd -t && systemctl reload ssh
-  door="door open to $from"
+  address=$(tailscale ip -4 | head -n 1)
+  [[ $address =~ ^[0-9.]+$ ]] || { echo "no Tailscale address for the door" >&2; exit 1; }
+  printf '[Socket]\nListenStream=%s:%s\n' "$address" "$door_port" > "$door_socket.new"
+  if ! cmp -s "$door_socket.new" "$door_socket"; then
+    install -D -m 0644 "$door_socket.new" "$door_socket"
+    sshd -t && systemctl daemon-reload && systemctl restart ssh.socket
+  fi
+  rm -f "$door_socket.new"
+  door="door open to $from on $address:$door_port"
 else
-  if [[ -f $door_conf ]]; then rm -f "$door_conf" "$door_keys"; sshd -t && systemctl reload ssh; fi
+  if [[ -f $door_conf || -f $door_socket ]]; then
+    rm -f "$door_conf" "$door_keys" "$door_socket"
+    systemctl daemon-reload && systemctl restart ssh.socket
+  fi
   door="door closed"
 fi
 

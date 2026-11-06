@@ -450,9 +450,11 @@ Firecracker VMs and network rules as the Beelink, `install-host.sh` with `ROLE=p
 idle registered VM per slot it gives, so GitHub hands a build job (`homelab-fc`) to whichever idle runner it picks.
 Light jobs stay on the Beelink.
 
-- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH (from the PC's Tailscale
-  address), forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). There the Beelink
-  registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`), reads its VM's live lines,
+- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH on port 2222 of its Tailscale
+  address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). There the Beelink
+  registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`) with the cache label of
+  the oldest waiting build (else the last build's), counts the idle ones as cover for builds queued under a minute
+  (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
   sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
   changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
   are not in `machines.json` yet, so the Control room shows the Beelink's only.
@@ -475,8 +477,8 @@ Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his;
 2. In the guest, from a checkout of `main`: `sudo apt install docker.io`, then
    `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh` and
    `sudo ci-runner/build-rootfs.sh`. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the door's
-   address in `/etc/homelab-ci/peer` (`ci-peer@<the Beelink's Tailscale address>`) and the Beelink's host key in
-   root's `known_hosts`.
+   address in `/etc/homelab-ci/peer` (`ssh://ci-peer@<the Beelink's Tailscale address>:2222`) and that port's host
+   key in root's `known_hosts`.
 3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the
    guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
    `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).

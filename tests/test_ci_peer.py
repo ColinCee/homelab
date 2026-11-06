@@ -58,21 +58,21 @@ class Registrar:
         pass
 
 
-def peer() -> sup.Peer:
-    return sup.Peer("token", served=frozenset({REPO}))
+def peer(**kw) -> sup.Peer:
+    return sup.Peer("token", served=frozenset({REPO}), **kw)
 
 
-def registered(gh: Registrar, slot: int = 0, have: str = "-", now: float = 0) -> list[str]:
-    return sup.peer_register(peer(), gh, str(slot), REPO, have).split()
+def registered(gh: Registrar, slot: int = 0, door: sup.Peer | None = None) -> list[str]:
+    return sup.peer_register(door or peer(), gh, str(slot), REPO).split()
 
 
 def test_registers_a_build_runner_only_for_a_served_repo_and_a_slot_the_beelink_allows(
     folders,
 ) -> None:
     gh = Registrar()
-    assert sup.peer_register(peer(), gh, "3", REPO, "-") == "no"
-    assert sup.peer_register(peer(), gh, "0", "octo/other", "-") == "no"
-    assert sup.peer_register(peer(), gh, "x", REPO, "-") == "no"
+    assert sup.peer_register(peer(), gh, "3", REPO) == "no"
+    assert sup.peer_register(peer(), gh, "0", "octo/other") == "no"
+    assert sup.peer_register(peer(), gh, "x", REPO) == "no"
     assert gh.sent == []
     ok, name, label, jit = registered(gh)
     assert (ok, label, jit) == ("ok", "-", "SklU")
@@ -83,14 +83,12 @@ def test_registers_a_build_runner_only_for_a_served_repo_and_a_slot_the_beelink_
     assert sup.read_peer(name)["runner_id"] == 100  # type: ignore[index]
 
 
-def test_the_cache_label_needs_a_cache_disk_on_both_sides(folders) -> None:
-    assert registered(Registrar(), 0, "8.1")[2] == "-"  # the Beelink has none
-    image = sup.cache_image(REPO)
-    image.write_bytes(b"ext4")
-    image.with_suffix(".json").write_text(json.dumps({"run": 9, "attempt": 2}))
-    assert registered(Registrar(), 1, "-")[2] == "-"  # the PC has none
-    # An older one will do: a merge to main must not strip ready runners of the label.
-    assert registered(Registrar(), 2, "8.1")[2] == "fc-cache-octo--app"
+def test_a_runner_gets_the_cache_label_of_the_oldest_waiting_build_else_the_last(folders) -> None:
+    servo = ("octo/app", "fc-cache-octo--servo")
+    blog = ("octo/app", "fc-cache-octo--blog")
+    assert registered(Registrar(), 0)[2] == "-"
+    assert registered(Registrar(), 1, peer(last=servo))[2] == servo[1]
+    assert registered(Registrar(), 2, peer(wants=(blog,), last=servo))[2] == blog[1]
 
 
 def test_a_slot_is_registered_again_only_after_a_pause_and_once_its_runner_is_idle(
@@ -101,10 +99,10 @@ def test_a_slot_is_registered_again_only_after_a_pause_and_once_its_runner_is_id
     monkeypatch.setattr(sup.time, "time", lambda: now[0])
     first = registered(gh)[1]
     now[0] += 10
-    assert sup.peer_register(peer(), gh, "0", REPO, "-") == "no"  # too soon
+    assert sup.peer_register(peer(), gh, "0", REPO) == "no"  # too soon
     now[0] += sup.PEER_REGISTER_EVERY
     gh.busy.add(100)
-    assert sup.peer_register(peer(), gh, "0", REPO, "-") == "no"  # it has a job
+    assert sup.peer_register(peer(), gh, "0", REPO) == "no"  # it has a job
     gh.busy.clear()
     assert registered(gh)[0] == "ok"
     assert sup.read_peer(first)["gone"]  # type: ignore[index]
@@ -159,7 +157,7 @@ def test_the_door_refuses_a_runner_it_did_not_register(folders) -> None:
         ["vm", "fc-1-1793990000"],
         ["outbox", "../x", "5"],
         ["release", "pc-1-1"],
-        ["cache", "octo/other", "-"],
+        ["cache", "octo/app", "-"],  # no cache disk to give
         ["sudo", "sh"],
     ):
         assert sup.peer_answer(peer(), Registrar(), words, io.BytesIO(), io.BytesIO(), near) == "no"
@@ -172,14 +170,14 @@ def test_the_sweep_forgets_gone_runners_and_deletes_dead_or_old_idle_ones(folder
     gh.runners[102]["status"] = "online"
     gh.busy.add(102)
     del gh.runners[100]  # its job ended and it removed itself
-    sup.sweep_peer(gh, sup.read_peer(names[0])["issued"] + 60)  # type: ignore[index]
+    sup.sweep_peer(gh, peer(), sup.read_peer(names[0])["issued"] + 60)  # type: ignore[index]
     assert sup.read_peer(names[0])["gone"]  # type: ignore[index]
     assert 101 in gh.runners and 102 in gh.runners
-    sup.sweep_peer(gh, sup.read_peer(names[1])["issued"] + sup.STANDBY_RECYCLE_SECONDS + 1)  # type: ignore[index]
+    sup.sweep_peer(gh, peer(), sup.read_peer(names[1])["issued"] + sup.STANDBY_RECYCLE_SECONDS + 1)  # type: ignore[index]
     assert 101 not in gh.runners  # idle too long: a fresh one replaces it
     assert 102 in gh.runners  # busy
     later = sup.read_peer(names[0])["gone"] + sup.OUTBOX_WAIT_SECONDS + 1  # type: ignore[index]
-    sup.sweep_peer(gh, later)
+    sup.sweep_peer(gh, peer(), later)
     assert sup.read_peer(names[0]) is None
     assert not (sup.OUTBOX_DIR / f"{names[0]}.json").exists()
 
@@ -280,3 +278,19 @@ def test_a_pc_vms_outbox_never_becomes_a_cache_disk(folders) -> None:
     tar.with_suffix(".json").write_text(json.dumps({"repo": REPO, "light": False}))
     assert sup.take_outbox(Runs(), tar, {REPO: "main"}, 0) is False
     assert not sup.cache_image(REPO).exists()
+
+
+def test_idle_pc_runners_cover_young_jobs_and_a_new_label_replaces_an_idle_one(folders) -> None:
+    gh = Registrar()
+    door = peer(last=("octo/app", "fc-cache-octo--servo"))
+    name = registered(gh, 0, door)[1]
+    gh.runners[100]["status"] = "online"
+    issued = sup.read_peer(name)["issued"]  # type: ignore[index]
+    sup.sweep_peer(gh, door, issued + 30)
+    assert sup.peer_ready(issued + 60) == {("octo/app", "fc-cache-octo--servo"): 1}
+    assert sup.peer_ready(issued + 30 + sup.PEER_SEEN_SECONDS) == {}
+    # A build for another product waits: the idle runner goes, a fresh one fits it.
+    door.wants = (("octo/app", "fc-cache-octo--blog"),)
+    sup.sweep_peer(gh, door, issued + sup.PEER_RELABEL_SECONDS + 1)
+    assert sup.read_peer(name)["gone"]  # type: ignore[index]
+    assert sup.peer_ready(issued + sup.PEER_RELABEL_SECONDS + 2) == {}

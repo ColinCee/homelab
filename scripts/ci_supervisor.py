@@ -1656,6 +1656,16 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     booting: Counter[Want] = Counter(
         run.want for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])
     )
+    # So do the PC's idle ready runners, for jobs queued under PEER_COVER_SECONDS: GitHub hands
+    # each job to one idle runner, and booting for it here too would waste a VM.
+    pc_ready = peer_ready(now) if PEER else Counter()
+    for want, n in pc_ready.items():
+        young = [
+            i
+            for i in job_ids.get(want, [])
+            if now - waited_since(state, i, now) < PEER_COVER_SECONDS
+        ]
+        booting[want] += min(n, len(young))
     free = [slot for slot in range(state.slots) if slot not in state.launches]
     light_free = [
         slot
@@ -1757,6 +1767,10 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # memory, if the standby cannot take it. A light job never uses a build slot.
     waiting = queued - booting
     waiting.subtract(launched)
+    if PEER:
+        builds_waiting = (w for w in oldest_first if w[1] not in LIGHT_SIZES and waiting[w] > 0)
+        PEER.wants = tuple(dict.fromkeys(builds_waiting))
+        PEER.last = (state.last_repo, state.last_label)
     for run in list(state.launches.values()):
         if run.standby and any(
             n > 0 and want != run.want and (want[1] in LIGHT_SIZES) == run.light
@@ -1774,8 +1788,10 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             stop_if_still_idle(gh, run, "is in the way of a job waiting for memory")
     standbys = [r for r in state.launches.values() if r.standby]
     # A standby is the first thing given up: never booted while a job waits for memory.
+    # Nor while one of the PC's ready runners waits: it is the standby.
     if (
         not state.held
+        and not any(n for (_, label), n in pc_ready.items() if label not in LIGHT_SIZES)
         and next_size(state, True)[1] <= room
         and wants_standby(
             repos, private, [not r.light for r in standbys], len(free), standby_count()
@@ -1834,6 +1850,12 @@ def hold_for_memory(state: State, repos: list[str], held: Mapping[int, tuple[str
 def duration(seconds: float) -> str:
     seconds = int(seconds)
     return f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+def waited_since(state: State, job_id: int, now: float) -> float:
+    """When the supervisor first saw the job waiting (now, if it never did)."""
+    wait = state.waits.get(job_id)
+    return wait.since if wait else now
 
 
 def note_waits(
@@ -2059,6 +2081,14 @@ PEER_FREE_DISK_BYTES = 20 * 1024**3
 PEER_SESSIONS_MAX_BYTES = 3 * 1024**3
 # A slot gets a new registration at most this often, so the PC cannot spend the token.
 PEER_REGISTER_EVERY = 120
+# An idle PC runner covers a queued job of its label for this long; past it the Beelink boots
+# for the job, so a PC runner that never takes it holds nothing up.
+PEER_COVER_SECONDS = 60
+# A ready PC runner's idle state, seen by sweep_peer, counts as current for this long.
+PEER_SEEN_SECONDS = 90
+# An idle PC runner for one product's cache label is swapped for a queued build of another's
+# once it has waited this long.
+PEER_RELABEL_SECONDS = 300
 # run-vm.sh's outbox: 6 GiB for the tar and its header.
 OUTBOX_BYTES = 6 * 1024**3 + 1024**2
 # Lines the PC's console reader sends up; read_console checks them again on the Beelink.
@@ -2074,6 +2104,10 @@ PC_POLL_SECONDS = 5
 # the Watcher reruns it as machine trouble.
 PC_DRAIN_SECONDS = 20 * 60
 PC_CACHE_EVERY = 600
+
+
+# The door's shared state, set by main when the door is open; tick reads it.
+PEER: Peer | None = None
 
 
 def peer_slots() -> int:
@@ -2116,18 +2150,19 @@ def peer_cache_version(repo: str) -> str:
         return ""
 
 
-def peer_label(repo: str) -> str:
-    owner, _, name = repo.lower().partition("/")
-    return f"{CACHE_LABEL_PREFIX}{owner}--{name}"
-
-
 @dataclass
 class Peer:
     """What the door's threads share with the main loop."""
 
     token: str
-    # The repos served, replaced whole by the main loop on each listing.
+    # The repo whose builds the PC runs, and the served repos whose cache disks it may copy,
+    # replaced whole by the main loop on each listing.
     served: frozenset[str] = frozenset()
+    caches: frozenset[str] = frozenset()
+    # Build wants (repo, cache label) still waiting after this poll's plan, oldest first, and
+    # the last build's: a new PC runner is registered for the first that fits.
+    wants: tuple[tuple[str, str], ...] = ()
+    last: tuple[str, str] = ("", "")
     # Each PC VM's open stream: a new one for the same runner (the PC reconnected) ends the old.
     streaming: dict[str, socket.socket] = field(default_factory=dict)
     # Outboxes being uploaded, by runner, with their sizes: the free-disk floor counts them all.
@@ -2185,8 +2220,8 @@ def peer_answer(
 ) -> str:
     """One request through the door (words: its first line); returns the reply line."""
     match words:
-        case ["register", slot, repo, have]:
-            return peer_register(peer, gh, slot, repo, have)
+        case ["register", slot, repo]:
+            return peer_register(peer, gh, slot, repo)
         case ["vm", runner] if read_peer(runner):
             conn.settimeout(None)  # as long as the VM runs; ssh's keepalives end a dead link
             peer_vm(peer, gh, runner, reader, writer, conn)
@@ -2195,7 +2230,7 @@ def peer_answer(
             return peer_outbox(peer, runner, int(size), reader, writer, conn)
         case ["release", runner] if fields := read_peer(runner):
             return "gone" if peer_drop(gh, runner, fields) else "busy"
-        case ["cache", repo, have] if repo in peer.served:
+        case ["cache", named, have] if repo := peer_cache_repo(peer, named):
             conn.settimeout(300)
             if not peer.caching.acquire(blocking=False):
                 return "busy"
@@ -2206,9 +2241,23 @@ def peer_answer(
     return "no"
 
 
-def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> str:
-    """A one-job runner for a PC slot, with the build labels, and the repo's cache label
-    only if the PC holds the Beelink's current cache disk."""
+def peer_cache_repo(peer: Peer, named: str) -> str:
+    """The served repo with a cache disk a PC asks for by its lowercase name, or ""."""
+    return next((r for r in peer.caches if r.lower() == named), "")
+
+
+def peer_wanted_label(peer: Peer, repo: str) -> str:
+    """The cache label for a new PC runner: the oldest waiting build's, else the last build's
+    (as the Beelink's standby is chosen), so a ready runner fits what comes next."""
+    for want_repo, label in (*peer.wants, peer.last):
+        if want_repo.lower() == repo.lower() and (not label or cache_label_repo(label)):
+            return label
+    return ""
+
+
+def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str) -> str:
+    """A one-job runner for a PC slot, with the build labels and the cache label of the build
+    it is most likely to take (the PC mounts that cache disk if it holds a copy)."""
     if not (slot.isdecimal() and int(slot) < peer_slots() and repo in peer.served):
         return "no"
     now = time.time()
@@ -2221,10 +2270,7 @@ def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> st
         if not fields.get("gone") and not peer_drop(gh, old.stem, fields):
             return "no"  # its last runner still has a job
     labels = list(RUNNER_LABELS)
-    version = peer_cache_version(repo)
-    # Any image the PC holds will do: a merge to main makes a new one, and ready runners
-    # registered before the PC fetches it must still take the builds asking for the label.
-    label = peer_label(repo) if version and have != "-" else ""
+    label = peer_wanted_label(peer, repo)
     if label:
         labels.append(label)
     name = f"{PEER_PREFIX}{int(slot)}-{int(now)}"
@@ -2238,6 +2284,7 @@ def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> st
         "runner_id": int(registration["runner"]["id"]),
         "issued": int(now),
         "asks": 0,
+        "label": label,
     }
     PEER_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     write_status(peer_record(name), fields)
@@ -2245,6 +2292,16 @@ def peer_register(peer: Peer, gh: GitHub, slot: str, repo: str, have: str) -> st
     (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo, "light": False}))
     log(f"PC slot {slot}: registered {name} for {repo}{f', {label}' if label else ''}")
     return f"ok {name} {label or '-'} {registration['encoded_jit_config']}"
+
+
+def peer_ready(now: float) -> Counter[Want]:
+    """The PC's runners sweep_peer last saw online and idle, by (repo, cache label)."""
+    ready: Counter[Want] = Counter()
+    for path in PEER_DIR.glob(f"{PEER_PREFIX}*.json"):
+        fields = read_peer(path.stem)
+        if fields and not fields.get("gone") and now - fields.get("idle_at", 0) < PEER_SEEN_SECONDS:
+            ready[(str(fields["repo"]), str(fields.get("label", "")))] += 1
+    return ready
 
 
 def peer_drop(gh: GitHub, runner: str, fields: dict[str, Any]) -> bool:
@@ -2398,7 +2455,7 @@ def peer_cache(repo: str, have: str, writer: IO[bytes]) -> str:
     return ""
 
 
-def sweep_peer(gh: GitHub, now: float) -> None:
+def sweep_peer(gh: GitHub, peer: Peer, now: float) -> None:
     """PC runners: forget those gone an hour (and the outbox record of one that never sent
     its outbox), delete one still offline PEER_OFFLINE_SECONDS after it was registered (the
     PC is off) and an idle one older than a standby lives (a fresh registration replaces it),
@@ -2430,8 +2487,18 @@ def sweep_peer(gh: GitHub, now: float) -> None:
             continue
         age = now - float(fields["issued"])
         offline = runner_data.get("status") != "online"
-        if (offline and age > PEER_OFFLINE_SECONDS) or (
-            not offline and runner_data.get("busy") is False and age > STANDBY_RECYCLE_SECONDS
+        idle = not offline and runner_data.get("busy") is False
+        if idle:
+            fields["idle_at"] = int(now)
+        else:
+            fields.pop("idle_at", None)
+        write_status(path, fields)
+        label = str(fields.get("label", ""))
+        others = {w for w in peer.wants if w[0] == fields["repo"] and w[1] != label}
+        if (
+            (offline and age > PEER_OFFLINE_SECONDS)
+            or (idle and age > STANDBY_RECYCLE_SECONDS)
+            or (idle and age > PEER_RELABEL_SECONDS and others)
         ):
             peer_drop(gh, runner, fields)
 
@@ -2579,18 +2646,23 @@ def pc_slot_count() -> int:
     return min(int(text), slot_count()) if text.isdecimal() else 0
 
 
-def pc_cache_version(repo: str) -> str:
-    """The version of the cache disk the PC holds for the repo, "-" for none."""
+def pc_cache_image(named: str) -> Path:
+    """The PC's copy of a repo's cache disk, by the repo's lowercase name."""
+    return CACHE_DIR / f"{named.replace('/', '__')}.ext4"
+
+
+def pc_cache_version(named: str) -> str:
+    """The version of the cache disk copy the PC holds, "-" for none."""
     try:
-        return cache_image(repo).with_suffix(".version").read_text().strip() or "-"
+        return pc_cache_image(named).with_suffix(".version").read_text().strip() or "-"
     except OSError:
         return "-"
 
 
-def start_pc_vm(repo: str, slot: int) -> bool:
-    """Register a ready runner for the slot through the door and boot its VM."""
-    have = pc_cache_version(repo)
-    reply = peer_call(f"register {slot} {repo} {have}").split()
+def start_pc_vm(repo: str, slot: int, wanted: set[str]) -> bool:
+    """Register a ready runner for the slot through the door and boot its VM, with the cache
+    disk its label names if the PC holds a copy (else that copy is fetched for next time)."""
+    reply = peer_call(f"register {slot} {repo}").split()
     if len(reply) != 4 or reply[0] != "ok" or not PEER_RUNNER.fullmatch(reply[1]):
         log(f"PC slot {slot}: not registered ({' '.join(reply[:1]) or 'no reply'})")
         return False
@@ -2599,8 +2671,12 @@ def start_pc_vm(repo: str, slot: int) -> bool:
     fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump({"task": "runner", "jitconfig": jit}, f)
+    named = cache_label_repo(label) or ""
+    image = pc_cache_image(named) if named else None
+    cache = image if image and image.exists() else None
+    if named:
+        wanted.add(named)
     run = Launch(slot, repo, 0, name, time.time(), metadata, standby=True, label=label)
-    cache = cache_image(repo) if label != "-" else None
     (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
     env = {
         "VCPUS": str(PC_SIZE[0]),
@@ -2632,8 +2708,11 @@ def ship_outboxes(running: set[str], tried: dict[str, float], now: float) -> Non
         runner = record.stem
         if f"{UNIT_PREFIX}{runner}" in running or now - tried.get(runner, 0) < OUTBOX_RETRY_SECONDS:
             continue
-        tried[runner] = now
         tar = record.with_suffix(".tar")
+        # run-vm.sh makes the outbox as the VM starts: until then the VM may be on its way.
+        if not tar.exists() and now - record.stat().st_mtime < 600:
+            continue
+        tried[runner] = now
         size = outbox_end(tar)
         try:
             with subprocess.Popen(
@@ -2661,14 +2740,14 @@ def ship_outboxes(running: set[str], tried: dict[str, float], now: float) -> Non
             tried.pop(runner, None)
 
 
-def refresh_cache(repo: str) -> None:
-    """Fetch the Beelink's cache disk for the repo when it is newer than the PC's."""
-    image = cache_image(repo)
-    version_file, have = image.with_suffix(".version"), pc_cache_version(repo)
+def refresh_cache(named: str) -> None:
+    """Fetch the Beelink's cache disk for the repo (lowercase name) when newer than the PC's."""
+    image = pc_cache_image(named)
+    version_file, have = image.with_suffix(".version"), pc_cache_version(named)
     staged = image.with_suffix(".part")
     with subprocess.Popen(peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE) as link:
         assert link.stdin is not None and link.stdout is not None
-        link.stdin.write(f"cache {repo} {have}\n".encode())
+        link.stdin.write(f"cache {named} {have}\n".encode())
         link.stdin.flush()
         words = link.stdout.readline(PEER_LINE_MAX).split()
         if len(words) != 3 or words[0] != b"image" or not words[1].isdigit():
@@ -2684,14 +2763,16 @@ def refresh_cache(repo: str) -> None:
         return
     staged.replace(image)  # VMs already booted keep the disk they opened
     version_file.write_text(f"{version}\n")
-    log(f"cache for {repo}: fetched {version} ({size} bytes)")
+    log(f"cache for {named}: fetched {version} ({size} bytes)")
 
 
-def fetch_cache(repo: str) -> None:
-    try:
-        refresh_cache(repo)
-    except Exception as e:  # the PC runs without the cache disk until the next try
-        log(f"cache for {repo}: not fetched, {type(e).__name__}: {e}")
+def fetch_caches(wanted: set[str]) -> None:
+    """Each cache disk copy the PC's runners have wanted, one after another."""
+    for named in sorted(wanted):
+        try:
+            refresh_cache(named)
+        except Exception as e:  # its VMs run without the cache disk until the next try
+            log(f"cache for {named}: not fetched, {type(e).__name__}: {e}")
 
 
 def pc_main(argv: list[str]) -> int:
@@ -2708,6 +2789,7 @@ def pc_main(argv: list[str]) -> int:
     slot_paused: dict[int, float] = {}
     cache_checked = 0.0
     fetching = shipping = threading.Thread()
+    wanted = {p.stem.replace("__", "/", 1) for p in CACHE_DIR.glob("*.ext4")}
     log("PC slots: keeping ready runners")
     while True:
         now = time.time()
@@ -2741,16 +2823,18 @@ def pc_main(argv: list[str]) -> int:
                     target=ship_outboxes, args=(running, tried, now), daemon=True
                 )
                 shipping.start()
-            if now - cache_checked > PC_CACHE_EVERY and not fetching.is_alive():
+            # Never while gaming: the copies cross Windows' network.
+            fresh = all(pc_cache_image(n).exists() for n in wanted)
+            due = now - cache_checked > PC_CACHE_EVERY or not fresh
+            if slots and due and wanted and not fetching.is_alive():
                 cache_checked = now
-                fetching = threading.Thread(target=fetch_cache, args=(repo,), daemon=True)
+                fetching = threading.Thread(target=fetch_caches, args=(set(wanted),), daemon=True)
                 fetching.start()
-            # Not before the first cache fetch has ended, so the first runners get the label.
-            for slot in range(slots if cache_checked and not fetching.is_alive() else 0):
+            for slot in range(slots):
                 room = mem_available_mib() - memory_reserve_mib()
                 if slot in by_slot or now < slot_paused.get(slot, 0) or room < PC_SIZE[1] + 256:
                     continue
-                if not start_pc_vm(repo, slot):
+                if not start_pc_vm(repo, slot, wanted):
                     slot_paused[slot] = now + 30
         except Exception as e:
             log(f"PC poll failed: {type(e).__name__}: {e}")
@@ -2799,7 +2883,8 @@ def main(argv: list[str] | None = None) -> int:
     log(f"{state.slots} slots; serving private repos the token can see")
     # VMs started before a restart are still running: take them back before anything else.
     adopt(state)
-    peer = Peer(gh._token) if peer_slots() and peer_door_installed() else None
+    global PEER
+    peer = PEER = Peer(gh._token) if peer_slots() and peer_door_installed() else None
     if peer:
         threading.Thread(target=serve_peer, args=(peer,), daemon=True).start()
     peer_swept = 0.0
@@ -2836,6 +2921,7 @@ def main(argv: list[str] | None = None) -> int:
                 if peer:
                     # The PC runs Auto Kaizen's builds only: no other repo's jobs, items or caches.
                     peer.served = frozenset(r for r in repos if r.lower() == LIVE_REPO.lower())
+                    peer.caches = frozenset(r for r in repos if cache_image(r).exists())
             started, asked, waited = time.monotonic(), gh.requests, gh.seconds
             if unclean:
                 running = [run.runner_name for run in state.launches.values()]
@@ -2874,7 +2960,7 @@ def main(argv: list[str] | None = None) -> int:
             ):
                 peer_swept = time.time()
                 peer_sweeper = threading.Thread(
-                    target=sweep_peer, args=(gh.clone(), peer_swept), daemon=True
+                    target=sweep_peer, args=(gh.clone(), peer, peer_swept), daemon=True
                 )
                 peer_sweeper.start()
             status_error = ""

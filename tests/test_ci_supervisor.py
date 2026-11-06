@@ -6,6 +6,7 @@ import os
 import tarfile
 import threading
 import urllib.error
+from collections import Counter
 from pathlib import Path
 from typing import ClassVar
 
@@ -1656,3 +1657,23 @@ def test_the_light_standby_keeps_its_memory_for_its_older_light_job(host, monkey
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert stopped == []  # its light job came first; the build waits
     assert started == [] and state.held == {2: "o/ok"}
+
+
+def test_an_idle_pc_runner_covers_a_young_job_and_stands_in_for_the_standby(
+    host, monkeypatch
+) -> None:
+    queue, started, _ = host
+    queue(jobs=2, free_mib=1 << 20)
+    monkeypatch.setattr(sup, "PEER", sup.Peer("token"))
+    monkeypatch.setattr(sup, "peer_ready", lambda now: Counter({("o/ok", ""): 1}))
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    # One job is the PC runner's; one VM boots for the other, and no standby.
+    assert started == [("o/ok", 4096, False)]
+    assert sup.PEER.wants == ()  # type: ignore[union-attr]
+    # A job still waiting past PEER_COVER_SECONDS is booted for here.
+    state.launches.clear()
+    started.clear()
+    queue(jobs=1, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], float(sup.PEER_COVER_SECONDS))  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, False)]
