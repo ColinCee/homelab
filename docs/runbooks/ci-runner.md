@@ -166,7 +166,7 @@ MiB of Y`), to size VMs by kind of job. No VM starts either while tasks waited o
 over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
 a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
 or the disk stays queued and is tried again on the
-next poll; the log says so once per job. A standby gives way first: none boots
+next poll (see [Why a job waits](#why-a-job-waits)). A standby gives way first: none boots
 while a job waits, and one waiting for another repo is stopped to
 make room.
 
@@ -335,6 +335,29 @@ Re-run `build-rootfs.sh` after a change under `ci-runner/rootfs/` and after a ke
 kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
 re-run `install-host.sh`, `build-rootfs.sh` and the audit.
+
+### Why a job waits
+
+The supervisor's journal logs each queued job it has not started, when it first waits
+and then every 3 minutes, with how long it has waited since the supervisor first saw it
+(a restart starts the count again) and why:
+
+| Line ends with | Means |
+|---|---|
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs |
+| `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
+| `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
+| `a VM booting or waiting ready for it` | A VM is up for it but GitHub has not given it the job; logged only after 3 minutes |
+| `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |
+
+A job that was logged gets `stopped waiting after Xm` once its VM starts or it is cancelled.
+To see why jobs waited, say after a "stuck waiting for a test VM" alert:
+
+```bash
+journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
+```
+
+Tune slots, the reserve or the alert's limit from what these lines show.
 
 ## Checks
 
