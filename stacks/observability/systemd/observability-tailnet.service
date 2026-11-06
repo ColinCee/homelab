@@ -1,0 +1,9 @@
+[Unit]
+Description=Record when each tailnet device was added, for the New Tailscale device rule
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/observability.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+# jq -e fails on empty input, so a tailscale error leaves the file stale for Tailscale device check stopped.
+ExecStart=/bin/sh -c "/usr/bin/tailscale status --json | jq -er '(.Peer // {})[] | select(.Created > \"1970\") | \"homelab_tailnet_device_created_timestamp_seconds{name=\" + (.DNSName | rtrimstr(\".\") | @json) + \",os=\" + (.OS | @json) + \"} \" + (.Created[0:19] + \"Z\" | fromdateiso8601 | tostring)' > /var/lib/homelab-metrics/tailnet.prom.tmp && mv /var/lib/homelab-metrics/tailnet.prom.tmp /var/lib/homelab-metrics/tailnet.prom"
