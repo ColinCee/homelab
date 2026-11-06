@@ -70,14 +70,6 @@ jobs:
           printf '%s' "$GHCR_TOKEN" \
             | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-      # Only stacks changed since the last full deploy (all when shared deploy files changed);
-      # the marker lives outside the checkout, which each deploy resets.
-      - name: Deploy changed stacks
-        id: deploy
-        run: |
-          cd /home/colin/code/homelab
-          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed"
-
       # How long a Control room change took from its auto-kaizen merge to answering here.
       # Measuring never fails a deploy.
       - id: control-room-changed
@@ -92,6 +84,27 @@ jobs:
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Logs each /state answer while the stacks deploy, so live is read from when the Control room came up,
+      # not after the stacks deployed after it. The runner stops it when the job ends.
+      - name: Watch the Control room's /state
+        if: steps.control-room-changed.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          nohup python3 scripts/control_room_timing.py --watch "$RUNNER_TEMP/control-room-state.jsonl" \
+            --state-url http://100.100.146.119:8090/state > /dev/null 2>&1 &
+
+      # Only stacks changed since the last full deploy (all when shared deploy files changed);
+      # the marker lives outside the checkout, which each deploy resets. This push's own stacks
+      # go first, after any stack creating a network or volume they use.
+      - name: Deploy changed stacks
+        id: deploy
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          cd /home/colin/code/homelab
+          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed" \
+            --first-changed-since "$BEFORE"
 
       - id: kaizen-read-key
         if: steps.control-room-changed.outputs.changed == 'true'
@@ -111,9 +124,11 @@ jobs:
         env:
           KAIZEN_TOKEN: ${{ steps.kaizen-read-key.outputs.token }}
           GITHUB_TOKEN: ${{ github.token }}
+          READY_AT: ${{ fromJSON(steps.deploy.outputs.ready_at || '{}')['kaizen-control-room'] || '' }}
         run: |
           python3 scripts/control_room_timing.py \
-            --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED"
+            --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED" \
+            --ready-at "$READY_AT" --answers "$RUNNER_TEMP/control-room-state.jsonl"
 
       # Grafana gives a top-level provisioned dashboard no viewer access, and
       # provisioning cannot grant it, so each deploy of Grafana's stack lets viewers open Home.
