@@ -61,8 +61,8 @@ the observability stack.
 Grafana allows anonymous read-only (Viewer) access so dashboards open without
 a login, including for agents checking a change. Editing, Explore and
 administration still require the admin password. This relies on the port
-being bound to the Tailscale address and on the tailnet policy limiting who
-can reach it; remove `GF_AUTH_ANONYMOUS_*` if either changes.
+being bound to the Tailscale address, on the tailnet policy limiting who
+can reach it, and on `stacks/internal-names` refusing Beelink's own address; remove `GF_AUTH_ANONYMOUS_*` if either changes.
 
 ### Dashboard patterns
 
