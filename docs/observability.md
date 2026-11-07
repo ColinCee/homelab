@@ -108,7 +108,8 @@ Prometheus receives metrics from:
   only while it runs a VM, so counting them counts running VMs, the ones
   waiting ready included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`. What each job needed inside its VM, and its out-of-memory kills, come
-  through the host's textfile collector (`homelab_ci_vm*`, see the ci-runner runbook).
+  through the host's textfile collector (`homelab_ci_vm*`), as does the longest-waiting queued job's
+  minutes per reason (`homelab_ci_wait_seconds{kind}`); see the ci-runner runbook.
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
@@ -189,7 +190,8 @@ The shipped rules cover host-level pressure such as:
   not covered
 - **PC backup stopped arriving**: no file from the Windows PC in 50 hours
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
-  for a homelab CI machine
+  for a homelab CI machine; its text gives the minutes per reason (see the ci-runner runbook's
+  "Why a job waits")
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
   hours and nothing has merged in that time
 - **Kaizen Control room unreachable**: Prometheus has not reached the Control room for

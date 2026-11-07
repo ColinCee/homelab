@@ -667,6 +667,54 @@ groups:
                 and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
               instant: true
               refId: A
+          # Why: the CI runner's longest-waiting queued job, its minutes so far per kind of wait
+          # (homelab_ci_wait_seconds, written by the supervisor), for the description. 0 when the
+          # file is missing, so the reason never makes the rule no-data.
+          - refId: slots
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="slots"}) / 60 or on() vector(0)
+              instant: true
+              refId: slots
+          - refId: memory
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="memory"}) / 60 or on() vector(0)
+              instant: true
+              refId: memory
+          - refId: disk
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="disk"}) / 60 or on() vector(0)
+              instant: true
+              refId: disk
+          - refId: booting
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="booting"}) / 60 or on() vector(0)
+              instant: true
+              refId: booting
+          - refId: other
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="other"}) / 60 or on() vector(0)
+              instant: true
+              refId: other
           - refId: C
             relativeTimeRange:
               from: 0
@@ -694,8 +742,15 @@ groups:
             and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
           chart_line: "20"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
-          description: "Threshold: a task has waited over 20 minutes for a homelab CI machine."
-          action: "Check `journalctl -u homelab-ci-supervisor` on the Beelink and the job's runner labels; see docs/runbooks/ci-runner.md."
+          description: >-
+            Threshold: a task has waited over 20 minutes for a homelab CI machine.
+            The CI runner's longest queued job waited
+            {{ with $values.slots }}{{ printf "%.0f" .Value }}{{ end }} min for a free slot,
+            {{ with $values.memory }}{{ printf "%.0f" .Value }}{{ end }} for memory,
+            {{ with $values.disk }}{{ printf "%.0f" .Value }}{{ end }} for the disk,
+            {{ with $values.booting }}{{ printf "%.0f" .Value }}{{ end }} for its VM to boot and
+            {{ with $values.other }}{{ printf "%.0f" .Value }}{{ end }} for a runner label no VM has.
+          action: "See \"Why a job waits\" in docs/runbooks/ci-runner.md; `journalctl -u homelab-ci-supervisor` on the Beelink has each job's reason."
         labels:
           severity: warning
 

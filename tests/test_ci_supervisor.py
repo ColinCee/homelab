@@ -36,6 +36,13 @@ def waits_file(tmp_path_factory, monkeypatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def wait_metrics(tmp_path_factory, monkeypatch) -> Path:
+    path = tmp_path_factory.mktemp("metrics") / "ci-waits.prom"
+    monkeypatch.setattr(sup, "WAIT_METRICS", path)
+    return path
+
+
+@pytest.fixture(autouse=True)
 def outbox_dir(tmp_path_factory, monkeypatch) -> Path:
     path = tmp_path_factory.mktemp("outbox")
     monkeypatch.setattr(sup, "OUTBOX_DIR", path)
@@ -1056,6 +1063,41 @@ def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
          "memory": 60, "disk": 10, "slots": 0, "booting": 30, "other": 0}
     ]  # fmt: skip
     assert waits_file.stat().st_mode & 0o777 == 0o644
+
+
+def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, monkeypatch):
+    queue, _, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
+    state = sup.State()
+    queue(jobs=1, free_mib=3072 + 2047)  # held for memory
+    sup.tick(None, state, ["o/ok"], 100.0)  # type: ignore[arg-type]
+    assert 'homelab_ci_wait_seconds{kind="memory"} 0' in wait_metrics.read_text()
+    sup.tick(None, state, ["o/ok"], 110.0)  # type: ignore[arg-type]  # under 15 s: not written
+    queue(jobs=1, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], 130.0)  # type: ignore[arg-type]  # its VM boots
+    sup.tick(None, state, ["o/ok"], 150.0)  # type: ignore[arg-type]
+    assert wait_metrics.read_text().splitlines() == [
+        'homelab_ci_wait_seconds{kind="memory"} 30',
+        'homelab_ci_wait_seconds{kind="disk"} 0',
+        'homelab_ci_wait_seconds{kind="slots"} 0',
+        'homelab_ci_wait_seconds{kind="booting"} 20',
+        'homelab_ci_wait_seconds{kind="other"} 0',
+    ]
+    assert wait_metrics.stat().st_mode & 0o777 == 0o644
+    queue(jobs=0, free_mib=1 << 20)  # the job started: nothing waits
+    sup.tick(None, state, ["o/ok"], 170.0)  # type: ignore[arg-type]
+    assert set(wait_metrics.read_text().split()[1::2]) == {"0"}
+
+
+def test_an_unwritable_wait_metrics_file_is_logged_once(tmp_path, monkeypatch) -> None:
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    monkeypatch.setattr(sup, "WAIT_METRICS", tmp_path / "missing" / "ci-waits.prom")
+    state = sup.State()
+    for now in (0.0, 2.0):
+        sup.note_waits(state, ["o/ok"], {}, now)
+    assert len(lines) == 1 and lines[0].startswith("could not write")
 
 
 def test_each_reason_has_a_kind_of_wait() -> None:
