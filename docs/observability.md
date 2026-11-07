@@ -109,7 +109,9 @@ Prometheus receives metrics from:
   waiting ready included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`. What each job needed inside its VM, and its out-of-memory kills, come
   through the host's textfile collector (`homelab_ci_vm*`), as does the longest-waiting queued job's
-  minutes per reason (`homelab_ci_wait_seconds{kind}`); see the ci-runner runbook.
+  minutes per reason (`homelab_ci_wait_seconds{kind}`); see the ci-runner runbook. The host SSD's
+  lifetime bytes written and read, wear and spare (`homelab_ssd_*{device="nvme0"}`) come the same way,
+  from `ssd.prom`.
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
@@ -188,6 +190,9 @@ The shipped rules cover host-level pressure such as:
   it. A 5-minute timer records each device's added time, and **Tailscale device
   check stopped** fires when it has not for 15 minutes. Policy file changes are
   not covered
+- **Beelink SSD wearing out**: the SSD reports over 80% of its rated write endurance used.
+  A 15-minute timer records its wear and lifetime writes, and **SSD wear check stopped**
+  fires when it has not for an hour
 - **PC backup stopped arriving**: no file from the Windows PC in 50 hours
 - **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
   for a homelab CI machine; its text gives the minutes per reason (see the ci-runner runbook's

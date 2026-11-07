@@ -600,6 +600,92 @@ groups:
         labels:
           severity: warning
 
+      - uid: ssd-worn
+        title: Beelink SSD wearing out
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # The SSD's own estimate of its rated endurance used (scripts/ssd_wear.py).
+              expr: max(homelab_ssd_percentage_used)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [80]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 0s
+        annotations:
+          summary: "Beelink SSD wear"
+          measure: "Endurance used"
+          trigger: "over 80%"
+          chart: max(homelab_ssd_percentage_used)
+          chart_line: "80"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}%{{ end }}"
+          description: "The SSD reports over 80% of its rated write endurance used; past 100% it may start failing."
+          action: >-
+            Order a replacement SSD and plan the move, check how fast it wears
+            (`homelab_ssd_written_bytes_total` in Grafana), and cut CI VM writes or slots if they climbed.
+        labels:
+          severity: warning
+
+      - uid: ssd-wear-stale
+        title: SSD wear check stopped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Without fresh data, Beelink SSD wearing out stays quiet.
+              expr: (time() - max(node_textfile_mtime_seconds{file=~".*/ssd.prom"})) / 60
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [60]
+              refId: C
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "SSD wear check stopped"
+          measure: "Last check"
+          trigger: "over 60 min ago"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min ago{{ else }}never{{ end }}"
+          description: "ssd.prom has not been written for over an hour, so a wearing SSD would go unnoticed."
+          action: >-
+            Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
+            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+        labels:
+          severity: warning
+
       - uid: pc-backup-stale
         title: PC backup stopped arriving
         condition: C
