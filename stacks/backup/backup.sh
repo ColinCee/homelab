@@ -60,12 +60,13 @@ verify() {
   fi
 }
 
+# step names the stage that is running, so a failed run records where it stopped.
 run_backup() {
-  within_cap &&
-    backup_data &&
-    restic forget --host beelink --prune \
+  step=cap && within_cap &&
+    step=backup && backup_data &&
+    step=forget && restic forget --host beelink --prune \
       --keep-daily 7 --keep-weekly 4 --keep-monthly 6 &&
-    verify &&
+    step=check && verify &&
     echo "repository size: $(repo_bytes) bytes of $MAX_REPO_BYTES allowed"
 }
 
@@ -75,8 +76,11 @@ report() {
     echo "backup ok"
     write_metric "$METRICS_FILE" homelab_backup_last_success_timestamp_seconds "$(date -u +%s)" ||
       echo "could not write $METRICS_FILE" >&2
+    rm -f "$FAILURE_FILE"
   else
-    echo "backup FAILED" >&2
+    echo "backup FAILED at $step" >&2
+    write_metric "$FAILURE_FILE" "homelab_backup_last_failure_timestamp_seconds{step=\"$step\"}" "$(date -u +%s)" ||
+      echo "could not write $FAILURE_FILE" >&2
     return 1
   fi
 }
@@ -85,6 +89,8 @@ report() {
 # instead of the "backup ok" log line: Loki missed that line once (2026-10-10)
 # and the alert fired with backups succeeding.
 METRICS_FILE=/metrics/backup.prom
+# The last run's failing step, for the alert to name; removed by the next good run.
+FAILURE_FILE=/metrics/backup-failure.prom
 # The weekly report reads this, not the log, for the same reason.
 DEEP_CHECK_FILE=/metrics/backup-deep-check.prom
 
