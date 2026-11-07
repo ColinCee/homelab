@@ -1979,7 +1979,9 @@ def test_an_ended_vm_is_counted_by_kind_and_its_memory_file_removed(vms, memory)
     assert not run.memory_file.exists()
 
 
-@pytest.mark.parametrize("label", [sup.SMALL_LABEL, sup.LIGHT_LABEL, sup.DEPLOY_LABEL, *sup.RUNNER_LABELS])
+@pytest.mark.parametrize(
+    "label", [sup.SMALL_LABEL, sup.LIGHT_LABEL, sup.DEPLOY_LABEL, *sup.RUNNER_LABELS]
+)
 def test_an_ended_vm_of_every_kind_is_counted(vms, memory, label) -> None:
     # A deploy VM's end crashed every poll, so no job started, while its kind had no count.
     run = _ended(vms, label, peak=300, kills=0)
