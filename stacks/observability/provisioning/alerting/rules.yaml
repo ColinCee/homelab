@@ -532,6 +532,7 @@ groups:
             `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command.
         labels:
           severity: warning
+          route: colin
 
       - uid: ssd-worn
         title: Beelink SSD wearing out
@@ -572,10 +573,11 @@ groups:
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}%{{ end }}"
           description: "The SSD reports over 80% of its rated write endurance used; past 100% it may start failing."
           action: >-
-            Order a replacement SSD and plan the move, check how fast it wears
-            (`homelab_ssd_written_bytes_total` in Grafana), and cut CI VM writes or slots if they climbed.
+            Order a replacement SSD and plan the move. To see how fast it wears, chart
+            `homelab_ssd_written_bytes_total` in Grafana.
         labels:
           severity: warning
+          route: colin
 
       - uid: ssd-wear-stale
         title: SSD wear check stopped

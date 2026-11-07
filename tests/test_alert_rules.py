@@ -38,9 +38,15 @@ def test_a_chart_queries_what_its_rule_alerts_on() -> None:
             float(rule["annotations"]["chart_line"])
 
 
-def test_only_the_control_rooms_outage_goes_straight_to_discord() -> None:
+def test_only_the_control_rooms_outage_and_colins_alerts_go_straight_to_discord() -> None:
     policy = yaml.safe_load((ALERTING / "policies.yaml").read_text(encoding="utf-8"))["policies"][0]
-    [[label, op, name]] = policy["routes"][0]["object_matchers"]
+    outage, colin = policy["routes"]
+    assert colin["object_matchers"] == [["route", "=", "colin"]]
+    assert {r["title"] for r in RULES if r["labels"].get("route") == "colin"} == {
+        "Unknown container started",
+        "Beelink SSD wearing out",
+    }
+    [[label, op, name]] = outage["object_matchers"]
     assert (label, op) == ("alertname", "=")
     assert name == "Kaizen Control room unreachable"
     assert name in {r["title"] for r in RULES}
