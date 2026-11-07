@@ -202,7 +202,8 @@ The shipped rules cover host-level pressure such as:
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
   hours and nothing has merged in that time
 - **Kaizen's GitHub App running out of calls**: the App has used over 80% of its hourly
-  GitHub calls; at the limit every Builder fails until the hour resets
+  GitHub calls with over 15 minutes until they reset; at the limit every Builder fails until
+  then. In the hour's last 15 minutes it stays quiet, as the calls come back soon
 - **Kaizen Control room unreachable**: Prometheus has not reached the Control room for
   5 minutes, so alerts are not reaching the #alerts forum
 
