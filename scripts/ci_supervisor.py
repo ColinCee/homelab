@@ -239,6 +239,10 @@ WAITS_PRUNE_SECONDS = 3600.0
 # write every 2 s poll would only add load to the shared disk.
 WAIT_METRICS = MEMORY_METRICS.with_name("ci-waits.prom")
 WAIT_METRICS_SECONDS = 15.0
+# A VM is told how long each queued job of its repo and label had waited here, and why
+# (the wait log's reason), at most this many, oldest first: ci-boot writes it to
+# /etc/homelab-ci/waits.json for the job's own record.
+VM_WAITS_MAX = 50
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -369,6 +373,8 @@ class Wait:
     kind: str = "other"
     seen: float = 0.0
     seconds: dict[str, float] = field(default_factory=dict)
+    # The reason the wait log gives at the last poll that saw it.
+    why: str = ""
 
     def count(self, now: float) -> None:
         self.seconds[self.kind] = self.seconds.get(self.kind, 0.0) + now - self.seen
@@ -607,7 +613,10 @@ def launch(
     cache: Path | None,
     label: str = "",
     standby: bool = False,
+    jobs: Iterable[int] = (),
 ) -> None:
+    """Start a VM for repo and label. `jobs` are the queued job ids it may take, whose
+    waits so far go into its metadata."""
     name = f"{RUNNER_PREFIX}{slot}-{int(now)}"
     light = label in LIGHT_SIZES
     # The cache label is registered too, so a job asking for it runs only on such a VM.
@@ -634,7 +643,14 @@ def launch(
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            json.dump({"task": "runner", "jitconfig": registration["encoded_jit_config"]}, f)
+            json.dump(
+                {
+                    "task": "runner",
+                    "jitconfig": registration["encoded_jit_config"],
+                    "waits": vm_waits(state, jobs, now),
+                },
+                f,
+            )
         # The record first: a supervisor that dies right after starting the VM still finds it.
         write_status(run.record, record(run))
         env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
@@ -663,6 +679,19 @@ def launch(
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
+
+
+def vm_waits(state: State, jobs: Iterable[int], now: float) -> dict[str, dict[str, Any]]:
+    """Each job's seconds waited here and why, oldest VM_WAITS_MAX first; a job first seen
+    this poll has waited 0 s."""
+    waits: dict[str, dict[str, Any]] = {}
+    for job_id in sorted(jobs)[:VM_WAITS_MAX]:
+        wait = state.waits.get(job_id)
+        waits[str(job_id)] = {
+            "seconds": int(now - wait.since) if wait else 0,
+            "why": wait.why if wait else "",
+        }
+    return waits
 
 
 def remember_last_job(repo: str, label: str) -> None:
@@ -1843,6 +1872,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
                 now,
                 label=label,
                 cache=cache_for(repo, label, private),
+                jobs=job_ids[(repo, label)],
             )
             room -= mem
             started += 1
@@ -1858,7 +1888,16 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             held[job_id] = (repo, "an older light job waiting for memory")
             continue
         else:
-            launch(gh, state, repo, light_free[light_started], now, label=label, cache=None)
+            launch(
+                gh,
+                state,
+                repo,
+                light_free[light_started],
+                now,
+                label=label,
+                cache=None,
+                jobs=job_ids[(repo, label)],
+            )
             room -= LIGHT_SIZES[label][1]
             light_started += 1
         pace()
@@ -2001,6 +2040,7 @@ def note_waits(
         wait = state.waits.setdefault(job_id, Wait(repo, now, seen=now))
         wait.count(now)
         wait.kind = wait_kind(why)
+        wait.why = why
         waited = now - wait.since
         quiet = why == BOOTING and waited < WAIT_LOG_SECONDS
         if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):

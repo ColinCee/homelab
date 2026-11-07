@@ -905,7 +905,7 @@ def host(caches, monkeypatch):
     monkeypatch.setattr(sup, "log", lines.append)
     started: list[tuple[str, int, bool]] = []
 
-    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False) -> None:
+    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False, jobs=()) -> None:
         mem = sup.next_size(state, standby)[1]
         started.append((repo, mem, standby))
         run = _launch(slot, standby)
@@ -1321,7 +1321,7 @@ def pools(caches, monkeypatch):
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     started: list[tuple[int, str]] = []
 
-    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False) -> None:
+    def launch(gh, state, repo, slot, now, *, cache, label="", standby=False, jobs=()) -> None:
         started.append((slot, label))
         state.launches[slot] = sup.Launch(
             slot, repo, slot, f"fc-{slot}", now, None, standby, label=label
@@ -1852,3 +1852,26 @@ def test_a_standby_that_never_took_a_job_or_a_silent_vm_is_not_counted(vms, memo
     sup.forget(_ended(vms, sup.LIGHT_LABEL, peak=300, kills=0, standby=True))
     sup.forget(sup.Launch(5, "o/ok", 7, "fc-5-1", 0.0, vms / "m"))  # no memory line came
     assert memory == [] and sup.MEMORY_COUNTS["light"] == [0, 0, 0]
+
+
+def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(monkeypatch, tmp_path) -> None:
+    class Registers:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    for name in ("STATE_DIR", "OUTBOX_DIR"):
+        monkeypatch.setattr(sup, name, tmp_path)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
+    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: None)
+    monkeypatch.setattr(sup, "log", lambda line: None)
+    state = sup.State()
+    sup.note_waits(state, ["o/ok"], {7: ("o/ok", "all 2 build slots in use")}, 100.0)
+    sup.launch(Registers(), state, "o/ok", 0, 340.0, cache=None, jobs=[9, 7])  # type: ignore[arg-type]
+    metadata = json.loads((tmp_path / "metadata-slot0.json").read_text())
+    assert metadata["waits"] == {
+        "7": {"seconds": 240, "why": "all 2 build slots in use"},
+        "9": {"seconds": 0, "why": ""},
+    }
+    monkeypatch.setattr(sup, "VM_WAITS_MAX", 1)
+    sup.launch(Registers(), state, "o/ok", 1, 340.0, cache=None, jobs=[9, 7])  # type: ignore[arg-type]
+    assert list(json.loads((tmp_path / "metadata-slot1.json").read_text())["waits"]) == ["7"]
