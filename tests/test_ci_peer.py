@@ -304,3 +304,27 @@ def test_a_registration_reply_comes_back_whole(monkeypatch) -> None:
     script = f"import sys; sys.stdin.readline(); print('ok pc-0-1793990000 - {jit}')"
     monkeypatch.setattr(sup, "peer_ssh", lambda: [sys.executable, "-c", script])
     assert sup.peer_call("register 0 octo/app").split()[3] == jit
+
+
+def test_the_status_file_shows_the_pcs_slots_and_busy_runners(folders, monkeypatch) -> None:
+    gh = Registrar()
+    door = peer()
+    now = 1793990000.0
+    monkeypatch.setattr(sup.time, "time", lambda: now)
+    assert sup.peer_answer(door, gh, ["slots", "9"], io.BytesIO(), io.BytesIO(), None) == "ok"  # type: ignore[arg-type]
+    names = [registered(gh, slot, door)[1] for slot in range(2)]
+    gh.runners[100]["status"] = gh.runners[101]["status"] = "online"
+    gh.busy.add(100)
+    gh.runners[100]["busy"] = True
+    sup.sweep_peer(gh, door, now)
+    assert sup.peer_status(door, now) == {
+        "up": True,
+        "slots": 3,
+        "in_use": 1,
+    }  # 3: the Beelink's limit
+    assert sup.peer_status(door, now + sup.PEER_HEARD_SECONDS) == {
+        "up": False,
+        "slots": 0,
+        "in_use": 0,
+    }
+    assert names
