@@ -1062,6 +1062,8 @@ groups:
           action: "On Grafana Home, the Kaizen GitHub App calls panel shows when use climbed; find the Kaizen job calling GitHub most and slow it."
         labels:
           severity: warning
+          # Kaizen's own spending: the factory manager finds and slows the spender.
+          route: factory
 
       - uid: kaizen-control-room-down
         title: Kaizen Control room unreachable
