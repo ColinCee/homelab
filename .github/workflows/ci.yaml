@@ -17,7 +17,8 @@ jobs:
         with:
           # The pull request's merge commit and its base, to diff them.
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
-      # A pull request that only moves image pins needs only Compose validation.
+      # A pull request that only moves image pins needs only Compose validation
+      # of the stacks it touches; the others are unchanged since main passed.
       # The base commit's copy of the script judges it, so the pull request
       # cannot loosen its own rule.
       - name: Check for an image-pin-only change
@@ -30,7 +31,7 @@ jobs:
           fi
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
-        run: scripts/validate-compose.sh
+        run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
         if: steps.pins.outputs.only != 'true'
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
