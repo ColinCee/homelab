@@ -2416,55 +2416,69 @@ def start_load_test_if_due() -> int:
 
 def run_load_test() -> int:
     """`load-test`, LOAD_TEST_UNIT's work: drain, run test-load.sh at every slot, keep the
-    result, and on a FAIL lower the slot count by one for the next run to test."""
+    result, and on a FAIL lower the slot count by one for the next run to test. Whatever
+    breaks after the drain starts is kept as "not run", so the test waits
+    LOAD_TEST_RETRY_SECONDS instead of draining the host again on every update pass."""
     slots, test = slot_count(), file_hash(LOAD_TEST_SCRIPT)
     commit = read_word(COMMIT_FILE) or ""
+    kept = False
 
     def keep(ran: bool, passed: bool, line: str) -> None:
+        nonlocal kept
         record = {"slots": slots, "passed": passed, "ran": ran, "line": line}
         record |= {"at": int(time.time()), "commit": commit, "test": test}
         replace_file(LOAD_TEST_FILE, json.dumps(record))
+        kept = True
         log(f"load test at {slots} slots: {line}")
 
     DRAIN_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     DRAIN_FILE.touch()
     try:
-        deadline = time.monotonic() + DRAIN_LIMIT_SECONDS
-        log("draining: no new VMs; waiting for the running ones to end")
-        # None (systemd did not answer) is not known to be empty: wait on.
-        while (vms := running_vms()) != set():
-            if time.monotonic() >= deadline:
-                count = "some" if vms is None else str(len(vms))
-                keep(False, False, f"not run: {count} VMs still running after the drain limit")
-                return 1
-            time.sleep(DRAIN_LOOK_SECONDS)
-        line = ""
-        with UPDATE_LOCK.open("a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            with subprocess.Popen(
-                [str(LOAD_TEST_SCRIPT)],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                env={**os.environ, "SLOTS": str(slots)},
-            ) as proc:
-                assert proc.stdout is not None
-                for out in proc.stdout:
-                    print(out, end="", flush=True)
-                    if out.startswith(("PASS ", "FAIL ")):
-                        line = out.strip()
-            code = proc.returncode
-        passed = code == 0 and line.startswith("PASS ")
-        if not line:
-            keep(False, False, f"not run: test-load.sh exited {code} with no PASS or FAIL line")
-            return 1
-        keep(True, passed, line)
-        if not passed and slots > MIN_TESTED_SLOTS:
-            SLOTS_FILE.write_text(f"{slots - 1}\n")
-            log(f"lowered the slot count to {slots - 1}; the next update tests it")
-        return 0 if passed else 1
+        return drain_and_test(slots, keep)
+    except Exception as e:
+        if not kept:
+            keep(False, False, f"not run: {type(e).__name__}: {e}")
+        raise
     finally:
         DRAIN_FILE.unlink(missing_ok=True)
+
+
+def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
+    """Wait for the running VMs to end, then run test-load.sh and keep its result."""
+    deadline = time.monotonic() + DRAIN_LIMIT_SECONDS
+    log("draining: no new VMs; waiting for the running ones to end")
+    # None (systemd did not answer) is not known to be empty: wait on.
+    while (vms := running_vms()) != set():
+        if time.monotonic() >= deadline:
+            count = "some" if vms is None else str(len(vms))
+            keep(False, False, f"not run: {count} VMs still running after the drain limit")
+            return 1
+        time.sleep(DRAIN_LOOK_SECONDS)
+    line = ""
+    with UPDATE_LOCK.open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        with subprocess.Popen(
+            [str(LOAD_TEST_SCRIPT)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env={**os.environ, "SLOTS": str(slots)},
+        ) as proc:
+            assert proc.stdout is not None
+            for out in proc.stdout:
+                print(out, end="", flush=True)
+                if out.startswith(("PASS ", "FAIL ")):
+                    line = out.strip()
+        code = proc.returncode
+    passed = code == 0 and line.startswith("PASS ")
+    if not line:
+        keep(False, False, f"not run: test-load.sh exited {code} with no PASS or FAIL line")
+        return 1
+    keep(True, passed, line)
+    if not passed and slots > MIN_TESTED_SLOTS:
+        SLOTS_FILE.write_text(f"{slots - 1}\n")
+        log(f"lowered the slot count to {slots - 1}; the next update tests it")
+    return 0 if passed else 1
 
 
 def read_live(run: Launch) -> dict[str, Any] | None:

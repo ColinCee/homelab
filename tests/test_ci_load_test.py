@@ -90,7 +90,7 @@ def test_a_fail_never_lowers_the_count_below_three_nor_runs_again(host) -> None:
         None,  # the script cannot be started at all
     ],
 )
-def test_the_drain_ends_when_the_test_breaks(host, broken) -> None:
+def test_the_drain_ends_when_the_test_breaks_and_it_waits_to_try_again(host, broken) -> None:
     if broken is None:
         (host / "test-load.sh").chmod(0o644)
         with pytest.raises(PermissionError):
@@ -98,9 +98,19 @@ def test_the_drain_ends_when_the_test_breaks(host, broken) -> None:
     else:
         write_test_script(host, broken)
         assert sup.run_load_test() == 1
-        record = json.loads((host / "load-test.json").read_text())
-        assert record["ran"] is False and record["line"].startswith("not run:")
     assert not sup.DRAIN_FILE.exists()
+    record = json.loads((host / "load-test.json").read_text())
+    assert record["ran"] is False and record["line"].startswith("not run:")
+    assert not started(host)  # not drained again on the next update pass
+
+
+def test_a_fail_kept_is_not_overwritten_when_lowering_the_count_breaks(host, monkeypatch) -> None:
+    write_test_script(host, 'echo "FAIL $SLOTS slots: slot 4: VM did not boot (exit 1)"; exit 1')
+    monkeypatch.setattr(sup, "SLOTS_FILE", host / "no-such-folder" / "slots")
+    with pytest.raises(FileNotFoundError):
+        sup.run_load_test()
+    record = json.loads((host / "load-test.json").read_text())
+    assert record["ran"] is True and record["line"].startswith("FAIL 5 slots")
 
 
 def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
