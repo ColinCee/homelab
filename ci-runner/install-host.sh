@@ -103,7 +103,7 @@ fi
 # The SSD's lifetime writes and wear, for Grafana (scripts/ssd_wear.py). The PC guest has no NVMe device of its own.
 if [[ $ROLE == beelink ]]; then
   # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to write into another user's
-  # folder (cap_drop ALL); sticky and open to all, as Colin's user timers (tailnet, PC backups) write here too.
+  # folder (cap_drop ALL); sticky and open to all, as Colin's user timers (PC backups) write here too.
   install -d -o root -g root -m 1777 /var/lib/homelab-metrics
   install -d -o root -g root -m 0755 "$dest"
   install -o root -g root -m 0644 "$here/../scripts/ssd_wear.py" "$dest/ssd_wear.py"

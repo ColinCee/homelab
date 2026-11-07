@@ -7,7 +7,7 @@ policies:
     group_interval: 5m
     # Rare repeats to Kaizen: a firing on an alert issue open over 12 hours reads
     # as a lost resolve and opens a new issue, and some alerts stay on until
-    # Colin acts (New Tailscale device). 5 days is as long as Grafana keeps its
+    # Colin acts (Beelink SSD wearing out). 5 days is as long as Grafana keeps its
     # record of what it sent.
     repeat_interval: 120h
     # The Control room posts every other alert to Discord, so only its own

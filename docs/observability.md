@@ -194,12 +194,6 @@ The shipped rules cover host-level pressure such as:
 - **Unknown container started**: a container whose name was not seen in the week
   before has run for 15 minutes, as one planted by an intruder would; redeploys
   keep their names and quick `docker run` checks stop sooner, so neither fires
-- **New Tailscale device**: a device visible to the Beelink was added to the
-  tailnet after the approved-before time in the rule, as an intruder's would be.
-  It stays on until the device is removed or approved by moving that time past
-  it. A 5-minute timer records each device's added time, and **Tailscale device
-  check stopped** fires when it has not for 15 minutes. Policy file changes are
-  not covered
 - **Beelink SSD wearing out**: the SSD reports over 80% of its rated write endurance used.
   A 15-minute timer records its wear and lifetime writes, and **SSD wear check stopped**
   fires when it has not for an hour
