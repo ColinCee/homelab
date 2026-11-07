@@ -45,8 +45,8 @@ Add panels to it rather than adding dashboards. From the top:
   and uptime
 - **Beelink:** CPU and memory over time, split into Docker containers,
   Firecracker CI VMs and the rest
-- **Kaizen:** working, waiting, merged and cost, tasks by state, and the
-  longest wait for a machine
+- **Kaizen:** working, waiting, merged and cost, tasks by state, the
+  longest wait for a machine, and the GitHub App's calls used against its hourly limit
 - **Containers:** a bar per container for CPU and for memory
 - **Backups:** one line of numbers
 - **Collapsed sections**, which load only when opened: alerts, containers,
@@ -116,7 +116,9 @@ Prometheus receives metrics from:
   (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
   stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
   `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`, and
-  `kaizen_tasks_read_timestamp_seconds` (its last good read of GitHub).
+  `kaizen_tasks_read_timestamp_seconds` (its last good read of GitHub), and the
+  Kaizen GitHub App's hourly calls (`kaizen_github_app_calls_used`, `_limit`,
+  `_reset_timestamp_seconds`).
   `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and the
   longest wait count homelab machines only. The Control room's code lives in the
   private auto-kaizen repo.
@@ -199,6 +201,8 @@ The shipped rules cover host-level pressure such as:
   "Why a job waits")
 - **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
   hours and nothing has merged in that time
+- **Kaizen's GitHub App running out of calls**: the App has used over 80% of its hourly
+  GitHub calls; at the limit every Builder fails until the hour resets
 - **Kaizen Control room unreachable**: Prometheus has not reached the Control room for
   5 minutes, so alerts are not reaching the #alerts forum
 

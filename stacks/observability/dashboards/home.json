@@ -1608,7 +1608,7 @@
       "gridPos": {
         "x": 6,
         "y": 15,
-        "w": 9,
+        "w": 6,
         "h": 10
       },
       "description": "The longest any running Kaizen task has waited for a Firecracker CI machine. Over 20 minutes alerts (the red dashed line).",
@@ -1692,9 +1692,9 @@
         "uid": "prometheus"
       },
       "gridPos": {
-        "x": 15,
+        "x": 12,
         "y": 15,
-        "w": 9,
+        "w": 6,
         "h": 10
       },
       "description": "Counts in the Control room, every 30 seconds.",
@@ -1855,6 +1855,98 @@
           "instant": false,
           "range": true,
           "refId": "D"
+        }
+      ]
+    },
+    {
+      "id": 33,
+      "title": "Kaizen GitHub App calls",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 15,
+        "w": 6,
+        "h": 10
+      },
+      "description": "GitHub calls Kaizen's App has used this hour against its hourly limit. Over 80% of the limit alerts; at the limit every Builder fails.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": 60,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0,
+            "axisWidth": 40,
+            "axisLabel": ""
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(kaizen_github_app_calls_used{job=\"kaizen\"})",
+          "legendFormat": "Used",
+          "instant": false,
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max(kaizen_github_app_calls_limit{job=\"kaizen\"})",
+          "legendFormat": "Limit",
+          "instant": false,
+          "range": true,
+          "refId": "B"
         }
       ]
     },
