@@ -222,8 +222,10 @@ GitHub-hosted runners and take it off the token's repository access.
 - **One light VM waits ready.** With a light slot free, a light standby waits
   registered for the repo and label of the last light job (kept in
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
-  first and last steps start in seconds. It gives way first: none boots while a job
-  waits for memory or the disk, and an idle one is stopped for another repo's or label's light job with no
+  first and last steps start in seconds. One waiting for `homelab-fc-light` also registers
+  `homelab-fc-small`, so it takes its repo's light and small jobs (a small one then runs at 2 GiB).
+  It gives way first: none boots while a job
+  waits for memory or the disk, and an idle one is stopped for a light job it cannot take with no
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).

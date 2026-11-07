@@ -1700,6 +1700,34 @@ def test_a_small_vm_registers_its_label_with_half_the_memory(monkeypatch, tmp_pa
     assert labels == [list(SMALL)] and sizes == ["1024"] and state.launches[1].light
     assert (state.last_light_repo, state.last_light_label) == ("o/ok", sup.SMALL_LABEL)
 
+    # The light standby also takes small jobs, at the light size; a small standby stays small.
+    sup.launch(Registers(), state, "o/ok", 2, 0.0, label=sup.LIGHT_LABEL, cache=None, standby=True)  # type: ignore[arg-type]
+    sup.launch(Registers(), state, "o/ok", 3, 0.0, label=sup.SMALL_LABEL, cache=None, standby=True)  # type: ignore[arg-type]
+    assert labels[1:] == [[*LIGHT, sup.SMALL_LABEL], list(SMALL)]
+    assert sizes[1:] == ["2048", "1024"]
+
+
+@pytest.mark.parametrize(
+    ("queued", "starts"),
+    [
+        ([SMALL], []),  # the standby takes it
+        ([LIGHT, SMALL], [sup.SMALL_LABEL]),  # it takes one; the other gets a VM
+        ([SMALL, SMALL], [sup.SMALL_LABEL]),
+    ],
+)
+def test_the_light_standby_covers_a_queued_small_job_of_its_repo(
+    pools, monkeypatch, queued, starts
+) -> None:
+    _, started = pools
+    jobs = [sup.Job("o/ok", 100 + n, "l", labels) for n, labels in enumerate(queued)]
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    state = sup.State(slots=1, light_slots=2, last_light_repo="o/ok")
+    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
+    assert [label for _, label in started] == starts and stopped == []
+
 
 def _queue_build_and_light(monkeypatch, build_id: int, light_id: int, free_mib: int) -> list[str]:
     jobs = [

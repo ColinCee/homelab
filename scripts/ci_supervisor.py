@@ -313,6 +313,13 @@ class Launch:
     def light(self) -> bool:
         return self.label in LIGHT_SIZES
 
+    def takes(self, now: float) -> tuple[Want, ...]:
+        """The wants whose queued jobs it may take. The light standby registers with the small
+        label too, so a small job of its repo starts on it instead of booting a VM."""
+        if self.label == LIGHT_LABEL and (self.standby or now < self.covers_until):
+            return (self.want, (self.repo, SMALL_LABEL))
+        return (self.want,)
+
 
 @dataclass
 class Privacy:
@@ -622,6 +629,8 @@ def launch(
     # The cache label is registered too, so a job asking for it runs only on such a VM.
     if light:
         labels = list(light_runner_labels(label))
+        if standby and label == LIGHT_LABEL:
+            labels.append(SMALL_LABEL)
     else:
         labels = [*RUNNER_LABELS, label] if label else list(RUNNER_LABELS)
     registration = gh.request(
@@ -1802,6 +1811,12 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     booting: Counter[Want] = Counter(
         run.want for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])
     )
+    # The light standby covers a small job of its repo when no light job needs it.
+    for run in state.launches.values():
+        for small in run.takes(now)[1:]:
+            if booting[run.want] > queued[run.want] and queued[small] > booting[small]:
+                booting[run.want] -= 1
+                booting[small] += 1
     # So do the PC's idle ready runners, for jobs queued under PEER_COVER_SECONDS: GitHub hands
     # each job to one idle runner, and booting for it here too would waste a VM.
     pc_ready = peer_ready(now) if PEER else Counter()
@@ -1935,7 +1950,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             PEER.last = ours[-1]
     for run in list(state.launches.values()):
         if run.standby and any(
-            n > 0 and want != run.want and (want[1] in LIGHT_SIZES) == run.light
+            n > 0 and want not in run.takes(now) and (want[1] in LIGHT_SIZES) == run.light
             for want, n in waiting.items()
         ):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
@@ -1945,7 +1960,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             run.standby
             and run.light
             and oldest_held_build is not None
-            and all(oldest_held_build < i for i in job_ids.get(run.want, []))
+            and all(oldest_held_build < i for w in run.takes(now) for i in job_ids.get(w, []))
         ):
             stop_if_still_idle(gh, run, "is in the way of a job waiting for memory")
     standbys = [r for r in state.launches.values() if r.standby]
