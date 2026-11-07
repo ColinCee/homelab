@@ -15,7 +15,7 @@ run `scripts/deploy.sh <stack>` by hand, or delete the marker so the next push
 deploys everything. Compose leaves unchanged containers running. CI and deployment are separate workflows;
 require CI on pull requests before merging. A pull request that only moves
 `image:` pins to new `name:tag@sha256:` digests in existing `compose.yaml` files
-gets only Compose validation in the `check` job
+gets only Compose validation of the stacks it touches in the `check` job
 ([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
 
 A deploy that changes the Control room's pinned image also reports how many

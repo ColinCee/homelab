@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Validate every Compose service and profile with placeholder secrets, without
-# overwriting .env.
+# overwriting .env. Arguments name the compose files to check; none means all.
 mapfile -t env_vars < <(
   for compose_file in stacks/*/compose.yaml; do
     example="${compose_file%/compose.yaml}/.env.example"
@@ -16,7 +16,9 @@ for var in "${env_vars[@]}"; do
   export "${var}=placeholder"
 done
 
-for f in stacks/*/compose.yaml; do
+files=("$@")
+[[ ${#files[@]} -gt 0 ]] || files=(stacks/*/compose.yaml)
+for f in "${files[@]}"; do
   echo "Validating $f..."
   env_file="$(dirname "$f")/.env.example"
   if [[ -f "$env_file" ]]; then
