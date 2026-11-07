@@ -86,6 +86,7 @@ install_vm_files() {
   install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
   install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
   install -o root -g root -m 0755 "$here/update.sh" "$dest/update.sh"
+  install -o root -g root -m 0755 "$here/tests/test-load.sh" "$dest/test-load.sh"
 }
 # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
 # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
@@ -179,6 +180,10 @@ fi
 for unit in homelab-ci-update.service homelab-ci-update.timer; do
   install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
 done
+# The Beelink's load test, which update.sh starts when its slot count has no result (ci-runner.md).
+if [[ $ROLE == beelink ]]; then
+  install -o root -g root -m 0644 "$here/systemd/homelab-ci-load-test.service" /etc/systemd/system/
+fi
 systemctl daemon-reload
 systemctl enable --now homelab-ci-update.timer
 

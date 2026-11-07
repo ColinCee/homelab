@@ -43,6 +43,14 @@ def wait_metrics(tmp_path_factory, monkeypatch) -> Path:
 
 
 @pytest.fixture(autouse=True)
+def no_load_test(tmp_path_factory, monkeypatch) -> None:
+    """The machine running the tests has no drain on and no load test record."""
+    folder = tmp_path_factory.mktemp("load-test")
+    monkeypatch.setattr(sup, "DRAIN_FILE", folder / "drain")
+    monkeypatch.setattr(sup, "LOAD_TEST_FILE", folder / "load-test.json")
+
+
+@pytest.fixture(autouse=True)
 def outbox_dir(tmp_path_factory, monkeypatch) -> Path:
     path = tmp_path_factory.mktemp("outbox")
     monkeypatch.setattr(sup, "OUTBOX_DIR", path)
@@ -712,6 +720,8 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "github_ok": True,
         "mem_available_mib": 9000,
         "held_for_memory": 1,
+        "draining": False,
+        "load_test": None,
     }
 
 
