@@ -4,10 +4,12 @@
 set -euo pipefail
 guest=(ssh -i D:/kaizen-ci/ssh/id_ed25519 -o UserKnownHostsFile=D:/kaizen-ci/ssh/known_hosts -o ConnectTimeout=10
   kaizen@192.168.250.10)
-pass='sudo systemctl start homelab-ci-update.service; s=$?;
-  sudo journalctl -u homelab-ci-update.service -o cat --no-pager -n 20 --since "-30min" | tail -n 5; exit $s'
+# shellcheck disable=SC2016 # expands on the host, on purpose
+pass='u=homelab-ci-update.service; sudo systemctl start $u; s=$?;
+  sudo journalctl -o cat --no-pager _SYSTEMD_INVOCATION_ID=$(systemctl show -p InvocationID --value $u); exit $s'
 
-ssh colin@beelink "$pass" 2>&1 | sed 's/^/beelink: /'
+# shellcheck disable=SC2029 # a fixed command, built here on purpose
+ssh colin@beelink "$pass" 2>&1 | sed 's/^/beelink: /' || echo "beelink: the pass failed; the PC still runs its own"
 if "${guest[@]}" true 2>/dev/null; then
   "${guest[@]}" "$pass" 2>&1 | sed 's/^/pc: /'
 else

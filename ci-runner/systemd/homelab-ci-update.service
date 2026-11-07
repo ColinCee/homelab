@@ -4,8 +4,8 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-TimeoutStartSec=30min
 Type=oneshot
+TimeoutStartSec=30min
 ExecStart=/usr/local/lib/homelab-ci/update.sh --follow
 Nice=10
 IOSchedulingClass=idle

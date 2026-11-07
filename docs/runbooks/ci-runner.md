@@ -444,19 +444,22 @@ when the waits are expected, such as a burst of tasks on full slots.
 
 ## Changing the Beelink while jobs run
 
-A change goes in by merging it: within a minute each host takes it on its own (`homelab-ci-update.timer` runs
-`update.sh --follow`). The Beelink reads main's commit; the PC reads the commit and job image the Beelink runs, so it is
-at most a minute behind and never takes a commit before its image is built. `ci-runner/update-hosts.sh`, from Colin's PC, runs that
-pass on both now and shows what it did. `update.sh` fetches the commit with git and refuses one not on main or older
-than the installed one (going back is a hand step on each host: `sudo ROLLBACK=1
-/usr/local/lib/homelab-ci/update.sh <commit>`). It runs `install-host.sh` only when `ci-runner/` or `scripts/` changed,
-naming the pull requests it ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file
-says how current a host is; a change that fails twice is not tried again until another lands. The Beelink rebuilds the job image, at low disk priority, only when `build-rootfs.sh`,
-`rootfs/` or `versions.env` changed; the PC then copies it through the door (compressed to about 1.2 GB: about 2 minutes at the
-10 MB/s measured between them; at most 4 an hour, 20 minutes each) and switches only if it hashes to the Beelink's `images/sha256`; a PC that was off or paused catches up the same way.
-A code change is live on both in about a minute; one that rebuilds the image, in about 5. The first time on a host, `update.sh` is not there
-yet: run `sudo ci-runner/install-host.sh` once from a checkout of main; the Beelink's first update then rebuilds the
-image (several minutes) because it has no `images/commit`. Never leave a loop waiting to change the Beelink from your
+A change goes in by merging it: within a minute or two each host takes it on its own (`homelab-ci-update.timer`
+runs `update.sh --follow`). The Beelink reads main's commit; the PC reads the commit and job image the Beelink runs,
+so it never takes a commit before its image is built. `ci-runner/update-hosts.sh`, from Colin's PC, runs that pass on
+both now and shows what it did. `update.sh` fetches the commit with git and refuses one not on main or older than the
+installed one. It runs `install-host.sh` only when `ci-runner/` or `scripts/` changed, naming the pull requests it
+ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file says how current a host
+is. A change whose install or image fails twice is tried again an hour after its last failure. The Beelink rebuilds
+the job image, at low disk priority, only when `build-rootfs.sh`, `rootfs/` or `versions.env` changed; the PC then
+copies it through the door (compressed to about 1.2 GB: about 2 minutes at the 10 MB/s measured between them; at most
+4 an hour, 20 minutes each) and switches only if it hashes to the Beelink's `images/sha256`. The PC takes the code
+first, so until the copy lands its new VMs boot the old image; a PC that was off or paused catches up the same way.
+A code change is live on both in about 2 minutes; one that rebuilds the image, in about 5. Going back is a hand step
+on each host, Beelink first: `sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>`, which holds the host
+there (`/etc/homelab-ci/pinned`) until `sudo rm /etc/homelab-ci/pinned`. The first time on a host, `update.sh` is
+not there yet: run `sudo ci-runner/install-host.sh` once from a checkout of main; the Beelink's first update then
+rebuilds the image (several minutes) because it has no `images/commit`. Never leave a loop waiting to change the Beelink from your
 own connection: on 5 Nov one outlived the session that thought it had stopped it.
 
 - **Running jobs carry on through any change.** Each VM is a systemd unit of its own
