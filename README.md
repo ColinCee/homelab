@@ -14,8 +14,8 @@ access; Cloudflare Tunnel exposes the flight tracker.
 - Backs up nightly with encrypted restic snapshots to Cloudflare R2
 - Accepts no connections from the internet: admin access is over Tailscale
   only, and the public API leaves through Cloudflare Tunnel, so filtering for
-  it belongs at Cloudflare. Alerts fire when an unknown container keeps running
-  or a new device on the tailnet can see the Beelink
+  it belongs at Cloudflare. A new tailnet device waits for Colin's approval in
+  Tailscale, and an alert fires when an unknown container keeps running
 
 ## Stack
 
