@@ -61,6 +61,17 @@ jobs:
           echo "## Resource use"
           docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
 
+      # backup.sh's own state files (metric names, times and the failing step), not its log:
+      # restic's errors can carry the repository's address.
+      - name: Backup state
+        if: inputs.target == 'all' || inputs.target == 'backup'
+        run: |
+          if docker inspect --type container backup >/dev/null 2>&1; then
+            echo "## Backup"
+            date -u +'now %s'
+            cat /var/lib/homelab-metrics/backup*.prom 2>/dev/null || echo "no backup metric files"
+          fi
+
       - name: Target detail
         if: inputs.target != 'all'
         run: |

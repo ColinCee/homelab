@@ -356,6 +356,24 @@ groups:
               expr: (time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600
               instant: true
               refId: A
+          # The step the last run failed at, written by backup.sh and removed by the next good run:
+          # 1 cap, 2 backup, 3 forget, 4 check, 0 none recorded. A number without labels, so the
+          # annotation can read it whatever the alert's own labels are.
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: >-
+                max(
+                  homelab_backup_last_failure_timestamp_seconds{step="cap"} * 0 + 1
+                  or homelab_backup_last_failure_timestamp_seconds{step="backup"} * 0 + 2
+                  or homelab_backup_last_failure_timestamp_seconds{step="forget"} * 0 + 3
+                  or homelab_backup_last_failure_timestamp_seconds{step="check"} * 0 + 4
+                ) or vector(0)
+              instant: true
+              refId: B
           - refId: C
             relativeTimeRange:
               from: 0
@@ -377,7 +395,12 @@ groups:
           measure: "Last good backup"
           trigger: "over 26 h ago"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} h ago{{ end }}"
-          description: "Threshold: no successful restic backup to R2 in the last 26 hours."
+          description: >-
+            Threshold: no successful restic backup to R2 in the last 26 hours.
+            Last run failed at: {{ with $values.B }}{{ if eq .Value 1.0 }}size cap (upload skipped)
+            {{- else if eq .Value 2.0 }}backup (R2 or credentials){{ else if eq .Value 3.0 }}forget and prune
+            {{- else if eq .Value 4.0 }}repository check{{ else }}no failure recorded (the run did not happen)
+            {{- end }}{{ end }}.
           action: "Check `docker logs backup`; see docs/runbooks/backups.md."
         labels:
           severity: critical
