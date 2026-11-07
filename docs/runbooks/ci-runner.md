@@ -410,8 +410,14 @@ Tune slots, the reserve or the alert's limit from what these lines show.
 
 ## Changing the Beelink while jobs run
 
-Every change goes in through `sudo REASON="<repo>#<number>: <why>" ci-runner/install-host.sh`, naming the issue or pull request it ships (the Control room links it),
-from a checkout of `main`. Never leave a loop waiting to change the Beelink from your
+Every change goes in, once merged, through `REASON="<repo>#<number>: <why>" ci-runner/update-hosts.sh` run on Colin's
+PC, naming the issue or pull request it ships (the Control room links it). It updates both hosts at once to main's
+commit: each runs `update.sh <commit>` as a unit of its own, which fetches it with git and refuses one not on main or
+older than the installed one (`ROLLBACK=1` goes back on purpose), runs `install-host.sh`, and writes
+`/etc/homelab-ci/commit` last. The Beelink rebuilds the job image, at low disk priority, only when `build-rootfs.sh`,
+`rootfs/` or `versions.env` changed; the PC then copies it through the door (compressed, about 2 minutes; at most 4 an
+hour) and switches only if it hashes to the Beelink's `images/sha256`. A PC that was off or paused catches up within
+10 minutes (`homelab-ci-update.timer`, `update.sh --follow`). Never leave a loop waiting to change the Beelink from your
 own connection: on 5 Nov one outlived the session that thought it had stopped it.
 
 - **Running jobs carry on through any change.** Each VM is a systemd unit of its own
@@ -483,9 +489,9 @@ Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his;
 1. The guest: Ubuntu 24.04 cloud image as a Gen2 VM with `Set-VMProcessor -ExposeVirtualizationExtensions $true`,
    static memory of 2 GiB plus 4.25 GiB per slot it will ever give, and Colin in Hyper-V Administrators (the
    keeper starts it and caps its CPU).
-2. In the guest, from a checkout of `main`: `sudo apt install docker.io`, then
-   `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh` and
-   `sudo ci-runner/build-rootfs.sh`. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the door's
+2. In the guest, from a checkout of `main`: `sudo apt install docker.io` (its network rules need Docker's chain),
+   then `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh`; the job image
+   comes from the Beelink with the first update. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the door's
    address in `/etc/homelab-ci/peer` (`ssh://ci-peer@<the Beelink's Tailscale address>:2222`) and that port's host
    key in root's `known_hosts`.
 3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the

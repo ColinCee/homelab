@@ -1,0 +1,9 @@
+[Unit]
+Description=Catch the PC guest up with the Beelink every 10 minutes (and after a boot)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

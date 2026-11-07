@@ -1,0 +1,10 @@
+[Unit]
+Description=Bring Colin's PC guest to the commit and job image the Beelink runs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/homelab-ci/update.sh --follow
+Nice=10
+IOSchedulingClass=idle
