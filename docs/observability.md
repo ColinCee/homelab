@@ -54,6 +54,8 @@ Add panels to it rather than adding dashboards. From the top:
   CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
+To remove a rule, also list its uid under `deleteRules` in `rules.yaml`: Grafana keeps
+a rule that is only deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
