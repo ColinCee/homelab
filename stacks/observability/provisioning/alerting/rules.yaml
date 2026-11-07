@@ -587,12 +587,13 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 600
+              from: 1800
               to: 0
             datasourceUid: prometheus
             model:
-              # Without fresh data, New Tailscale device stays quiet.
-              expr: (time() - max(node_textfile_mtime_seconds{file=~".*/tailnet.prom"})) / 60
+              # Without fresh data, New Tailscale device stays quiet. last_over_time carries the
+              # file time across a short scrape gap (an Alloy restart); a longer one is no data.
+              expr: (time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/tailnet.prom"}[30m]))) / 60
               instant: true
               refId: A
           - refId: C
@@ -673,12 +674,13 @@ groups:
         data:
           - refId: A
             relativeTimeRange:
-              from: 600
+              from: 1800
               to: 0
             datasourceUid: prometheus
             model:
-              # Without fresh data, Beelink SSD wearing out stays quiet.
-              expr: (time() - max(node_textfile_mtime_seconds{file=~".*/ssd.prom"})) / 60
+              # Without fresh data, Beelink SSD wearing out stays quiet. last_over_time carries the
+              # file time across a short scrape gap (an Alloy restart); a longer one is no data.
+              expr: (time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60
               instant: true
               refId: A
           - refId: C
