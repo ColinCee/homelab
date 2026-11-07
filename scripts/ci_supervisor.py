@@ -39,6 +39,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import IO, Any
 
@@ -233,14 +234,21 @@ DISK_PACE_SECONDS = 60.0
 # A queued job not started is logged with why (slots, memory, disk, labels) when it starts
 # waiting and then every this many seconds, to explain a long wait.
 WAIT_LOG_SECONDS = 180.0
-# A job a VM is booting for (or a standby waits ready for) is logged only once it has
-# waited WAIT_LOG_SECONDS, so every job's few seconds of boot are not logged.
-BOOTING = "a VM booting or waiting ready for it"
+# A job a VM is booting for, or one whose VM's runner is up and idle but GitHub has not
+# given it the job, is logged only once it has waited WAIT_LOG_SECONDS, so every job's few
+# seconds of boot are not logged.
+BOOTING = "a VM booting for it"
+READY = "a VM ready for it that GitHub has not given the job"
+# A job GitHub had queued this long before the supervisor first saw it is logged then: the
+# quiet repos are asked once a minute, so less is expected.
+UNSEEN_LOG_SECONDS = 90.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
 # wait (see wait_kind), for the Control room and speed reports. Lines older than
-# WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
+# WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS. "unseen" is the time
+# from GitHub queueing the job to the supervisor first seeing it (a restart counts again
+# from GitHub's queueing).
 WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
-WAIT_KINDS = ("memory", "disk", "slots", "booting", "other")
+WAIT_KINDS = ("memory", "disk", "slots", "booting", "ready", "unseen", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
 WAITS_PRUNE_SECONDS = 3600.0
 # The longest-waiting queued job's seconds so far per kind of wait, for the "stuck waiting
@@ -267,6 +275,8 @@ class Job:
     labels: tuple[str, ...]
     # False for a job asking for our label with others no VM of ours has: it never starts.
     ours: bool = True
+    # When GitHub queued it (its created_at), 0 when unknown.
+    queued_at: float = 0.0
 
     @property
     def want(self) -> Want:
@@ -291,6 +301,8 @@ class Launch:
     label: str = ""
     # GitHub showed its runner with a job: it no longer covers a queued one.
     busy: bool = False
+    # GitHub showed its runner online and idle: a job it covers waits on GitHub, not the boot.
+    ready: bool = False
 
     @property
     def unit(self) -> str:
@@ -385,6 +397,8 @@ class State:
 class Wait:
     repo: str
     since: float
+    # When GitHub queued the job, or `since` when unknown.
+    queued: float = 0.0
     logged: float | None = None
     # The kind of wait at the last poll that saw it, and when: the time until the next
     # poll counts for that kind.
@@ -393,6 +407,9 @@ class Wait:
     seconds: dict[str, float] = field(default_factory=dict)
     # The reason the wait log gives at the last poll that saw it.
     why: str = ""
+
+    def __post_init__(self) -> None:
+        self.queued = self.queued or self.since
 
     def count(self, now: float) -> None:
         self.seconds[self.kind] = self.seconds.get(self.kind, 0.0) + now - self.seen
@@ -440,8 +457,19 @@ def queued_jobs(
             ours = wants_us(labels)
             # One asking for our label with another we lack is kept, to log why it waits.
             if ours or {LABEL, *LIGHT_SIZES} & {label.lower() for label in labels}:
-                jobs.append(Job(repo, int(job["id"]), str(job.get("name", "")), labels, ours))
+                queued_at = github_time(job.get("created_at"))
+                jobs.append(
+                    Job(repo, int(job["id"]), str(job.get("name", "")), labels, ours, queued_at)
+                )
     return jobs
+
+
+def github_time(value: Any) -> float:
+    """Seconds since the epoch of one of GitHub's times, 0 when missing or unreadable."""
+    try:
+        return datetime.fromisoformat(str(value)).timestamp()
+    except ValueError:
+        return 0.0
 
 
 def plan(oldest_first: Iterable[Want], booting: Mapping[Want, int], free_slots: int) -> list[Want]:
@@ -1134,6 +1162,7 @@ def is_idle(gh: GitHub, run: Launch) -> bool:
         if e.code == 404:  # finished and removed itself; the VM is ending
             return False
         raise
+    note_ready(run, runner)
     return runner.get("busy") is False
 
 
@@ -1145,7 +1174,13 @@ def has_job(gh: GitHub, run: Launch) -> bool:
         if e.code == 404:
             return True
         raise
+    note_ready(run, runner)
     return runner.get("busy") is True
+
+
+def note_ready(run: Launch, runner: Mapping[str, Any]) -> None:
+    if runner.get("status") == "online" and runner.get("busy") is False:
+        run.ready = True
 
 
 def on_its_way(gh: GitHub, run: Launch, now: float, queued_for_want: int) -> bool:
@@ -1813,6 +1848,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     spent: dict[str, float] = {}
     # Why each queued job not started this poll waits: (repo, why).
     reasons: dict[int, tuple[str, str]] = {}
+    # When GitHub queued each job.
+    queued_at: dict[int, float] = {}
     # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
     answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
     for repo, (jobs, took) in zip(repos, answers, strict=True):
@@ -1821,6 +1858,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             continue
         private.append(repo)
         for job in jobs:
+            queued_at[job.id] = job.queued_at
             if not job.ours:
                 reasons[job.id] = (repo, f"no VM has its labels ({', '.join(job.labels)})")
                 continue
@@ -1830,15 +1868,19 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     maybe_take_outboxes(gh, state, now)
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
     # with the same repo and cache label (or none).
-    booting: Counter[Want] = Counter(
-        run.want for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])
-    )
+    # Those whose runner is up and idle are ready: the rest of the wait is GitHub's.
+    ways = [run for run in state.launches.values() if on_its_way(gh, run, now, queued[run.want])]
+    booting: Counter[Want] = Counter(run.want for run in ways)
+    ready: Counter[Want] = Counter(run.want for run in ways if run.ready)
     # The light standby covers a small job of its repo when no light job needs it.
     for run in state.launches.values():
         for small in run.takes(now)[1:]:
             if booting[run.want] > queued[run.want] and queued[small] > booting[small]:
                 booting[run.want] -= 1
                 booting[small] += 1
+                if run.ready:
+                    ready[run.want] -= 1
+                    ready[small] += 1
     # So do the PC's idle ready runners, for jobs queued under PEER_COVER_SECONDS: GitHub hands
     # each job to one idle runner, and booting for it here too would waste a VM.
     pc_ready = peer_ready(now) if PEER else Counter()
@@ -1849,6 +1891,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             if now - waited_since(state, i, now) < PEER_COVER_SECONDS
         ]
         booting[want] += min(n, len(young))
+        ready[want] += min(n, len(young))
     free = [slot for slot in range(state.slots) if slot not in state.launches]
     light_free = [
         slot
@@ -1950,11 +1993,13 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         for n, job_id in enumerate(sorted(ids)):
             if job_id in held:
                 reasons[job_id] = held[job_id]
+            elif n < ready[want]:
+                reasons[job_id] = (want[0], READY)
             elif n < booting[want] or job_id in planned:
                 reasons[job_id] = (want[0], BOOTING)
             else:
                 reasons[job_id] = (want[0], f"all {slots} {kind} slots in use")
-    note_waits(state, private, reasons, now)
+    note_waits(state, private, reasons, now, queued_at)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
     # memory, if the standby cannot take it. A light job never uses a build slot.
@@ -2078,11 +2123,17 @@ def waited_since(state: State, job_id: int, now: float) -> float:
 
 
 def note_waits(
-    state: State, repos: list[str], reasons: Mapping[int, tuple[str, str]], now: float
+    state: State,
+    repos: list[str],
+    reasons: Mapping[int, tuple[str, str]],
+    now: float,
+    queued_at: Mapping[int, float] | None = None,
 ) -> None:
     """Log each queued job not started, with why and how long it has waited here: when it
-    starts waiting and every WAIT_LOG_SECONDS. A job that was logged gets one more line when
-    it stops waiting. Jobs of repos not polled this time are left as they are."""
+    starts waiting and every WAIT_LOG_SECONDS, and at once if GitHub had queued it
+    UNSEEN_LOG_SECONDS before the supervisor saw it. A job that was logged gets one more line
+    when it stops waiting. Jobs of repos not polled this time are left as they are."""
+    queued_at = queued_at or {}
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
@@ -2090,16 +2141,27 @@ def note_waits(
             record_wait(state, job_id, wait, now)
             if wait.logged is not None:
                 waited = duration(now - wait.since)
-                log(f"job {job_id} in {wait.repo} stopped waiting after {waited}")
+                total = f", {duration(now - wait.queued)} since GitHub queued it"
+                log(
+                    f"job {job_id} in {wait.repo} stopped waiting after {waited}"
+                    + (total if wait.queued < wait.since else "")
+                )
     for job_id, (repo, why) in sorted(reasons.items()):
-        wait = state.waits.setdefault(job_id, Wait(repo, now, seen=now))
+        wait = state.waits.get(job_id)
+        unseen = 0.0
+        if wait is None:
+            queued = min(queued_at.get(job_id) or now, now)
+            wait = state.waits[job_id] = Wait(repo, now, queued, seen=now)
+            unseen = wait.seconds["unseen"] = now - queued
         wait.count(now)
         wait.kind = wait_kind(why)
         wait.why = why
         waited = now - wait.since
-        quiet = why == BOOTING and waited < WAIT_LOG_SECONDS
+        late = unseen >= UNSEEN_LOG_SECONDS
+        quiet = why in (BOOTING, READY) and waited < WAIT_LOG_SECONDS and not late
         if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):
-            log(f"job {job_id} in {repo} has waited {duration(waited)} here: {why}")
+            seen = f" (GitHub had queued it {duration(unseen)} before)" if late else ""
+            log(f"job {job_id} in {repo} has waited {duration(waited)} here{seen}: {why}")
             wait.logged = now
     if now - state.wait_metrics_written >= WAIT_METRICS_SECONDS:
         write_wait_metrics(state, now)
@@ -2108,7 +2170,7 @@ def note_waits(
 def write_wait_metrics(state: State, now: float) -> None:
     """Write the longest-waiting queued job's seconds per kind (all 0 when none waits). A
     failure is logged once and never stops the poll."""
-    longest = min(state.waits.values(), key=lambda w: w.since, default=None)
+    longest = min(state.waits.values(), key=lambda w: w.queued, default=None)
     seconds = longest.seconds if longest else {}
     lines = [
         f'homelab_ci_wait_seconds{{kind="{kind}"}} {round(seconds.get(kind, 0.0))}'
@@ -2130,6 +2192,8 @@ def wait_kind(why: str) -> str:
     waits for memory too."""
     if why == BOOTING:
         return "booting"
+    if why == READY:
+        return "ready"
     if why.startswith("the disk"):
         return "disk"
     if why.startswith("memory") or why.endswith("waiting for memory"):

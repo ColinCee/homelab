@@ -339,13 +339,16 @@ stops waiting, for the Control room and speed reports:
 
 ```json
 {"job": 123, "repo": "ColinCee/example", "since": 1792999400, "until": 1793000000,
- "memory": 420, "disk": 60, "slots": 0, "booting": 120, "other": 0}
+ "memory": 420, "disk": 60, "slots": 0, "booting": 100, "ready": 20, "unseen": 4, "other": 0}
 ```
 
 `since` and `until` are when the supervisor first saw the job queued and when it stopped
 waiting; the rest are the seconds it waited for memory (a job queued behind one held for
-memory counts too), for the busy disk, for a free slot, for its VM to boot or be picked up,
-and for anything else (a label no VM has). A supervisor restart starts a job's count again.
+memory counts too), for the busy disk, for a free slot, for its VM to boot, with its VM's
+runner online and idle but no job from GitHub (`ready`), and for anything else (a label no VM
+has). `unseen` is from GitHub queueing the job (its `created_at`) to the supervisor first seeing
+it, so the kinds add up to the wait since GitHub queued it. A supervisor restart starts a job's
+count here again, and its `unseen` then covers the time before.
 Lines over 30 days old are dropped at most once an hour; a failed write is logged once.
 
 Also beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
@@ -378,7 +381,8 @@ merge it and run the audit.
 
 The supervisor's journal logs each queued job it has not started, when it first waits
 and then every 3 minutes, with how long it has waited since the supervisor first saw it
-(a restart starts the count again) and why:
+(a restart starts the count again) and why. A job GitHub had queued 90 s or more before the
+supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 
 | Line ends with | Means |
 |---|---|
@@ -387,10 +391,12 @@ and then every 3 minutes, with how long it has waited since the supervisor first
 | `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
-| `a VM booting or waiting ready for it` | A VM is up for it but GitHub has not given it the job; logged only after 3 minutes |
+| `a VM booting for it` | Its VM is booting; logged only after 3 minutes |
+| `a VM ready for it that GitHub has not given the job` | Its VM's runner (or a standby, or a PC ready runner) is online and idle, and GitHub has not handed it the job; logged only after 3 minutes |
 | `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |
 
-A job that was logged gets `stopped waiting after Xm` once its VM starts or it is cancelled.
+A job that was logged gets `stopped waiting after Xm, Ym since GitHub queued it` once its VM
+starts or it is cancelled.
 
 Each job VM is also told, when it starts, how long the queued jobs of its repo and label had
 waited here and why: `/etc/homelab-ci/waits.json` in the VM, readable by any job, maps each job
@@ -400,9 +406,13 @@ its record. It reaches VMs once the next update (`install-host.sh` and the image
 
 The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
 so far per kind of wait, from `homelab_ci_wait_seconds{kind}` (kinds as in `waits.jsonl`, all 0
-when nothing waits), which the supervisor writes to `ci-waits.prom` in the textfile folder at
-most every 15 s. The alert's own number is the Control room's, which counts GitHub's part of
-the wait too, so the two can differ by a minute or two. For each job:
+when nothing waits; the longest is the one GitHub queued first), which the supervisor writes to
+`ci-waits.prom` in the textfile folder at most every 15 s. The alert's own number is the Control
+room's: since GitHub created the task's next homelab job, while it is queued, waiting or
+pending. The supervisor sees only queued jobs, so what the Control room has beyond the kinds
+added up is given as minutes with no runner reason: a job still waiting or pending on GitHub
+(a concurrency group, say), which no runner can take yet. A large one with every kind at 0
+means look at the task's run on GitHub, not the runner. For each job:
 
 ```bash
 journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
@@ -410,9 +420,11 @@ journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped wa
 
 From what they show: mostly slots means more slots
 ([Changing the number of slots](#changing-the-number-of-slots)) or shorter jobs; memory or
-disk means fewer or smaller VMs, not more; booting means GitHub was slow to hand the VM its
-job; a label no VM has means fixing that job's `runs-on`. Raise the alert's 20 minutes only
-when the waits are expected, such as a burst of tasks on full slots.
+disk means fewer or smaller VMs, not more; booting means slow boots; ready means GitHub was
+slow to hand the VM its job; unseen means the job sat waiting or pending on GitHub before it
+was queued, or the supervisor polled the repo late (`slow poll:` lines) or restarted; a label
+no VM has means fixing that job's `runs-on`. Raise the alert's 20 minutes only when the waits
+are expected, such as a burst of tasks on full slots.
 
 ## Checks
 
