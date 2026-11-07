@@ -118,7 +118,14 @@ Prometheus receives metrics from:
   `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`, and
   `kaizen_tasks_read_timestamp_seconds` (its last good read of GitHub), and the
   Kaizen GitHub App's hourly calls (`kaizen_github_app_calls_used`, `_limit`,
-  `_reset_timestamp_seconds`).
+  `_reset_timestamp_seconds`), the workflows' shared key's
+  (`kaizen_github_workflow_key_calls_remaining`, `_limit`, `_reset_timestamp_seconds`,
+  `_read_timestamp_seconds`), and signs of waste or a stall that the "Kaizen factory"
+  rules read: `kaizen_workflow_failures_last_hour{cause}`,
+  `kaizen_goal_owner_runs_since_change{goal}`, `kaizen_stopped_tasks_alike{reason}`,
+  `kaizen_silent_tasks`, `kaizen_agent_cost_usd_last_hour` and
+  `kaizen_anomaly_read_timestamp_seconds`. Those rules carry `route: factory`, which the
+  Kaizen payload passes on, so the Control room files them for its factory manager.
   `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and the
   longest wait count homelab machines only. The Control room's code lives in the
   private auto-kaizen repo.
