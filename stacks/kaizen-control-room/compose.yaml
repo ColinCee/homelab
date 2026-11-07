@@ -1,6 +1,6 @@
 services:
   control-room:
-    image: ghcr.io/colincee/kaizen-control-room:latest@sha256:37af6788330923ec79902593efbd833d635eb4c16f0fa97e0c6d89c144bdce8a
+    image: ghcr.io/colincee/kaizen-control-room:latest@sha256:e4f24cd7fab25f1e73b59dfe2af50d27787d31204116cb0ad03397e537c695aa
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
