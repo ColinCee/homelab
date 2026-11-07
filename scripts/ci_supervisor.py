@@ -61,6 +61,8 @@ DEFAULT_LIGHT_SLOTS = 0
 # vCPUs and MiB by label. One core, as they mostly wait; 2 GiB for jobs running Claude
 # Code with no swap.
 LIGHT_SIZES = {LIGHT_LABEL: (1, 2048), SMALL_LABEL: (1, 1024), DEPLOY_LABEL: (1, 1024)}
+# A VM's kind in logs and metrics, by the label it took; any other label is a build VM.
+KINDS = {SMALL_LABEL: "small", LIGHT_LABEL: "light", DEPLOY_LABEL: "deploy"}
 
 
 def light_runner_labels(label: str) -> tuple[str, ...]:
@@ -310,9 +312,7 @@ class Launch:
 
     @property
     def kind(self) -> str:
-        return {SMALL_LABEL: "small", LIGHT_LABEL: "light", DEPLOY_LABEL: "deploy"}.get(
-            self.label, "build"
-        )
+        return KINDS.get(self.label, "build")
 
     @property
     def want(self) -> Want:
@@ -859,7 +859,7 @@ def forget(run: Launch) -> None:
 
 # Ended job VMs, near-full ones and out-of-memory kills, by kind; every kind from 0, so the
 # first kill after a restart still shows as an increase.
-MEMORY_COUNTS: dict[str, list[int]] = {kind: [0, 0, 0] for kind in ("build", "light", "small")}
+MEMORY_COUNTS: dict[str, list[int]] = {kind: [0, 0, 0] for kind in ("build", *KINDS.values())}
 
 
 def count_memory(run: Launch) -> None:

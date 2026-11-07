@@ -1950,7 +1950,8 @@ def test_the_console_reader_keeps_only_exact_memory_lines() -> None:
 @pytest.fixture
 def memory(monkeypatch, tmp_path):
     """Fresh counts, a temporary textfile, and the log lines."""
-    monkeypatch.setattr(sup, "MEMORY_COUNTS", {k: [0, 0, 0] for k in ("build", "light", "small")})
+    # The supervisor's own kinds, so a kind it lacks fails here as it would on the host.
+    monkeypatch.setattr(sup, "MEMORY_COUNTS", {k: [0, 0, 0] for k in sup.MEMORY_COUNTS})
     monkeypatch.setattr(sup, "MEMORY_METRICS", tmp_path / "ci-vm-memory.prom")
     lines: list[str] = []
     monkeypatch.setattr(sup, "log", lines.append)
@@ -1976,6 +1977,14 @@ def test_an_ended_vm_is_counted_by_kind_and_its_memory_file_removed(vms, memory)
         "slot 6: fc-6-1 (small) needed at least 850 MiB of 1000, 1 out-of-memory kills"
     ]
     assert not run.memory_file.exists()
+
+
+@pytest.mark.parametrize("label", [sup.SMALL_LABEL, sup.LIGHT_LABEL, sup.DEPLOY_LABEL, *sup.RUNNER_LABELS])
+def test_an_ended_vm_of_every_kind_is_counted(vms, memory, label) -> None:
+    # A deploy VM's end crashed every poll, so no job started, while its kind had no count.
+    run = _ended(vms, label, peak=300, kills=0)
+    sup.forget(run)
+    assert sup.MEMORY_COUNTS[run.kind][0] == 1
 
 
 def test_a_standby_that_never_took_a_job_or_a_silent_vm_is_not_counted(vms, memory) -> None:
