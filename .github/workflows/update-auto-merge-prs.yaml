@@ -15,7 +15,7 @@ permissions: {}
 
 jobs:
   update:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     steps:
       # An app token, not GITHUB_TOKEN, so the update triggers CI.
