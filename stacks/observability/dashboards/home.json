@@ -1870,7 +1870,7 @@
         "x": 18,
         "y": 15,
         "w": 6,
-        "h": 10
+        "h": 6
       },
       "description": "GitHub calls Kaizen's App has used this hour against its hourly limit. Over 80% of the limit alerts; at the limit every Builder fails.",
       "fieldConfig": {
@@ -1947,6 +1947,87 @@
           "instant": false,
           "range": true,
           "refId": "B"
+        }
+      ]
+    },
+    {
+      "id": 34,
+      "title": "Kaizen Control room restarts",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 21,
+        "w": 6,
+        "h": 4
+      },
+      "description": "Minutes since the Control room container started; each drop to zero is a restart. A restart re-reads every task issue, so a climb in App calls just after a drop comes from the restart.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "opacity",
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "spanNulls": 60,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            },
+            "axisSoftMin": 0,
+            "axisWidth": 40,
+            "axisLabel": ""
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              }
+            ]
+          },
+          "unit": "m"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min(time() - container_start_time_seconds{job=\"docker\",container_label_com_docker_compose_project=\"kaizen-control-room\"}) / 60",
+          "legendFormat": "Minutes since start",
+          "instant": false,
+          "range": true,
+          "refId": "A"
         }
       ]
     },

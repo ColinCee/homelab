@@ -1059,7 +1059,9 @@ groups:
             Threshold: Kaizen's GitHub App has used over 80% of its hourly calls with over 15 minutes left in the hour;
             at the limit every Builder fails. Later in the hour it stays quiet, as the calls come back soon.
             The calls come back in {{ with $values.reset }}{{ printf "%.0f" .Value }}{{ end }} min.
-          action: "On Grafana Home, the Kaizen GitHub App calls panel shows when use climbed; find the Kaizen job calling GitHub most and slow it."
+          action: >-
+            On Grafana Home, the Kaizen GitHub App calls panel shows when use climbed, and the Control room restarts
+            panel below it shows whether a restart came just before; find the Kaizen job calling GitHub most and slow it.
         labels:
           severity: warning
           # Kaizen's own spending: the factory manager finds and slows the spender.
