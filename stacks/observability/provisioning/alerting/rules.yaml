@@ -1348,3 +1348,9 @@ groups:
         labels:
           severity: warning
           route: factory
+# Grafana keeps a rule removed from this file until its uid is listed here.
+deleteRules:
+  - orgId: 1
+    uid: new-tailnet-device
+  - orgId: 1
+    uid: tailnet-check-stale
