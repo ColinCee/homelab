@@ -105,3 +105,7 @@ fi
 echo "$want" > "$installed.new"
 mv "$installed.new" "$installed"
 echo "on $want (${role}), image $(cat "$images/sha256" 2>/dev/null || echo none)"
+# The Beelink tests each slot count once under full load, in its own unit (homelab-ci-load-test).
+if [[ $role == beelink ]]; then
+  "${python[@]}" start-load-test-if-due || echo "could not start the load test; next pass"
+fi

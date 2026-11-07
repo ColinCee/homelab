@@ -39,3 +39,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 testpaths = ["tests"]
 # Tests import scripts/ as a package, whichever way pytest is started.
 pythonpath = ["."]
+
+# ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
+[tool.ty]
