@@ -154,7 +154,7 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
-point: every firing and resolved alert goes to the Kaizen Control room's
+point: every firing and resolved alert, except the few below, goes to the Kaizen Control room's
 `/alert`, which opens (or, for a repeat, comments on) an `alert` issue in the
 private auto-kaizen repo and closes it on resolve. Each new one starts Auto
 Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
