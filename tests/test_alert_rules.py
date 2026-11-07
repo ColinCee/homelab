@@ -32,13 +32,12 @@ def test_a_chart_queries_what_its_rule_alerts_on() -> None:
             float(rule["annotations"]["chart_line"])
 
 
-def test_kaizens_own_failures_route_to_rules_that_exist() -> None:
+def test_only_the_control_rooms_outage_goes_straight_to_discord() -> None:
     policy = yaml.safe_load((ALERTING / "policies.yaml").read_text(encoding="utf-8"))["policies"][0]
-    [[_, _, pattern]] = policy["routes"][0]["object_matchers"]
-    titles = {r["title"] for r in RULES}
-    for name in pattern.split("|"):
-        assert name in titles or name.startswith("Datasource"), name
-    assert re.fullmatch(pattern, "Kaizen Control room unreachable")
+    [[label, op, name]] = policy["routes"][0]["object_matchers"]
+    assert (label, op) == ("alertname", "=")
+    assert name == "Kaizen Control room unreachable"
+    assert name in {r["title"] for r in RULES}
 
 
 def test_annotations_name_only_their_rules_queries() -> None:

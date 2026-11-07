@@ -10,10 +10,10 @@ policies:
     # Colin acts (New Tailscale device). 5 days is as long as Grafana keeps its
     # record of what it sent.
     repeat_interval: 120h
-    # Kaizen posts alerts to Discord itself, so it cannot report its own
-    # failure: these also go straight to Discord through the webhook.
+    # The Control room posts every other alert to Discord, so only its own
+    # outage also goes straight to Discord through the webhook.
     routes:
       - receiver: Discord Private
         repeat_interval: 12h
         object_matchers:
-          - ["alertname", "=~", "Kaizen's Watcher stopped running|Kaizen Control room unreachable|DatasourceNoData|DatasourceError"]
+          - ["alertname", "=", "Kaizen Control room unreachable"]
