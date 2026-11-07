@@ -387,7 +387,7 @@ A job that was logged gets `stopped waiting after Xm` once its VM starts or it i
 Each job VM is also told, when it starts, how long the queued jobs of its repo and label had
 waited here and why: `/etc/homelab-ci/waits.json` in the VM, readable by any job, maps each job
 id (at most 50, oldest first) to `{"seconds": N, "why": "<the reason above>"}`, with `"why": ""`
-for a job first seen that poll; `{}` when the metadata had none. A job can copy its own entry into
+for a job first seen that poll; `{}` when the metadata has none or it is not a JSON object. A job can copy its own entry into
 its record. It reaches VMs once the next update (`install-host.sh` and the image rebuild) runs.
 
 The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
