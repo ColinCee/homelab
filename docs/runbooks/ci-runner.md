@@ -514,7 +514,8 @@ own connection: on 5 Nov one outlived the session that thought it had stopped it
 The Beelink then load-tests the count itself. Each `update.sh` pass asks the supervisor
 (`start-load-test-if-due`) and starts `homelab-ci-load-test.service` when
 `/var/lib/homelab-ci/load-test.json` has no result for the current slot count and
-`test-load.sh` (hashed), or only a "not run" one over 6 hours old. The unit drains the host:
+`test-load.sh` (hashed), or only a "not run" one over 6 hours old; systemd starts it at most 3 times
+in 6 hours, whatever goes wrong. The unit drains the host:
 the supervisor starts no VM and stops its standbys while `/run/homelab-ci/load-test-drain`
 exists, and the unit waits up to 65 minutes for running VMs to end. It then runs `test-load.sh`
 at every slot, holding `update.sh`'s lock so no install or image build adds load, writes

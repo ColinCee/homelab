@@ -2410,7 +2410,11 @@ def start_load_test_if_due() -> int:
         return 0
     if load_test_due(read_load_test(), slot_count(), test, time.time()):
         log(f"starting {LOAD_TEST_UNIT}: no result for {slot_count()} slots and this test")
-        subprocess.run(["systemctl", "start", "--no-block", LOAD_TEST_UNIT], check=True, timeout=30)
+        # Refused once the unit's start limit is reached: it is started again after that.
+        if subprocess.run(
+            ["systemctl", "start", "--no-block", LOAD_TEST_UNIT], timeout=30
+        ).returncode:
+            log(f"systemd did not start {LOAD_TEST_UNIT}; tried again on the next pass")
     return 0
 
 

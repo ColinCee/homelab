@@ -27,7 +27,12 @@ def host(tmp_path, monkeypatch) -> Path:
     (tmp_path / "commit").write_text("a" * 40 + "\n")
     write_test_script(tmp_path, 'echo "PASS $SLOTS slots: every VM booted and finished"')
     CALLS.clear()
-    monkeypatch.setattr(sup.subprocess, "run", lambda args, **kwargs: CALLS.append(args))
+
+    def run(args: list[str], **kwargs: object) -> sup.subprocess.CompletedProcess[str]:
+        CALLS.append(args)
+        return sup.subprocess.CompletedProcess(args, 0)
+
+    monkeypatch.setattr(sup.subprocess, "run", run)
     return tmp_path
 
 
@@ -47,6 +52,13 @@ def started(host: Path) -> bool:
 
 def test_no_result_for_the_current_slot_count_starts_the_load_test(host) -> None:
     assert started(host)
+
+
+def test_a_start_refused_by_its_start_limit_is_left_for_a_later_pass(host, monkeypatch) -> None:
+    monkeypatch.setattr(
+        sup.subprocess, "run", lambda args, **kwargs: sup.subprocess.CompletedProcess(args, 1)
+    )
+    assert sup.start_load_test_if_due() == 0
 
 
 def test_a_pass_for_the_same_slots_and_test_does_not_start_it_again(host) -> None:
@@ -127,10 +139,12 @@ def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
     assert started(host)
 
 
-def test_the_unit_ends_the_drain_however_it_stops() -> None:
+def test_the_unit_ends_the_drain_however_it_stops_and_never_drains_every_minute() -> None:
     unit = Path("ci-runner/systemd/homelab-ci-load-test.service").read_text()
     assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE}" in unit
     assert "ci_supervisor.py load-test" in unit
+    # A run that keeps no record (its file cannot be written) is not started again each pass.
+    assert "StartLimitIntervalSec=6h" in unit and "StartLimitBurst=3" in unit
 
 
 def test_update_starts_the_load_test_on_the_beelink() -> None:
