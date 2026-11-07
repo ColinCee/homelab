@@ -322,7 +322,21 @@ host's free memory when the file was written, and `held_for_memory` counts queue
 jobs not started because that memory would have dipped into the services' reserve, or the disk was busy. A failed write is logged
 once and tried again next poll; it never holds up the poll.
 
-Beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
+Beside it, `waits.jsonl` (0644) gets one line for each job that waited here, when it
+stops waiting, for the Control room and speed reports:
+
+```json
+{"job": 123, "repo": "ColinCee/example", "since": 1792999400, "until": 1793000000,
+ "memory": 420, "disk": 60, "slots": 0, "booting": 120, "other": 0}
+```
+
+`since` and `until` are when the supervisor first saw the job queued and when it stopped
+waiting; the rest are the seconds it waited for memory (a job queued behind one held for
+memory counts too), for the busy disk, for a free slot, for its VM to boot or be picked up,
+and for anything else (a label no VM has). A supervisor restart starts a job's count again.
+Lines over 30 days old are dropped at most once an hour; a failed write is logged once.
+
+Also beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
 doing, the line its VM prints on its console (format in auto-kaizen's
 `docs/live-view.md`). One background reader per VM reads that console for the
 VM's whole life, so the console never stalls, and keeps only lines in that exact

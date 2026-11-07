@@ -29,6 +29,13 @@ def plenty_of_memory(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def waits_file(tmp_path_factory, monkeypatch) -> Path:
+    path = tmp_path_factory.mktemp("status") / "waits.jsonl"
+    monkeypatch.setattr(sup, "WAITS_FILE", path)
+    return path
+
+
+@pytest.fixture(autouse=True)
 def outbox_dir(tmp_path_factory, monkeypatch) -> Path:
     path = tmp_path_factory.mktemp("outbox")
     monkeypatch.setattr(sup, "OUTBOX_DIR", path)
@@ -1022,7 +1029,68 @@ def test_a_job_whose_vm_is_booting_is_logged_only_after_a_long_wait(host, monkey
         sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
     assert len(started) == 1 and lines == []
     sup.tick(None, state, ["o/ok"], 182.0)  # type: ignore[arg-type]
-    assert lines == [f"job 0 in o/ok has waited 3m00s here: {sup.BOOTING}"]
+    assert lines == [f"job 0 in o/ok has waited 3m02s here: {sup.BOOTING}"]
+
+
+def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
+    host, waits_file, monkeypatch
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
+    state = sup.State()
+    queue(jobs=1, free_mib=3072 + 2047)  # held for memory
+    sup.tick(None, state, ["o/ok"], 100.0)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 130.0)  # type: ignore[arg-type]
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 90.0)
+    sup.tick(None, state, ["o/ok"], 160.0)  # type: ignore[arg-type]  # held for the disk
+    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
+    queue(jobs=1, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], 170.0)  # type: ignore[arg-type]  # its VM boots
+    assert len(started) == 1 and not waits_file.exists()
+    sup.tick(None, state, ["o/ok"], 185.0)  # type: ignore[arg-type]
+    queue(jobs=0, free_mib=1 << 20)  # the job started
+    sup.tick(None, state, ["o/ok"], 200.0)  # type: ignore[arg-type]
+    assert [json.loads(line) for line in waits_file.read_text().splitlines()] == [
+        {"job": 0, "repo": "o/ok", "since": 100, "until": 200,
+         "memory": 60, "disk": 10, "slots": 0, "booting": 30, "other": 0}
+    ]  # fmt: skip
+    assert waits_file.stat().st_mode & 0o777 == 0o644
+
+
+def test_each_reason_has_a_kind_of_wait() -> None:
+    assert sup.wait_kind("memory (0 MiB free above the 3072 MiB reserve, a VM needs 2048)") == (
+        "memory"
+    )
+    assert sup.wait_kind("an older build waiting for memory") == "memory"
+    assert sup.wait_kind("the disk (tasks waited on it 90% of the last minute)") == "disk"
+    assert sup.wait_kind("all 5 light slots in use") == "slots"
+    assert sup.wait_kind(sup.BOOTING) == "booting"
+    assert sup.wait_kind("no VM has its labels (homelab-fc, gpu)") == "other"
+
+
+def test_waits_over_30_days_old_are_pruned_once_an_hour(waits_file) -> None:
+    day = 24 * 3600.0
+    now = 100 * day
+    old = {"job": 1, "repo": "o/ok", "since": 0, "until": int(now - 31 * day)}
+    waits_file.write_text(json.dumps(old) + "\nhalf a li")
+    state = sup.State()
+    sup.record_wait(state, 2, sup.Wait("o/ok", now - 5, seen=now), now)
+    assert [json.loads(line)["job"] for line in waits_file.read_text().splitlines()] == [2]
+    with waits_file.open("a") as f:
+        f.write(json.dumps(old) + "\n")
+    sup.record_wait(state, 3, sup.Wait("o/ok", now, seen=now), now + 60)  # pruned an hour ago
+    assert [json.loads(line)["job"] for line in waits_file.read_text().splitlines()] == [2, 1, 3]
+
+
+def test_an_unwritable_waits_file_is_logged_once_and_does_not_raise(tmp_path, monkeypatch) -> None:
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    monkeypatch.setattr(sup, "WAITS_FILE", tmp_path / "missing" / "waits.jsonl")
+    state = sup.State()
+    for job in (1, 2):
+        sup.record_wait(state, job, sup.Wait("o/ok", 0.0), 10.0)
+    assert len(lines) == 1 and lines[0].startswith("could not write")
 
 
 def test_a_job_asking_for_a_label_no_vm_has_is_logged_and_never_started(host, monkeypatch):
