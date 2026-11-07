@@ -467,8 +467,10 @@ Light jobs stay on the Beelink.
   set once in Hyper-V for the most slots it will give.
 - **Gaming:** `keeper.ps1`, run by `keeper-tray.pyw` from Colin's Startup folder (a dot in the Windows notification
   area: green busy, amber paused, grey off, red restarting; its menu sets the slots or quits), gives 0 slots while
-  a full-screen app runs for 15 s (Windows' own flag, read by the tray app; GPU load is no signal, the desktop
-  alone sits near 30% on this card) or another `gpu` lease is held, caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
+  a full-screen app has the screen for 15 s or another `gpu` lease is held. The tray app judges full screen
+  (Windows' full-screen flag, or the front window covering its whole monitor, so a full-screen video or slideshow
+  pauses jobs too) and must be running: without it nothing pauses, and the keeper logs that. GPU load is no
+  signal, the desktop alone sits near 30% on this card. It caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
   runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
   trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, shown after
   `kaizen-ci` in the band above Claude's prompt, is the PC runners busy/online (`‖` while paused).

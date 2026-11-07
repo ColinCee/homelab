@@ -15,10 +15,12 @@ from PIL import Image, ImageDraw
 
 ROOT = Path(r"D:\kaizen-ci")
 LOG = ROOT / "keeper.log"
-# Windows' notification state (SHQueryUserNotificationState): busy, full-screen Direct3D, or a
-# full-screen store app means a game (or a full-screen video) has the screen.
+# A game (or a full-screen video) has the screen: Windows' notification state says full-screen
+# Direct3D or a full-screen store app (not "busy", which some maximised apps set), or the
+# foreground window covers its whole monitor (borderless games, which that state misses).
 FULLSCREEN = ROOT / "fullscreen.txt"
-FULL_SCREEN_STATES = {2, 3, 7}
+FULL_SCREEN_STATES = {3, 7}
+DESKTOP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd"}
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW: no console flashes up
 ALREADY_EXISTS = 183
 COLOURS = {"busy": "#3fb950", "paused": "#d29922", "off": "#8b949e", "down": "#f85149"}
@@ -64,18 +66,55 @@ def kaizen_status() -> str:
     return next((str(h.get("status") or "") for h in holds if h.get("name") == "kaizen-ci"), "")
 
 
+class Rect(ctypes.Structure):
+    _fields_ = [(n, ctypes.c_long) for n in ("left", "top", "right", "bottom")]
+
+
+class MonitorInfo(ctypes.Structure):
+    _fields_ = [
+        ("size", ctypes.c_ulong),
+        ("monitor", Rect),
+        ("work", Rect),
+        ("flags", ctypes.c_ulong),
+    ]
+
+
+def covers_its_screen() -> bool:
+    """The foreground window fills its whole monitor, taskbar included: a borderless game (or
+    video), which Windows' flag misses. A maximised window stops at the taskbar."""
+    user32 = ctypes.windll.user32
+    window = user32.GetForegroundWindow()
+    name = ctypes.create_unicode_buffer(64)
+    user32.GetClassNameW(window, name, 64)
+    if not window or name.value in DESKTOP_CLASSES:
+        return False
+    box, info = Rect(), MonitorInfo(size=ctypes.sizeof(MonitorInfo))
+    user32.GetWindowRect(window, ctypes.byref(box))
+    if not user32.GetMonitorInfoW(user32.MonitorFromWindow(window, 2), ctypes.byref(info)):
+        return False
+    screen = info.monitor
+    return (box.left, box.top, box.right, box.bottom) == (
+        screen.left,
+        screen.top,
+        screen.right,
+        screen.bottom,
+    )
+
+
 def full_screen() -> bool:
     state = ctypes.c_int()
-    if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
-        return False
-    return state.value in FULL_SCREEN_STATES
+    flagged = ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) == 0
+    return (flagged and state.value in FULL_SCREEN_STATES) or covers_its_screen()
 
 
 def say_full_screen(stopping: threading.Event) -> None:
-    """Every 5 s, for keeper.ps1, which cannot ask Windows itself (ConstrainedLanguage)."""
+    """Every 5 s, for keeper.ps1, which cannot ask Windows itself (ConstrainedLanguage). Written
+    whole (a new file renamed over the old), so the keeper never reads it half written."""
+    staged = FULLSCREEN.with_suffix(".new")
     while not stopping.wait(5):
         with contextlib.suppress(OSError):
-            FULLSCREEN.write_text("1" if full_screen() else "0")
+            staged.write_text("1" if full_screen() else "0")
+            os.replace(staged, FULLSCREEN)
 
 
 def dot(colour: str) -> Image.Image:

@@ -41,8 +41,10 @@ function GpuBusy {
         Where-Object { $_.name -ne $vm -and ($_.wants | Where-Object { $_.resource -eq 'gpu' }) }
     # Only a fresh answer counts: with the tray gone, nothing says a game runs.
     $said = Get-Item $fullscreen -ErrorAction SilentlyContinue
-    $full = $said -and ((Get-Date) - $said.LastWriteTime).TotalSeconds -lt 30 -and
-        (Get-Content $fullscreen -ErrorAction SilentlyContinue | Select-Object -First 1) -eq '1'
+    $fresh = $said -and ((Get-Date) - $said.LastWriteTime).TotalSeconds -lt 30
+    if (-not $fresh -and -not $script:staleSaid) { Say 'no full-screen answer from the tray: games will not pause jobs' }
+    $script:staleSaid = -not $fresh
+    $full = $fresh -and (Get-Content $fullscreen -ErrorAction SilentlyContinue | Select-Object -First 1) -eq '1'
     return [bool]($held -or $full)
 }
 
