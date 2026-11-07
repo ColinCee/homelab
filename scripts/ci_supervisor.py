@@ -2033,6 +2033,7 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
         "github_ok": github_ok,
         "mem_available_mib": mem_available,
         "held_for_memory": len(state.held),
+        **({"pc": peer_status(PEER, now)} if PEER else {}),
     }
 
 
@@ -2183,6 +2184,9 @@ PEER_SEEN_SECONDS = 90
 # An idle PC runner for one product's cache label is swapped for a queued build of another's
 # once it has waited this long.
 PEER_RELABEL_SECONDS = 300
+# The PC says how many slots it gives every PC_SAY_SECONDS; unheard for this long, it is off.
+PEER_HEARD_SECONDS = 180
+PC_SAY_SECONDS = 60
 # run-vm.sh's outbox: 6 GiB for the tar and its header.
 OUTBOX_BYTES = 6 * 1024**3 + 1024**2
 # Lines the PC's console reader sends up; read_console checks them again on the Beelink.
@@ -2277,6 +2281,9 @@ class Peer:
     # the newest Auto Kaizen build queued: a new PC runner is registered for the first that fits.
     wants: tuple[tuple[str, str], ...] = ()
     last: tuple[str, str] = ("", "")
+    # The slots the PC last said it gives (0 while Colin games), and when.
+    pc_slots: int = 0
+    pc_heard: float = 0.0
     # Each PC VM's open stream: a new one for the same runner (the PC reconnected) ends the old.
     streaming: dict[str, socket.socket] = field(default_factory=dict)
     # Outboxes being uploaded, by runner, with their sizes: the free-disk floor counts them all.
@@ -2342,6 +2349,9 @@ def peer_answer(
             return ""
         case ["outbox", runner, size] if read_peer(runner) and size.isdecimal():
             return peer_outbox(peer, runner, int(size), reader, writer, conn)
+        case ["slots", given] if given.isdecimal():
+            peer.pc_slots, peer.pc_heard = min(int(given), peer_slots()), time.time()
+            return "ok"
         case ["release", runner] if fields := read_peer(runner):
             return "gone" if peer_drop(gh, runner, fields) else "busy"
         case ["cache", named, have] if repo := peer_cache_repo(peer, named):
@@ -2416,6 +2426,18 @@ def peer_ready(now: float) -> Counter[Want]:
         if fields and not fields.get("gone") and now - fields.get("idle_at", 0) < PEER_SEEN_SECONDS:
             ready[(str(fields["repo"]), str(fields.get("label", "")))] += 1
     return ready
+
+
+def peer_status(peer: Peer, now: float) -> dict[str, Any]:
+    """The PC for the status file: up (heard lately), the slots it gives, and how many of its
+    runners sweep_peer last saw with a job."""
+    up = now - peer.pc_heard < PEER_HEARD_SECONDS
+    busy = 0
+    for path in PEER_DIR.glob(f"{PEER_PREFIX}*.json"):
+        fields = read_peer(path.stem)
+        if fields and not fields.get("gone") and now - fields.get("busy_at", 0) < PEER_SEEN_SECONDS:
+            busy += 1
+    return {"up": up, "slots": peer.pc_slots if up else 0, "in_use": busy if up else 0}
 
 
 def peer_drop(gh: GitHub, runner: str, fields: dict[str, Any]) -> bool:
@@ -2603,7 +2625,9 @@ def sweep_peer(gh: GitHub, peer: Peer, now: float) -> None:
         age = now - float(fields["issued"])
         offline = runner_data.get("status") != "online"
         idle = not offline and runner_data.get("busy") is False
-        fields = update_peer(runner, idle_at=int(now) if idle else None) or fields
+        busy = not offline and not idle
+        changes = {"idle_at": int(now) if idle else None, "busy_at": int(now) if busy else None}
+        fields = update_peer(runner, **changes) or fields
         label = str(fields.get("label", ""))
         others = {w for w in peer.wants if w[0] == fields["repo"] and w[1] != label}
         if (
@@ -2899,7 +2923,8 @@ def pc_main(argv: list[str]) -> int:
     released: dict[str, float] = {}
     tried: dict[str, float] = {}
     slot_paused: dict[int, float] = {}
-    cache_checked = 0.0
+    cache_checked = said_at = 0.0
+    said_slots = -1
     fetching = shipping = threading.Thread()
     wanted = {p.stem.replace("__", "/", 1) for p in CACHE_DIR.glob("*.ext4")}
     log("PC slots: keeping ready runners")
@@ -2929,6 +2954,10 @@ def pc_main(argv: list[str]) -> int:
                     subprocess.run(
                         ["systemctl", "stop", "--no-block", f"{UNIT_PREFIX}{runner}"], check=False
                     )
+            # The Beelink shows the PC's slots on the Control room, paused ones included.
+            due = slots != said_slots or now - said_at >= PC_SAY_SECONDS
+            if due and peer_call(f"slots {slots}") == "ok":
+                said_slots, said_at = slots, now
             # Uploads in the background: a 6 GiB one must not hold up a gaming drain.
             if not shipping.is_alive():
                 shipping = threading.Thread(
