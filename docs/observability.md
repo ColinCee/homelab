@@ -157,10 +157,10 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
 `test_alert`.
 
-Kaizen cannot report its own failure, so Kaizen's Watcher stopped running, Kaizen Control
-room unreachable, and every no-data or evaluation-error alert also go straight to the
-`Discord Private` webhook (Discord's #uptime channel), as do the deploy
-watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A failed
+The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
+straight to the `Discord Private` webhook (Discord's #uptime channel), as do the deploy
+watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. Every other alert,
+no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
 deploy stops Auto Kaizen.
 After deploying alerting file changes, reload them with Grafana's authenticated
 `POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
