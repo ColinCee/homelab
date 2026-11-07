@@ -384,6 +384,12 @@ and then every 3 minutes, with how long it has waited since the supervisor first
 
 A job that was logged gets `stopped waiting after Xm` once its VM starts or it is cancelled.
 
+Each job VM is also told, when it starts, how long the queued jobs of its repo and label had
+waited here and why: `/etc/homelab-ci/waits.json` in the VM, readable by any job, maps each job
+id (at most 50, oldest first) to `{"seconds": N, "why": "<the reason above>"}`, with `"why": ""`
+for a job first seen that poll; `{}` when the metadata had none. A job can copy its own entry into
+its record. It reaches VMs once the next update (`install-host.sh` and the image rebuild) runs.
+
 The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
 so far per kind of wait, from `homelab_ci_wait_seconds{kind}` (kinds as in `waits.jsonl`, all 0
 when nothing waits), which the supervisor writes to `ci-waits.prom` in the textfile folder at

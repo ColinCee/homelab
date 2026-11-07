@@ -35,6 +35,11 @@ case "$task" in
     [[ -b /dev/vdb ]] && mount /dev/vdb /cache
     chown runner:runner /cache
     printf 'UV_CACHE_DIR=/cache/uv\nnpm_config_cache=/cache/npm\nUV_PROJECT_ENVIRONMENT=/cache/venv\n' >> /opt/runner/.env
+    # How long each queued job had waited for this VM, and why (the supervisor's
+    # vm_waits), for a job to put in its own record; {} when missing or not JSON.
+    mkdir -p /etc/homelab-ci
+    { mmds waits | jq -ce 'objects' 2>/dev/null || echo '{}'; } > /etc/homelab-ci/waits.json
+    chmod 0644 /etc/homelab-ci/waits.json
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
