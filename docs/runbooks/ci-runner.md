@@ -151,7 +151,8 @@ that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memor
 process, not the VM.
 
 Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's merge and agents: 2 GiB),
-or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 700 MiB). They run in light slots of
+or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 700 MiB), or `homelab-fc-deploy` for
+a merge's deploy (1 GiB, with a standby of its own). They run in light slots of
 their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, no cache disk, a
 3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
 merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
@@ -229,6 +230,11 @@ GitHub-hosted runners and take it off the token's repository access.
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
+- **One deploy VM waits ready.** In another free light slot, a deploy standby waits registered with
+  `homelab-fc-deploy` alone for the repo of the last deploy job (kept in `/var/lib/homelab-ci/last-deploy-repo`,
+  `ColinCee/auto-kaizen` until there is one; polled every 2 s), so a merge's deploy starts in seconds and no task
+  job can take it first. It gives way, is replaced and boots again after taking a job like the light standby.
+  `/etc/homelab-ci/deploy-standbys` sets how many wait (1 by default, 0 for none).
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves the host.
@@ -315,13 +321,13 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
- "light_slots": 5, "light_in_use": 2, "light_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
+ "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
 `light_slots`, `light_in_use` and `light_standby` the light slots, the light VMs
-running a job and the ones waiting ready,
+running a job and the ones waiting ready, `deploy_standby` the deploy VMs waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
