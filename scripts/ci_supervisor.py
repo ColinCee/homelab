@@ -72,14 +72,23 @@ def light_runner_labels(label: str) -> tuple[str, ...]:
 
 # A merge job waits for a pull request's CI, two rounds at most.
 LIGHT_TIMEOUT_SECONDS = 3 * 3600
-# How many light VMs wait ready for the last light job's repo, so a task's first and last
+# How many light VMs wait ready for the last 2 GiB light job's repo, so a task's agent
 # steps start in seconds. /etc/homelab-ci/light-standbys changes it with no code change.
 LIGHT_STANDBY_COUNT_FILE = Path("/etc/homelab-ci/light-standbys")
 LAST_LIGHT_REPO_FILE = Path("/var/lib/homelab-ci/last-light-repo")
 # Likewise for the deploy standby, which waits for the last deploy job's repo.
 DEPLOY_STANDBY_COUNT_FILE = Path("/etc/homelab-ci/deploy-standbys")
 LAST_DEPLOY_REPO_FILE = Path("/var/lib/homelab-ci/last-deploy-repo")
+# And for the small standby, for the last small job's repo: each task's first step is one.
+SMALL_STANDBY_COUNT_FILE = Path("/etc/homelab-ci/small-standbys")
+LAST_SMALL_REPO_FILE = Path("/var/lib/homelab-ci/last-small-repo")
+# Where the deploy and small standbys wait until a job of theirs has run.
 DEFAULT_DEPLOY_REPO = "ColinCee/auto-kaizen"
+# The labels whose standby keeps a light slot of its own and boots while jobs wait for
+# memory: a merge's deploy, and the short jobs that run no agent (without it a task's first
+# step waited for a VM a typical 55 s, most of it behind builds' memory and full light slots).
+KEPT_LABELS = (DEPLOY_LABEL, SMALL_LABEL)
+KEPT_FOR = {DEPLOY_LABEL: "deploys", SMALL_LABEL: "small jobs"}
 # One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
 # (a job working on that repo's code). GitHub owner names cannot hold `--`.
 CACHE_LABEL_PREFIX = "fc-cache-"
@@ -368,11 +377,11 @@ class State:
     # boots for the same, so the next such job (a task's Builder, then its Reviewer) takes it.
     last_repo: str = ""
     last_label: str = ""
-    # The repository and label of the last light job: the light standby boots for them.
+    # The repository of the last 2 GiB light job: the light standby boots for it.
     last_light_repo: str = ""
-    last_light_label: str = LIGHT_LABEL
-    # The repository of the last deploy job: the deploy standby boots for it.
+    # The repository of the last deploy job, and of the last small one: their standbys boot there.
     last_deploy_repo: str = DEFAULT_DEPLOY_REPO
+    last_small_repo: str = DEFAULT_DEPLOY_REPO
     # Repos that have had a job here (or have a cache disk): polled every poll, the rest
     # every QUIET_POLL_SECONDS, when each was last polled.
     used: set[str] = field(default_factory=set)
@@ -725,9 +734,13 @@ def launch(
         if not standby and repo != state.last_deploy_repo:
             state.last_deploy_repo = repo
             remember(LAST_DEPLOY_REPO_FILE, f"{repo}\n")
-    elif light and not standby and (repo, label) != (state.last_light_repo, state.last_light_label):
-        state.last_light_repo, state.last_light_label = repo, label
-        remember(LAST_LIGHT_REPO_FILE, f"{repo}\n{label}\n")
+    elif label == SMALL_LABEL:
+        if not standby and repo != state.last_small_repo:
+            state.last_small_repo = repo
+            remember(LAST_SMALL_REPO_FILE, f"{repo}\n")
+    elif light and not standby and repo != state.last_light_repo:
+        state.last_light_repo = repo
+        remember(LAST_LIGHT_REPO_FILE, f"{repo}\n")
     kind = "standby" if standby else "VM"
     disk = cache.name if cache else "no cache disk"
     log(f"slot {slot}: started {kind} {name} for {repo}, {disk} ({vcpus} vCPUs, {mem_mib} MiB)")
@@ -758,21 +771,13 @@ def remember(path: Path, text: str) -> None:
         log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
 
 
-def recalled_last_light_job() -> Want:
-    """The last light job's repo and label (the 2 GiB one from an older file)."""
+def recalled_repo(path: Path, default: str) -> str:
+    """The repo kept in a last-repo file: its first line (older files add a label after it)."""
     try:
-        lines = LAST_LIGHT_REPO_FILE.read_text().split()
+        lines = path.read_text().split()
     except OSError:
-        return ("", LIGHT_LABEL)
-    label = lines[1] if len(lines) > 1 and lines[1] in {LIGHT_LABEL, SMALL_LABEL} else LIGHT_LABEL
-    return (lines[0] if lines else "", label)
-
-
-def recalled_last_deploy_repo() -> str:
-    try:
-        return LAST_DEPLOY_REPO_FILE.read_text().strip() or DEFAULT_DEPLOY_REPO
-    except OSError:
-        return DEFAULT_DEPLOY_REPO
+        return default
+    return lines[0] if lines else default
 
 
 def recalled_last_job() -> Want:
@@ -1901,15 +1906,19 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # GitHub's job ids only grow, so the smallest is the oldest.
     oldest_first = [w for _, w in sorted((i, w) for w, ids in job_ids.items() for i in ids)]
     starts = plan([w for w in oldest_first if w[1] not in LIGHT_SIZES], booting, len(free))
-    # Deploys first, in any free light slot; other light jobs never take the slot kept for them.
+    # Deploys first, in any free light slot, then small jobs, then 2 GiB ones; none takes
+    # a slot kept for another label's standby.
     deploy_starts = plan(
         [w for w in oldest_first if w[1] == DEPLOY_LABEL], booting, len(light_free)
     )
-    light_starts = deploy_starts + plan(
-        [w for w in oldest_first if w[1] in LIGHT_SIZES and w[1] != DEPLOY_LABEL],
-        booting,
-        min(len(light_free) - len(deploy_starts), task_light_room(state)),
-    )
+    light_starts = deploy_starts
+    for label in (SMALL_LABEL, LIGHT_LABEL):
+        room_left = light_room(state, label, Counter(w[1] for w in light_starts))
+        light_starts = light_starts + plan(
+            [w for w in oldest_first if w[1] == label],
+            booting,
+            min(len(light_free) - len(light_starts), room_left),
+        )
     # The VMs started this poll are counted by their size: they have touched almost
     # nothing yet, so MemAvailable does not show them.
     reserve = memory_reserve_mib()
@@ -1998,9 +2007,13 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         kind, slots = (
             ("light", state.light_slots) if want[1] in LIGHT_SIZES else ("build", state.slots)
         )
-        kept = deploy_slot_kept(state) and want[1] in LIGHT_SIZES and want[1] != DEPLOY_LABEL
-        full = f"all {slots - kept} {kind} slots in use" + (
-            ", one more kept for deploys" if kept else ""
+        kept = (
+            [k for k in kept_slots(state) if k != want[1]]
+            if want[1] in LIGHT_SIZES and want[1] != DEPLOY_LABEL
+            else []
+        )
+        full = f"all {slots - len(kept)} {kind} slots in use" + "".join(
+            f", one more kept for {KEPT_FOR[k]}" for k in kept
         )
         for n, job_id in enumerate(sorted(ids)):
             if job_id in held:
@@ -2028,13 +2041,14 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         if ours:
             PEER.last = ours[-1]
     for run in list(state.launches.values()):
-        # The deploy standby is the one VM a merge's deploy needs: it gives way only to
-        # another repo's deploy, never to other jobs or memory (light jobs never take its slot).
-        deploy = run.label == DEPLOY_LABEL
+        # The deploy and small standbys are the VMs those jobs need: each gives way only to
+        # another repo's job of its label, never to other jobs or memory (no other label takes
+        # its slot).
+        kept = run.label in KEPT_LABELS
         if run.standby and any(
             n > 0
             and want not in run.takes(now)
-            and ((want[1] == DEPLOY_LABEL) if deploy else (want[1] in LIGHT_SIZES) == run.light)
+            and ((want[1] == run.label) if kept else (want[1] in LIGHT_SIZES) == run.light)
             for want, n in waiting.items()
         ):
             stop_if_still_idle(gh, run, "is in the way of a queued job")
@@ -2043,7 +2057,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         elif (
             run.standby
             and run.light
-            and not deploy
+            and not kept
             and oldest_held_build is not None
             and all(oldest_held_build < i for w in run.takes(now) for i in job_ids.get(w, []))
         ):
@@ -2069,38 +2083,41 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
         room -= next_size(state, True)[1]
         pace()
-    # One light VM waits ready for the last light job's repo, in a free light slot.
+    # One light VM waits ready for the last 2 GiB light job's repo, in a free light slot.
     light_free = light_free[light_started:]
     if (
         not state.held
-        and LIGHT_SIZES[state.last_light_label][1] <= room
+        and LIGHT_SIZES[LIGHT_LABEL][1] <= room
         and wants_standby(
             [state.last_light_repo] if state.last_light_repo else [],
             private,
-            [r.light and r.label != DEPLOY_LABEL for r in standbys],
-            min(len(light_free), task_light_room(state)),
+            [r.label == LIGHT_LABEL for r in standbys],
+            min(len(light_free), light_room(state, LIGHT_LABEL)),
             light_standby_count(),
         )
     ):
         repo = state.last_light_repo
-        label = state.last_light_label
-        launch(gh, state, repo, light_free[0], now, label=label, cache=None, standby=True)
+        launch(gh, state, repo, light_free[0], now, label=LIGHT_LABEL, cache=None, standby=True)
         light_free = light_free[1:]
-        room -= LIGHT_SIZES[label][1]
+        room -= LIGHT_SIZES[LIGHT_LABEL][1]
         pace()
-    # And one for the last deploy job's repo, registered for deploys alone, so no task job
-    # takes it just before a merge's deploy needs it. It boots even while jobs wait for
-    # memory, if its 1 GiB fits: without it a merge's deploy waited up to 135 s for a VM.
-    if LIGHT_SIZES[DEPLOY_LABEL][1] <= room and wants_standby(
-        [state.last_deploy_repo],
-        private,
-        [r.label == DEPLOY_LABEL for r in standbys],
-        len(light_free),
-        deploy_standby_count(),
-    ):
-        repo = state.last_deploy_repo
-        launch(gh, state, repo, light_free[0], now, label=DEPLOY_LABEL, cache=None, standby=True)
-        pace()
+    # And one each for the last deploy job's repo and the last small job's, registered for
+    # their label alone, so no other job takes it just before one of theirs needs it. They
+    # boot even while jobs wait for memory, if their 1 GiB fits: without that a merge's
+    # deploy waited up to 135 s for a VM, and a task's first step behind builds' memory.
+    for label in KEPT_LABELS:
+        repo = kept_repo(state, label)
+        if LIGHT_SIZES[label][1] <= room and wants_standby(
+            [repo],
+            private,
+            [r.label == label for r in standbys],
+            min(len(light_free), light_room(state, label)),
+            kept_standby_count(label),
+        ):
+            launch(gh, state, repo, light_free[0], now, label=label, cache=None, standby=True)
+            light_free = light_free[1:]
+            room -= LIGHT_SIZES[label][1]
+            pace()
     return spent
 
 
@@ -2213,7 +2230,7 @@ def wait_kind(why: str) -> str:
         return "disk"
     if why.startswith("memory") or why.endswith("waiting for memory"):
         return "memory"
-    if why.endswith("slots in use"):
+    if "slots in use" in why:
         return "slots"
     return "other"
 
@@ -2273,17 +2290,36 @@ def deploy_standby_count() -> int:
     return count_in(DEPLOY_STANDBY_COUNT_FILE)
 
 
-def deploy_slot_kept(state: State) -> bool:
-    """Whether one light slot is kept for deploy jobs: while a deploy standby is wanted and
-    another light slot is left for task jobs."""
-    return deploy_standby_count() > 0 and state.light_slots > 1
+def small_standby_count() -> int:
+    return count_in(SMALL_STANDBY_COUNT_FILE)
 
 
-def task_light_room(state: State) -> int:
-    """How many more light VMs other than deploys may start: the light slots, less the one
-    kept for deploys, less those such VMs (standby included) already hold."""
-    used = sum(r.light and r.label != DEPLOY_LABEL for r in state.launches.values())
-    return max(state.light_slots - deploy_slot_kept(state) - used, 0)
+def kept_standby_count(label: str) -> int:
+    return deploy_standby_count() if label == DEPLOY_LABEL else small_standby_count()
+
+
+def kept_repo(state: State, label: str) -> str:
+    return state.last_deploy_repo if label == DEPLOY_LABEL else state.last_small_repo
+
+
+def kept_slots(state: State) -> list[str]:
+    """The labels keeping a light slot for their standby: each whose standby is wanted, while
+    another light slot is left for 2 GiB jobs."""
+    kept: list[str] = []
+    for label in KEPT_LABELS:
+        if kept_standby_count(label) > 0 and state.light_slots > len(kept) + 1:
+            kept.append(label)
+    return kept
+
+
+def light_room(state: State, label: str, planned: Counter[str] | None = None) -> int:
+    """How many more light VMs with `label` may start: the light slots, less those every
+    light VM (and `planned`) holds, less one kept for each other kept label with no standby
+    up. A standby that takes a job keeps no slot, so the next one boots in another."""
+    used = sum(r.light for r in state.launches.values()) + sum((planned or Counter()).values())
+    standing = {r.label for r in state.launches.values() if r.standby}
+    kept = sum(k != label and k not in standing for k in kept_slots(state))
+    return max(state.light_slots - used - kept, 0)
 
 
 def count_in(path: Path) -> int:
@@ -2318,17 +2354,24 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
     runs = state.launches.values()
     standby = sum(run.standby and not run.light for run in runs)
     deploy_standby = sum(run.standby and run.label == DEPLOY_LABEL for run in runs)
-    light_standby = sum(run.standby and run.light for run in runs) - deploy_standby
-    light = sum(run.light for run in runs) - light_standby - deploy_standby
+    small_standby = sum(run.standby and run.label == SMALL_LABEL for run in runs)
+    light_standby = sum(run.standby and run.light for run in runs) - deploy_standby - small_standby
+    light = sum(run.light for run in runs) - light_standby - deploy_standby - small_standby
     return {
         "updated": int(now),
         "slots": state.slots,
-        "in_use": len(state.launches) - standby - light - light_standby - deploy_standby,
+        "in_use": len(state.launches)
+        - standby
+        - light
+        - light_standby
+        - deploy_standby
+        - small_standby,
         "standby": standby,
         "light_slots": state.light_slots,
         "light_in_use": light,
         "light_standby": light_standby,
         "deploy_standby": deploy_standby,
+        "small_standby": small_standby,
         "cache_disks": sorted(
             image.stem.replace("__", "/", 1) for image in CACHE_DIR.glob("*__*.ext4")
         ),
@@ -2434,9 +2477,9 @@ def due(repos: list[str], state: State, now: float) -> list[str]:
     """The repos to poll now, in the order given: every one that has had a VM or has a
     cache disk, and of the quiet rest those unasked for a minute, QUIET_PER_POLL at most,
     the longest unasked first, so no poll is slowed by all of them at once."""
-    # The light and deploy standbys' repos too, so their privacy is checked every poll like
+    # The light, deploy and small standbys' repos too, so their privacy is checked every poll like
     # the standby's.
-    standing = {state.last_light_repo, state.last_deploy_repo}
+    standing = {state.last_light_repo, state.last_deploy_repo, state.last_small_repo}
     busy = {r for r in repos if r in state.used or r in standing or cache_image(r).exists()}
     quiet = [
         r for r in repos if r not in busy and now - state.polled.get(r, 0) >= QUIET_POLL_SECONDS
@@ -3442,8 +3485,9 @@ def main(argv: list[str] | None = None) -> int:
     state.last_repo, state.last_label = recalled_last_job()
     if state.last_repo:
         state.used.add(state.last_repo)
-    state.last_light_repo, state.last_light_label = recalled_last_light_job()
-    state.last_deploy_repo = recalled_last_deploy_repo()
+    state.last_light_repo = recalled_repo(LAST_LIGHT_REPO_FILE, "")
+    state.last_deploy_repo = recalled_repo(LAST_DEPLOY_REPO_FILE, DEFAULT_DEPLOY_REPO)
+    state.last_small_repo = recalled_repo(LAST_SMALL_REPO_FILE, DEFAULT_DEPLOY_REPO)
     # The repo listing runs beside the poll, on its own client (the request cache is not
     # shared between threads).
     lister = ThreadPoolExecutor(max_workers=1)
