@@ -1065,3 +1065,335 @@ groups:
           action: "On the Beelink: docker ps -a | grep control-room, then docker logs on it."
         labels:
           severity: critical
+
+  # Signs that Auto Kaizen itself wastes or stalls, served by its Control room (auto-kaizen's src/kaizen/anomaly.py,
+  # whose *_AT constants are these thresholds). route=factory makes each a factory problem the factory manager fixes,
+  # not an alert for the responder.
+  - orgId: 1
+    name: Kaizen factory
+    folder: Alert rules
+    interval: 1m
+    rules:
+      - uid: kaizen-workflow-key-calls
+        title: Kaizen's shared workflow key running out of calls
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Percent left, as the Watcher last counted it; only while that count is under 30 minutes old.
+              expr: >-
+                min(min_over_time(kaizen_github_workflow_key_calls_remaining{job="kaizen"}[2m]))
+                / max(max_over_time(kaizen_github_workflow_key_calls_limit{job="kaizen"}[2m])) * 100
+                and on() (time() - max(kaizen_github_workflow_key_calls_read_timestamp_seconds{job="kaizen"}) < 1800)
+              instant: true
+              refId: A
+          - refId: reset
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (max(kaizen_github_workflow_key_calls_reset_timestamp_seconds{job="kaizen"}) - time()) / 60 or on() vector(0)
+              instant: true
+              refId: reset
+          - refId: early
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: $A < 20 && $reset > 15
+              refId: early
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: early
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Share of the workflows' shared GitHub key's hourly calls left"
+          measure: "Shared key's calls left"
+          trigger: "under 20% with over 15 min until it resets"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}%{{ end }}"
+          description: >-
+            Threshold: every Auto Kaizen workflow shares one key of 5,000 GitHub calls an hour, and under a fifth is left
+            with over 15 minutes to go. At none, workflows fail and the Watcher sits out. Back in
+            {{ with $values.reset }}{{ printf "%.0f" .Value }}{{ end }} min.
+          action: "Find the workflow spending it: the Watcher's 'used N of 5000' line, and which step reads GitHub most."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-workflow-failures
+        title: Kaizen workflows failing for one cause
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Failed runs of any workflow in the last hour, by the cause of their first failed job.
+              expr: max by (cause) (max_over_time(kaizen_workflow_failures_last_hour{job="kaizen"}[2m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [4]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Failed Kaizen runs in the last hour for one cause"
+          measure: "Failed runs, one cause"
+          trigger: "5 or more in an hour"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} runs{{ end }}"
+          description: "Threshold: 5 or more runs of Kaizen's workflows failed in the last hour with one cause: {{ $labels.cause }}"
+          action: "Find the step that logs it, and why; an outside error that keeps coming back is ours to work around."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-goal-owner-reruns
+        title: A Kaizen goal owner reruns with nothing new
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Each ongoing goal's owner runs since the goal or one of its tasks last changed.
+              expr: max by (goal) (max_over_time(kaizen_goal_owner_runs_since_change{job="kaizen"}[2m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [3]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Goal owner runs since anything changed for the goal"
+          measure: "Owner runs, nothing new"
+          trigger: "4 or more"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} runs{{ end }}"
+          description: >-
+            Threshold: goal G{{ $labels.goal }}'s owner ran 4 or more times while nothing changed for it: no task opened
+            and no task's run ended. Each run is an agent paid for.
+          action: "Read the goal's Recheck: and Owner: lines: what it waits on, and why that wakes it."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-stopped-alike
+        title: Kaizen tasks stopped for one reason
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Tasks stopped for Colin or their goal owner, by the cause of their last run's stop.
+              expr: max by (reason) (max_over_time(kaizen_stopped_tasks_alike{job="kaizen"}[2m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Stopped Kaizen tasks sharing one stop reason"
+          measure: "Tasks stopped alike"
+          trigger: "2 or more"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} tasks{{ end }}"
+          description: >-
+            Threshold: 2 or more tasks wait on Colin or their goal owner, stopped for one reason: {{ $labels.reason }}.
+            One reason across tasks is likely Kaizen's own fault, not theirs.
+          action: "Find what the tasks share (a conflict with main, a red main, a step) and fix that once."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-silent-tasks
+        title: Kaizen tasks left with nothing moving them
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Open tasks whose newest finished run left no Run record, and that nothing runs.
+              expr: max(max_over_time(kaizen_silent_tasks{job="kaizen"}[2m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Open Kaizen tasks whose last run left no record"
+          measure: "Silent tasks"
+          trigger: "1 or more for 10 min"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} tasks{{ end }}"
+          description: >-
+            Threshold: a task's run finished over 40 minutes ago without writing its Run record, and nothing runs it now,
+            so no goal owner, Watcher or retry will move it.
+          action: "The Control room's /state lists the tasks; read the run's Record step log for why its note was not written."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-agent-cost
+        title: Kaizen's agents spending fast
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Agent runs that ended in the last hour. The busiest real hours of a week cost about $26 (90th
+              # percentile); the night of waste reached $45 to $58.
+              expr: max(max_over_time(kaizen_agent_cost_usd_last_hour{job="kaizen"}[2m]))
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [40]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "What Kaizen's agents cost in the last hour"
+          measure: "Agent cost, last hour"
+          trigger: "over $40"
+          chart: max(max_over_time(kaizen_agent_cost_usd_last_hour{job="kaizen"}[2m]))
+          chart_line: "40"
+          value: "{{ with $values.A }}${{ printf \"%.0f\" .Value }}{{ end }}"
+          description: "Threshold: agents' runs that ended in the last hour cost over $40, past any busy hour of real work."
+          action: "kaizen-speed --agents --since <an hour ago> names the workflow and agent spending it."
+        labels:
+          severity: warning
+          route: factory
+
+      - uid: kaizen-signs-stale
+        title: Kaizen's waste checks stopped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Minutes since the Control room last looked for these signs, while it is up: a dead look reads as calm.
+              expr: >-
+                (time() - max(max_over_time(kaizen_anomaly_read_timestamp_seconds{job="kaizen"}[2m]))) / 60
+                and on() (max(up{job="kaizen"}) == 1)
+              instant: true
+              refId: A
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Minutes since the Control room last looked for waste"
+          measure: "Since the last look"
+          trigger: "over 10 min"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
+          description: >-
+            Threshold: the Control room is up but has not looked for signs of waste or stalls for 10 minutes, so the other
+            factory alerts cannot fire.
+          action: "docker logs on the Control room: its anomaly look's error repeats there."
+        labels:
+          severity: warning
+          route: factory
