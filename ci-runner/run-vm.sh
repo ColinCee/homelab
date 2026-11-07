@@ -44,7 +44,13 @@ cleanup() {
   fi
   if [[ -n ${sampler:-} ]]; then
     kill "$sampler" 2>/dev/null
-    echo "slot $slot: VM ended ($status), its memory peaked at $(($(<"$peak_file") / 1048576)) MiB of $MEM_MIB" >&2
+    # What it wrote to the SSD, to find the VMs that wear it most.
+    if wrote=$(written_bytes "$slot" ${CACHE_OUT:+"$CACHE_OUT"} ${INBOX:+"$INBOX"}); then
+      wrote=$((wrote / 1048576))
+    else
+      wrote="?"
+    fi
+    echo "slot $slot: VM ended ($status), its memory peaked at $(($(<"$peak_file") / 1048576)) MiB of $MEM_MIB, it wrote $wrote MiB" >&2
   fi
   rm -f "$peak_file"
   detach_disks "$slot" || true

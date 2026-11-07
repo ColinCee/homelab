@@ -50,3 +50,26 @@ detach_disks() {
   rm -f "$cow_dir/slot${1:+$1-}"*
   return $status
 }
+
+# written_bytes SLOT [FILE...]: print how many bytes the slot's VM wrote: the sectors
+# written to each of its snapshots, plus the blocks each FILE that exists takes on disk
+# (the outbox and inbox, which are sparse). Fails, printing nothing, when a counter
+# cannot be read. Run before detach_disks: the counters go with the snapshots.
+written_bytes() {
+  local prefix="ci-slot$1-" dm blk sectors bytes f total=0 found=0
+  shift
+  while read -r dm blk; do
+    [[ $dm == "$prefix"* ]] || continue
+    sectors=$(awk '{print $7}' "${SYS_BLOCK:-/sys/block}/$blk/stat" 2>/dev/null) || return 1
+    [[ $sectors =~ ^[0-9]+$ ]] || return 1
+    total=$((total + sectors * 512))
+    found=1
+  done < <(dmsetup info -c --noheadings --separator ' ' -o name,blkdevname 2>/dev/null)
+  ((found)) || return 1
+  for f in "$@"; do
+    [[ -f $f ]] || continue
+    bytes=$(stat -c '%b*%B' "$f") || return 1
+    total=$((total + bytes))
+  done
+  echo "$total"
+}
