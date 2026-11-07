@@ -1084,11 +1084,12 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              # Percent left, as the Watcher last counted it; only while that count is under 30 minutes old.
+              # Percent left, as the Watcher last counted it; only while that count is under 90 minutes old, since a
+              # Watcher waiting out an empty key runs up to 65 minutes before it counts again.
               expr: >-
                 min(min_over_time(kaizen_github_workflow_key_calls_remaining{job="kaizen"}[2m]))
                 / max(max_over_time(kaizen_github_workflow_key_calls_limit{job="kaizen"}[2m])) * 100
-                and on() (time() - max(kaizen_github_workflow_key_calls_read_timestamp_seconds{job="kaizen"}) < 1800)
+                and on() (time() - max(kaizen_github_workflow_key_calls_read_timestamp_seconds{job="kaizen"}) < 5400)
               instant: true
               refId: A
           - refId: reset
