@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -29,6 +30,8 @@ def folders(tmp_path, monkeypatch) -> Path:
     slots = tmp_path / "peer-slots-max"
     slots.write_text("3\n")
     monkeypatch.setattr(sup, "PEER_SLOTS_FILE", slots)
+    # The door and image fetch want tens of GiB free; a small test machine has less.
+    monkeypatch.setattr(sup.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**12))
     return tmp_path
 
 
