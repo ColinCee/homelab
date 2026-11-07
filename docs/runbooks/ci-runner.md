@@ -164,8 +164,9 @@ touches far less than its size and gives file cache back: `ci-trim-cache` in the
 VM drops its cache once it passes a quarter of its memory, and the balloon
 device's free page reporting returns the freed pages to the host. So this counts
 what is really free, not the sizes added up. When a VM ends, the journal says how
-much host memory it touched at most, cache included (`slot N: VM ended (exit 0), its memory peaked at X
-MiB of Y`), and what its job needed, cache left out, with the kernel's out-of-memory kills
+much host memory it touched at most, cache included, and what it wrote to the SSD, its disks' writes plus the
+outbox and inbox (`slot N: VM ended (exit 0), its memory peaked at X MiB of Y, it wrote Z MiB`; `?` when a counter
+cannot be read), and what its job needed, cache left out, with the kernel's out-of-memory kills
 (`slot N: <runner> (<kind>) needed at least X MiB of Y, K out-of-memory kills`, from `ci-memwatch` in the VM).
 The second sizes VMs by kind of job: its counts go to Grafana (`homelab_ci_vms_ended_total`,
 `homelab_ci_vms_near_full_total` and `homelab_ci_vm_oom_kills_total` by kind), which alerts on any kill and on a
