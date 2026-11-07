@@ -2186,6 +2186,14 @@ PEER_SEEN_SECONDS = 90
 PEER_RELABEL_SECONDS = 300
 # The PC says how many slots it gives every PC_SAY_SECONDS; unheard for this long, it is off.
 PEER_HEARD_SECONDS = 180
+# Both hosts run one commit and one job image (ci-runner/update.sh); the PC follows the Beelink's.
+COMMIT_FILE = Path("/etc/homelab-ci/commit")
+IMAGES_DIR = Path("/var/lib/homelab-ci/images")
+# A copy of the job image (about 1.2 GB compressed): at most this many an hour, this long each,
+# below the jobs on the Beelink's disk, so a PC guest asking in a loop cannot wear it down.
+IMAGE_SENDS_PER_HOUR = 4
+TRANSFER_SECONDS = 20 * 60
+SHA256 = re.compile(r"[0-9a-f]{64}")
 PC_SAY_SECONDS = 60
 # run-vm.sh's outbox: 6 GiB for the tar and its header.
 OUTBOX_BYTES = 6 * 1024**3 + 1024**2
@@ -2288,7 +2296,9 @@ class Peer:
     streaming: dict[str, socket.socket] = field(default_factory=dict)
     # Outboxes being uploaded, by runner, with their sizes: the free-disk floor counts them all.
     uploading: dict[str, int] = field(default_factory=dict)
+    # One big copy (a cache disk or the job image) at a time, and when the image was last sent.
     caching: threading.Lock = field(default_factory=threading.Lock)
+    image_sent: list[float] = field(default_factory=list)
     lock: threading.Lock = field(default_factory=threading.Lock)
     connections: threading.BoundedSemaphore = field(
         default_factory=lambda: threading.BoundedSemaphore(2 * max(peer_slots(), 1) + 4)
@@ -2354,6 +2364,10 @@ def peer_answer(
             return "ok"
         case ["release", runner] if fields := read_peer(runner):
             return "gone" if peer_drop(gh, runner, fields) else "busy"
+        case ["version"]:
+            return " ".join(read_word(f) or "-" for f in (COMMIT_FILE, IMAGES_DIR / "sha256"))
+        case ["image", have] if have == "-" or SHA256.fullmatch(have):
+            return peer_image(peer, have, writer, conn)
         case ["cache", named, have] if repo := peer_cache_repo(peer, named):
             conn.settimeout(300)
             if not peer.caching.acquire(blocking=False):
@@ -2578,6 +2592,51 @@ def receive_outbox(
         return "saved"
     finally:
         part.unlink(missing_ok=True)
+
+
+def read_word(path: Path) -> str:
+    try:
+        return path.read_text().split()[0]
+    except (OSError, IndexError):
+        return ""
+
+
+def peer_image(peer: Peer, have: str, writer: IO[bytes], conn: socket.socket) -> str:
+    """The job image (rootfs.ext4 and vmlinuz, a sparse tar through zstd) when the PC's is not the
+    Beelink's. The PC checks it against `version`'s hash, which also catches a rebuild mid-copy."""
+    current = read_word(IMAGES_DIR / "sha256")
+    if not current or have == current:
+        return "same"
+    now = time.time()
+    with peer.lock:
+        peer.image_sent[:] = [t for t in peer.image_sent if now - t < 3600]
+        if len(peer.image_sent) >= IMAGE_SENDS_PER_HOUR:
+            return "busy"
+    if not peer.caching.acquire(blocking=False):
+        return "busy"
+    try:
+        with peer.lock:
+            peer.image_sent.append(now)
+        conn.settimeout(120)
+        writer.write(b"image\n")
+        writer.flush()
+        pack = f"tar --sparse -C {IMAGES_DIR} -cf - rootfs.ext4 vmlinuz | zstd -1 -T2 -q -c"
+        command = ["nice", "-n", "10", "ionice", "-c3", "bash", "-o", "pipefail", "-c", pack]
+        # Its own process group, killed whole at the time limit, even mid-read on a slow disk.
+        with subprocess.Popen(command, stdout=subprocess.PIPE, start_new_session=True) as packing:
+            assert packing.stdout is not None
+            limit = threading.Timer(TRANSFER_SECONDS, os.killpg, (packing.pid, signal.SIGKILL))
+            limit.start()
+            try:
+                while chunk := packing.stdout.read(1024**2):
+                    writer.write(chunk)
+            finally:
+                limit.cancel()
+        writer.flush()
+        log(f"PC image copy sent ({current[:12]})")
+        return ""
+    finally:
+        peer.caching.release()
 
 
 def peer_cache(repo: str, have: str, writer: IO[bytes]) -> str:
@@ -2902,6 +2961,68 @@ def refresh_cache(named: str) -> None:
     log(f"cache for {named}: fetched {version} ({size} bytes)")
 
 
+def peer_version() -> int:
+    """`peer-version`: the commit and image hash the Beelink runs, for update.sh --follow."""
+    words = peer_call("version").split()
+    if len(words) != 2 or not re.fullmatch(r"[0-9a-f]{40}|-", words[0]):
+        return 1
+    print(*words)
+    return 0
+
+
+def fetch_image(want: str) -> int:
+    """`fetch-image <sha256>`: copy the Beelink's job image, and switch to it only if it is the
+    one `want` names. Staged beside the images (one filesystem), both files are renamed into place
+    together; running VMs keep the copies they opened."""
+    if not SHA256.fullmatch(want):
+        return 2
+    IMAGES_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
+    if shutil.disk_usage(IMAGES_DIR).free < 12 * 1024**3:
+        log("job image not fetched: under 12 GiB free")
+        return 1
+    staging = IMAGES_DIR / ".incoming"
+    subprocess.run(["rm", "-rf", "--one-file-system", str(staging)], check=False)
+    staging.mkdir(mode=0o700)
+    try:
+        have = read_word(IMAGES_DIR / "sha256") or "-"
+        with subprocess.Popen(peer_ssh(), stdin=subprocess.PIPE, stdout=subprocess.PIPE) as link:
+            assert link.stdin is not None and link.stdout is not None
+            link.stdin.write(f"image {have}\n".encode())
+            link.stdin.flush()
+            said = link.stdout.readline(PEER_LINE_MAX).strip()
+            if said != b"image":
+                why = said.decode("ascii", "replace") or "nothing"
+                log(f"job image not fetched: the Beelink said {why}")
+                return 0 if said == b"same" else 1
+            unpack = f"zstd -d -q -c | tar --sparse -x -C {staging}"
+            with subprocess.Popen(
+                ["bash", "-o", "pipefail", "-c", unpack], stdin=subprocess.PIPE
+            ) as unpacking:
+                assert unpacking.stdin is not None
+                shutil.copyfileobj(link.stdout, unpacking.stdin, 1024**2)
+                unpacking.stdin.close()
+            link.stdin.close()
+        got = subprocess.run(
+            "sha256sum rootfs.ext4 vmlinuz | sha256sum | cut -c1-64",
+            shell=True,
+            cwd=staging,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip()
+        if got != want:
+            log(f"job image not switched: it hashes to {got[:12] or 'nothing'}, not {want[:12]}")
+            return 1
+        for name in ("rootfs.ext4", "vmlinuz"):
+            (staging / name).chmod(0o644)
+            (staging / name).replace(IMAGES_DIR / name)
+        (IMAGES_DIR / "sha256").write_text(f"{want}\n")
+        log(f"job image switched to the Beelink's ({want[:12]})")
+        return 0
+    finally:
+        subprocess.run(["rm", "-rf", "--one-file-system", str(staging)], check=False)
+
+
 def fetch_caches(wanted: set[str]) -> None:
     """Each cache disk copy the PC's runners have wanted, one after another."""
     for named in sorted(wanted):
@@ -2988,6 +3109,10 @@ def main(argv: list[str] | None = None) -> int:
         return vm_main(argv[1:])
     if argv[:1] == ["pc"]:
         return pc_main(argv[1:])
+    if argv == ["peer-version"]:
+        return peer_version()
+    if argv[:1] == ["fetch-image"] and len(argv) == 2:
+        return fetch_image(argv[1])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="one poll, for testing")
     args = parser.parse_args(argv)

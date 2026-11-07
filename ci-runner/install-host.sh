@@ -85,6 +85,7 @@ install_vm_files() {
   install -o root -g root -m 0644 "$here/vm-disks.sh" "$dest/vm-disks.sh"
   install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
   install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
+  install -o root -g root -m 0755 "$here/update.sh" "$dest/update.sh"
 }
 # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
 # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
@@ -159,6 +160,15 @@ else
   else
     how="network up, supervisor not running"
   fi
+fi
+
+# The PC catches up with the Beelink on its own (update.sh --follow, every 10 minutes and after a boot).
+if [[ $ROLE == pc ]]; then
+  for unit in homelab-ci-update.service homelab-ci-update.timer; do
+    install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+  done
+  systemctl daemon-reload
+  systemctl enable --now homelab-ci-update.timer
 fi
 
 # The PC's door: user ci-peer may only reach the supervisor's socket, with the PC guest's

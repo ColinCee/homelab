@@ -3,6 +3,7 @@
 import io
 import json
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -328,3 +329,62 @@ def test_the_status_file_shows_the_pcs_slots_and_busy_runners(folders, monkeypat
         "in_use": 0,
     }
     assert names
+
+
+def test_the_door_says_which_commit_and_image_the_beelink_runs(folders, monkeypatch) -> None:
+    commit, images = folders / "commit", folders / "images"
+    images.mkdir()
+    monkeypatch.setattr(sup, "COMMIT_FILE", commit)
+    monkeypatch.setattr(sup, "IMAGES_DIR", images)
+    near, _ = socket.socketpair()
+    ask = lambda *w: sup.peer_answer(peer(), Registrar(), list(w), io.BytesIO(), io.BytesIO(), near)  # noqa: E731
+    assert ask("version") == "- -"
+    commit.write_text("a" * 40 + "\n")
+    (images / "sha256").write_text("b" * 64 + "\n")
+    assert ask("version") == f"{'a' * 40} {'b' * 64}"
+    assert ask("image", "../x") == "no"
+    assert ask("image", "b" * 64) == "same"
+
+
+def test_the_pc_takes_the_beelinks_image_only_when_it_hashes_right(folders, monkeypatch) -> None:
+    beelink, pc = folders / "beelink", folders / "pc"
+    for d in (beelink, pc):
+        d.mkdir()
+    (beelink / "rootfs.ext4").write_bytes(b"root" * 1000)
+    (beelink / "vmlinuz").write_bytes(b"kernel")
+    sums = subprocess.run(
+        "sha256sum rootfs.ext4 vmlinuz | sha256sum | cut -c1-64",
+        shell=True,
+        cwd=beelink,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    (beelink / "sha256").write_text(sums + "\n")
+    door = peer()
+    sent = io.BytesIO()
+    monkeypatch.setattr(sup, "IMAGES_DIR", beelink)
+    near, _ = socket.socketpair()
+    assert sup.peer_image(door, "-", sent, near) == ""
+    assert door.image_sent and not door.caching.locked()
+    stream = folders / "stream"
+    stream.write_bytes(sent.getvalue())
+    # The PC side, its door replaced by a script that answers with what the Beelink sent.
+    monkeypatch.setattr(sup, "IMAGES_DIR", pc)
+    monkeypatch.setattr(sup, "peer_ssh", lambda: ["sh", "-c", f"read line; cat {stream}"])
+    assert sup.fetch_image("c" * 64) == 1  # not the hash `version` named: nothing switches
+    assert not (pc / "rootfs.ext4").exists()
+    assert sup.fetch_image(sums) == 0
+    assert (pc / "rootfs.ext4").read_bytes() == b"root" * 1000
+    assert (pc / "sha256").read_text().strip() == sums
+    assert not (pc / ".incoming").exists()
+
+
+def test_image_copies_are_limited_per_hour(folders, monkeypatch) -> None:
+    images = folders / "images"
+    images.mkdir()
+    (images / "sha256").write_text("b" * 64 + "\n")
+    monkeypatch.setattr(sup, "IMAGES_DIR", images)
+    door = peer(image_sent=[time.time()] * sup.IMAGE_SENDS_PER_HOUR)
+    near, _ = socket.socketpair()
+    assert sup.peer_image(door, "-", io.BytesIO(), near) == "busy"
