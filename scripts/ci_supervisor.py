@@ -2621,17 +2621,17 @@ def peer_image(peer: Peer, have: str, writer: IO[bytes], conn: socket.socket) ->
         writer.write(b"image\n")
         writer.flush()
         pack = f"tar --sparse -C {IMAGES_DIR} -cf - rootfs.ext4 vmlinuz | zstd -1 -T2 -q -c"
-        with subprocess.Popen(
-            ["nice", "-n", "10", "ionice", "-c3", "bash", "-o", "pipefail", "-c", pack],
-            stdout=subprocess.PIPE,
-        ) as packing:
+        command = ["nice", "-n", "10", "ionice", "-c3", "bash", "-o", "pipefail", "-c", pack]
+        # Its own process group, killed whole at the time limit, even mid-read on a slow disk.
+        with subprocess.Popen(command, stdout=subprocess.PIPE, start_new_session=True) as packing:
             assert packing.stdout is not None
-            while chunk := packing.stdout.read(1024**2):
-                if time.time() - now > TRANSFER_SECONDS:
-                    packing.kill()
-                    log("PC image copy cut off at the time limit")
-                    break
-                writer.write(chunk)
+            limit = threading.Timer(TRANSFER_SECONDS, os.killpg, (packing.pid, signal.SIGKILL))
+            limit.start()
+            try:
+                while chunk := packing.stdout.read(1024**2):
+                    writer.write(chunk)
+            finally:
+                limit.cancel()
         writer.flush()
         log(f"PC image copy sent ({current[:12]})")
         return ""
@@ -2976,6 +2976,7 @@ def fetch_image(want: str) -> int:
     together; running VMs keep the copies they opened."""
     if not SHA256.fullmatch(want):
         return 2
+    IMAGES_DIR.mkdir(mode=0o755, parents=True, exist_ok=True)
     if shutil.disk_usage(IMAGES_DIR).free < 12 * 1024**3:
         log("job image not fetched: under 12 GiB free")
         return 1

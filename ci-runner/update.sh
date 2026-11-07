@@ -16,10 +16,14 @@ failed=/var/lib/homelab-ci/update-failed
 role=$(cat /etc/homelab-ci/role 2>/dev/null || echo beelink)
 python=(/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py)
 
-exec 7>/run/homelab-ci-update.lock
-flock -n 7 || { echo "another update is running"; exit 0; }
-
 want=${1:?usage: update.sh <commit> [reason] | --follow}
+# One update at a time: a named commit waits its turn; the timer's catch-up gives way.
+exec 7>/run/homelab-ci-update.lock
+if [[ $want == --follow ]]; then
+  flock -n 7 || { echo "another update is running"; exit 0; }
+else
+  flock -w 900 7 || { echo "another update has run for 15 minutes" >&2; exit 1; }
+fi
 reason=${2:-${REASON:-update.sh}}
 image_want=""
 if [[ $want == --follow ]]; then
@@ -27,6 +31,8 @@ if [[ $want == --follow ]]; then
   # Not while Colin games (0 slots): the image copy crosses Windows' network.
   [[ "$(cat /etc/homelab-ci/pc-slots 2>/dev/null)" != 0 ]] || { echo "paused; later"; exit 0; }
   read -r want image_want < <("${python[@]}" peer-version) || { echo "the Beelink did not answer"; exit 0; }
+  [[ $want != - ]] || { echo "the Beelink names no commit yet"; exit 0; }
+  [[ $image_want != - ]] || image_want=""
   reason="follow the Beelink"
 fi
 [[ $want =~ ^[0-9a-f]{40}$ ]] || { echo "not a commit: $want" >&2; exit 2; }

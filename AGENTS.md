@@ -35,7 +35,7 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
 - Change the CI runners (the Beelink and the PC guest together) only through
   `REASON="<repo>#<number>: <why>" ci-runner/update-hosts.sh` from Colin's PC once the change is on main: both hosts
   take the same commit and job image, and running jobs carry on (docs/runbooks/ci-runner.md, "Changing the Beelink
-  while jobs run").
+  while jobs run"; a host's first install is by hand there).
   Run any wait on the Beelink as a named systemd unit, never as a loop tied to your own
   connection.
 - Use the existing `mise` tasks for relevant checks. Keep tests for meaningful

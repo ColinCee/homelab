@@ -37,7 +37,7 @@ and needs no `install-deps` step. The actions the CI repos use
 (`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
 does not download them; a tag that has moved on is downloaded as usual until
 the list is refreshed and the image rebuilt. A change to the image's tools or
-actions reaches jobs only once `build-rootfs.sh` is re-run on the host.
+actions reaches jobs only once the image is rebuilt (`update-hosts.sh` does it when `versions.env` changes).
 
 The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
 checkout, then one step that runs `uv sync --locked --no-install-project` and
@@ -202,7 +202,7 @@ GitHub-hosted runners and take it off the token's repository access.
   with everything the job wrote. A starting VM covers a queued job of its repo and
   label only until GitHub shows its runner with a job, for at most 2 minutes, so a
   second job of the same kind gets its own VM within a poll. The supervisor runs from
-  the host's copy: re-run `sudo ci-runner/install-host.sh` to put a change to
+  the host's copy: run `ci-runner/update-hosts.sh` to put a change to
   `scripts/ci_supervisor.py` on the Beelink (see
   [Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)).
   However the job ends, the VM ends, within seconds. A VM left
@@ -342,10 +342,11 @@ line, so one VM cannot write into another's. Folder 0750 and files 0640, root on
 sessions can carry private notes. A file stops growing at 30 MB, and files not written to
 for 30 days are deleted. A failed save is logged once and the console keeps being read.
 
-Re-run `build-rootfs.sh` after a change under `ci-runner/rootfs/` and after a kernel upgrade, since the VMs boot the host's
-kernel, and after a runner upgrade. For a Firecracker or runner upgrade,
+`update-hosts.sh` rebuilds the image after a change under `ci-runner/rootfs/`, `build-rootfs.sh` or
+`versions.env`; after a kernel upgrade, since the VMs boot the Beelink's kernel, rebuild it by hand
+(`sudo ci-runner/build-rootfs.sh`, then delete `/var/lib/homelab-ci/images/commit` so the PC takes it). For a Firecracker or runner upgrade,
 Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
-re-run `install-host.sh`, `build-rootfs.sh` and the audit.
+run `update-hosts.sh` and the audit.
 
 ### Why a job waits
 
@@ -413,11 +414,14 @@ Tune slots, the reserve or the alert's limit from what these lines show.
 Every change goes in, once merged, through `REASON="<repo>#<number>: <why>" ci-runner/update-hosts.sh` run on Colin's
 PC, naming the issue or pull request it ships (the Control room links it). It updates both hosts at once to main's
 commit: each runs `update.sh <commit>` as a unit of its own, which fetches it with git and refuses one not on main or
-older than the installed one (`ROLLBACK=1` goes back on purpose), runs `install-host.sh`, and writes
+older than the installed one (going back is a hand step on each host: `sudo ROLLBACK=1
+/usr/local/lib/homelab-ci/update.sh <commit>`), runs `install-host.sh`, and writes
 `/etc/homelab-ci/commit` last. The Beelink rebuilds the job image, at low disk priority, only when `build-rootfs.sh`,
-`rootfs/` or `versions.env` changed; the PC then copies it through the door (compressed, about 2 minutes; at most 4 an
-hour) and switches only if it hashes to the Beelink's `images/sha256`. A PC that was off or paused catches up within
-10 minutes (`homelab-ci-update.timer`, `update.sh --follow`). Never leave a loop waiting to change the Beelink from your
+`rootfs/` or `versions.env` changed; the PC then copies it through the door (compressed to about 1.2 GB: about 2 minutes at the
+10 MB/s measured between them; at most 4 an hour, 20 minutes each) and switches only if it hashes to the Beelink's `images/sha256`. A PC that was off or paused catches up within
+10 minutes (`homelab-ci-update.timer`, `update.sh --follow`). The first time on a host, `update.sh` is not there
+yet: run `sudo ci-runner/install-host.sh` once from a checkout of main; the Beelink's first update then rebuilds the
+image (several minutes) because it has no `images/commit`. Never leave a loop waiting to change the Beelink from your
 own connection: on 5 Nov one outlived the session that thought it had stopped it.
 
 - **Running jobs carry on through any change.** Each VM is a systemd unit of its own
@@ -461,7 +465,8 @@ idle registered VM per slot it gives, so GitHub hands a build job (`homelab-fc`)
 Light jobs stay on the Beelink.
 
 - **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH on port 2222 of its Tailscale
-  address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). There the Beelink
+  address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). Through it the PC also asks
+  which commit and image the Beelink runs (`version`) and copies the image (`image`). There the Beelink
   registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`) with the cache label of
   the oldest waiting build (else the last build's), counts the idle ones as cover for builds queued under a minute
   (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
