@@ -178,7 +178,7 @@ a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job withou
 or the disk stays queued and is tried again on the
 next poll (see [Why a job waits](#why-a-job-waits)). A standby gives way first: none boots
 while a job waits, and one waiting for another repo is stopped to
-make room.
+make room; the deploy standby is the exception (see Design).
 
 Only Colin's private repositories the token can see are served (its repository
 access is the list; `served_repos` in the supervisor), and only those nobody else can
@@ -230,11 +230,15 @@ GitHub-hosted runners and take it off the token's repository access.
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
-- **One deploy VM waits ready.** In another free light slot, a deploy standby waits registered with
+- **One deploy VM waits ready.** One light slot is kept for deploys: other light jobs and the light standby
+  never take the last one, though a deploy may use any free light slot. There a deploy standby waits registered with
   `homelab-fc-deploy` alone for the repo of the last deploy job (kept in `/var/lib/homelab-ci/last-deploy-repo`,
   `ColinCee/auto-kaizen` until there is one; polled every 2 s), so a merge's deploy starts in seconds and no task
-  job can take it first. It gives way, is replaced and boots again after taking a job like the light standby.
-  `/etc/homelab-ci/deploy-standbys` sets how many wait (1 by default, 0 for none).
+  job can take it first. It is the one VM a merge's deploy needs, so it never gives way to other jobs or to a job
+  waiting for memory, and boots while jobs wait for memory if its 1 GiB still leaves the reserve: without that, busy
+  hours stopped or held it and a deploy waited up to 135 s for a VM. Only another repo's deploy, its repo going public
+  or its 45-minute replacement stops it; it boots again after taking a job. `/etc/homelab-ci/deploy-standbys` sets how
+  many wait (1 by default, 0 for none, which keeps no slot); a host with one light slot keeps none either.
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves the host.
@@ -386,7 +390,7 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 
 | Line ends with | Means |
 |---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs |
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
 | `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
