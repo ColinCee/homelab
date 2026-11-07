@@ -4,7 +4,8 @@
 	default_bind 100.100.146.119
 }
 
-# Only other tailnet devices; the tailnet policy decides which ones reach port 80.
+# Other tailnet devices only, never Beelink itself (see compose.yaml, proxy); the tailnet
+# policy decides which devices reach port 80.
 (tailnet_only) {
 	@refused expression !remote_ip('100.64.0.0/10') || remote_ip('100.100.146.119')
 	respond @refused 403
@@ -12,7 +13,12 @@
 
 http://control.internal {
 	import tailnet_only
-	reverse_proxy 100.100.146.119:8090
+	# The Control room takes actions only for its own host names, and for an Origin that matches
+	# the Host; another site's Origin is left as it is, so it is still refused.
+	reverse_proxy 100.100.146.119:8090 {
+		header_up Host 100.100.146.119:8090
+		header_up Origin ^http://control\.internal$ http://100.100.146.119:8090
+	}
 }
 
 http://grafana.internal {
@@ -20,7 +26,7 @@ http://grafana.internal {
 	reverse_proxy 100.100.146.119:3001
 }
 
-# Home Assistant trusts proxies on 127.0.0.1 (its configuration.yaml, http: trusted_proxies).
+# Home Assistant trusts proxies on loopback (http: trusted_proxies in its configuration.yaml on Beelink).
 http://home.internal {
 	import tailnet_only
 	reverse_proxy 127.0.0.1:8123

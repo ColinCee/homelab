@@ -238,7 +238,8 @@ sudo systemctl daemon-reload
 This affects the next Docker start; do not restart Docker just to install it.
 The bounded wait fails the start if the expected address is missing rather than
 publishing services on a public interface. If the server's Tailscale IP changes,
-update both this drop-in and the Compose bindings.
+update this drop-in, the Compose bindings, `stacks/internal-names` (Caddyfile,
+Corefile) and the `.internal` nameserver in Tailscale's DNS settings.
 
 For containers already stranded without networking, recreate only affected
 services with their existing `.env` and named volumes:

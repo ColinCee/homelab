@@ -1,5 +1,4 @@
-# Short names on the tailnet: http://control.internal, grafana.internal, home.internal.
-# Tailscale sends *.internal lookups to dns (split DNS); proxy routes each name to its service.
+# Tailscale sends .internal lookups to dns: a custom nameserver in its admin console (notes, network.md).
 services:
   dns:
     image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
@@ -28,8 +27,3 @@ services:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - data:/data
-
-volumes:
-  data:
-    name: internal-names_data
