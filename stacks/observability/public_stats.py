@@ -24,6 +24,7 @@ STACKS = (
     "backup",
     "flight-tracker",
     "home-assistant",
+    "internal-names",
     "kaizen-control-room",
     "observability",
 )

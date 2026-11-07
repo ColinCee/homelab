@@ -1,0 +1,8 @@
+internal:53 {
+    template IN A internal {
+        answer "{{ .Name }} 60 IN A 100.100.146.119"
+    }
+    template ANY ANY internal {
+        rcode NOERROR
+    }
+}
