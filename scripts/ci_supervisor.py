@@ -227,6 +227,13 @@ WAIT_LOG_SECONDS = 180.0
 # A job a VM is booting for (or a standby waits ready for) is logged only once it has
 # waited WAIT_LOG_SECONDS, so every job's few seconds of boot are not logged.
 BOOTING = "a VM booting or waiting ready for it"
+# Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
+# wait (see wait_kind), for the Control room and speed reports. Lines older than
+# WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
+WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
+WAIT_KINDS = ("memory", "disk", "slots", "booting", "other")
+WAITS_KEEP_SECONDS = 30 * 24 * 3600
+WAITS_PRUNE_SECONDS = 3600.0
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -338,6 +345,10 @@ class State:
     disk_paced_until: float = 0.0
     # Queued jobs not started, with why (see WAIT_LOG_SECONDS).
     waits: dict[int, Wait] = field(default_factory=dict)
+    # When WAITS_FILE was last pruned, and why it could not be written last time, so a
+    # lasting failure logs once.
+    waits_pruned: float = 0.0
+    waits_error: str = ""
 
 
 @dataclass
@@ -345,6 +356,15 @@ class Wait:
     repo: str
     since: float
     logged: float | None = None
+    # The kind of wait at the last poll that saw it, and when: the time until the next
+    # poll counts for that kind.
+    kind: str = "other"
+    seen: float = 0.0
+    seconds: dict[str, float] = field(default_factory=dict)
+
+    def count(self, now: float) -> None:
+        self.seconds[self.kind] = self.seconds.get(self.kind, 0.0) + now - self.seen
+        self.seen = now
 
 
 def log(message: str) -> None:
@@ -1831,8 +1851,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         pace()
     launched = starts[:started] + light_starts[:light_started]
     hold_for_memory(state, repos, held)
-    # The rest of each want's jobs: the oldest are covered by VMs on their way, the next
-    # were planned (started or held above), and the rest found no free slot.
+    # The rest of each want's jobs: the oldest are covered by VMs on their way or started
+    # above, and the rest found no free slot.
     planned = {job_id for job_id, _ in builds + lights}
     for want, ids in job_ids.items():
         kind, slots = (
@@ -1841,9 +1861,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         for n, job_id in enumerate(sorted(ids)):
             if job_id in held:
                 reasons[job_id] = held[job_id]
-            elif n < booting[want]:
+            elif n < booting[want] or job_id in planned:
                 reasons[job_id] = (want[0], BOOTING)
-            elif job_id not in planned:
+            else:
                 reasons[job_id] = (want[0], f"all {slots} {kind} slots in use")
     note_waits(state, private, reasons, now)
     free = free[started:]
@@ -1959,16 +1979,70 @@ def note_waits(
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
+            wait.count(now)
+            record_wait(state, job_id, wait, now)
             if wait.logged is not None:
                 waited = duration(now - wait.since)
                 log(f"job {job_id} in {wait.repo} stopped waiting after {waited}")
     for job_id, (repo, why) in sorted(reasons.items()):
-        wait = state.waits.setdefault(job_id, Wait(repo, now))
+        wait = state.waits.setdefault(job_id, Wait(repo, now, seen=now))
+        wait.count(now)
+        wait.kind = wait_kind(why)
         waited = now - wait.since
         quiet = why == BOOTING and waited < WAIT_LOG_SECONDS
         if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):
             log(f"job {job_id} in {repo} has waited {duration(waited)} here: {why}")
             wait.logged = now
+
+
+def wait_kind(why: str) -> str:
+    """Which of WAIT_KINDS a reason from tick is. A job queued behind one held for memory
+    waits for memory too."""
+    if why == BOOTING:
+        return "booting"
+    if why.startswith("the disk"):
+        return "disk"
+    if why.startswith("memory") or why.endswith("waiting for memory"):
+        return "memory"
+    if why.endswith("slots in use"):
+        return "slots"
+    return "other"
+
+
+def record_wait(state: State, job_id: int, wait: Wait, now: float) -> None:
+    """Append the job's wait to WAITS_FILE, pruning old lines first when due. A failure is
+    logged once and never stops the poll."""
+    line = {"job": job_id, "repo": wait.repo, "since": int(wait.since), "until": int(now)}
+    line |= {kind: round(wait.seconds.get(kind, 0.0)) for kind in WAIT_KINDS}
+    try:
+        if now - state.waits_pruned >= WAITS_PRUNE_SECONDS:
+            prune_waits(now)
+            state.waits_pruned = now
+        with WAITS_FILE.open("a") as f:
+            f.write(json.dumps(line) + "\n")
+        WAITS_FILE.chmod(0o644)
+        state.waits_error = ""
+    except OSError as e:
+        why = f"{type(e).__name__}: {e}"
+        if why != state.waits_error:
+            log(f"could not write {WAITS_FILE}: {why}")
+        state.waits_error = why
+
+
+def prune_waits(now: float) -> None:
+    """Drop the lines of waits that ended over WAITS_KEEP_SECONDS ago."""
+    try:
+        lines = WAITS_FILE.read_text().splitlines()
+    except FileNotFoundError:
+        return
+    kept: list[str] = []
+    for text in lines:
+        try:
+            if now - float(json.loads(text)["until"]) < WAITS_KEEP_SECONDS:
+                kept.append(text + "\n")
+        except (ValueError, KeyError, TypeError):
+            continue  # a half-written line from a crash
+    replace_file(WAITS_FILE, "".join(kept))
 
 
 def wants_standby(
@@ -2053,13 +2127,17 @@ def live(state: State, now: float) -> dict[str, Any]:
 
 
 def write_status(path: Path, data: Mapping[str, Any]) -> None:
-    """Replace the file whole, so a reader never sees half of it."""
+    replace_file(path, json.dumps(data))
+
+
+def replace_file(path: Path, text: str) -> None:
+    """Replace the file whole, readable by anyone, so a reader never sees half of it."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o755)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-")
     try:
         with os.fdopen(fd, "w") as f:
-            json.dump(data, f)
+            f.write(text)
         os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
