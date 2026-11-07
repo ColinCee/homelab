@@ -99,6 +99,16 @@ if ! cmp -s "$here/systemd/fstrim-hourly.conf" "$trim"; then
   systemctl daemon-reload
   systemctl restart fstrim.timer
 fi
+# The SSD's lifetime writes and wear, for Grafana (scripts/ssd_wear.py). The PC guest has no NVMe device of its own.
+if [[ $ROLE == beelink ]]; then
+  install -d -o root -g root -m 0755 "$dest"
+  install -o root -g root -m 0644 "$here/../scripts/ssd_wear.py" "$dest/ssd_wear.py"
+  for unit in homelab-ssd-wear.service homelab-ssd-wear.timer; do
+    install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+  done
+  systemctl daemon-reload
+  systemctl enable --now homelab-ssd-wear.timer
+fi
 
 # The supervisor, the network rules and the slot counts take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the

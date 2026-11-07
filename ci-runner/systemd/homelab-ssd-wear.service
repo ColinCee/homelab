@@ -1,0 +1,16 @@
+[Unit]
+Description=Write the SSD's lifetime bytes and wear to the metrics folder (ssd.prom)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ssd_wear.py
+Nice=10
+IOSchedulingClass=idle
+# Reads one log page from the NVMe device and writes one file; nothing else.
+DevicePolicy=closed
+DeviceAllow=/dev/nvme0 r
+ProtectSystem=strict
+ReadWritePaths=/var/lib/homelab-metrics
+ProtectHome=yes
+PrivateNetwork=yes
+NoNewPrivileges=yes
