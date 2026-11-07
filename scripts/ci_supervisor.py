@@ -234,6 +234,11 @@ WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
 WAIT_KINDS = ("memory", "disk", "slots", "booting", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
 WAITS_PRUNE_SECONDS = 3600.0
+# The longest-waiting queued job's seconds so far per kind of wait, for the "stuck waiting
+# for a test VM" alert (Alloy's textfile collector), at most every WAIT_METRICS_SECONDS: a
+# write every 2 s poll would only add load to the shared disk.
+WAIT_METRICS = MEMORY_METRICS.with_name("ci-waits.prom")
+WAIT_METRICS_SECONDS = 15.0
 
 
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
@@ -349,6 +354,9 @@ class State:
     # lasting failure logs once.
     waits_pruned: float = 0.0
     waits_error: str = ""
+    # When WAIT_METRICS was last written, and why it could not be written last time.
+    wait_metrics_written: float = float("-inf")
+    wait_metrics_error: str = ""
 
 
 @dataclass
@@ -828,13 +836,18 @@ def write_memory_metrics() -> None:
         for kind, counts in MEMORY_COUNTS.items()
     ]
     try:
-        # Not *.prom, or the collector could read it half written.
-        tmp = MEMORY_METRICS.with_name(f".{MEMORY_METRICS.stem}.tmp")
-        tmp.write_text("\n".join(lines) + "\n")
-        tmp.chmod(0o644)
-        os.replace(tmp, MEMORY_METRICS)
+        write_textfile(MEMORY_METRICS, lines)
     except OSError as e:
         log(f"could not write {MEMORY_METRICS}: {type(e).__name__}: {e}")
+
+
+def write_textfile(path: Path, lines: list[str]) -> None:
+    """Replace a textfile for Alloy's collector whole, readable by anyone."""
+    # Not *.prom, or the collector could read it half written.
+    tmp = path.with_name(f".{path.stem}.tmp")
+    tmp.write_text("\n".join(lines) + "\n")
+    tmp.chmod(0o644)
+    os.replace(tmp, path)
 
 
 def adopt(state: State) -> None:
@@ -1993,6 +2006,28 @@ def note_waits(
         if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):
             log(f"job {job_id} in {repo} has waited {duration(waited)} here: {why}")
             wait.logged = now
+    if now - state.wait_metrics_written >= WAIT_METRICS_SECONDS:
+        write_wait_metrics(state, now)
+
+
+def write_wait_metrics(state: State, now: float) -> None:
+    """Write the longest-waiting queued job's seconds per kind (all 0 when none waits). A
+    failure is logged once and never stops the poll."""
+    longest = min(state.waits.values(), key=lambda w: w.since, default=None)
+    seconds = longest.seconds if longest else {}
+    lines = [
+        f'homelab_ci_wait_seconds{{kind="{kind}"}} {round(seconds.get(kind, 0.0))}'
+        for kind in WAIT_KINDS
+    ]
+    try:
+        write_textfile(WAIT_METRICS, lines)
+        state.wait_metrics_written = now
+        state.wait_metrics_error = ""
+    except OSError as e:
+        why = f"{type(e).__name__}: {e}"
+        if why != state.wait_metrics_error:
+            log(f"could not write {WAIT_METRICS}: {why}")
+        state.wait_metrics_error = why
 
 
 def wait_kind(why: str) -> str:

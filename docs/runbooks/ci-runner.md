@@ -380,13 +380,22 @@ and then every 3 minutes, with how long it has waited since the supervisor first
 | `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |
 
 A job that was logged gets `stopped waiting after Xm` once its VM starts or it is cancelled.
-To see why jobs waited, say after a "stuck waiting for a test VM" alert:
+
+The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
+so far per kind of wait, from `homelab_ci_wait_seconds{kind}` (kinds as in `waits.jsonl`, all 0
+when nothing waits), which the supervisor writes to `ci-waits.prom` in the textfile folder at
+most every 15 s. The alert's own number is the Control room's, which counts GitHub's part of
+the wait too, so the two can differ by a minute or two. For each job:
 
 ```bash
 journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
 ```
 
-Tune slots, the reserve or the alert's limit from what these lines show.
+From what they show: mostly slots means more slots
+([Changing the number of slots](#changing-the-number-of-slots)) or shorter jobs; memory or
+disk means fewer or smaller VMs, not more; booting means GitHub was slow to hand the VM its
+job; a label no VM has means fixing that job's `runs-on`. Raise the alert's 20 minutes only
+when the waits are expected, such as a burst of tasks on full slots.
 
 ## Checks
 

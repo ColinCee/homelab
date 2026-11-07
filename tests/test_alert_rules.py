@@ -39,3 +39,11 @@ def test_kaizens_own_failures_route_to_rules_that_exist() -> None:
     for name in pattern.split("|"):
         assert name in titles or name.startswith("Datasource"), name
     assert re.fullmatch(pattern, "Kaizen Control room unreachable")
+
+
+def test_annotations_name_only_their_rules_queries() -> None:
+    for rule in RULES:
+        refs = {d["refId"] for d in rule["data"]}
+        for text in rule["annotations"].values():
+            for name in re.findall(r"\$values\.(\w+)", text):
+                assert name in refs, f"{rule['uid']}: no query {name}"
