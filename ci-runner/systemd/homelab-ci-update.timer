@@ -1,9 +1,9 @@
 [Unit]
-Description=Catch the PC guest up with the Beelink every 10 minutes (and after a boot)
+Description=Bring this CI host to homelab's main every minute (the PC: to what the Beelink runs)
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=10min
+OnBootSec=1min
+OnUnitActiveSec=1min
 
 [Install]
 WantedBy=timers.target
