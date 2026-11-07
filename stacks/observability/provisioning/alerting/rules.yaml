@@ -930,6 +930,65 @@ groups:
         labels:
           severity: warning
 
+      - uid: kaizen-github-app-calls
+        title: Kaizen's GitHub App running out of calls
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Served by the Control room. At the limit every Builder fails until the hour resets.
+              expr: >-
+                max(max_over_time(kaizen_github_app_calls_used{job="kaizen"}[2m]))
+                / max(max_over_time(kaizen_github_app_calls_limit{job="kaizen"}[2m])) * 100
+              instant: true
+              refId: A
+          - refId: reset
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (max(kaizen_github_app_calls_reset_timestamp_seconds{job="kaizen"}) - time()) / 60 or on() vector(0)
+              instant: true
+              refId: reset
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [80]
+              refId: C
+        # No number while the Control room restarts for a deploy: quiet, as Kaizen Control room
+        # unreachable says when it is really down.
+        noDataState: OK
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Share of the Kaizen GitHub App's hourly calls used"
+          measure: "App's GitHub calls used"
+          trigger: "over 80% of the hour's limit"
+          chart: >-
+            max(max_over_time(kaizen_github_app_calls_used{job="kaizen"}[2m]))
+            / max(max_over_time(kaizen_github_app_calls_limit{job="kaizen"}[2m])) * 100
+          chart_line: "80"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}%{{ end }}"
+          description: >-
+            Threshold: Kaizen's GitHub App has used over 80% of its hourly calls; at the limit every Builder fails.
+            The calls come back in {{ with $values.reset }}{{ printf "%.0f" .Value }}{{ end }} min.
+          action: "On Grafana Home, the Kaizen GitHub App calls panel shows when use climbed; find the Kaizen job calling GitHub most and slow it."
+        labels:
+          severity: warning
+
       - uid: kaizen-control-room-down
         title: Kaizen Control room unreachable
         condition: C
