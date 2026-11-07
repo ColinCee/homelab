@@ -561,7 +561,7 @@ groups:
                 # until the device leaves the tailnet or this moves past its added time.
                 - evaluator:
                     type: gt
-                    params: [1793962000]  # 6 Nov 2026 10:46 UTC
+                    params: [1794080336]  # 7 Nov 2026 19:38 UTC
               refId: C
         noDataState: OK
         execErrState: Error
