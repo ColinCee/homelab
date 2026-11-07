@@ -113,7 +113,13 @@ def test_finds_queued_jobs_for_us_only() -> None:
     runs = [{"id": 1}, {"id": 2}]
     jobs = {
         1: [
-            {"id": 11, "name": "check", "status": "queued", "labels": ["homelab-fc"]},
+            {
+                "id": 11,
+                "name": "check",
+                "status": "queued",
+                "labels": ["homelab-fc"],
+                "created_at": "2026-11-07T10:00:00Z",
+            },
             {"id": 12, "name": "windows", "status": "queued", "labels": ["windows-latest"]},
         ],
         2: [{"id": 21, "name": "check", "status": "in_progress", "labels": ["homelab-fc"]}],
@@ -122,6 +128,7 @@ def test_finds_queued_jobs_for_us_only() -> None:
     found = sup.queued_jobs("ColinCee/cortex", runs, jobs.__getitem__)
 
     assert [job.id for job in found] == [11]
+    assert found[0].queued_at == 1794045600.0  # GitHub's created_at
 
 
 @pytest.mark.parametrize(
@@ -915,12 +922,15 @@ def host(caches, monkeypatch):
 
     monkeypatch.setattr(sup, "launch", launch)
 
-    def queue(jobs: int, free_mib: int) -> None:
+    def queue(jobs: int, free_mib: int, queued_at: float = 0.0) -> None:
         monkeypatch.setattr(
             sup,
             "find_queued",
             lambda gh, repo: (
-                [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(jobs)]
+                [
+                    sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS), queued_at=queued_at)
+                    for n in range(jobs)
+                ]
                 if repo == "o/ok"
                 else []
             ),
@@ -1040,6 +1050,43 @@ def test_a_job_whose_vm_is_booting_is_logged_only_after_a_long_wait(host, monkey
     assert lines == [f"job 0 in o/ok has waited 3m02s here: {sup.BOOTING}"]
 
 
+def test_a_job_whose_vm_is_ready_is_counted_apart_from_its_boot(
+    host, waits_file, monkeypatch
+) -> None:
+    queue, _, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+
+    def online(gh, run) -> bool:  # the runner is up and idle from the second poll
+        run.ready = True
+        return False
+
+    monkeypatch.setattr(sup, "has_job", online)
+    state = sup.State()
+    queue(jobs=1, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]  # its VM boots
+    sup.tick(None, state, ["o/ok"], 10.0)  # type: ignore[arg-type]
+    assert state.waits[0].why == sup.READY
+    queue(jobs=0, free_mib=1 << 20)  # GitHub gave it the job
+    sup.tick(None, state, ["o/ok"], 40.0)  # type: ignore[arg-type]
+    record = json.loads(waits_file.read_text())
+    assert (record["booting"], record["ready"]) == (10, 30)
+    assert lines == []  # a short wait is not logged
+
+
+def test_a_job_github_queued_long_before_it_was_seen_is_logged_at_once(host, monkeypatch):
+    queue, _, lines = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    state = sup.State()
+    queue(jobs=1, free_mib=1 << 20, queued_at=1000.0)
+    sup.tick(None, state, ["o/ok"], 1600.0)  # type: ignore[arg-type]
+    queue(jobs=0, free_mib=1 << 20)
+    sup.tick(None, state, ["o/ok"], 1610.0)  # type: ignore[arg-type]
+    assert lines == [
+        f"job 0 in o/ok has waited 0m00s here (GitHub had queued it 10m00s before): {sup.BOOTING}",
+        "job 0 in o/ok stopped waiting after 0m10s, 10m10s since GitHub queued it",
+    ]
+
+
 def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
     host, waits_file, monkeypatch
 ) -> None:
@@ -1061,7 +1108,8 @@ def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
     sup.tick(None, state, ["o/ok"], 200.0)  # type: ignore[arg-type]
     assert [json.loads(line) for line in waits_file.read_text().splitlines()] == [
         {"job": 0, "repo": "o/ok", "since": 100, "until": 200,
-         "memory": 60, "disk": 10, "slots": 0, "booting": 30, "other": 0}
+         "memory": 60, "disk": 10, "slots": 0, "booting": 30, "ready": 0, "unseen": 0,
+         "other": 0}
     ]  # fmt: skip
     assert waits_file.stat().st_mode & 0o777 == 0o644
 
@@ -1071,11 +1119,11 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
     state = sup.State()
-    queue(jobs=1, free_mib=3072 + 2047)  # held for memory
+    queue(jobs=1, free_mib=3072 + 2047, queued_at=40.0)  # held for memory, GitHub's for 60 s
     sup.tick(None, state, ["o/ok"], 100.0)  # type: ignore[arg-type]
     assert 'homelab_ci_wait_seconds{kind="memory"} 0' in wait_metrics.read_text()
     sup.tick(None, state, ["o/ok"], 110.0)  # type: ignore[arg-type]  # under 15 s: not written
-    queue(jobs=1, free_mib=1 << 20)
+    queue(jobs=1, free_mib=1 << 20, queued_at=40.0)
     sup.tick(None, state, ["o/ok"], 130.0)  # type: ignore[arg-type]  # its VM boots
     sup.tick(None, state, ["o/ok"], 150.0)  # type: ignore[arg-type]
     assert wait_metrics.read_text().splitlines() == [
@@ -1083,6 +1131,8 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
         'homelab_ci_wait_seconds{kind="disk"} 0',
         'homelab_ci_wait_seconds{kind="slots"} 0',
         'homelab_ci_wait_seconds{kind="booting"} 20',
+        'homelab_ci_wait_seconds{kind="ready"} 0',
+        'homelab_ci_wait_seconds{kind="unseen"} 60',
         'homelab_ci_wait_seconds{kind="other"} 0',
     ]
     assert wait_metrics.stat().st_mode & 0o777 == 0o644
@@ -1109,6 +1159,7 @@ def test_each_reason_has_a_kind_of_wait() -> None:
     assert sup.wait_kind("the disk (tasks waited on it 90% of the last minute)") == "disk"
     assert sup.wait_kind("all 5 light slots in use") == "slots"
     assert sup.wait_kind(sup.BOOTING) == "booting"
+    assert sup.wait_kind(sup.READY) == "ready"
     assert sup.wait_kind("no VM has its labels (homelab-fc, gpu)") == "other"
 
 

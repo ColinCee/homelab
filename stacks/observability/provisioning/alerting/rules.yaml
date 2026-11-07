@@ -826,6 +826,39 @@ groups:
               expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="other"}) / 60 or on() vector(0)
               instant: true
               refId: other
+          - refId: ready
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="ready"}) / 60 or on() vector(0)
+              instant: true
+              refId: ready
+          - refId: unseen
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="unseen"}) / 60 or on() vector(0)
+              instant: true
+              refId: unseen
+          # The rest of the Control room's wait, which the runner has no reason for: the kinds add
+          # up to its longest queued job's wait since GitHub created it, and the Control room also
+          # counts a job still waiting or pending on GitHub, which the runner never sees. 0 when
+          # the two disagree.
+          - refId: gap
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: math
+              expression: >-
+                ($A - $slots - $memory - $disk - $booting - $ready - $unseen - $other)
+                * ($A - $slots - $memory - $disk - $booting - $ready - $unseen - $other > 0)
+              refId: gap
           - refId: C
             relativeTimeRange:
               from: 0
@@ -856,11 +889,15 @@ groups:
           description: >-
             Threshold: a task has waited over 20 minutes for a homelab CI machine.
             The CI runner's longest queued job waited
-            {{ with $values.slots }}{{ printf "%.0f" .Value }}{{ end }} min for a free slot,
+            {{ with $values.unseen }}{{ printf "%.0f" .Value }}{{ end }} min on GitHub before the runner saw it,
+            {{ with $values.slots }}{{ printf "%.0f" .Value }}{{ end }} for a free slot,
             {{ with $values.memory }}{{ printf "%.0f" .Value }}{{ end }} for memory,
             {{ with $values.disk }}{{ printf "%.0f" .Value }}{{ end }} for the disk,
-            {{ with $values.booting }}{{ printf "%.0f" .Value }}{{ end }} for its VM to boot and
+            {{ with $values.booting }}{{ printf "%.0f" .Value }}{{ end }} for its VM to boot,
+            {{ with $values.ready }}{{ printf "%.0f" .Value }}{{ end }} with its VM ready but no job from GitHub and
             {{ with $values.other }}{{ printf "%.0f" .Value }}{{ end }} for a runner label no VM has.
+            {{ with $values.gap }}{{ printf "%.0f" .Value }}{{ end }} min of the wait has no runner reason:
+            the job is still waiting or pending on GitHub, not yet queued for any runner.
           action: "See \"Why a job waits\" in docs/runbooks/ci-runner.md; `journalctl -u homelab-ci-supervisor` on the Beelink has each job's reason."
         labels:
           severity: warning
