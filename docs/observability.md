@@ -46,7 +46,8 @@ Add panels to it rather than adding dashboards. From the top:
 - **Beelink:** CPU and memory over time, split into Docker containers,
   Firecracker CI VMs and the rest
 - **Kaizen:** working, waiting, merged and cost, tasks by state, the
-  longest wait for a machine, and the GitHub App's calls used against its hourly limit
+  longest wait for a machine, the GitHub App's calls used against its hourly limit, and below
+  it the Control room's minutes since start, so a climb in calls after a restart shows
 - **Containers:** a bar per container for CPU and for memory
 - **Backups:** one line of numbers
 - **Collapsed sections**, which load only when opened: alerts, containers,
