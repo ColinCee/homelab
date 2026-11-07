@@ -172,14 +172,12 @@ else
   fi
 fi
 
-# The PC catches up with the Beelink on its own (update.sh --follow, every 10 minutes and after a boot).
-if [[ $ROLE == pc ]]; then
-  for unit in homelab-ci-update.service homelab-ci-update.timer; do
-    install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
-  done
-  systemctl daemon-reload
-  systemctl enable --now homelab-ci-update.timer
-fi
+# Each host takes main on its own (update.sh --follow, every minute): the Beelink from GitHub, the PC from the Beelink.
+for unit in homelab-ci-update.service homelab-ci-update.timer; do
+  install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now homelab-ci-update.timer
 
 # The PC's door: user ci-peer may only reach the supervisor's socket, with the PC guest's
 # key (/etc/homelab-ci/peer.pub) from the PC's address (/etc/homelab-ci/peer-from).
