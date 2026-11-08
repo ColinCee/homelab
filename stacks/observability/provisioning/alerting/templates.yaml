@@ -89,6 +89,6 @@ templates:
       {{ $a := index .Alerts 0 -}}
       {{ $post := coll.Dict "name" (or $a.Labels.rulename $a.Labels.alertname) "measure" $a.Annotations.measure
         "trigger" $a.Annotations.trigger "value" $a.Annotations.value "chart" $a.Annotations.chart
-        "chart_line" $a.Annotations.chart_line "grafana" $a.GeneratorURL -}}
+        "chart_line" $a.Annotations.chart_line "grafana" $a.GeneratorURL "needs" $a.Annotations.needs -}}
       {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text "post" $post "route" (or $a.Labels.route "") | data.ToJSON }}
       {{- end }}

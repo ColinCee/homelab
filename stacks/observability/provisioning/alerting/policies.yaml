@@ -16,7 +16,3 @@ policies:
         repeat_interval: 12h
         object_matchers:
           - ["alertname", "=", "Kaizen Control room unreachable"]
-      # Only Colin can act on these, so they skip Kaizen.
-      - receiver: Discord only
-        object_matchers:
-          - ["route", "=", "colin"]

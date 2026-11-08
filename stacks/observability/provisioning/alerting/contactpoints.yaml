@@ -23,20 +23,7 @@ contactPoints:
           authorization_credentials: ${KAIZEN_ALERT_SECRET}
           payload:
             template: '{{ template "homelab.kaizen.payload" . }}'
-  # Alerts only Colin can act on (`route: colin`): #uptime alone, no Kaizen issue.
-  - orgId: 1
-    name: Discord only
-    receivers:
-      - uid: discord-only
-        type: discord
-        disableResolveMessage: false
-        settings:
-          url: ${DISCORD_PRIVATE_WEBHOOK_URL}
-          use_discord_username: true
-          use_embed_description: true
-          title: '{{ template "homelab.discord.title" . }}'
-          message: '{{ template "homelab.discord.message" . }}'
-  # Every other alert: an `alert` issue in Auto Kaizen through its Control
+  # Every other alert (`route: colin` ones too, which the Control room asks Colin about with no responder): an `alert` issue in Auto Kaizen through its Control
   # room, which starts the responder and keeps the alert's post in the Discord
   # #alerts forum; the resolve closes the issue.
   - orgId: 1
@@ -52,3 +39,7 @@ contactPoints:
           authorization_credentials: ${KAIZEN_ALERT_SECRET}
           payload:
             template: '{{ template "homelab.kaizen.payload" . }}'
+# Grafana keeps a contact point removed from this file until its uid is listed here.
+deleteContactPoints:
+  - orgId: 1
+    uid: discord-only

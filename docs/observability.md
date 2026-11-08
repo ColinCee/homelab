@@ -54,8 +54,9 @@ Add panels to it rather than adding dashboards. From the top:
   CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
-To remove a rule, also list its uid under `deleteRules` in `rules.yaml`: Grafana keeps
-a rule that is only deleted from the file.
+To remove a rule, also list its uid under `deleteRules` in `rules.yaml` (a contact
+point: `deleteContactPoints` in `contactpoints.yaml`): Grafana keeps one that is only
+deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -171,7 +172,9 @@ The Control room cannot post its own outage, so Kaizen Control room unreachable 
 straight to the `Discord Private` webhook (Discord's #uptime channel), as do the deploy
 watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A rule labelled
 `route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
-out) goes only to #uptime, with no Kaizen issue. Every other alert,
+out) still gets its #alerts post, but its issue starts no responder and the post asks Colin its
+`needs` annotation (a few words), mentioning him once. #uptime holds only what must arrive while
+the Beelink or the Control room may be down. Every other alert,
 no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
 deploy stops Auto Kaizen.
 After deploying alerting file changes, reload them with Grafana's authenticated

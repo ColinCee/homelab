@@ -38,18 +38,20 @@ def test_a_chart_queries_what_its_rule_alerts_on() -> None:
             float(rule["annotations"]["chart_line"])
 
 
-def test_only_the_control_rooms_outage_and_colins_alerts_go_straight_to_discord() -> None:
+def test_only_the_control_rooms_outage_goes_straight_to_discord() -> None:
     policy = yaml.safe_load((ALERTING / "policies.yaml").read_text(encoding="utf-8"))["policies"][0]
-    outage, colin = policy["routes"]
-    assert colin["object_matchers"] == [["route", "=", "colin"]]
-    assert {r["title"] for r in RULES if r["labels"].get("route") == "colin"} == {
-        "Unknown container started",
-        "Beelink SSD wearing out",
-    }
+    [outage] = policy["routes"]
     [[label, op, name]] = outage["object_matchers"]
     assert (label, op) == ("alertname", "=")
     assert name == "Kaizen Control room unreachable"
     assert name in {r["title"] for r in RULES}
+
+
+def test_alerts_only_colin_can_act_on_say_what_to_ask_him() -> None:
+    colins = [r for r in RULES if r["labels"].get("route") == "colin"]
+    assert {r["title"] for r in colins} == {"Unknown container started", "Beelink SSD wearing out"}
+    # The #alerts post's Needs you line: a few words.
+    assert all(len(r["annotations"]["needs"].split()) <= 8 for r in colins)
 
 
 def test_annotations_name_only_their_rules_queries() -> None:
