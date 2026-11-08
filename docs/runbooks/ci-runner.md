@@ -171,7 +171,9 @@ or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 
 a merge's deploy (1 GiB); small and deploy jobs each have a standby of their own. They run in light slots of
 their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, no cache disk, a
 3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
-merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first, but a light job whose VM
+merge waiting on CI never takes the slot that CI needs. Slots and memory go to the oldest job first, except that a
+later job of a run that already finished a build job (a task's review) goes before a new run's first build, until that
+build has been queued 10 minutes (`FIRST_BUILD_WAIT_MAX`); a light job whose VM
 fits starts even past a build waiting for memory, so a task's first step and merge step never wait behind builds; light
 VMs never outgrow their own slots (see [Why a job waits](#why-a-job-waits)).
 
@@ -323,7 +325,7 @@ and taps; the supervisor reads it when it starts and when a load test's drain en
 works the same way (`LIGHT_SLOTS`, 5 by default, 7 on the Beelink; the supervisor counts none until the file
 exists), and the users and taps cover both. Change either only through `install-host.sh`, so the network always has a
 tap for every slot. With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 1-2 GiB per light
-slot; light VMs mostly wait and builds get memory oldest first. A job touches far less
+slot; light VMs mostly wait and builds get memory in that start order. A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
 and the memory check above holds a VM back before the services' reserve is
 reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
@@ -578,7 +580,7 @@ Light jobs stay on the Beelink.
   address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). Through it the PC also asks
   which commit and image the Beelink runs (`version`) and copies the image (`image`). There the Beelink
   registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`) with the cache label of
-  the oldest waiting build (else the last build's), counts the idle ones as cover for builds queued under a minute
+  the first waiting build in start order (else the last build's), counts the idle ones as cover for builds queued under a minute
   (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
   sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
   changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
