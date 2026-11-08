@@ -1195,7 +1195,7 @@ def test_each_reason_has_a_kind_of_wait() -> None:
     assert sup.wait_kind("memory (0 MiB free above the 3072 MiB reserve, a VM needs 2048)") == (
         "memory"
     )
-    assert sup.wait_kind("an older build waiting for memory") == "memory"
+    assert sup.wait_kind("an older light job waiting for memory") == "memory"
     assert sup.wait_kind("the disk (tasks waited on it 90% of the last minute)") == "disk"
     assert sup.wait_kind("all 5 light slots in use") == "slots"
     assert sup.wait_kind("all 5 light slots in use, one more kept for deploys") == "slots"
@@ -2124,19 +2124,28 @@ def test_an_older_light_job_starts_while_a_newer_build_waits_for_memory(pools, m
     ]
 
 
-def test_a_newer_light_job_waits_behind_an_older_build_held_for_memory(pools, monkeypatch) -> None:
+def test_a_small_job_starts_on_the_next_poll_while_an_older_build_waits_for_memory(
+    pools, monkeypatch
+) -> None:
     _, started = pools
     monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    lines = _queue_build_and_light(monkeypatch, build_id=1, light_id=2, free_mib=3072 + 3000)
+    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 3000)
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    jobs = [sup.Job("o/ok", 1, "b", tuple(sup.RUNNER_LABELS))]
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
     state = sup.State(slots=1, light_slots=1)
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert started == [] and state.held == {1: "o/ok"}
+    # A task's first step is queued after the build: its 1 GiB fits, so it does not wait.
+    jobs.append(sup.Job("o/ok", 2, "line", SMALL))
     sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert started == []
-    assert state.held == {1: "o/ok", 2: "o/ok"}
-    assert lines == [  # logged once each
+    assert started == [(1, sup.SMALL_LABEL)]
+    assert state.held == {1: "o/ok"}
+    assert lines == [  # the build is logged once; the small job never waits
         "job 1 in o/ok has waited 0m00s here:"
         " memory (3000 MiB free above the 3072 MiB reserve, a VM needs 4096)",
-        "job 2 in o/ok has waited 0m00s here: an older build waiting for memory",
     ]
 
 

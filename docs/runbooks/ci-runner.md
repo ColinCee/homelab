@@ -155,8 +155,9 @@ or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 
 a merge's deploy (1 GiB); small and deploy jobs each have a standby of their own. They run in light slots of
 their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, no cache disk, a
 3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
-merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
-build waiting for memory holds back only the light jobs queued after it (see [Why a job waits](#why-a-job-waits)).
+merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first, but a light job whose VM
+fits starts even past a build waiting for memory, so a task's first step and merge step never wait behind builds; light
+VMs never outgrow their own slots (see [Why a job waits](#why-a-job-waits)).
 
 A VM starts only when the host's available memory (`MemAvailable` in
 `/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
@@ -304,7 +305,7 @@ and taps; the supervisor reads it when it starts and when a load test's drain en
 works the same way (`LIGHT_SLOTS`, 5 by default, 7 on the Beelink; the supervisor counts none until the file
 exists), and the users and taps cover both. Change either only through `install-host.sh`, so the network always has a
 tap for every slot. With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 1-2 GiB per light
-slot; light VMs mostly wait and the oldest job gets memory first. A job touches far less
+slot; light VMs mostly wait and builds get memory oldest first. A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
 and the memory check above holds a VM back before the services' reserve is
 reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
@@ -401,7 +402,6 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 |---|---|
 | `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
-| `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
 | `a VM booting for it` | Its VM is booting; logged only after 3 minutes |
