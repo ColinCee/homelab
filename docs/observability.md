@@ -197,9 +197,10 @@ The shipped rules cover host-level pressure such as:
 - **Kaizen jobs need nearly all their VM's memory**: over a quarter of one kind's job VMs
   needed over 80% of their memory in 6 hours (at least 8 VMs)
 - **Flight Tracker site down**: the live-data probe has failed for 10 minutes
-- **Unknown container started**: a container whose name was not seen in the week
-  before has run for 15 minutes, as one planted by an intruder would; redeploys
-  keep their names and quick `docker run` checks stop sooner, so neither fires
+- **Unknown container started**: a container outside any Compose project whose name
+  was not seen in the week before has run for 15 minutes, as one planted by an intruder
+  would; stacks (new or redeployed) run under Compose and quick `docker run` checks
+  stop sooner, so neither fires
 - **Beelink SSD wearing out**: the SSD reports over 80% of its rated write endurance used.
   A 15-minute timer records its wear and lifetime writes, and **SSD wear check stopped**
   fires when it has not for an hour
