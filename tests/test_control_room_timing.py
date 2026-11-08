@@ -89,6 +89,21 @@ def test_watcher_log_is_read_back_and_a_cut_line_is_skipped(tmp_path) -> None:
     assert timing.read_answers(tmp_path / "missing.jsonl") == []
 
 
+def test_live_waits_for_the_watcher_to_log_the_new_commit(tmp_path, monkeypatch) -> None:
+    log = tmp_path / "state.jsonl"
+    log.write_text(f'{{"at": "2026-11-05T10:06:30+00:00", "commit": "{OLD}"}}\n', encoding="utf-8")
+
+    def watcher_logs(_: float) -> None:
+        with log.open("a", encoding="utf-8") as f:
+            f.write(f'{{"at": "2026-11-05T10:06:40+00:00", "commit": "{NEW}"}}\n')
+
+    monkeypatch.setattr(timing.time, "sleep", watcher_logs)
+    ready = T("2026-11-05T10:06:20Z")
+
+    assert timing.wait_for_logged_live(log, NEW, ready) == T("2026-11-05T10:06:40Z")
+    assert timing.wait_for_logged_live(tmp_path / "missing.jsonl", NEW, ready, timeout=0) is None
+
+
 def test_polling_skips_a_stale_commit_and_waits_for_the_deployed_one() -> None:
     replies = iter([None, OLD, OLD, NEW])
     asked: list[str | None] = []
