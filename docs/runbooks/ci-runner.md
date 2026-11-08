@@ -144,6 +144,20 @@ is not there, or not for this job:
    called workflow's job (`build (3.12)`, `call / build`) cannot put or be named in
    `from`. Handoffs are root's alone on the Beelink (`0700`).
 
+### Free build machines
+
+`ci-capacity` in any job VM prints the build machines' counts as JSON, no repo names, so a job (Auto Kaizen's
+task start) can see how many are free before it starts work:
+
+```json
+{"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1, "queued": 0, "held_for_memory": 0,
+ "pc_up": 1, "pc_slots": 6, "pc_in_use": 2}
+```
+
+It asks on the console, as `get` does, and the console reader answers on the inbox from `machines.json` (see
+Operating for each field; `pc_up` is 1 or 0). It counts as one of the VM's 50 answers, and fails within 15
+seconds (`CAPACITY_WAIT`) when nothing answers: a host whose supervisor predates it, or no `machines.json`.
+
 There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
 Operating). Auto Kaizen runs no more tasks at once than this number, set in its
 `build.yml` and `watch.yml`; change them with it. A job running alone gets 4 vCPUs and 4 GiB; a job
@@ -335,7 +349,8 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "small_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
- "mem_available_mib": 9216, "held_for_memory": 0, "draining": false,
+ "mem_available_mib": 9216, "held_for_memory": 0, "queued": 0, "draining": false,
+ "pc": {"up": true, "slots": 6, "in_use": 2},
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
@@ -345,7 +360,9 @@ running a job and the ones waiting ready, `deploy_standby` and `small_standby` t
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve, or the disk was busy. A failed write is logged
+jobs not started because that memory would have dipped into the services' reserve, or the disk was busy;
+`queued` counts every queued job seen here and not started yet, for any reason. `pc` (only on a host that serves
+the PC) says whether the PC was heard lately, the slots it gives and how many of its runners have a job. A failed write is logged
 once and tried again next poll; it never holds up the poll. `draining` is true while the
 load test has the host ([Changing the number of slots](#changing-the-number-of-slots)), and
 `load_test` is its last record (null before the first).
@@ -558,7 +575,7 @@ Light jobs stay on the Beelink.
   (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
   sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
   changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
-  are not in `machines.json` yet, so the Control room shows the Beelink's only.
+  are in `machines.json` under `pc`.
 - **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
   off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
   set once in Hyper-V for the most slots it will give.

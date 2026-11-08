@@ -3,6 +3,7 @@ import http.client
 import io
 import json
 import os
+import queue
 import tarfile
 import threading
 import urllib.error
@@ -721,9 +722,67 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "github_ok": True,
         "mem_available_mib": 9000,
         "held_for_memory": 1,
+        "queued": 0,
         "draining": False,
         "load_test": None,
     }
+
+
+def asks_of(*asks) -> queue.Queue:
+    """A VM's ask queue holding these asks, then the end."""
+    q: queue.Queue = queue.Queue()
+    for ask in (*asks, None):
+        q.put(ask)
+    return q
+
+
+def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
+    caches, tmp_path, monkeypatch
+) -> None:
+    (caches / "octo__agent.ext4").touch()
+    state = sup.State(
+        slots=5, launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)}
+    )
+    state.waits = {9: sup.Wait("octo/other", 0.0)}
+    peer = sup.Peer("token", pc_slots=2)
+    peer.pc_heard = 100.0
+    monkeypatch.setattr(sup, "PEER", peer)
+    monkeypatch.setattr(sup, "PEER_DIR", tmp_path / "peer")
+    machines = tmp_path / "machines.json"
+    sup.write_status(machines, sup.status(state, 100.0, github_ok=True, mem_available=9000))
+    monkeypatch.setattr(sup, "STATUS_FILE", machines)
+    inbox = tmp_path / "fc-0.inbox"
+    inbox.write_bytes(sup.INBOX_EMPTY.ljust(512, b"\0"))
+    asks: list = []
+    sup.read_console(io.BytesIO(b"HOMELAB-CAPACITY 1 0123456789abcdef\n"), None, ask=asks.append)
+
+    sup.answer_asks(None, "octo/agent", "fc-0", inbox, asks_of(*asks))  # type: ignore[arg-type]
+
+    header = inbox.read_bytes().partition(b"\0")[0]
+    size = int(header.split()[-1])
+    assert header.split()[:4] == [b"homelab-ci-inbox", b"v1", b"0123456789abcdef", b"ok"]
+    answer = inbox.read_bytes()[512 : 512 + size]
+    assert json.loads(answer) == {
+        "updated": 100,
+        "slots": 5,
+        "in_use": 2,
+        "standby": 1,
+        "queued": 1,
+        "held_for_memory": 0,
+        "pc_up": 1,
+        "pc_slots": 2,
+        "pc_in_use": 0,
+    }
+    assert b"octo" not in answer
+
+
+def test_a_capacity_ask_with_no_status_file_is_answered_none(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "STATUS_FILE", tmp_path / "missing.json")
+    inbox = tmp_path / "fc-0.inbox"
+    inbox.write_bytes(sup.INBOX_EMPTY.ljust(512, b"\0"))
+    ask = sup.CAPACITY_ASK.fullmatch(b"HOMELAB-CAPACITY 1 0123456789abcdef\n")
+    sup.answer_asks(None, "o/r", "fc-0", inbox, asks_of(ask))  # type: ignore[arg-type]
+    assert inbox.read_bytes().startswith(b"homelab-ci-inbox v1 0123456789abcdef none 0\n")
 
 
 @pytest.mark.parametrize(
