@@ -324,10 +324,12 @@ missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
 and taps; the supervisor reads it when it starts and when a load test's drain ends, and `setup-net.sh` and
 `test-load.sh` read it too (a `SLOTS` variable wins). `/etc/homelab-ci/light-slots`
-works the same way (`LIGHT_SLOTS`, 5 by default, 7 on the Beelink; the supervisor counts none until the file
-exists), and the users and taps cover both. Change either only through `install-host.sh`, so the network always has a
+works the same way (`LIGHT_SLOTS`, 5 by default; the supervisor counts none until the file exists), except that on
+the Beelink it is raised to `LIGHT_SLOTS_MIN` in `ci-runner/slots.sh` and never lowered, and the PC keeps 0: raising
+that number and merging raises the Beelink's light slots. The users and taps cover both. Change either only through `install-host.sh`, so the network always has a
 tap for every slot. With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 1-2 GiB per light
-slot; light VMs mostly wait and builds get memory in that start order. A job touches far less
+slot (10 light slots beside 4 build slots are over the 13 GiB above the reserve on paper, sized in `slots.sh`);
+light VMs mostly wait and builds get memory in that start order. A job touches far less
 than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
 and the memory check above holds a VM back before the services' reserve is
 reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
@@ -430,7 +432,7 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 
 | Line ends with | Means |
 |---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots (light ones by raising `LIGHT_SLOTS_MIN`), or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |

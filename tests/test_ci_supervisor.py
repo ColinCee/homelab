@@ -4,6 +4,7 @@ import io
 import json
 import os
 import queue
+import subprocess
 import tarfile
 import threading
 import urllib.error
@@ -1617,6 +1618,33 @@ def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, te
         path.write_text(text)
     monkeypatch.setattr(sup, "LIGHT_SLOTS_FILE", path)
     assert sup.light_slot_count() == slots
+
+
+def _install_counts(etc: Path, **files: str) -> tuple[str, str]:
+    """The light slots and role install-host.sh would write for a host folder with these files."""
+    for name, text in files.items():
+        (etc / name.replace("_", "-")).write_text(text)
+    script = Path(__file__).parent.parent / "ci-runner" / "slots.sh"
+    env = {"PATH": os.environ["PATH"], "etc": str(etc)}
+    out = subprocess.run(
+        ["bash", "-c", f'set -euo pipefail; source "{script}"; echo "$LIGHT_SLOTS $ROLE"'],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    return out[0], out[1]
+
+
+@pytest.mark.parametrize(("have", "want"), [("7", "10"), ("12", "12"), ("lots", "10")])
+def test_install_raises_the_beelinks_light_slots_to_the_repos_minimum_and_keeps_more(
+    tmp_path, have, want
+) -> None:
+    assert _install_counts(tmp_path, light_slots=have, role="beelink") == (want, "beelink")
+
+
+def test_install_leaves_the_pc_with_no_light_slots(tmp_path) -> None:
+    assert _install_counts(tmp_path, light_slots="7", role="pc") == ("0", "pc")
 
 
 def test_an_old_last_repo_file_with_the_repo_alone_still_loads(monkeypatch, tmp_path) -> None:

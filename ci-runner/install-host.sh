@@ -1,37 +1,20 @@
 #!/usr/bin/env bash
 # Prepare Beelink to run CI jobs in Firecracker microVMs. Run from a checkout of
-# main; deploys never touch these files, so a push cannot change them:
+# main; deploys never touch these files:
 #   sudo ci-runner/install-host.sh
-# Re-run after changing anything under ci-runner/ or versions.env.
+# update.sh reruns it when main changes anything under ci-runner/ or scripts/.
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "run with sudo" >&2; exit 1; }
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
-# How many VMs run at once: SLOTS if given, else the count in /etc/homelab-ci/slots
-# from the last run. 5 when neither is a number, at least 1, as in ci_supervisor.py.
-# Written to that file below, so the supervisor, network and slot users all match:
+# Slot counts and role (slots.sh), written to /etc/homelab-ci below so the supervisor, network and slot users match:
 #   sudo SLOTS=4 ci-runner/install-host.sh
-SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
-SLOTS=${SLOTS//[[:space:]]/}
-if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=5; fi
-# Light slots (small VMs for light jobs, numbered after the build slots): LIGHT_SLOTS if
-# given, else /etc/homelab-ci/light-slots, else 5, as in ci_supervisor.py; 0 is none.
-LIGHT_SLOTS=${LIGHT_SLOTS:-$(cat /etc/homelab-ci/light-slots 2>/dev/null || true)}
-LIGHT_SLOTS=${LIGHT_SLOTS//[[:space:]]/}
-if [[ $LIGHT_SLOTS =~ ^[0-9]+$ ]]; then LIGHT_SLOTS=$((10#$LIGHT_SLOTS)); else LIGHT_SLOTS=5; fi
-# ROLE=pc on the PC's Hyper-V guest: ready runners registered through the Beelink's door
-# (ci_supervisor.py pc), no GitHub token, no light slots. Kept in /etc/homelab-ci/role.
-ROLE=${ROLE:-$(cat /etc/homelab-ci/role 2>/dev/null || echo beelink)}
-[[ $ROLE == beelink || $ROLE == pc ]] || { echo "ROLE is beelink or pc" >&2; exit 2; }
+# shellcheck source=ci-runner/slots.sh
+source "$here/slots.sh"
 service=homelab-ci-supervisor.service
-if [[ $ROLE == pc ]]; then LIGHT_SLOTS=0 service=homelab-ci-pc.service; fi
-# On the Beelink, the door for the PC's slots ("PC build slots" in ci-runner.md): at most
-# PEER_SLOTS runners, else /etc/homelab-ci/peer-slots-max, else 0 (closed).
-PEER_SLOTS=${PEER_SLOTS:-$(cat /etc/homelab-ci/peer-slots-max 2>/dev/null || true)}
-PEER_SLOTS=${PEER_SLOTS//[[:space:]]/}
-[[ $PEER_SLOTS =~ ^[0-9]+$ && $ROLE == beelink ]] && PEER_SLOTS=$((10#$PEER_SLOTS)) || PEER_SLOTS=0
+[[ $ROLE == beelink ]] || service=homelab-ci-pc.service
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between
