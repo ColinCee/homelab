@@ -355,7 +355,8 @@ stops waiting, for the Control room and speed reports:
 
 ```json
 {"job": 123, "repo": "ColinCee/example", "since": 1792999400, "until": 1793000000,
- "memory": 420, "disk": 60, "slots": 0, "booting": 100, "ready": 20, "unseen": 4, "other": 0}
+ "memory": 420, "disk": 60, "slots": 0, "booting": 100, "ready": 20, "unseen": 4, "other": 0,
+ "why": "memory (1500 MiB free above the 3072 MiB reserve, a VM needs 2048)"}
 ```
 
 `since` and `until` are when the supervisor first saw the job queued and when it stopped
@@ -364,7 +365,10 @@ memory counts too), for the busy disk, for a free slot, for its VM to boot, with
 runner online and idle but no job from GitHub (`ready`), and for anything else (a label no VM
 has). `unseen` is from GitHub queueing the job (its `created_at`) to the supervisor first seeing
 it, so the kinds add up to the wait since GitHub queued it. A supervisor restart starts a job's
-count here again, and its `unseen` then covers the time before.
+count here again, and its `unseen` then covers the time before. `why` is the
+[wait log's reason](#why-a-job-waits) for the kind it waited longest for. Every job
+that waited gets this line, including one taken by a standby or by a VM booted for another
+job, whose `waits.json` in the VM (fixed when the VM boots) lacks it.
 Lines over 30 days old are dropped at most once an hour; a failed write is logged once.
 
 Also beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is

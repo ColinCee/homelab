@@ -1127,9 +1127,51 @@ def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
     assert [json.loads(line) for line in waits_file.read_text().splitlines()] == [
         {"job": 0, "repo": "o/ok", "since": 100, "until": 200,
          "memory": 60, "disk": 10, "slots": 0, "booting": 30, "ready": 0, "unseen": 0,
-         "other": 0}
+         "other": 0, "why": "memory (2047 MiB free above the 3072 MiB reserve, a VM needs 4096)"}
     ]  # fmt: skip
     assert waits_file.stat().st_mode & 0o777 == 0o644
+
+
+def test_a_job_a_standby_takes_is_recorded_with_its_seconds_and_reason(
+    host, waits_file, monkeypatch
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: False)  # the busy VM has its own job
+    queue(jobs=1, free_mib=1 << 20)
+    state = sup.State(slots=1, launches={0: _launch(0, False)})
+    state.launches[0].repo = "o/ok"
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 100.0)  # type: ignore[arg-type]
+    # That VM ends and a standby, booted before the job queued, is up in its slot.
+    standby = state.launches[0] = _launch(0, True)
+    standby.repo, standby.ready = "o/ok", True
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
+    sup.tick(None, state, ["o/ok"], 102.0)  # type: ignore[arg-type]
+    queue(jobs=0, free_mib=1 << 20)  # GitHub gave the standby the job
+    sup.tick(None, state, ["o/ok"], 104.0)  # type: ignore[arg-type]
+    record = json.loads(waits_file.read_text())
+    assert started == [] and (record["job"], record["slots"], record["ready"]) == (0, 102, 2)
+    assert record["why"] == "all 1 build slots in use"
+
+
+def test_a_job_taken_by_a_vm_booted_for_another_is_recorded_with_its_seconds_and_reason(
+    host, waits_file, monkeypatch
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
+    queue(jobs=2, free_mib=1 << 20)
+    state = sup.State(slots=1)
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]  # a VM boots for job 0
+    sup.tick(None, state, ["o/ok"], 50.0)  # type: ignore[arg-type]
+    assert len(started) == 1 and state.waits[1].why == "all 1 build slots in use"
+    # GitHub gives that VM job 1, not job 0 it booted for.
+    first = [sup.Job("o/ok", 0, "j", tuple(sup.RUNNER_LABELS))]
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: first if repo == "o/ok" else [])
+    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
+    record = json.loads(waits_file.read_text())
+    assert (record["job"], record["slots"], record["why"]) == (1, 60, "all 1 build slots in use")
 
 
 def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, monkeypatch):
