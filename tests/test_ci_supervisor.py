@@ -997,7 +997,7 @@ def host(caches, monkeypatch):
         mem = sup.next_size(state, standby)[1]
         started.append((repo, mem, standby))
         run = _launch(slot, standby)
-        run.repo = repo
+        run.repo, run.label = repo, label
         state.launches[slot] = run
 
     monkeypatch.setattr(sup, "launch", launch)
@@ -1826,6 +1826,46 @@ def test_a_second_standby_boots_only_with_a_spare_slot_and_memory(host, monkeypa
     assert started == [("o/ok", 4096, True)]
     sup.tick(None, state, ["o/ok"], 6.0)  # type: ignore[arg-type]
     assert len(started) == 1  # two wait already
+
+
+@pytest.mark.parametrize(("count", "boots"), [(2, 2), (1, 1)])
+def test_a_second_standby_boots_for_the_same_repo_and_label(
+    host, monkeypatch, count: int, boots: int
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: count)
+    queue(jobs=0, free_mib=1 << 20)
+    state = sup.State(slots=2)
+    for now in (0.0, 2.0, 4.0):
+        sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
+    assert started == [("o/ok", 4096, True)] * boots
+
+
+def test_each_wanted_repo_gets_a_standby_before_any_gets_a_second(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 2)
+    running = _launch(0, False)
+    running.repo = "o/b"
+    queue(jobs=0, free_mib=1 << 20)
+    state = sup.State(slots=4, launches={0: running}, last_repo="o/a")
+    for now in (0.0, 2.0, 4.0):
+        sup.tick(None, state, ["o/a", "o/b"], now)  # type: ignore[arg-type]
+    assert [(repo, standby) for repo, _, standby in started] == [("o/a", True), ("o/b", True)]
+
+
+def test_a_second_standby_for_one_repo_gives_way_to_a_newly_wanted_one(host, monkeypatch) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 2)
+    stopped: list[int] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(run.slot))
+    first, second, running = _launch(0, True), _launch(1, True), _launch(2, False)
+    first.repo, second.repo, running.repo = "o/a", "o/a", "o/b"
+    second.started = 1.0
+    queue(jobs=0, free_mib=1 << 20)
+    state = sup.State(slots=4, launches={0: first, 1: second, 2: running}, last_repo="o/a")
+    sup.tick(None, state, ["o/a", "o/b"], 2.0)  # type: ignore[arg-type]
+    assert stopped == [1]
+    assert started == []  # o/b's boots once the stopped one has gone
 
 
 def test_a_build_standby_gives_way_to_another_labels_job_with_no_free_slot(

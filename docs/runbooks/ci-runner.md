@@ -238,10 +238,13 @@ GitHub-hosted runners and take it off the token's repository access.
   (kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), then each running
   build job's, oldest first: a task's Reviewer, queued seconds after its Builder ends, takes the
   standby booted while its Builder ran, even when another task's build started in between. Up to
-  two wait, each for a different repo and label, one boot a poll, and only while free build slots
-  outnumber the build jobs waiting for one and memory above the reserve allows; none boots while
-  a job waits for memory, or for a label one of the PC's ready runners already waits for. Each
-  costs about 450 MB of RAM while idle, and always has 4 vCPUs.
+  two wait, one boot a poll: one for each of those repos and labels first, then a second for the
+  first of them, so two tasks of the busiest repo starting builds together both find one booted
+  (that second one stops for a newly wanted repo or label with none).
+  One boots only while free build slots outnumber the build jobs waiting for one and memory
+  above the reserve allows; none boots while a job waits for memory, or for a label one of the
+  PC's ready runners already waits for. Each costs about 450 MB of RAM while idle, and always
+  has 4 vCPUs.
   Once it takes a job it is an ordinary job VM and a new standby boots in a
   free slot. A build job wanting another repo or label, with no slot free, stops
   it; an idle standby is replaced every 45 minutes, and stopped if its
