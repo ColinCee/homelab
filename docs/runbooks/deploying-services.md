@@ -25,7 +25,8 @@ room live" notice and a table in the run's summary
 ([`control_room_timing.py`](../../scripts/control_room_timing.py)). Live is the
 first `/state` answer naming the commit baked into the pinned image, at or after
 the Control room stack came up (its `ready_at` from the deploy step); a watcher
-logs `/state` from before the deploy, so stacks deployed after it do not count.
+logs `/state` from before the deploy, and the timing waits up to 15 seconds for its
+next answer, so stacks deployed after it do not count.
 It only measures, and a measuring failure never fails the deploy.
 
 ## Ownership and deployment contract

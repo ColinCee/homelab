@@ -149,6 +149,21 @@ def first_live(
     return next((at for at, named in answers if named == commit and at >= ready_at), None)
 
 
+def wait_for_logged_live(
+    log: Path, commit: str, ready_at: datetime, *, timeout: float = 15, interval: float = 0.5
+) -> datetime | None:
+    """First logged answer naming ``commit`` from ``ready_at``, waiting for the watcher to log it.
+
+    This step starts moments after the stack comes up, usually before the watcher's next answer.
+    """
+    deadline = time.monotonic() + timeout
+    while (live := first_live(read_answers(log), commit, ready_at)) is None:
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(interval)
+    return live
+
+
 def wait_for_commit(
     url: str,
     commit: str,
@@ -230,7 +245,7 @@ def main() -> int:
     commit = pinned_commit(args.compose)
     live = None
     if args.ready_at and args.answers:
-        live = first_live(read_answers(args.answers), commit, parse_time(args.ready_at))
+        live = wait_for_logged_live(args.answers, commit, parse_time(args.ready_at))
     if live is None:
         if args.ready_at:
             print("::warning::No /state answer was logged from the ready time; timing from now")
