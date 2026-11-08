@@ -1992,9 +1992,10 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             state.disk_paced_until = now + DISK_PACE_SECONDS
             room = min(room, 0)
 
-    # Oldest job first across both kinds: a build held for memory holds back only the
-    # light jobs queued after it, so a task's quick gate or merge step queued before it
-    # still starts when there is room for its small VM, and neither kind starves the other.
+    # Oldest job first. A light job whose VM fits starts even past a build held for memory:
+    # held behind it, a task's first step and merge step (which run no build) waited for
+    # minutes with room for their VMs. Light VMs never outgrow their own slots, so a build
+    # waits behind at most those, and builds still start oldest first.
     builds = with_job_ids(starts, job_ids, booting)
     lights = with_job_ids(light_starts, job_ids, booting)
     held: dict[int, tuple[str, str]] = {}
@@ -2025,9 +2026,6 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             held[job_id] = (repo, why(LIGHT_SIZES[label][1]))
             # Small VMs fit where a 2 GiB one does not: a stream of them would starve it.
             oldest_held_light = True
-            continue
-        elif oldest_held_build is not None:
-            held[job_id] = (repo, "an older build waiting for memory")
             continue
         elif oldest_held_light:
             held[job_id] = (repo, "an older light job waiting for memory")
