@@ -150,8 +150,8 @@ VM_TIMEOUT_SECONDS = 3600
 # a job starts in seconds instead of waiting for a VM. Each is replaced every 45 minutes
 # while idle; its timeout leaves a job that starts just before then time to finish.
 STANDBY_RECYCLE_SECONDS = 45 * 60
-# How many build VMs wait ready at once, each for a different repo and cache label (each
-# about 450 MB while idle). Read from /etc/homelab-ci/standbys if present (see standby_count).
+# How many build VMs wait ready at once (each about 450 MB while idle), from
+# /etc/homelab-ci/standbys if present (see standby_count and standby_wants).
 STANDBY_COUNT_FILE = Path("/etc/homelab-ci/standbys")
 STANDBY_TIMEOUT_SECONDS = 2 * 3600
 # Checked every poll: conditional requests make an unchanged answer free.
@@ -2251,14 +2251,19 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # Nor for a want one of the PC's ready runners waits for: it is the standby.
     build_standbys = [r for r in standbys if not r.light]
     waiting_builds = sum(n for w, n in waiting.items() if n > 0 and w[1] not in LIGHT_SIZES)
-    target = next(
-        (
-            w
-            for w in standby_wants(state, repos, private)
-            if not pc_ready[w] and all(r.want != w for r in build_standbys)
-        ),
-        None,
-    )
+    # Each want gets one first; once all have one, a further standby waits for the most needed,
+    # so two tasks of the busiest repo starting builds together both find one booted.
+    wants = [w for w in standby_wants(state, repos, private) if not pc_ready[w]]
+    uncovered = next((w for w in wants if all(r.want != w for r in build_standbys)), None)
+    target = uncovered or (wants[0] if wants else None)
+    if uncovered and len(build_standbys) >= standby_count():
+        # A second standby for one want gives its place to a want with none.
+        seen: set[Want] = set()
+        for run in sorted(build_standbys, key=lambda r: r.started):
+            if run.want in seen:
+                stop_if_still_idle(gh, run, "gives its place to a standby for another job")
+                break
+            seen.add(run.want)
     if (
         target
         and not state.held
@@ -2533,7 +2538,8 @@ def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Wa
     job's (or the first polled repo's) once no VM runs it, then each running build job's,
     oldest first (a task's Reviewer asks for its Builder's seconds after the Builder ends, even
     when another task's build started in between). Booted for the cache label too, else a job
-    asking for it never takes the standby and stops it as in the way."""
+    asking for it never takes the standby and stops it as in the way. Each gets one standby
+    first; any left under standby_count() go to the first, and give way to a want with none."""
     running = sorted(
         (r for r in state.launches.values() if not r.standby and not r.light),
         key=lambda r: r.started,
@@ -2547,7 +2553,7 @@ def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Wa
 
 
 def standby_count() -> int:
-    """How many build standbys may wait, each for a different repo and cache label: 2 unless
+    """How many build standbys may wait (see standby_wants for which): 2 unless
     /etc/homelab-ci/standbys says otherwise."""
     return count_in(STANDBY_COUNT_FILE, default=2)
 
