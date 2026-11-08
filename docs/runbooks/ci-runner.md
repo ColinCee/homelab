@@ -228,19 +228,21 @@ GitHub-hosted runners and take it off the token's repository access.
   However the job ends, the VM ends, within seconds. A VM left
   without a job (cancelled before it started, or taken by another runner) is
   stopped about 30 to 40 seconds after it boots.
-- **One VM waits ready.** A standby VM is kept booted and registered for the
-  repo and cache label of the last build job started or ended, with that label's cache disk (both
-  kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there). A build VM that ends
-  points it at its own repo and label, so a task's Reviewer, queued seconds after its Builder's VM
-  ends, takes the standby booted in that slot instead of waiting for a VM of its own; so
-  the next job asking for the same starts in about a
-  second instead of waiting for the next poll, a VM to boot and its runner to start
-  (about 11 seconds). It costs about 450 MB of RAM while idle, and always has 4 vCPUs.
-  Once it takes a job it is an ordinary job VM and a new standby boots in the
+- **Build VMs wait ready.** With a build slot free, a standby VM is kept booted and registered
+  for a repo and cache label, with that label's cache disk, so the next job asking for the same
+  starts in about a second instead of waiting for the next poll, a VM to boot and its runner to
+  start (about 11 seconds). Its label is, first, the last build job's once that job's VM has ended
+  (kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), then each running
+  build job's, oldest first: a task's Reviewer, queued seconds after its Builder ends, takes the
+  standby booted while its Builder ran, even when another task's build started in between. Up to
+  two wait, each for a different repo and label, one boot a poll, and only while free build slots
+  outnumber the build jobs waiting for one and memory above the reserve allows; none boots while
+  a job waits for memory, or for a label one of the PC's ready runners already waits for. Each
+  costs about 450 MB of RAM while idle, and always has 4 vCPUs.
+  Once it takes a job it is an ordinary job VM and a new standby boots in a
   free slot. A build job wanting another repo or label, with no slot free, stops
   it; an idle standby is replaced every 45 minutes, and stopped if its
-  repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
-  default); 2 was measured and not worth its RAM (see the performance doc).
+  repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (2 by default).
 - **One light VM waits ready.** With a light slot free, a light standby waits
   registered for the repo of the last `homelab-fc-light` job (kept in
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
