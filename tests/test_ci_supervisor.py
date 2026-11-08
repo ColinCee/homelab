@@ -933,13 +933,20 @@ def host(caches, monkeypatch):
 
     monkeypatch.setattr(sup, "launch", launch)
 
-    def queue(jobs: int, free_mib: int, queued_at: float = 0.0) -> None:
+    def queue(jobs: int, free_mib: int, queued_at: float = 0.0, workflow: str = "") -> None:
         monkeypatch.setattr(
             sup,
             "find_queued",
             lambda gh, repo: (
                 [
-                    sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS), queued_at=queued_at)
+                    sup.Job(
+                        repo,
+                        n,
+                        "j",
+                        tuple(sup.RUNNER_LABELS),
+                        queued_at=queued_at,
+                        workflow=workflow,
+                    )
                     for n in range(jobs)
                 ]
                 if repo == "o/ok"
@@ -1130,13 +1137,15 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
     state = sup.State()
-    queue(jobs=1, free_mib=3072 + 2047, queued_at=40.0)  # held for memory, GitHub's for 60 s
+    # Held for memory, GitHub's for 60 s.
+    queue(jobs=1, free_mib=3072 + 2047, queued_at=40.0, workflow="watch")
     sup.tick(None, state, ["o/ok"], 100.0)  # type: ignore[arg-type]
     assert 'homelab_ci_wait_seconds{kind="memory"} 0' in wait_metrics.read_text()
     sup.tick(None, state, ["o/ok"], 110.0)  # type: ignore[arg-type]  # under 15 s: not written
     queue(jobs=1, free_mib=1 << 20, queued_at=40.0)
     sup.tick(None, state, ["o/ok"], 130.0)  # type: ignore[arg-type]  # its VM boots
     sup.tick(None, state, ["o/ok"], 150.0)  # type: ignore[arg-type]
+    slots = state.slots + state.light_slots
     assert wait_metrics.read_text().splitlines() == [
         'homelab_ci_wait_seconds{kind="memory"} 30',
         'homelab_ci_wait_seconds{kind="disk"} 0',
@@ -1145,11 +1154,31 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
         'homelab_ci_wait_seconds{kind="ready"} 0',
         'homelab_ci_wait_seconds{kind="unseen"} 60',
         'homelab_ci_wait_seconds{kind="other"} 0',
+        'homelab_ci_queued_seconds{repo="o/ok",workflow="watch"} 110',
+        "homelab_ci_vms_busy 1",
+        f"homelab_ci_vm_slots {slots}",
     ]
     assert wait_metrics.stat().st_mode & 0o777 == 0o644
     queue(jobs=0, free_mib=1 << 20)  # the job started: nothing waits
     sup.tick(None, state, ["o/ok"], 170.0)  # type: ignore[arg-type]
-    assert set(wait_metrics.read_text().split()[1::2]) == {"0"}
+    lines = wait_metrics.read_text().splitlines()
+    assert {line.split()[1] for line in lines if "wait_seconds" in line} == {"0"}
+    assert not [line for line in lines if "queued_seconds" in line]
+
+
+def test_a_queued_jobs_workflow_comes_from_github() -> None:
+    labels = list(sup.RUNNER_LABELS)
+    jobs = {
+        1: [{"id": 7, "status": "queued", "labels": labels, "workflow_name": "watch"}],
+        2: [{"id": 8, "status": "queued", "labels": labels}],
+    }
+    runs = [{"id": 1, "name": "ignored"}, {"id": 2, "name": "build"}]
+    found = sup.queued_jobs("o/ok", runs, jobs.__getitem__)
+    assert [job.workflow for job in found] == ["watch", "build"]
+
+
+def test_a_label_value_is_escaped() -> None:
+    assert sup.label_value('a "b" \\ c') == 'a \\"b\\" \\\\ c'
 
 
 def test_an_unwritable_wait_metrics_file_is_logged_once(tmp_path, monkeypatch) -> None:

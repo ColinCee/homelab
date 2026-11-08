@@ -876,6 +876,46 @@ groups:
                 and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
               instant: true
               refId: A
+          # Why: minutes since GitHub queued Auto Kaizen's longest-waiting job and the Watcher's own
+          # job for a test VM, and the VMs running jobs (homelab_ci_queued_seconds and
+          # homelab_ci_vms_busy, written by the CI supervisor), for the description. 0 when nothing
+          # waits or the file is missing, so the reason never makes the rule no-data.
+          - refId: kaizen
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_queued_seconds{job="integrations/unix",repo="ColinCee/auto-kaizen"}) / 60 or on() vector(0)
+              instant: true
+              refId: kaizen
+          - refId: watcher
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_queued_seconds{job="integrations/unix",repo="ColinCee/auto-kaizen",workflow="watch"}) / 60 or on() vector(-1)
+              instant: true
+              refId: watcher
+          - refId: busy
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_vms_busy{job="integrations/unix"}) or on() vector(0)
+              instant: true
+              refId: busy
+          - refId: slots
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_vm_slots{job="integrations/unix"}) or on() vector(0)
+              instant: true
+              refId: slots
           - refId: C
             relativeTimeRange:
               from: 0
@@ -898,8 +938,15 @@ groups:
           measure: "Since the Watcher last ran"
           trigger: "over 60 min"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
-          description: "Threshold: the Watcher, due every 20 minutes, has not worked for an hour, so GitHub is not starting Kaizen's jobs."
-          action: "Open github.com/ColinCee/auto-kaizen/actions: a refused job names the cause (billing, an outage, no machine)."
+          description: >-
+            Threshold: the Watcher, due every 20 minutes, has not worked for an hour.
+            {{ with $values.watcher }}{{ if ge .Value 0.0 }}Its job has waited {{ printf "%.0f" .Value }} min for a test VM.
+            {{- else }}Its job is not waiting for a test VM.{{ end }}{{ end }}
+            Auto Kaizen's longest-waiting job has queued {{ with $values.kaizen }}{{ printf "%.0f" .Value }}{{ end }} min for a test VM,
+            with {{ with $values.busy }}{{ printf "%.0f" .Value }}{{ end }} of {{ with $values.slots }}{{ printf "%.0f" .Value }}{{ end }} VMs busy.
+          action: >-
+            Waiting for a VM means a capacity problem: see "Why a job waits" in docs/runbooks/ci-runner.md.
+            No waiting job means GitHub is not starting jobs: github.com/ColinCee/auto-kaizen/actions names the cause (billing, an outage).
         labels:
           severity: warning
 

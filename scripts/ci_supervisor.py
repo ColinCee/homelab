@@ -306,6 +306,8 @@ class Job:
     ours: bool = True
     # When GitHub queued it (its created_at), 0 when unknown.
     queued_at: float = 0.0
+    # Its workflow's name, "" when unknown.
+    workflow: str = ""
 
     @property
     def want(self) -> Want:
@@ -438,6 +440,8 @@ class Wait:
     seconds: dict[str, float] = field(default_factory=dict)
     # The reason the wait log gives at the last poll that saw it.
     why: str = ""
+    # Its workflow's name, "" when unknown.
+    workflow: str = ""
 
     def __post_init__(self) -> None:
         self.queued = self.queued or self.since
@@ -490,7 +494,15 @@ def queued_jobs(
             if ours or {LABEL, *LIGHT_SIZES} & {label.lower() for label in labels}:
                 queued_at = github_time(job.get("created_at"))
                 jobs.append(
-                    Job(repo, int(job["id"]), str(job.get("name", "")), labels, ours, queued_at)
+                    Job(
+                        repo,
+                        int(job["id"]),
+                        str(job.get("name", "")),
+                        labels,
+                        ours,
+                        queued_at,
+                        str(job.get("workflow_name") or run.get("name") or ""),
+                    )
                 )
     return jobs
 
@@ -1876,8 +1888,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     spent: dict[str, float] = {}
     # Why each queued job not started this poll waits: (repo, why).
     reasons: dict[int, tuple[str, str]] = {}
-    # When GitHub queued each job.
+    # When GitHub queued each job, and its workflow.
     queued_at: dict[int, float] = {}
+    workflows: dict[int, str] = {}
     # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
     answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
     for repo, (jobs, took) in zip(repos, answers, strict=True):
@@ -1887,6 +1900,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         private.append(repo)
         for job in jobs:
             queued_at[job.id] = job.queued_at
+            workflows[job.id] = job.workflow
             if not job.ours:
                 reasons[job.id] = (repo, f"no VM has its labels ({', '.join(job.labels)})")
                 continue
@@ -2053,7 +2067,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
                 reasons[job_id] = (want[0], BOOTING)
             else:
                 reasons[job_id] = (want[0], full)
-    note_waits(state, private, reasons, now, queued_at)
+    note_waits(state, private, reasons, now, queued_at, workflows)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
     # memory, if the standby cannot take it. A light job never uses a build slot.
@@ -2193,12 +2207,14 @@ def note_waits(
     reasons: Mapping[int, tuple[str, str]],
     now: float,
     queued_at: Mapping[int, float] | None = None,
+    workflows: Mapping[int, str] | None = None,
 ) -> None:
     """Log each queued job not started, with why and how long it has waited here: when it
     starts waiting and every WAIT_LOG_SECONDS, and at once if GitHub had queued it
     UNSEEN_LOG_SECONDS before the supervisor saw it. A job that was logged gets one more line
     when it stops waiting. Jobs of repos not polled this time are left as they are."""
     queued_at = queued_at or {}
+    workflows = workflows or {}
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
@@ -2216,7 +2232,9 @@ def note_waits(
         unseen = 0.0
         if wait is None:
             queued = min(queued_at.get(job_id) or now, now)
-            wait = state.waits[job_id] = Wait(repo, now, queued, seen=now)
+            wait = state.waits[job_id] = Wait(
+                repo, now, queued, seen=now, workflow=workflows.get(job_id, "")
+            )
             unseen = wait.seconds["unseen"] = now - queued
         wait.count(now)
         wait.kind = wait_kind(why)
@@ -2233,13 +2251,30 @@ def note_waits(
 
 
 def write_wait_metrics(state: State, now: float) -> None:
-    """Write the longest-waiting queued job's seconds per kind (all 0 when none waits). A
-    failure is logged once and never stops the poll."""
+    """Write the longest-waiting queued job's seconds per kind (all 0 when none waits), the
+    seconds since GitHub queued each workflow's longest-waiting job (none when nothing
+    waits), and how many VMs run a job of how many slots, so an alert can tell a job held
+    for a VM from one GitHub never queued. A failure is logged once and never stops the
+    poll."""
     longest = min(state.waits.values(), key=lambda w: w.queued, default=None)
     seconds = longest.seconds if longest else {}
     lines = [
         f'homelab_ci_wait_seconds{{kind="{kind}"}} {round(seconds.get(kind, 0.0))}'
         for kind in WAIT_KINDS
+    ]
+    queued: dict[tuple[str, str], float] = {}
+    for wait in state.waits.values():
+        key = (wait.repo, wait.workflow)
+        queued[key] = max(queued.get(key, 0.0), now - wait.queued)
+    lines += [
+        f'homelab_ci_queued_seconds{{repo="{label_value(repo)}",workflow="{label_value(name)}"}}'
+        f" {round(waited)}"
+        for (repo, name), waited in sorted(queued.items())
+    ]
+    busy = sum(not run.standby for run in state.launches.values())
+    lines += [
+        f"homelab_ci_vms_busy {busy}",
+        f"homelab_ci_vm_slots {state.slots + state.light_slots}",
     ]
     try:
         write_textfile(WAIT_METRICS, lines)
@@ -2250,6 +2285,11 @@ def write_wait_metrics(state: State, now: float) -> None:
         if why != state.wait_metrics_error:
             log(f"could not write {WAIT_METRICS}: {why}")
         state.wait_metrics_error = why
+
+
+def label_value(text: str) -> str:
+    """Text as a Prometheus label value."""
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def wait_kind(why: str) -> str:

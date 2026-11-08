@@ -111,8 +111,10 @@ Prometheus receives metrics from:
   only while it runs a VM, so counting them counts running VMs, the ones
   waiting ready included. Its relabel keeps only those series, so there is no
   `up{job="ci-vms"}`. What each job needed inside its VM, and its out-of-memory kills, come
-  through the host's textfile collector (`homelab_ci_vm*`), as does the longest-waiting queued job's
-  minutes per reason (`homelab_ci_wait_seconds{kind}`); see the ci-runner runbook. The host SSD's
+  through the host's textfile collector (`homelab_ci_vm*`), as do the longest-waiting queued job's
+  minutes per reason (`homelab_ci_wait_seconds{kind}`), each workflow's longest wait since GitHub
+  queued it (`homelab_ci_queued_seconds{repo,workflow}`) and the VMs running jobs
+  (`homelab_ci_vms_busy` of `homelab_ci_vm_slots`); see the ci-runner runbook. The host SSD's
   lifetime bytes written and read, wear and spare (`homelab_ssd_*{device="nvme0"}`) come the same way,
   from `ssd.prom`.
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`

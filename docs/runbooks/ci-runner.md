@@ -425,7 +425,14 @@ room's: since GitHub created the task's next homelab job, while it is queued, wa
 pending. The supervisor sees only queued jobs, so what the Control room has beyond the kinds
 added up is given as minutes with no runner reason: a job still waiting or pending on GitHub
 (a concurrency group, say), which no runner can take yet. A large one with every kind at 0
-means look at the task's run on GitHub, not the runner. For each job:
+means look at the task's run on GitHub, not the runner.
+
+The same file has, per repo and workflow, the seconds since GitHub queued its longest-waiting job
+(`homelab_ci_queued_seconds{repo,workflow}`, only while one waits) and how many of the VM slots
+run a job (`homelab_ci_vms_busy`, `homelab_ci_vm_slots`). The "Kaizen's Watcher stopped running"
+alert names from them how long the Watcher's own job and Auto Kaizen's longest job have waited
+for a VM: a waiting job means a capacity problem; none means GitHub is not starting jobs.
+For each job:
 
 ```bash
 journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
