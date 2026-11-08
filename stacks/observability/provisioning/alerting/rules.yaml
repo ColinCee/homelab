@@ -737,6 +737,17 @@ groups:
               expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="other"}) / 60 or on() vector(0)
               instant: true
               refId: other
+          # The longest-waiting job asking for a runner label no VM has: its repo and labels
+          # ride on the "other" kind, for the description. 0 with no labels when none waits.
+          - refId: unmatched
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max by (repo, labels) (homelab_ci_wait_seconds{job="integrations/unix",kind="other",repo!=""}) or on() vector(0)
+              instant: true
+              refId: unmatched
           - refId: ready
             relativeTimeRange:
               from: 300
@@ -807,6 +818,8 @@ groups:
             {{ with $values.booting }}{{ printf "%.0f" .Value }}{{ end }} for its VM to boot,
             {{ with $values.ready }}{{ printf "%.0f" .Value }}{{ end }} with its VM ready but no job from GitHub and
             {{ with $values.other }}{{ printf "%.0f" .Value }}{{ end }} for a runner label no VM has.
+            {{ with $values.unmatched }}{{ if .Labels.repo }}A job in {{ .Labels.repo }} asks for labels
+            {{ .Labels.labels }}, which no VM has: it never starts here until its runs-on changes.{{ end }}{{ end }}
             {{ with $values.gap }}{{ printf "%.0f" .Value }}{{ end }} min of the wait has no runner reason:
             the job is still waiting or pending on GitHub, not yet queued for any runner.
           action: "See \"Why a job waits\" in docs/runbooks/ci-runner.md; `journalctl -u homelab-ci-supervisor` on the Beelink has each job's reason."
