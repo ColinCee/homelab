@@ -406,7 +406,7 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
 | `a VM booting for it` | Its VM is booting; logged only after 3 minutes |
 | `a VM ready for it that GitHub has not given the job` | Its VM's runner (or a standby, or a PC ready runner) is online and idle, and GitHub has not handed it the job; logged only after 3 minutes |
-| `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on` |
+| `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on`. The alert below names the longest-waiting such job's repo and labels |
 
 A job that was logged gets `stopped waiting after Xm, Ym since GitHub queued it` once its VM
 starts or it is cancelled.
@@ -420,7 +420,9 @@ its record. It reaches VMs once the next update (`install-host.sh` and the image
 The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
 so far per kind of wait, from `homelab_ci_wait_seconds{kind}` (kinds as in `waits.jsonl`, all 0
 when nothing waits; the longest is the one GitHub queued first), which the supervisor writes to
-`ci-waits.prom` in the textfile folder at most every 15 s. The alert's own number is the Control
+`ci-waits.prom` in the textfile folder at most every 15 s. While a job asks for a label no VM has,
+the `other` kind also carries the `repo` and `labels` (comma-separated) of the longest-waiting such
+job, and the alert's text names them, so the job to fix needs no journal search. The alert's own number is the Control
 room's: since GitHub created the task's next homelab job, while it is queued, waiting or
 pending. The supervisor sees only queued jobs, so what the Control room has beyond the kinds
 added up is given as minutes with no runner reason: a job still waiting or pending on GitHub

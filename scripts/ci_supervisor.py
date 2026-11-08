@@ -442,6 +442,8 @@ class Wait:
     why: str = ""
     # Its workflow's name, "" when unknown.
     workflow: str = ""
+    # The labels it asks for when no VM has them, else empty.
+    unmatched: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         self.queued = self.queued or self.since
@@ -1891,6 +1893,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # When GitHub queued each job, and its workflow.
     queued_at: dict[int, float] = {}
     workflows: dict[int, str] = {}
+    # The labels of each job no VM has the labels of.
+    unmatched: dict[int, tuple[str, ...]] = {}
     # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
     answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
     for repo, (jobs, took) in zip(repos, answers, strict=True):
@@ -1903,6 +1907,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             workflows[job.id] = job.workflow
             if not job.ours:
                 reasons[job.id] = (repo, f"no VM has its labels ({', '.join(job.labels)})")
+                unmatched[job.id] = job.labels
                 continue
             queued[job.want] += 1
             job_ids.setdefault(job.want, []).append(job.id)
@@ -2067,7 +2072,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
                 reasons[job_id] = (want[0], BOOTING)
             else:
                 reasons[job_id] = (want[0], full)
-    note_waits(state, private, reasons, now, queued_at, workflows)
+    note_waits(state, private, reasons, now, queued_at, workflows, unmatched)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
     # memory, if the standby cannot take it. A light job never uses a build slot.
@@ -2208,6 +2213,7 @@ def note_waits(
     now: float,
     queued_at: Mapping[int, float] | None = None,
     workflows: Mapping[int, str] | None = None,
+    unmatched: Mapping[int, tuple[str, ...]] | None = None,
 ) -> None:
     """Log each queued job not started, with why and how long it has waited here: when it
     starts waiting and every WAIT_LOG_SECONDS, and at once if GitHub had queued it
@@ -2215,6 +2221,7 @@ def note_waits(
     when it stops waiting. Jobs of repos not polled this time are left as they are."""
     queued_at = queued_at or {}
     workflows = workflows or {}
+    unmatched = unmatched or {}
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
@@ -2239,6 +2246,7 @@ def note_waits(
         wait.count(now)
         wait.kind = wait_kind(why)
         wait.why = why
+        wait.unmatched = unmatched.get(job_id, ())
         waited = now - wait.since
         late = unseen >= UNSEEN_LOG_SECONDS
         quiet = why in (BOOTING, READY) and waited < WAIT_LOG_SECONDS and not late
@@ -2251,15 +2259,23 @@ def note_waits(
 
 
 def write_wait_metrics(state: State, now: float) -> None:
-    """Write the longest-waiting queued job's seconds per kind (all 0 when none waits), the
-    seconds since GitHub queued each workflow's longest-waiting job (none when nothing
-    waits), and how many VMs run a job of how many slots, so an alert can tell a job held
-    for a VM from one GitHub never queued. A failure is logged once and never stops the
-    poll."""
+    """Write the longest-waiting queued job's seconds per kind (all 0 when none waits), with
+    the repo and labels of the longest-waiting job no VM has the labels of on the "other"
+    kind (it never starts here, so the alert names it), the seconds since GitHub queued each
+    workflow's longest-waiting job (none when nothing waits), and how many VMs run a job of
+    how many slots, so an alert can tell a job held for a VM from one GitHub never queued.
+    A failure is logged once and never stops the poll."""
     longest = min(state.waits.values(), key=lambda w: w.queued, default=None)
     seconds = longest.seconds if longest else {}
+    stray = min(
+        (w for w in state.waits.values() if w.unmatched), key=lambda w: w.queued, default=None
+    )
+    names = {kind: f'kind="{kind}"' for kind in WAIT_KINDS}
+    if stray:
+        labels = label_value(",".join(stray.unmatched))
+        names["other"] += f',repo="{label_value(stray.repo)}",labels="{labels}"'
     lines = [
-        f'homelab_ci_wait_seconds{{kind="{kind}"}} {round(seconds.get(kind, 0.0))}'
+        f"homelab_ci_wait_seconds{{{names[kind]}}} {round(seconds.get(kind, 0.0))}"
         for kind in WAIT_KINDS
     ]
     queued: dict[tuple[str, str], float] = {}

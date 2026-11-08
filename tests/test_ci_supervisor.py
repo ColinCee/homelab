@@ -1228,7 +1228,9 @@ def test_an_unwritable_waits_file_is_logged_once_and_does_not_raise(tmp_path, mo
     assert len(lines) == 1 and lines[0].startswith("could not write")
 
 
-def test_a_job_asking_for_a_label_no_vm_has_is_logged_and_never_started(host, monkeypatch):
+def test_a_job_asking_for_a_label_no_vm_has_is_logged_named_and_never_started(
+    host, wait_metrics, monkeypatch
+):
     _, started, lines = host
     runs = [{"id": 1}]
     jobs = {1: [{"id": 7, "name": "gpu", "status": "queued", "labels": ["homelab-fc", "gpu"]}]}
@@ -1237,9 +1239,15 @@ def test_a_job_asking_for_a_label_no_vm_has_is_logged_and_never_started(host, mo
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
     monkeypatch.setattr(sup, "find_queued", lambda gh, repo: found if repo == "o/ok" else [])
-    sup.tick(None, sup.State(), ["o/ok"], 0.0)  # type: ignore[arg-type]
+    state = sup.State()
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    sup.tick(None, state, ["o/ok"], 20.0)  # type: ignore[arg-type]
     assert started == []
     assert lines == ["job 7 in o/ok has waited 0m00s here: no VM has its labels (homelab-fc, gpu)"]
+    # The alert names the repo and labels, so nobody has to search the journal for them.
+    assert 'homelab_ci_wait_seconds{kind="other",repo="o/ok",labels="homelab-fc,gpu"} 20' in (
+        wait_metrics.read_text().splitlines()
+    )
 
 
 def test_an_unreadable_pressure_file_does_not_hold_vms(tmp_path, monkeypatch) -> None:
