@@ -146,12 +146,12 @@ BOOT_GRACE_SECONDS = 120
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
 IDLE_AFTER_SECONDS = 30
 VM_TIMEOUT_SECONDS = 3600
-# One VM is kept booted and registered for the last job's repo, so a job
-# starts in seconds instead of waiting for a VM. It is replaced every 45 minutes
+# Build VMs are kept booted and registered for the jobs likely next (see standby_wants), so
+# a job starts in seconds instead of waiting for a VM. Each is replaced every 45 minutes
 # while idle; its timeout leaves a job that starts just before then time to finish.
 STANDBY_RECYCLE_SECONDS = 45 * 60
-# How many VMs wait ready at once (each about 450 MB while idle). Read from
-# /etc/homelab-ci/standbys if present, so trying 2 needs no code change.
+# How many build VMs wait ready at once, each for a different repo and cache label (each
+# about 450 MB while idle). Read from /etc/homelab-ci/standbys if present (see standby_count).
 STANDBY_COUNT_FILE = Path("/etc/homelab-ci/standbys")
 STANDBY_TIMEOUT_SECONDS = 2 * 3600
 # Checked every poll: conditional requests make an unchanged answer free.
@@ -2230,22 +2230,27 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             stop_if_still_idle(gh, run, "gives way to the host's load test")
         return spent
     standbys = [r for r in state.launches.values() if r.standby]
-    # A standby is the first thing given up: never booted while a job waits for memory.
-    # Nor while one of the PC's ready runners waits: it is the standby.
+    # A standby is the first thing given up: never booted while a job waits for memory, nor
+    # while a build job waits for a slot (one at a time while free slots outnumber them).
+    # Nor for a want one of the PC's ready runners waits for: it is the standby.
+    build_standbys = [r for r in standbys if not r.light]
+    waiting_builds = sum(n for w, n in waiting.items() if n > 0 and w[1] not in LIGHT_SIZES)
+    target = next(
+        (
+            w
+            for w in standby_wants(state, repos, private)
+            if not pc_ready[w] and all(r.want != w for r in build_standbys)
+        ),
+        None,
+    )
     if (
-        not state.held
-        and not (
-            repos and pc_ready[(repos[0], state.last_label if repos[0] == state.last_repo else "")]
-        )
+        target
+        and not state.held
+        and len(free) > waiting_builds
+        and len(build_standbys) < standby_count()
         and next_size(state, True)[1] <= room
-        and wants_standby(
-            repos, private, [not r.light for r in standbys], len(free), standby_count()
-        )
     ):
-        repo = repos[0]
-        # Booted for the last job's cache label too, else a job asking for it never takes
-        # the standby and stops it as in the way (5 Nov: every task's Builder and Reviewer).
-        label = state.last_label if repo == state.last_repo else ""
+        repo, label = target
         cache = cache_for(repo, label, private)
         launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
         room -= next_size(state, True)[1]
@@ -2502,8 +2507,28 @@ def wants_standby(
     return bool(repos) and repos[0] in private and sum(standbys) < wanted and free > 0
 
 
+def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Want]:
+    """The repos and cache labels build standbys boot for, most needed first: the last build
+    job's (or the first polled repo's) once no VM runs it, then each running build job's,
+    oldest first (a task's Reviewer asks for its Builder's seconds after the Builder ends, even
+    when another task's build started in between). Booted for the cache label too, else a job
+    asking for it never takes the standby and stops it as in the way."""
+    running = sorted(
+        (r for r in state.launches.values() if not r.standby and not r.light),
+        key=lambda r: r.started,
+    )
+    wants = [r.want for r in running]
+    if repos:
+        last = (repos[0], state.last_label if repos[0] == state.last_repo else "")
+        # The last build job's want leads once its VM has ended: that is when it is asked for.
+        wants = [*wants, last] if last in wants else [last, *wants]
+    return [w for w in dict.fromkeys(wants) if w[0] in private]
+
+
 def standby_count() -> int:
-    return count_in(STANDBY_COUNT_FILE)
+    """How many build standbys may wait, each for a different repo and cache label: 2 unless
+    /etc/homelab-ci/standbys says otherwise."""
+    return count_in(STANDBY_COUNT_FILE, default=2)
 
 
 def light_standby_count() -> int:
@@ -2550,12 +2575,12 @@ def light_room(state: State, label: str, planned: Counter[str] | None = None) ->
     return max(state.light_slots - used - len(kept_from(state, label)), 0)
 
 
-def count_in(path: Path) -> int:
-    """How many standbys a host file asks for: 1 if it is missing or not a number."""
+def count_in(path: Path, default: int = 1) -> int:
+    """How many standbys a host file asks for: `default` if it is missing or not a number."""
     try:
         return max(0, int(path.read_text().strip()))
     except (OSError, ValueError):
-        return 1
+        return default
 
 
 def light_slot_count() -> int:
