@@ -42,5 +42,6 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
 - Update the relevant operational doc when behavior changes. Keep necessary
   rationale beside its instructions or code; a decision between designs gets a
   record in `docs/adr/` (the doc-upkeep skill's "Decision records").
-  Delete obsolete guidance; archive only for a concrete retention need.
+  Delete obsolete guidance (decision records stay; see above); archive only
+  for a concrete retention need.
   Track future work in issues rather than another roadmap.

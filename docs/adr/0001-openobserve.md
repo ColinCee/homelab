@@ -17,7 +17,7 @@ A decision rule was fixed before any results:
 
 ## Decision
 
-OpenObserve replaces Grafana, Prometheus and Loki. It is one program holding the store for logs, metrics and traces, the UI, logins and alerts. Alloy stays as the collector. The fallback is GreptimeDB + Grafana.
+OpenObserve replaces Grafana, Prometheus and Loki. It is one program holding the store for logs, metrics and traces, the UI, logins and alerts. Alloy stays as the collector. The fallback is GreptimeDB or VictoriaMetrics + Grafana.
 
 The finalists tied on memory at the real rate (OpenObserve 724-751 MiB, GreptimeDB + Grafana 723-755 MiB, over 3 rounds), so simplicity decided.
 
@@ -33,5 +33,5 @@ OpenObserve runs with `ZO_WAL_WRITE_QUEUE_ENABLED=false` and `ZO_WAL_FSYNC_DISAB
   - alerts on missing data and on evaluation errors;
   - recovery messages.
 
-  If that step fails, this record is rejected and GreptimeDB + Grafana is used instead, keeping the rules almost unchanged.
+  If that step fails, this record is rejected and a Grafana-based fallback is used instead, keeping the rules almost unchanged.
 - Expiry of old data runs hours late. It is checked after the first month.

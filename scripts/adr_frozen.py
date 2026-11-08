@@ -1,8 +1,9 @@
-"""Fail a change that rewrites an accepted decision record.
+"""Fail a change that rewrites a decided decision record.
 
-Usage: adr_frozen.py BASE HEAD. A record (docs/adr/NNNN-title.md) accepted at
-BASE must still exist at HEAD with only its status line changed, and its
-evidence folder (docs/adr/NNNN-title/) must be unchanged. A changed decision is
+Usage: adr_frozen.py BASE HEAD. A record (docs/adr/NNNN-title.md) whose status
+at BASE is anything but proposed (accepted, superseded, a missing status) must
+still exist at HEAD with only its status line changed, and its evidence folder
+(docs/adr/NNNN-title/) must be unchanged. A changed decision is
 a new record that supersedes the old one. Exits 1 and names each breach. CI
 runs the base commit's copy, so a pull request cannot change the rule that
 judges it.
@@ -43,16 +44,16 @@ def breaches(base: str, head: str) -> list[str]:
     found = []
     for path in sorted(p for p in before if RECORD.fullmatch(p)):
         status, body = _split(_git("show", f"{base}:{path}"))
-        if not status.lower().startswith("accepted"):
+        if status.lower().lstrip("*-_ ").startswith("proposed"):
             continue
         if path not in after:
-            found.append(f"{path}: an accepted record was removed or renamed")
+            found.append(f"{path}: a decided record was removed or renamed")
         elif _split(_git("show", f"{head}:{path}"))[1] != body:
-            found.append(f"{path}: an accepted record changed beyond its status line")
+            found.append(f"{path}: a decided record changed beyond its status line")
         folder = path.removesuffix(".md") + "/"
         evidence = {p: b for p, b in before.items() if p.startswith(folder)}
         if evidence != {p: b for p, b in after.items() if p.startswith(folder)}:
-            found.append(f"{folder}: an accepted record's evidence changed")
+            found.append(f"{folder}: a decided record's evidence changed")
     return found
 
 

@@ -70,6 +70,16 @@ def test_a_proposed_record_changes_freely_and_may_be_accepted(repo: Path) -> Non
     assert _change(repo, start, change) == []
 
 
+def test_a_superseded_record_stays_frozen(repo: Path) -> None:
+    start = {RECORD: _record("Superseded by 0002")}
+    assert _change(repo, start, {RECORD: _record("Superseded by 0002", "Use another.")}) != []
+
+
+def test_a_record_with_no_status_heading_is_frozen(repo: Path) -> None:
+    start = {RECORD: "# Store\n\nUse the store.\n"}
+    assert _change(repo, start, {RECORD: "# Store\n\nUse another.\n"}) != []
+
+
 def test_a_new_record_passes(repo: Path) -> None:
     start = {RECORD: _record("Accepted")}
     assert _change(repo, start, {"docs/adr/0002-other.md": _record("Accepted")}) == []

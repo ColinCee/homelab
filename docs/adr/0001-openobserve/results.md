@@ -26,7 +26,7 @@ The method and results behind [0001](../0001-openobserve.md).
   2. 4x;
   3. 3 rounds of the busiest 3 hours at the real rate;
   4. safety tests on the two finalists: 6 days bulk-loaded, every container killed, the shortest keep period.
-- Gap: in every real-rate round, OpenObserve's collector had the wrong login, so it missed the homelab load (about 10 points and 1 log a second). The login is fixed, but those rounds were not rerun.
+- Gap: in every screen and real-rate round, OpenObserve's collector had the wrong login, so it missed the homelab load (about 10 points and 1 log a second). The login is fixed, but those rounds were not rerun.
 
 ## Results
 
