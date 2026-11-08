@@ -75,9 +75,9 @@ automatically. Non-major versions can still break behavior, especially before
 
 The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
 pending updates) to its job summary. On the first Monday of each month it also
-prunes unused Docker images and test-restores a file from backup. The **Deploy
-watchdog** runs off-host after every deploy (and every 15 minutes as a backup):
-it alerts Discord about stuck deploys and stops Auto Kaizen after a failed one.
+prunes unused Docker images and test-restores a file from backup. A failed or
+stuck deploy stops Auto Kaizen's homelab work until fixed; see
+[observability](docs/observability.md) for what watches what.
 
 ## Maintain and extend
 

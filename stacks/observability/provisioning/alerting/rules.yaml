@@ -942,7 +942,7 @@ groups:
                     type: gt
                     params: [60]
               refId: C
-        # No number yet (a Control room older than the metric): quiet; the off-host Kaizen watchdog still checks.
+        # No number yet (a Control room older than the metric): quiet; Kaizen Control room unreachable covers a Control room that is down.
         noDataState: OK
         execErrState: Error
         for: 5m
