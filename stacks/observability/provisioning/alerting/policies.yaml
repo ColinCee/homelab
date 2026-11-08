@@ -16,3 +16,9 @@ policies:
         repeat_interval: 12h
         object_matchers:
           - ["alertname", "=", "Kaizen Control room unreachable"]
+      # One issue, post and question per unknown container: grouped only by rule, a second
+      # container would hide behind the first's post with no new mention.
+      - receiver: Kaizen
+        group_by: ['alertname', 'rulename', 'name']
+        object_matchers:
+          - ["route", "=", "colin"]
