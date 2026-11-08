@@ -257,6 +257,9 @@ READY = "a VM ready for it that GitHub has not given the job"
 # A job GitHub had queued this long before the supervisor first saw it is logged then: the
 # quiet repos are asked once a minute, so less is expected.
 UNSEEN_LOG_SECONDS = 90.0
+# A new run's first build job waits behind later jobs of started runs at most this long
+# since GitHub queued it, then goes back to oldest first: a few minutes, never starved.
+FIRST_BUILD_WAIT_MAX = 600.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
 # wait (see wait_kind) and the reason of its longest kind, for the Control room and speed
 # reports. Lines older than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
@@ -312,6 +315,8 @@ class Job:
     queued_at: float = 0.0
     # Its workflow's name, "" when unknown.
     workflow: str = ""
+    # Its run already finished a job on the build label (a task's review after its build).
+    run_started: bool = False
 
     @property
     def want(self) -> Want:
@@ -498,7 +503,12 @@ def queued_jobs(
 ) -> list[Job]:
     jobs: list[Job] = []
     for run in runs:
-        for job in get_jobs(int(run["id"])):
+        run_jobs = list(get_jobs(int(run["id"])))
+        run_started = any(
+            job.get("status") == "completed" and on_build_label(job.get("labels", []))
+            for job in run_jobs
+        )
+        for job in run_jobs:
             labels = tuple(str(label) for label in job.get("labels", []))
             if job.get("status") != "queued":
                 continue
@@ -515,9 +525,29 @@ def queued_jobs(
                         ours,
                         queued_at,
                         str(job.get("workflow_name") or run.get("name") or ""),
+                        run_started,
                     )
                 )
     return jobs
+
+
+def on_build_label(labels: Iterable[str]) -> bool:
+    asked = {str(label).lower() for label in labels}
+    return LABEL in asked and not LIGHT_SIZES.keys() & asked
+
+
+def start_order(jobs: Iterable[Job], waited_since: Callable[[int], float], now: float) -> list[Job]:
+    """Jobs in the order they get slots and memory: oldest first, except that a new run's
+    first build job waits behind later jobs of runs already started (a task's review), so a
+    task half done is not left behind newer tasks' builds. A first build queued over
+    FIRST_BUILD_WAIT_MAX goes back to oldest first."""
+
+    def new(job: Job) -> bool:
+        if job.run_started or not on_build_label(job.labels):
+            return False
+        return now - (job.queued_at or waited_since(job.id)) < FIRST_BUILD_WAIT_MAX
+
+    return sorted(jobs, key=lambda job: (new(job), job.id))
 
 
 def github_time(value: Any) -> float:
@@ -1952,6 +1982,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     workflows: dict[int, str] = {}
     # The labels of each job no VM has the labels of.
     unmatched: dict[int, tuple[str, ...]] = {}
+    polled: list[Job] = []
     # All at once: one after another, 9 repos took 13 s a poll while a job waited (4 Nov).
     answers = state.askers.map(lambda repo: ask(gh, state, repo, now), repos)
     for repo, (jobs, took) in zip(repos, answers, strict=True):
@@ -1968,6 +1999,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
                 continue
             queued[job.want] += 1
             job_ids.setdefault(job.want, []).append(job.id)
+            polled.append(job)
     reap(gh, state, now, queued, private)
     maybe_take_outboxes(gh, state, now)
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
@@ -2009,7 +2041,9 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         if slot not in state.launches and not draining
     ]
     # GitHub's job ids only grow, so the smallest is the oldest.
-    oldest_first = [w for _, w in sorted((i, w) for w, ids in job_ids.items() for i in ids)]
+    order = start_order(polled, lambda i: waited_since(state, i, now), now)
+    rank = {(job.id, job.want): n for n, job in enumerate(order)}
+    oldest_first = [job.want for job in order]
     starts = plan([w for w in oldest_first if w[1] not in LIGHT_SIZES], booting, len(free))
     # Deploys first, in any free light slot, then small jobs, then 2 GiB ones; none takes
     # a slot kept for another label's standby.
@@ -2049,7 +2083,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             state.disk_paced_until = now + DISK_PACE_SECONDS
             room = min(room, 0)
 
-    # Oldest job first. A light job whose VM fits starts even past a build held for memory:
+    # In start order. A light job whose VM fits starts even past a build held for memory:
     # held behind it, a task's first step and merge step (which run no build) waited for
     # minutes with room for their VMs. Light VMs never outgrow their own slots, so a build
     # waits behind at most those, and builds still start oldest first.
@@ -2059,7 +2093,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     oldest_held_build: int | None = None
     oldest_held_light = False
     started = light_started = 0
-    for job_id, (repo, label) in sorted(builds + lights):
+    for job_id, (repo, label) in sorted(builds + lights, key=rank.__getitem__):
         if label not in LIGHT_SIZES:
             mem = next_size(state, False)[1]
             if oldest_held_build is not None or mem > room:
@@ -2136,8 +2170,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     if PEER:
         builds_waiting = (w for w in oldest_first if w[1] not in LIGHT_SIZES and waiting[w] > 0)
         PEER.wants = tuple(dict.fromkeys(builds_waiting))
-        # The newest queued Auto Kaizen build's, kept until another is queued: the label a
-        # ready PC runner most likely needs next (each task's build asks for its product's).
+        # The queued Auto Kaizen build's last in start order, kept until another is queued: the
+        # label a ready PC runner most likely needs next (each task's build asks for its product's).
         ours = [
             w for w in oldest_first if w[1] not in LIGHT_SIZES and w[0].lower() == LIVE_REPO.lower()
         ]

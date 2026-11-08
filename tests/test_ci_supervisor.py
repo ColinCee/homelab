@@ -2451,3 +2451,49 @@ def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(monkeypatch, tmp_p
     monkeypatch.setattr(sup, "VM_WAITS_MAX", 1)
     sup.launch(Registers(), state, "o/ok", 1, 340.0, cache=None, jobs=[9, 7])  # type: ignore[arg-type]
     assert list(json.loads((tmp_path / "metadata-slot1.json").read_text())["waits"]) == ["7"]
+
+
+def test_a_queued_job_knows_its_run_already_finished_a_build() -> None:
+    small = ["self-hosted", "linux", "x64", sup.SMALL_LABEL]
+    build = ["self-hosted", "linux", "x64", "homelab-fc"]
+    jobs = {
+        # A task's run: its build is done, its review waits.
+        1: [
+            {"id": 11, "status": "completed", "labels": small},
+            {"id": 12, "status": "completed", "labels": build},
+            {"id": 13, "name": "review", "status": "queued", "labels": build},
+        ],
+        # A new task's run: only its first step, on a small VM, is done.
+        2: [
+            {"id": 21, "status": "completed", "labels": small},
+            {"id": 22, "name": "build", "status": "queued", "labels": build},
+        ],
+    }
+
+    found = sup.queued_jobs("o/ok", [{"id": 1}, {"id": 2}], jobs.__getitem__)
+
+    assert [(job.id, job.run_started) for job in found] == [(13, True), (22, False)]
+
+
+@pytest.mark.parametrize(
+    ("build_waited", "first"),
+    [
+        (60.0, "fc-cache-o--review"),  # the started run's review goes first
+        (sup.FIRST_BUILD_WAIT_MAX + 60, "fc-cache-o--build"),  # the build waited too long
+    ],
+)
+def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
+    pools, monkeypatch, build_waited: float, first: str
+) -> None:
+    _, started = pools
+    now = 10_000.0
+    labels = tuple(sup.RUNNER_LABELS)
+    jobs = [
+        sup.Job("o/ok", 1, "build", (*labels, "fc-cache-o--build"), queued_at=now - build_waited),
+        sup.Job("o/ok", 2, "review", (*labels, "fc-cache-o--review"), run_started=True),
+    ]
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+
+    sup.tick(None, sup.State(slots=1), ["o/ok"], now)  # type: ignore[arg-type]
+
+    assert started == [(0, first)]
