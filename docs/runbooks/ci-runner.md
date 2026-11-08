@@ -462,6 +462,12 @@ The same file has, per repo and workflow, the seconds since GitHub queued its lo
 run a job (`homelab_ci_vms_busy`, `homelab_ci_vm_slots`). The "Kaizen's Watcher stopped running"
 alert names from them how long the Watcher's own job and Auto Kaizen's longest job have waited
 for a VM: a waiting job means a capacity problem; none means GitHub is not starting jobs.
+It also has the polls failed in a row (`homelab_ci_poll_failures`, 0 while polls work; a rate
+limit is not one) and the seconds since the first of them (`homelab_ci_poll_failed_seconds`),
+written within 15 s of a failed poll too. No VM starts while every poll fails, so the "CI
+supervisor's poll keeps failing" alert fires at 10 or more for 2 minutes. An ended VM's
+bookkeeping (its memory count, files, runner removal, the standby's next repo) never fails the
+poll: its failure is logged as `slot N: <runner> bookkeeping failed: ...` and the slot is freed.
 For each job:
 
 ```bash

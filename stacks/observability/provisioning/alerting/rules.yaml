@@ -247,6 +247,62 @@ groups:
         labels:
           severity: warning
 
+      - uid: ci-supervisor-poll-failing
+        title: The CI supervisor's poll keeps failing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Polls failed in a row (2 s apart), from the CI supervisor; 0 while they work.
+              expr: max(homelab_ci_poll_failures{job="integrations/unix"})
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_poll_failed_seconds{job="integrations/unix"})
+              instant: true
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [9]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "The CI supervisor's poll keeps failing: no job VM starts"
+          measure: "Polls failed in a row"
+          trigger: "10 or more, for 2 min"
+          chart: |
+            max(homelab_ci_poll_failures{job="integrations/unix"})
+          chart_line: "10"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}{{ end }}"
+          description: >-
+            Every poll of the CI supervisor has failed for {{ with $values.B }}{{ humanizeDuration .Value }}{{ end }}:
+            no job VM starts on the Beelink, so every queued job waits.
+          action: >-
+            Read the error (`journalctl -u homelab-ci-supervisor -g "poll failed"`) and fix its cause in
+            scripts/ci_supervisor.py (docs/runbooks/ci-runner.md).
+        labels:
+          severity: critical
+
       - uid: beelink-disk-stalled
         title: Beelink disk too slow for Kaizen's VMs
         condition: C
