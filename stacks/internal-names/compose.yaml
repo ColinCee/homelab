@@ -1,0 +1,29 @@
+# Tailscale sends .internal lookups to dns: a custom nameserver in its admin console (notes, network.md).
+services:
+  dns:
+    image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: ["-conf", "/etc/coredns/Corefile"]
+    ports:
+      - "100.100.146.119:53:53/udp"
+      - "100.100.146.119:53:53/tcp"
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - ./Corefile:/etc/coredns/Corefile:ro
+
+  proxy:
+    image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Host networking: the Control room trusts tailnet addresses, and from here it sees
+    # Beelink's own. The Caddyfile admits only other tailnet devices, so a container on
+    # Beelink cannot borrow that trust.
+    network_mode: host
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro

@@ -54,6 +54,8 @@ Add panels to it rather than adding dashboards. From the top:
   CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
+To remove a rule, also list its uid under `deleteRules` in `rules.yaml`: Grafana keeps
+a rule that is only deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -61,8 +63,8 @@ the observability stack.
 Grafana allows anonymous read-only (Viewer) access so dashboards open without
 a login, including for agents checking a change. Editing, Explore and
 administration still require the admin password. This relies on the port
-being bound to the Tailscale address and on the tailnet policy limiting who
-can reach it; remove `GF_AUTH_ANONYMOUS_*` if either changes.
+being bound to the Tailscale address, on the tailnet policy limiting who
+can reach it, and on `stacks/internal-names` refusing Beelink's own address; remove `GF_AUTH_ANONYMOUS_*` if either changes.
 
 ### Dashboard patterns
 
@@ -152,7 +154,7 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
-point: every firing and resolved alert goes to the Kaizen Control room's
+point: every firing and resolved alert, except the few below, goes to the Kaizen Control room's
 `/alert`, which opens (or, for a repeat, comments on) an `alert` issue in the
 private auto-kaizen repo and closes it on resolve. Each new one starts Auto
 Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
@@ -167,7 +169,9 @@ only; read container logs in Grafana. Grafana and the Control room share the
 
 The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
 straight to the `Discord Private` webhook (Discord's #uptime channel), as do the deploy
-watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. Every other alert,
+watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A rule labelled
+`route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
+out) goes only to #uptime, with no Kaizen issue. Every other alert,
 no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
 deploy stops Auto Kaizen.
 After deploying alerting file changes, reload them with Grafana's authenticated
@@ -194,12 +198,6 @@ The shipped rules cover host-level pressure such as:
 - **Unknown container started**: a container whose name was not seen in the week
   before has run for 15 minutes, as one planted by an intruder would; redeploys
   keep their names and quick `docker run` checks stop sooner, so neither fires
-- **New Tailscale device**: a device visible to the Beelink was added to the
-  tailnet after the approved-before time in the rule, as an intruder's would be.
-  It stays on until the device is removed or approved by moving that time past
-  it. A 5-minute timer records each device's added time, and **Tailscale device
-  check stopped** fires when it has not for 15 minutes. Policy file changes are
-  not covered
 - **Beelink SSD wearing out**: the SSD reports over 80% of its rated write endurance used.
   A 15-minute timer records its wear and lifetime writes, and **SSD wear check stopped**
   fires when it has not for an hour

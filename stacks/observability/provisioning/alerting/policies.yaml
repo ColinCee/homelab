@@ -6,14 +6,17 @@ policies:
     group_wait: 30s
     group_interval: 5m
     # Rare repeats to Kaizen: a firing on an alert issue open over 12 hours reads
-    # as a lost resolve and opens a new issue, and some alerts stay on until
-    # Colin acts (New Tailscale device). 5 days is as long as Grafana keeps its
-    # record of what it sent.
+    # as a lost resolve and opens a new issue, and an alert can stay on for days.
+    # 5 days is as long as Grafana keeps its record of what it sent.
     repeat_interval: 120h
-    # The Control room posts every other alert to Discord, so only its own
-    # outage also goes straight to Discord through the webhook.
     routes:
+      # The Control room posts every other alert to Discord, so its own outage
+      # also goes straight to Discord through the webhook.
       - receiver: Discord Private
         repeat_interval: 12h
         object_matchers:
           - ["alertname", "=", "Kaizen Control room unreachable"]
+      # Only Colin can act on these, so they skip Kaizen.
+      - receiver: Discord only
+        object_matchers:
+          - ["route", "=", "colin"]

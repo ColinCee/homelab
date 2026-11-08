@@ -299,7 +299,7 @@ only read access to `/dev/nvme0`) and writes its lifetime bytes and wear to `ssd
 `/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
 missing or not a number). `install-host.sh` writes it, keeping its value unless
 run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
-and taps; the supervisor reads it when it starts, and `setup-net.sh` and
+and taps; the supervisor reads it when it starts and when a load test's drain ends, and `setup-net.sh` and
 `test-load.sh` read it too (a `SLOTS` variable wins). `/etc/homelab-ci/light-slots`
 works the same way (`LIGHT_SLOTS`, 5 by default, 7 on the Beelink; the supervisor counts none until the file
 exists), and the users and taps cover both. Change either only through `install-host.sh`, so the network always has a
@@ -332,7 +332,8 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "small_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
- "mem_available_mib": 9216, "held_for_memory": 0}
+ "mem_available_mib": 9216, "held_for_memory": 0, "draining": false,
+ "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
@@ -342,7 +343,9 @@ running a job and the ones waiting ready, `deploy_standby` and `small_standby` t
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
 jobs not started because that memory would have dipped into the services' reserve, or the disk was busy. A failed write is logged
-once and tried again next poll; it never holds up the poll.
+once and tried again next poll; it never holds up the poll. `draining` is true while the
+load test has the host ([Changing the number of slots](#changing-the-number-of-slots)), and
+`load_test` is its last record (null before the first).
 
 Beside it, `waits.jsonl` (0644) gets one line for each job that waited here, when it
 stops waiting, for the Control room and speed reports:
@@ -510,19 +513,23 @@ own connection: on 5 Nov one outlived the session that thought it had stopped it
 
 ## Changing the number of slots
 
-With the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and
-its VMs finished (they outlive the supervisor: wait for them, or stop them with
-`sudo ci-runner/stop-vms.sh`):
-
 1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
-   makes that many slot users and taps.
-2. `sudo ci-runner/tests/test-load.sh` must end with `PASS 5 slots`.
-3. `sudo ci-runner/tests/audit.sh` must pass.
-4. `sudo systemctl restart homelab-ci-supervisor`; it reads the number when it starts.
+   makes that many slot users and taps and restarts the supervisor.
+2. `sudo ci-runner/tests/audit.sh` must pass.
 
-If the load test fails, go back to the old number with
-`sudo SLOTS=3 ci-runner/install-host.sh` (your old count), start the
-supervisor, and try 4.
+The Beelink then load-tests the count itself. Each `update.sh` pass asks the supervisor
+(`start-load-test-if-due`) and starts `homelab-ci-load-test.service` when
+`/var/lib/homelab-ci/load-test.json` has no result for the current slot count and
+`test-load.sh` (hashed), or only a "not run" one over 6 hours old; systemd starts it at most 3 times
+in 6 hours, whatever goes wrong. The unit drains the host:
+the supervisor starts no VM and stops its standbys while `/run/homelab-ci/load-test-drain`
+exists, and the unit waits up to 65 minutes for running VMs to end. It then runs `test-load.sh`
+at every slot, holding `update.sh`'s lock so no install or image build adds load, writes
+`{slots, passed, ran, line, at, commit, test}` to `load-test.json`, and removes the drain file
+however it ends (`ExecStopPost`). The supervisor shows the record in `machines.json`
+(`load_test`) and gives it to each VM at `/etc/homelab-ci/load-test.json`. A `FAIL` lowers
+`/etc/homelab-ci/slots` by one, never below 3; the supervisor takes the lower count when the
+drain ends, and the next pass tests it. Follow it with `journalctl -u homelab-ci-load-test`.
 
 ## PC build slots
 

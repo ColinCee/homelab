@@ -194,9 +194,9 @@ therefore redundant and is no longer installed. A new image requires updating
 the digest in Git; Git and Renovate own that update path.
 
 Do not copy the image-polling pattern for new services. User timers require
-`loginctl enable-linger colin` on the host to run without a login session, and
-`sudo chown colin: /var/lib/homelab-metrics` once to write the `*.prom` files
-Alloy reads there.
+`loginctl enable-linger colin` on the host to run without a login session.
+They write the `*.prom` files Alloy reads into `/var/lib/homelab-metrics`,
+which `ci-runner/install-host.sh` makes writable to all.
 
 ### One-time retirement of the old flight-tracker timer
 
@@ -238,7 +238,8 @@ sudo systemctl daemon-reload
 This affects the next Docker start; do not restart Docker just to install it.
 The bounded wait fails the start if the expected address is missing rather than
 publishing services on a public interface. If the server's Tailscale IP changes,
-update both this drop-in and the Compose bindings.
+update this drop-in, the Compose bindings, `stacks/internal-names` (Caddyfile,
+Corefile) and the `.internal` nameserver in Tailscale's DNS settings.
 
 For containers already stranded without networking, recreate only affected
 services with their existing `.env` and named volumes:

@@ -41,6 +41,9 @@ case "$task" in
     mkdir -p /etc/homelab-ci
     { mmds waits | jq -cn 'first(inputs | objects) // {}' 2>/dev/null || echo '{}'; } > /etc/homelab-ci/waits.json
     chmod 0644 /etc/homelab-ci/waits.json
+    # The host's last load test (the supervisor's read_load_test), {} when there is none.
+    { mmds load_test | jq -cn 'first(inputs | objects) // {}' 2>/dev/null || echo '{}'; } > /etc/homelab-ci/load-test.json
+    chmod 0644 /etc/homelab-ci/load-test.json
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
