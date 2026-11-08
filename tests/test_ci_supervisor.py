@@ -723,6 +723,7 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "mem_available_mib": 9000,
         "held_for_memory": 1,
         "queued": 0,
+        "in_use_repos": {"octo/agent": 2},
         "draining": False,
         "load_test": None,
     }
@@ -744,6 +745,7 @@ def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
         slots=5, launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)}
     )
     state.waits = {9: sup.Wait("octo/other", 0.0)}
+    state.launches[1].repo = "octo/product"  # product CI holds one build VM
     peer = sup.Peer("token", pc_slots=2)
     peer.pc_heard = 100.0
     monkeypatch.setattr(sup, "PEER", peer)
@@ -756,7 +758,7 @@ def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
     asks: list = []
     sup.read_console(io.BytesIO(b"HOMELAB-CAPACITY 1 0123456789abcdef\n"), None, ask=asks.append)
 
-    sup.answer_asks(None, "octo/agent", "fc-0", inbox, asks_of(*asks))  # type: ignore[arg-type]
+    sup.answer_asks(None, "Octo/Agent", "fc-0", inbox, asks_of(*asks))  # type: ignore[arg-type]
 
     header = inbox.read_bytes().partition(b"\0")[0]
     size = int(header.split()[-1])
@@ -769,15 +771,22 @@ def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
         "standby": 1,
         "queued": 1,
         "held_for_memory": 0,
+        "in_use_other_repos": 1,
         "pc_up": 1,
         "pc_slots": 2,
         "pc_in_use": 0,
     }
-    assert b"octo" not in answer
+    assert b"octo" not in answer.lower()
 
 
-def test_a_capacity_ask_with_no_status_file_is_answered_none(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(sup, "STATUS_FILE", tmp_path / "missing.json")
+@pytest.mark.parametrize("text", [None, "{}", '{"slots": 5}', "[1]", "not json"])
+def test_a_capacity_ask_with_no_good_status_file_is_answered_none(
+    tmp_path, monkeypatch, text
+) -> None:
+    machines = tmp_path / "machines.json"
+    if text is not None:
+        machines.write_text(text)
+    monkeypatch.setattr(sup, "STATUS_FILE", machines)
     inbox = tmp_path / "fc-0.inbox"
     inbox.write_bytes(sup.INBOX_EMPTY.ljust(512, b"\0"))
     ask = sup.CAPACITY_ASK.fullmatch(b"HOMELAB-CAPACITY 1 0123456789abcdef\n")

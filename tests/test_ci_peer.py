@@ -2,6 +2,7 @@
 
 import io
 import json
+import queue
 import socket
 import subprocess
 import sys
@@ -216,7 +217,7 @@ def test_a_pc_vms_lines_are_checked_and_its_ask_answered_down_the_link(folders) 
     pc_inbox = folders / "pc.inbox"
     pc_inbox.write_bytes(sup.INBOX_EMPTY.ljust(1 << 16, b"\0"))
     stream = sup.PeerStream.__new__(sup.PeerStream)
-    stream.inbox, stream.ask = pc_inbox, forwarded[-1]
+    stream.inbox, stream.asks = pc_inbox, {b"HOMELAB-HANDOFF": forwarded[-1]}
     answering = threading.Thread(target=stream.answers, args=(far.makefile("rb"),), daemon=True)
     answering.start()
     for _ in range(100):
@@ -229,10 +230,32 @@ def test_a_pc_vms_lines_are_checked_and_its_ask_answered_down_the_link(folders) 
     inbox = pc_inbox.read_bytes()
     assert inbox.startswith(b"homelab-ci-inbox v1 abcdef12 ok 7\n")
     assert inbox[512:519] == b"payload"
-    assert stream.ask is None
+    assert stream.asks == {}
     live = json.loads((sup.PEER_DIR / f"{PC_REVIEWER}.live").read_text())
     assert live["text"] == "reading files"
     assert sup.read_peer(PC_REVIEWER)["asks"] == 1  # type: ignore[index]
+
+
+def test_a_pc_vms_capacity_ask_is_forwarded_and_never_replaces_a_waiting_handoff() -> None:
+    handoff = b"HOMELAB-HANDOFF 1 abcdef12 70 1 70 build builder 600\n"
+    capacity = b"HOMELAB-CAPACITY 1 0123456789abcdef\n"
+    forwarded: list[bytes] = []
+    sup.read_console(io.BytesIO(handoff + capacity), None, forward=forwarded.append)
+    assert forwarded == [handoff, capacity]
+
+    stream = sup.PeerStream.__new__(sup.PeerStream)
+    stream.lines, stream.asks, stream.sent = queue.Queue(), {}, set()
+    for line in forwarded:
+        stream.put(line)
+    link = io.BytesIO()
+    stream.send_asks(link)
+    assert link.getvalue() == handoff + capacity
+    # The capacity answer comes first; the handoff stays to be sent again after a reconnect.
+    stream.answered(b"homelab-ci-inbox v1 0123456789abcdef ok 9\n".ljust(512, b"\0"))
+    stream.sent.clear()
+    again = io.BytesIO()
+    stream.send_asks(again)
+    assert again.getvalue() == handoff
 
 
 def test_only_fresh_pc_live_lines_show(folders) -> None:
