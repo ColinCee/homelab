@@ -580,7 +580,7 @@ Light jobs stay on the Beelink.
   address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). Through it the PC also asks
   which commit and image the Beelink runs (`version`) and copies the image (`image`). There the Beelink
   registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`) with the cache label of
-  the oldest waiting build (else the last build's), counts the idle ones as cover for builds queued under a minute
+  the first waiting build in start order (else the last build's), counts the idle ones as cover for builds queued under a minute
   (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
   sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
   changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
