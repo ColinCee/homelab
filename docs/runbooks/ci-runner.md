@@ -173,7 +173,10 @@ their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for 
 3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
 merge waiting on CI never takes the slot that CI needs. Slots and memory go to the oldest job first, except that a
 later job of a run that already finished a build job (a task's review) goes before a new run's first build, until that
-build has been queued 10 minutes (`FIRST_BUILD_WAIT_MAX`); a light job whose VM
+build has been queued 10 minutes (`FIRST_BUILD_WAIT_MAX`), and a task run's light jobs past its first step (its review
+and merge) go before other workflows' light and small jobs (goal owners, Planners) until those have been queued 5 minutes
+(`LIGHT_OTHER_WAIT_MAX`). GitHub, not the supervisor, picks which of a repo's queued jobs a VM for that repo and label
+takes, so this order decides which repo's VM boots and gets memory first; a light job whose VM
 fits starts even past a build waiting for memory, so a task's first step and merge step never wait behind builds; light
 VMs never outgrow their own slots (see [Why a job waits](#why-a-job-waits)).
 
@@ -243,7 +246,7 @@ GitHub-hosted runners and take it off the token's repository access.
   free slot. A build job wanting another repo or label, with no slot free, stops
   it; an idle standby is replaced every 45 minutes, and stopped if its
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (2 by default).
-- **One light VM waits ready.** With a light slot free, a light standby waits
+- **Two light VMs wait ready.** With a light slot free, a light standby waits
   registered for the repo of the last `homelab-fc-light` job (kept in
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
   agent steps start in seconds. It also registers
@@ -251,8 +254,8 @@ GitHub-hosted runners and take it off the token's repository access.
   It gives way first: none boots while a job
   waits for memory or the disk, and an idle one is stopped for a light job it cannot take with no
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
-  minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
-  default, 0 for none).
+  minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (2 by
+  default, 0 for none); one boots a poll, each only while its memory fits.
 - **One deploy VM and one small VM wait ready.** One light slot is kept for deploys and one for small jobs while
   no standby of theirs is up: other light jobs and the light standby never take them, though a deploy may use any
   free light slot. A standby that takes its job keeps no slot, so the next one boots in the first light slot to free

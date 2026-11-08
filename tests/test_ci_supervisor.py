@@ -2043,6 +2043,7 @@ def test_the_deploy_standby_waits_beside_the_light_one_unless_set_to_none(
     queue, started = pools
     queue(build=0, light=0)
     monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 1)
     state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok")
     state.last_deploy_repo = "o/ok"
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
@@ -2433,6 +2434,7 @@ def test_the_light_standby_covers_a_queued_small_job_of_its_repo(
     _, started = pools
     jobs = [sup.Job("o/ok", 100 + n, "l", labels) for n, labels in enumerate(queued)]
     monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 1)
     stopped: list[str] = []
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     state = sup.State(slots=1, light_slots=2, last_light_repo="o/ok")
@@ -2681,3 +2683,66 @@ def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
     sup.tick(None, sup.State(slots=1), ["o/ok"], now)  # type: ignore[arg-type]
 
     assert started == [(0, first)]
+
+
+@pytest.mark.parametrize(
+    ("owner_waited", "first"),
+    [
+        (60.0, "o/ok"),  # the task's review goes first
+        (sup.LIGHT_OTHER_WAIT_MAX + 60, "o/other"),  # the goal owner waited too long
+    ],
+)
+def test_a_task_runs_light_job_starts_before_an_older_light_job_of_another_workflow(
+    pools, monkeypatch, owner_waited: float, first: str
+) -> None:
+    _, started = pools
+    now = 10_000.0
+    jobs = {
+        "o/other": [
+            sup.Job("o/other", 1, "owner", LIGHT, queued_at=now - owner_waited, workflow="goal")
+        ],
+        "o/ok": [
+            sup.Job(
+                "o/ok", 2, "review", LIGHT, queued_at=now - 30, workflow="build", run_underway=True
+            )
+        ],
+    }
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs[repo])
+    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
+    state = sup.State(slots=1, light_slots=1)
+
+    sup.tick(None, state, ["o/other", "o/ok"], now)  # type: ignore[arg-type]
+
+    assert started == [(1, sup.LIGHT_LABEL)] and state.launches[1].repo == first
+
+
+def test_a_queued_job_knows_its_run_is_past_its_first_step() -> None:
+    small = ["self-hosted", "linux", "x64", sup.SMALL_LABEL]
+    jobs = {
+        1: [
+            {"id": 11, "status": "completed", "labels": small},
+            {"id": 12, "name": "review", "status": "queued", "labels": list(LIGHT)},
+        ],
+        2: [{"id": 21, "name": "line", "status": "queued", "labels": small}],
+    }
+
+    found = sup.queued_jobs("o/ok", [{"id": 1}, {"id": 2}], jobs.__getitem__)
+
+    assert [(job.id, job.run_underway) for job in found] == [(12, True), (21, False)]
+
+
+@pytest.mark.parametrize(
+    ("free_mib", "standbys"), [(1 << 20, 2), (sup.DEFAULT_MEMORY_RESERVE_MIB + 2500, 1)]
+)
+def test_two_light_standbys_wait_when_memory_allows(
+    pools, monkeypatch, free_mib: int, standbys: int
+) -> None:
+    queue, started = pools
+    queue(build=0, light=0)
+    state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok")
+    for now in (0.0, 2.0, 4.0):
+        sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
+        mem = free_mib - 2048 * len(state.launches)  # booted standbys hold their memory
+        monkeypatch.setattr(sup, "mem_available_mib", lambda mem=mem: mem)
+
+    assert started == [(1 + n, sup.LIGHT_LABEL) for n in range(standbys)]

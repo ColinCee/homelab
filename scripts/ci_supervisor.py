@@ -74,8 +74,8 @@ def light_runner_labels(label: str) -> tuple[str, ...]:
 
 # A merge job waits for a pull request's CI, two rounds at most.
 LIGHT_TIMEOUT_SECONDS = 3 * 3600
-# How many light VMs wait ready for the last 2 GiB light job's repo, so a task's agent
-# steps start in seconds. /etc/homelab-ci/light-standbys changes it with no code change.
+# How many light VMs (2 by default) wait ready for the last 2 GiB light job's repo, so a task's
+# agent steps start in seconds. /etc/homelab-ci/light-standbys changes it with no code change.
 LIGHT_STANDBY_COUNT_FILE = Path("/etc/homelab-ci/light-standbys")
 LAST_LIGHT_REPO_FILE = Path("/var/lib/homelab-ci/last-light-repo")
 # Likewise for the deploy standby, which waits for the last deploy job's repo.
@@ -260,6 +260,10 @@ UNSEEN_LOG_SECONDS = 90.0
 # A new run's first build job waits behind later jobs of started runs at most this long
 # since GitHub queued it, then goes back to oldest first: a few minutes, never starved.
 FIRST_BUILD_WAIT_MAX = 600.0
+# Likewise a light or small job of any other workflow, or of a task run not past its first
+# step, waits behind a started task run's light jobs (its review and merge) at most this long.
+TASK_WORKFLOW = "build"
+LIGHT_OTHER_WAIT_MAX = 300.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
 # wait (see wait_kind) and the reason of its longest kind, for the Control room and speed
 # reports. Lines older than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
@@ -317,6 +321,8 @@ class Job:
     workflow: str = ""
     # Its run already finished a job on the build label (a task's review after its build).
     run_started: bool = False
+    # Its run already finished a job on any label (a task past its first step).
+    run_underway: bool = False
 
     @property
     def want(self) -> Want:
@@ -507,10 +513,8 @@ def queued_jobs(
     jobs: list[Job] = []
     for run in runs:
         run_jobs = list(get_jobs(int(run["id"])))
-        run_started = any(
-            job.get("status") == "completed" and on_build_label(job.get("labels", []))
-            for job in run_jobs
-        )
+        done = [job for job in run_jobs if job.get("status") == "completed"]
+        run_started = any(on_build_label(job.get("labels", [])) for job in done)
         for job in run_jobs:
             labels = tuple(str(label) for label in job.get("labels", []))
             if job.get("status") != "queued":
@@ -529,6 +533,7 @@ def queued_jobs(
                         queued_at,
                         str(job.get("workflow_name") or run.get("name") or ""),
                         run_started,
+                        bool(done),
                     )
                 )
     return jobs
@@ -542,15 +547,26 @@ def on_build_label(labels: Iterable[str]) -> bool:
 def start_order(jobs: Iterable[Job], waited_since: Callable[[int], float], now: float) -> list[Job]:
     """Jobs in the order they get slots and memory: oldest first, except that a new run's
     first build job waits behind later jobs of runs already started (a task's review), so a
-    task half done is not left behind newer tasks' builds. A first build queued over
-    FIRST_BUILD_WAIT_MAX goes back to oldest first."""
+    task half done is not left behind newer tasks' builds; and other workflows' light jobs
+    (goal owners, Planners) wait behind a started task run's, for the same reason. A job
+    queued over FIRST_BUILD_WAIT_MAX or LIGHT_OTHER_WAIT_MAX goes back to oldest first."""
+
+    def waited(job: Job) -> float:
+        return now - (job.queued_at or waited_since(job.id))
 
     def new(job: Job) -> bool:
         if job.run_started or not on_build_label(job.labels):
             return False
-        return now - (job.queued_at or waited_since(job.id)) < FIRST_BUILD_WAIT_MAX
+        return waited(job) < FIRST_BUILD_WAIT_MAX
 
-    return sorted(jobs, key=lambda job: (new(job), job.id))
+    def background(job: Job) -> bool:
+        if job.want[1] not in (LIGHT_LABEL, SMALL_LABEL):
+            return False
+        if job.workflow == TASK_WORKFLOW and job.run_underway:
+            return False
+        return waited(job) < LIGHT_OTHER_WAIT_MAX
+
+    return sorted(jobs, key=lambda job: (new(job), background(job), job.id))
 
 
 def github_time(value: Any) -> float:
@@ -2113,8 +2129,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # waits behind at most those, and builds still start in start_order (a started run's
     # job first, oldest first within each group, a new build back in after
     # FIRST_BUILD_WAIT_MAX).
-    builds = with_job_ids(starts, job_ids, booting)
-    lights = with_job_ids(light_starts, job_ids, booting)
+    builds = with_job_ids(starts, job_ids, booting, rank)
+    lights = with_job_ids(light_starts, job_ids, booting, rank)
     held: dict[int, tuple[str, str]] = {}
     first_held_build: int | None = None
     oldest_held_light = False
@@ -2255,7 +2271,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         launch(gh, state, repo, free[0], now, label=label, cache=cache, standby=True)
         room -= next_size(state, True)[1]
         pace()
-    # One light VM waits ready for the last 2 GiB light job's repo, in a free light slot.
+    # Light VMs wait ready for the last 2 GiB light job's repo, one booted a poll.
     light_free = light_free[light_started:]
     if (
         not state.held
@@ -2294,14 +2310,19 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
 
 
 def with_job_ids(
-    starts: list[Want], job_ids: Mapping[Want, list[int]], covered: Mapping[Want, int]
+    starts: list[Want],
+    job_ids: Mapping[Want, list[int]],
+    covered: Mapping[Want, int],
+    rank: Mapping[tuple[int, Want], int],
 ) -> list[tuple[int, Want]]:
-    """Each planned start with the id of the job it is for: a want's oldest jobs not
-    covered by a VM already on its way, in order."""
+    """Each planned start with the id of the job it is for: a want's first jobs in start
+    order not covered by a VM already on its way, so a task's review sharing a want with an
+    older goal owner gets memory at the review's place."""
     taken = Counter(covered)
     paired: list[tuple[int, Want]] = []
     for want in starts:
-        paired.append((sorted(job_ids[want])[taken[want]], want))
+        ids = sorted(job_ids[want], key=lambda i: rank[(i, want)])
+        paired.append((ids[taken[want]], want))
         taken[want] += 1
     return paired
 
@@ -2532,7 +2553,7 @@ def standby_count() -> int:
 
 
 def light_standby_count() -> int:
-    return count_in(LIGHT_STANDBY_COUNT_FILE)
+    return count_in(LIGHT_STANDBY_COUNT_FILE, default=2)
 
 
 def deploy_standby_count() -> int:
