@@ -152,7 +152,7 @@ process, not the VM.
 
 Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's merge and agents: 2 GiB),
 or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 700 MiB), or `homelab-fc-deploy` for
-a merge's deploy (1 GiB, with a standby of its own). They run in light slots of
+a merge's deploy (1 GiB); small and deploy jobs each have a standby of their own. They run in light slots of
 their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, no cache disk, a
 3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
 merge waiting on CI never takes the slot that CI needs. Memory goes to the oldest job first across both kinds: a
@@ -178,7 +178,7 @@ a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job withou
 or the disk stays queued and is tried again on the
 next poll (see [Why a job waits](#why-a-job-waits)). A standby gives way first: none boots
 while a job waits, and one waiting for another repo is stopped to
-make room; the deploy standby is the exception (see Design).
+make room; the deploy and small standbys are the exception (see Design).
 
 Only Colin's private repositories the token can see are served (its repository
 access is the list; `served_repos` in the supervisor), and only those nobody else can
@@ -221,24 +221,30 @@ GitHub-hosted runners and take it off the token's repository access.
   repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (1 by
   default); 2 was measured and not worth its RAM (see the performance doc).
 - **One light VM waits ready.** With a light slot free, a light standby waits
-  registered for the repo and label of the last light job (kept in
+  registered for the repo of the last `homelab-fc-light` job (kept in
   `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
-  first and last steps start in seconds. One waiting for `homelab-fc-light` also registers
+  agent steps start in seconds. It also registers
   `homelab-fc-small`, so it takes its repo's light and small jobs (a small one then runs at 2 GiB).
   It gives way first: none boots while a job
   waits for memory or the disk, and an idle one is stopped for a light job it cannot take with no
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
   minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (1 by
   default, 0 for none).
-- **One deploy VM waits ready.** One light slot is kept for deploys: other light jobs and the light standby
-  never take the last one, though a deploy may use any free light slot. There a deploy standby waits registered with
+- **One deploy VM and one small VM wait ready.** One light slot is kept for deploys and one for small jobs while
+  no standby of theirs is up: other light jobs and the light standby never take them, though a deploy may use any
+  free light slot. A standby that takes its job keeps no slot, so the next one boots in the first light slot to free
+  up. At least one light slot is left for 2 GiB jobs: with two light slots only the deploy one is kept, with one none.
+  There a deploy standby waits registered with
   `homelab-fc-deploy` alone for the repo of the last deploy job (kept in `/var/lib/homelab-ci/last-deploy-repo`,
   `ColinCee/auto-kaizen` until there is one; polled every 2 s), so a merge's deploy starts in seconds and no task
   job can take it first. It is the one VM a merge's deploy needs, so it never gives way to other jobs or to a job
   waiting for memory, and boots while jobs wait for memory if its 1 GiB still leaves the reserve: without that, busy
   hours stopped or held it and a deploy waited up to 135 s for a VM. Only another repo's deploy, its repo going public
   or its 45-minute replacement stops it; it boots again after taking a job. `/etc/homelab-ci/deploy-standbys` sets how
-  many wait (1 by default, 0 for none, which keeps no slot); a host with one light slot keeps none either.
+  many wait (1 by default, 0 for none, which keeps no slot). The small standby is the same for `homelab-fc-small` and
+  the repo of the last small job (`/var/lib/homelab-ci/last-small-repo`, `/etc/homelab-ci/small-standbys`), so each
+  task's first step and other jobs that run no agent start in seconds while builds hold the memory and 2 GiB jobs
+  the other light slots: before it, a task's first step waited a typical 55 s for a VM, mostly for those.
 - **Just-in-time registration.** For each VM the supervisor asks GitHub for a
   runner registration that is good for exactly one job and passes only that to
   the VM. The GitHub token never leaves the host.
@@ -325,14 +331,14 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
- "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
+ "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "small_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0, "draining": false,
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
 `in_use` counts build VMs started for a job, `standby` the ones waiting ready,
 `light_slots`, `light_in_use` and `light_standby` the light slots, the light VMs
-running a job and the ones waiting ready, `deploy_standby` the deploy VMs waiting ready,
+running a job and the ones waiting ready, `deploy_standby` and `small_standby` the deploy and small VMs waiting ready,
 `cache_disks` the repos with a disk in the caches folder, and `github_ok` is
 false when the last poll failed or was rate limited. `mem_available_mib` is the
 host's free memory when the file was written, and `held_for_memory` counts queued
@@ -393,7 +399,7 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 
 | Line ends with | Means |
 |---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` |
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
 | `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
