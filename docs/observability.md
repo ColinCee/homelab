@@ -9,19 +9,15 @@ Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
 do not treat an on-host dashboard as proof of availability.
 
-The [deploy watchdog](../.github/workflows/deploy-watchdog.yaml) runs on
-GitHub-hosted runners when a deploy finishes, 16 minutes after one is queued,
-and every 15 minutes as a backup (GitHub delays schedules on quiet repos). It
-posts to Discord when a `deploy.yaml` run has been queued for over 15 minutes,
-which usually means the `beelink` runner is down, and stops Auto Kaizen's line
-when the last deploy failed or was blocked by the runner guard. It posts once when a problem starts and once when it clears, using its
-previous run's conclusion as state. Healthchecks.io remains the external
-heartbeat for full host outages.
+What watches what:
 
-The [Kaizen watchdog](../.github/workflows/kaizen-watchdog.yaml) runs there every 15 minutes too, and posts
-once when Auto Kaizen's Watcher (due every 20 minutes) has not worked for an hour, and once when it works again.
-The Grafana rule Kaizen's Watcher stopped running checks the same from the Beelink, so one of the two warns whether GitHub
-stops starting Kaizen's jobs or the Beelink goes down.
+| Problem | Who warns |
+|---|---|
+| Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
+| Deploy failed | `deploy.yaml` stops Auto Kaizen's homelab line |
+| Deploy queued over 15 minutes or failed before its first step | Auto Kaizen's Watcher stops the homelab line |
+| Auto Kaizen's Watcher not working | Grafana's Kaizen's Watcher stopped running |
+| Control room down | Grafana's Kaizen Control room unreachable |
 
 ## What's deployed
 
@@ -170,8 +166,8 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `test_alert`.
 
 The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
-straight to the `Discord Private` webhook (Discord's #uptime channel), as do the deploy
-watchdog's stuck-deploy posts and Healthchecks.io's Beelink up/down. A rule labelled
+straight to the `Discord Private` webhook (Discord's #uptime channel), as does
+Healthchecks.io's Beelink up/down. A rule labelled
 `route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
 out) goes only to #uptime, with no Kaizen issue. Every other alert,
 no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
