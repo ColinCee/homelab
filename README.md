@@ -87,7 +87,7 @@ stuck deploy stops Auto Kaizen's homelab work until fixed; see
 - [Security audit](docs/runbooks/security-audit.md): checking Beelink for compromise.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [Public stats](docs/public-stats.md): the few numbers pushed to colincheung.dev's home page, and what they expose.
-- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
+- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work, and [docs/adr](docs/adr/) records decisions between designs; no parallel roadmap.
 - Private operational records live in the workspace's `notes/04-dev/homelab/`.
 
 Keep current instructions and necessary rationale together. Configuration owns
