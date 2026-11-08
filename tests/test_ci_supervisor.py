@@ -1859,7 +1859,12 @@ def test_light_jobs_leave_the_small_slot_free(pools, monkeypatch) -> None:
         for line in lines
     )
 
-    # With three light slots, only the deploy one is kept: two are left for light jobs.
+    # Once both standbys are up, a waiting light job's reason names no kept slot: none is held.
+    state.launches[1].busy = state.launches[2].busy = True  # running their jobs
+    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
+    assert state.waits[102].why == "all 4 light slots in use"
+
+    # With two light slots, only the deploy one is kept: one is left for light jobs.
     state = sup.State(slots=1, light_slots=2, last_deploy_repo="o/ok", last_small_repo="o/ok")
     assert sup.kept_slots(state) == [sup.DEPLOY_LABEL]
 

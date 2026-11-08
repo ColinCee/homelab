@@ -233,7 +233,7 @@ GitHub-hosted runners and take it off the token's repository access.
 - **One deploy VM and one small VM wait ready.** One light slot is kept for deploys and one for small jobs while
   no standby of theirs is up: other light jobs and the light standby never take them, though a deploy may use any
   free light slot. A standby that takes its job keeps no slot, so the next one boots in the first light slot to free
-  up, and two light slots are left for 2 GiB jobs (with three light slots only the deploy one is kept, with one none).
+  up. At least one light slot is left for 2 GiB jobs: with two light slots only the deploy one is kept, with one none.
   There a deploy standby waits registered with
   `homelab-fc-deploy` alone for the repo of the last deploy job (kept in `/var/lib/homelab-ci/last-deploy-repo`,
   `ColinCee/auto-kaizen` until there is one; polled every 2 s), so a merge's deploy starts in seconds and no task
@@ -399,7 +399,7 @@ supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
 
 | Line ends with | Means |
 |---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby |
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots, or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
 | `an older build waiting for memory` | A light job queued after a build that is held for memory |
 | `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |

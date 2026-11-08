@@ -2037,9 +2037,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             ("light", state.light_slots) if want[1] in LIGHT_SIZES else ("build", state.slots)
         )
         kept = (
-            [k for k in kept_slots(state) if k != want[1]]
-            if want[1] in LIGHT_SIZES and want[1] != DEPLOY_LABEL
-            else []
+            kept_from(state, want[1]) if want[1] in LIGHT_SIZES and want[1] != DEPLOY_LABEL else []
         )
         full = f"all {slots - len(kept)} {kind} slots in use" + "".join(
             f", one more kept for {KEPT_FOR[k]}" for k in kept
@@ -2347,14 +2345,18 @@ def kept_slots(state: State) -> list[str]:
     return kept
 
 
+def kept_from(state: State, label: str) -> list[str]:
+    """The other kept labels whose slot `label` may not take now: those with no standby up.
+    A standby that takes a job keeps no slot, so the next one boots in another."""
+    standing = {r.label for r in state.launches.values() if r.standby}
+    return [k for k in kept_slots(state) if k != label and k not in standing]
+
+
 def light_room(state: State, label: str, planned: Counter[str] | None = None) -> int:
     """How many more light VMs with `label` may start: the light slots, less those every
-    light VM (and `planned`) holds, less one kept for each other kept label with no standby
-    up. A standby that takes a job keeps no slot, so the next one boots in another."""
+    light VM (and `planned`) holds, less those kept from it."""
     used = sum(r.light for r in state.launches.values()) + sum((planned or Counter()).values())
-    standing = {r.label for r in state.launches.values() if r.standby}
-    kept = sum(k != label and k not in standing for k in kept_slots(state))
-    return max(state.light_slots - used - kept, 0)
+    return max(state.light_slots - used - len(kept_from(state, label)), 0)
 
 
 def count_in(path: Path) -> int:
