@@ -95,9 +95,11 @@ Repository write access is therefore privileged, even for private repositories.
 Keep PR CI off the deploy runner: public repositories' CI on GitHub-hosted
 runners, private repositories' CI only in the
 [Firecracker VMs](ci-runner.md), which hold no secrets, deploy access or home
-network. Keep Beelink deployment restricted to trusted `main`. Renovate auto-merges eligible dependency PRs after checks; other changes
-are human-directed. Admins can bypass the ruleset, including via agents using
-their credentials. Renovate has no such bypass. Workflow conditions alone are
+network. Keep Beelink deployment restricted to trusted `main`. After checks, Renovate auto-merges eligible dependency PRs and the
+`auto-kaizen` app its own (Control room image pins, and agent changes its
+Reviewer passes); other changes are human-directed.
+Admins can bypass the ruleset, including via agents using their credentials.
+Neither bot has that bypass. Workflow conditions alone are
 not access controls.
 
 This avoids giving hosted CI tailnet access or maintaining another deployment
