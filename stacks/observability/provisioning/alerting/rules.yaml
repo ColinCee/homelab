@@ -496,13 +496,13 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              # A container whose name was not seen in the week before its last hour.
-              # Compose keeps names across deploys, so redeploys don't fire. Quick
-              # `docker run` checks by people and agents get random names but stop
-              # within minutes, so `for: 15m` lets them pass (30 days to 6 Nov: 35 new
-              # names, 32 such checks; the 3 that ran on were new stacks).
+              # A container outside any Compose project whose name was not seen in the
+              # week before its last hour. Stacks run under Compose and reach the
+              # Beelink through the reviewed deploy path, so new stacks don't fire; a
+              # hand-run `docker run` carries no project label. Quick checks by people
+              # and agents stop within minutes, so `for: 15m` lets them pass.
               expr: >-
-                count by (name) (container_last_seen{job="docker",name!=""})
+                count by (name) (container_last_seen{job="docker",name!="",container_label_com_docker_compose_project=""})
                 unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))
               instant: true
               refId: A
