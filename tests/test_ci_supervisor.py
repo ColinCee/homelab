@@ -1267,6 +1267,8 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
         'homelab_ci_queued_seconds{repo="o/ok",workflow="watch"} 110',
         "homelab_ci_vms_busy 1",
         f"homelab_ci_vm_slots {slots}",
+        "homelab_ci_poll_failures 0",
+        "homelab_ci_poll_failed_seconds 0",
     ]
     assert wait_metrics.stat().st_mode & 0o777 == 0o644
     queue(jobs=0, free_mib=1 << 20)  # the job started: nothing waits
@@ -1274,6 +1276,25 @@ def test_the_longest_waits_seconds_per_kind_go_to_grafana(host, wait_metrics, mo
     lines = wait_metrics.read_text().splitlines()
     assert {line.split()[1] for line in lines if "wait_seconds" in line} == {"0"}
     assert not [line for line in lines if "queued_seconds" in line]
+
+
+def test_failed_polls_in_a_row_go_to_grafana_and_a_good_poll_clears_them(wait_metrics) -> None:
+    state = sup.State()
+
+    def metric(name: str) -> str:
+        line = next(x for x in wait_metrics.read_text().splitlines() if x.startswith(name + " "))
+        return line.split()[1]
+
+    for now in (100.0, 102.0, 104.0):
+        sup.note_poll(state, False, now)
+    assert metric("homelab_ci_poll_failures") == "1"  # written when polls start failing
+    sup.note_poll(state, False, 120.0)  # 15 s on: written again
+    assert metric("homelab_ci_poll_failures") == "4"
+    assert metric("homelab_ci_poll_failed_seconds") == "20"
+    sup.note_poll(state, True, 122.0)  # written at once when polls work again
+    assert metric("homelab_ci_poll_failures") == "0"
+    assert metric("homelab_ci_poll_failed_seconds") == "0"
+    assert state.poll_failed_since is None
 
 
 def test_a_queued_jobs_workflow_comes_from_github() -> None:
@@ -2141,6 +2162,52 @@ def test_a_vm_that_ended_is_forgotten_and_its_runner_removed(vms, monkeypatch) -
     sup.reap(None, state, 10.0)  # type: ignore[arg-type]
 
     assert state.launches == {} and removed == ["fc-0-1"] and not run.record.exists()
+
+
+def test_an_ended_vms_failed_bookkeeping_frees_its_slot_and_the_queued_job_still_starts(
+    vms, monkeypatch
+) -> None:
+    ended = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, vms / "metadata")
+    sup.write_status(ended.record, sup.record(ended))
+
+    def count_memory(run: sup.Launch) -> None:
+        raise KeyError("deploy")
+
+    monkeypatch.setattr(sup, "count_memory", count_memory)
+    removed: list[str] = []
+    monkeypatch.setattr(sup, "delete_runner", lambda gh, repo, rid, name: removed.append(name))
+    monkeypatch.setattr(sup, "running_vms", lambda: set())
+    for name in ("check_private", "only_colin"):
+        monkeypatch.setattr(sup, name, lambda *a, **k: True)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "has_job", lambda gh, run: False)
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    job = sup.Job("o/ok", 1, "j", tuple(sup.RUNNER_LABELS))
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: [job] if repo == "o/ok" else [])
+    started: list[int] = []
+
+    def launch(gh, state, repo, slot, now, **k) -> None:
+        started.append(slot)
+        state.launches[slot] = _launch(slot, False)
+
+    monkeypatch.setattr(sup, "launch", launch)
+    lines: list[str] = []
+    monkeypatch.setattr(sup, "log", lines.append)
+    state = sup.State(slots=1, launches={0: ended})
+
+    sup.tick(None, state, ["o/ok"], 10.0)  # type: ignore[arg-type]
+
+    assert started == [0] and state.launches[0] is not ended
+    assert removed == ["fc-0-1"]  # the rest of its bookkeeping still ran
+    assert "slot 0: fc-0-1 bookkeeping failed: KeyError: 'deploy'" in lines
+
+
+def test_an_ended_vm_of_a_kind_with_no_count_yet_is_counted(vms, memory, monkeypatch) -> None:
+    monkeypatch.setattr(sup, "MEMORY_COUNTS", {})
+    run = _ended(vms, sup.DEPLOY_LABEL, peak=300, kills=0)
+    sup.forget(run)
+    assert sup.MEMORY_COUNTS == {"deploy": [1, 0, 0]}
+    assert 'homelab_ci_vms_ended_total{kind="deploy"} 1' in sup.MEMORY_METRICS.read_text()
 
 
 def test_reaping_waits_while_systemd_cannot_be_asked(monkeypatch) -> None:

@@ -38,7 +38,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -431,6 +431,9 @@ class State:
     # When WAIT_METRICS was last written, and why it could not be written last time.
     wait_metrics_written: float = float("-inf")
     wait_metrics_error: str = ""
+    # Polls failed in a row (a rate limit is not one), and when the first of them failed.
+    poll_failures: int = 0
+    poll_failed_since: float | None = None
     # Whether the last poll found the load test's drain on (see DRAIN_FILE).
     draining: bool = False
 
@@ -993,7 +996,7 @@ def count_memory(run: Launch) -> None:
         f"slot {run.slot}: {run.runner_name} ({run.kind}) needed at least {peak} MiB of"
         f" {total}, {kills} out-of-memory kills"
     )
-    counts = MEMORY_COUNTS[run.kind]
+    counts = MEMORY_COUNTS.setdefault(run.kind, [0, 0, 0])
     counts[0] += 1
     counts[1] += peak > NEAR_FULL * total
     counts[2] += kills
@@ -1341,23 +1344,40 @@ def reap(
             if run.standby:
                 check_standby(gh, run, now, run.repo in private)
                 if not run.standby:  # it took a job
-                    write_status(
-                        run.record, record(run)
-                    )  # a restart must not take it for a standby
                     if not run.light:
                         state.used.add(run.repo)
+                    # A restart must not take it for a standby.
+                    with bookkeeping(run, "its record"):
+                        write_status(run.record, record(run))
             else:
                 stop_idle(gh, run, now, queued.get(run.want, 0))
             continue
-        forget(run)
-        delete_runner(gh, run.repo, run.runner_id, run.runner_name)
-        log(f"slot {slot}: {run.runner_name} finished")
-        del state.launches[slot]
+        # One ended VM's bookkeeping failing is logged and its slot still freed: raised into
+        # the poll, it would stop every job start until fixed.
+        with bookkeeping(run, "bookkeeping"):
+            forget(run)
+        with bookkeeping(run, "bookkeeping"):
+            delete_runner(gh, run.repo, run.runner_id, run.runner_name)
         # A task's next build job (its Reviewer after its Builder) asks for the same repo and
         # cache label seconds after this one ends: the standby booting in the freed slot is
         # for those, not for the last job started, so the next job need not wait for a boot.
         if not run.standby and not run.light:
-            note_last_job(state, run.repo, run.label)
+            with bookkeeping(run, "bookkeeping"):
+                note_last_job(state, run.repo, run.label)
+        log(f"slot {slot}: {run.runner_name} finished")
+        del state.launches[slot]
+
+
+@contextlib.contextmanager
+def bookkeeping(run: Launch, what: str) -> Iterator[None]:
+    """Logs a failure of one VM's after-the-fact bookkeeping instead of failing the poll. A
+    rate limit still ends the poll, leaving the VM to be tried again on the next."""
+    try:
+        yield
+    except RateLimited:
+        raise
+    except Exception as e:
+        log(f"slot {run.slot}: {run.runner_name} {what} failed: {type(e).__name__}: {e}")
 
 
 # Each repo GitHub would not show on the last try, with why; logged only when it changes.
@@ -2001,7 +2021,13 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             job_ids.setdefault(job.want, []).append(job.id)
             polled.append(job)
     reap(gh, state, now, queued, private)
-    maybe_take_outboxes(gh, state, now)
+    # Ended VMs' outboxes are after-the-fact too: a failure to list them never stops a start.
+    try:
+        maybe_take_outboxes(gh, state, now)
+    except RateLimited:
+        raise
+    except Exception as e:
+        log(f"could not look at ended VMs' outboxes: {type(e).__name__}: {e}")
     # A VM still on its way to a job, or a standby waiting for one, covers a queued job
     # with the same repo and cache label (or none).
     # Those whose runner is up and idle are ready: the rest of the wait is GitHub's.
@@ -2377,9 +2403,12 @@ def write_wait_metrics(state: State, now: float) -> None:
         for (repo, name), waited in sorted(queued.items())
     ]
     busy = sum(not run.standby for run in state.launches.values())
+    failed_for = now - state.poll_failed_since if state.poll_failed_since is not None else 0.0
     lines += [
         f"homelab_ci_vms_busy {busy}",
         f"homelab_ci_vm_slots {state.slots + state.light_slots}",
+        f"homelab_ci_poll_failures {state.poll_failures}",
+        f"homelab_ci_poll_failed_seconds {round(failed_for)}",
     ]
     try:
         write_textfile(WAIT_METRICS, lines)
@@ -2390,6 +2419,22 @@ def write_wait_metrics(state: State, now: float) -> None:
         if why != state.wait_metrics_error:
             log(f"could not write {WAIT_METRICS}: {why}")
         state.wait_metrics_error = why
+
+
+def note_poll(state: State, ok: bool, now: float) -> None:
+    """Counts failed polls in a row for the "CI supervisor's poll keeps failing" alert: no VM
+    starts while every poll fails. The metrics are written at once when polls start or stop
+    failing, and otherwise at most every WAIT_METRICS_SECONDS."""
+    was_failing = state.poll_failures > 0
+    if ok:
+        state.poll_failures, state.poll_failed_since = 0, None
+    else:
+        state.poll_failures += 1
+        if state.poll_failed_since is None:
+            state.poll_failed_since = now
+    changed = was_failing != (state.poll_failures > 0)
+    if changed or now - state.wait_metrics_written >= WAIT_METRICS_SECONDS:
+        write_wait_metrics(state, now)
 
 
 def label_value(text: str) -> str:
@@ -3811,7 +3856,6 @@ def main(argv: list[str] | None = None) -> int:
     listing: Future[tuple[dict[str, str], list[str]]] | None = None
     # Repos whose stale registrations are not cleared yet.
     unclean: list[str] = []
-    failures = 0
     # Why the status file could not be written last time, so a lasting failure logs once.
     status_error = ""
     log(f"{state.slots} slots; serving private repos the token can see")
@@ -3867,16 +3911,16 @@ def main(argv: list[str] | None = None) -> int:
                 state.polled[repo] = now
             if (took := time.monotonic() - started) >= SLOW_POLL_SECONDS:
                 log(slow_poll(took, gh.requests - asked, gh.seconds - waited, spent))
-            failures = 0
             github_ok = True
+            note_poll(state, True, time.time())
         except RateLimited as e:
             log(str(e))
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
-            failures += 1
+            note_poll(state, False, time.time())
             # Without GitHub nothing re-checks privacy, so no VM is left waiting meanwhile.
-            if failures == 5:
+            if state.poll_failures == 5:
                 for run in [r for r in state.launches.values() if r.standby]:
                     stop(run, "cannot be checked while GitHub fails")
         # Written after a failed poll too, so it still shows the supervisor is alive.
