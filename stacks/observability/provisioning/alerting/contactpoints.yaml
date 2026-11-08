@@ -23,7 +23,8 @@ contactPoints:
           authorization_credentials: ${KAIZEN_ALERT_SECRET}
           payload:
             template: '{{ template "homelab.kaizen.payload" . }}'
-  # Every other alert (`route: colin` ones too, which the Control room asks Colin about with no responder): an `alert` issue in Auto Kaizen through its Control
+  # Every other alert (`route: colin` ones too, which the Control room asks Colin about
+  # with no responder): an `alert` issue in Auto Kaizen through its Control
   # room, which starts the responder and keeps the alert's post in the Discord
   # #alerts forum; the resolve closes the issue.
   - orgId: 1

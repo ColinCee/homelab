@@ -90,5 +90,7 @@ templates:
       {{ $post := coll.Dict "name" (or $a.Labels.rulename $a.Labels.alertname) "measure" $a.Annotations.measure
         "trigger" $a.Annotations.trigger "value" $a.Annotations.value "chart" $a.Annotations.chart
         "chart_line" $a.Annotations.chart_line "grafana" $a.GeneratorURL "needs" $a.Annotations.needs -}}
-      {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text "post" $post "route" (or $a.Labels.route "") | data.ToJSON }}
+      {{- /* A query error on a route: colin rule is the responder's to look at, not Colin's. */ -}}
+      {{ $route := or (and (ne $a.Labels.alertname "DatasourceError") $a.Labels.route) "" -}}
+      {{ coll.Dict "status" .Status "key" .GroupKey "title" $title "text" $text "post" $post "route" $route | data.ToJSON }}
       {{- end }}
