@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. It becomes accepted once the move's first step shows OpenObserve's alerting can carry today's rules ([#1208](https://github.com/ColinCee/homelab/issues/1208)).
+Accepted. The move's first step showed OpenObserve v1.1.2's alerting can carry the shapes of today's rules, with three workarounds ([#1208](https://github.com/ColinCee/homelab/issues/1208)).
 
 ## Context
 
@@ -28,10 +28,10 @@ OpenObserve runs with `ZO_WAL_WRITE_QUEUE_ENABLED=false` and `ZO_WAL_FSYNC_DISAB
 - One store and one UI replace three stores and a UI, and traces need no extra store.
 - Disk is about 24 GB for 30 days, 2.3 times GreptimeDB's, within the 100 GB limit.
 - After a crash it is back in 17-22 s, against 6 s for GreptimeDB.
-- Today's 27 Grafana alert rules, the Home dashboard and Auto Kaizen's alert intake are rebuilt for OpenObserve. Its docs leave open some features they use, which the move's first step must prove:
-  - rules combining several queries;
-  - alerts on missing data and on evaluation errors;
-  - recovery messages.
-
-  If that step fails, this record is rejected and a Grafana-based fallback is used instead, keeping the rules almost unchanged.
+- Today's 27 Grafana alert rules, the Home dashboard and Auto Kaizen's alert intake are rebuilt for OpenObserve. Its alerting differs from Grafana's in three ways, each met by a workaround the move builds:
+  - A resolved message waits until the repeat interval ends. Alerts to the Control room repeat every minute, and the Control room is to ignore a repeat for an alert it already has open. "Control room unreachable" goes straight to Discord with a 30-minute repeat, so its resolved message can be up to 30 minutes late.
+  - A failed query is only marked as an error in the alert list, and nothing is sent. The Control room is to poll the list instead of receiving today's evaluation-error alerts.
+  - A query with no result counts as normal, so each no-data rule is written with `absent_over_time`.
+- Several queries combine in one PromQL expression, and a log rule becomes SQL, whose message uses the aggregate value field.
+- The webhook's message fields were checked; its custom header was set but not checked.
 - Expiry of old data runs hours late. It is checked after the first month.
