@@ -192,6 +192,10 @@ HANDOFF_ASK = re.compile(
     rb"HOMELAB-HANDOFF 1 ([a-z0-9]{8,32}) ([0-9]{1,20}) ([0-9]{1,5}) ([0-9]{1,20}) "
     rb"(\S{1,100}) (\S{1,64}) ([0-9]{1,4})\r?\n?"
 )
+# A job asks how many build machines are free with this line (ci-capacity); the answer,
+# counts only (capacity()), goes on the inbox as JSON in place of a tar, and counts as an ask.
+CAPACITY_ASK = re.compile(rb"HOMELAB-CAPACITY 1 ([a-z0-9]{8,32})\r?\n?")
+capacity_ask = CAPACITY_ASK.fullmatch
 HANDOFF_MAX_WAIT_SECONDS = 1800
 # Asks one VM may make, and wait in line: a job makes a few.
 HANDOFF_MAX_ASKS = 50
@@ -1141,7 +1145,7 @@ def read_console(
             fits = not too_long and (whole or len(chunk) < CONSOLE_LINE_MAX)
             if forward and fits and whole and chunk.startswith(FORWARDED):
                 forward(chunk)
-            elif ask and fits and (asked := HANDOFF_ASK.fullmatch(chunk)):
+            elif ask and fits and (asked := HANDOFF_ASK.fullmatch(chunk) or capacity_ask(chunk)):
                 ask(asked)
             elif keep and fits and (line := live_line(chunk, time.time())):
                 keep(line)
@@ -1723,14 +1727,22 @@ def sweep_handoffs(now: float) -> None:
 INBOX_EMPTY = b"homelab-ci-inbox-empty\n"
 
 
-def write_inbox(inbox: Path, nonce: str, verdict: str, item: Path | None = None) -> None:
-    """Answer an ask on the VM's inbox: blank the header, write the item's tar after 512
-    bytes, then the header, so the job never reads a half-written tar as an answer."""
+def write_inbox(
+    inbox: Path, nonce: str, verdict: str, item: Path | None = None, data: bytes = b""
+) -> None:
+    """Answer an ask on the VM's inbox: blank the header, write the item's tar (or `data`)
+    after 512 bytes, then the header, so the job never reads a half-written answer."""
     with inbox.open("r+b") as f:
         f.write(INBOX_EMPTY.ljust(512, b"\0"))
         f.flush()
         os.fsync(f.fileno())
         size = 0
+        if data:
+            f.seek(512)
+            f.write(data)
+            size = len(data)
+            f.flush()
+            os.fsync(f.fileno())
         if item is not None:
             f.seek(512)
             with item.open("rb") as source:
@@ -1855,10 +1867,14 @@ def answer_asks(
         try:
             if count > HANDOFF_MAX_ASKS:
                 write_inbox(inbox, ask[1].decode(), "denied")
-                continue
-            verdict = answer_ask(gh, repo, runner, inbox, ask, known)
-            what = f"{ask[5].decode()}/{ask[6].decode()} of run {int(ask[4])}"
-            log(f"handoff for {repo}: {runner} asked for {what}: {verdict}")
+            elif ask.re is CAPACITY_ASK:
+                counts = capacity(STATUS_FILE, repo)
+                answer = json.dumps(counts).encode() if counts else b""
+                write_inbox(inbox, ask[1].decode(), "ok" if counts else "none", data=answer)
+            else:
+                verdict = answer_ask(gh, repo, runner, inbox, ask, known)
+                what = f"{ask[5].decode()}/{ask[6].decode()} of run {int(ask[4])}"
+                log(f"handoff for {repo}: {runner} asked for {what}: {verdict}")
         except Exception as e:  # anything: the job waits on an answer
             log(f"handoff for {repo}: ask from {runner} failed: {type(e).__name__}: {e}")
             with contextlib.suppress(OSError):
@@ -1869,6 +1885,29 @@ def answer_asks(
             except OSError as e:  # the PC's link is gone: it asks again when it is back
                 log(f"handoff for {repo}: answer to {runner} not sent: {e}")
                 return
+
+
+CAPACITY_FIELDS = ("updated", "slots", "in_use", "standby", "queued", "held_for_memory")
+
+
+def capacity(machines: Path, repo: str) -> dict[str, int] | None:
+    """The build machines' counts from the status file, for a job of `repo` asking: no repo
+    names, so any job may have them. None if the file is missing or not the supervisor's."""
+    try:
+        fields = json.loads(machines.read_text())
+        counts = {name: int(fields[name]) for name in CAPACITY_FIELDS[:2]}
+        counts |= {name: int(fields.get(name, 0)) for name in CAPACITY_FIELDS[2:]}
+        by_repo = {str(r).lower(): int(n) for r, n in (fields.get("in_use_repos") or {}).items()}
+        counts["in_use_other_repos"] = counts["in_use"] - by_repo.get(repo.lower(), 0)
+        pc = fields.get("pc") or {}
+        counts |= {
+            "pc_up": int(bool(pc.get("up"))),
+            "pc_slots": int(pc.get("slots", 0)),
+            "pc_in_use": int(pc.get("in_use", 0)),
+        }
+    except (OSError, ValueError, TypeError, AttributeError, KeyError):
+        return None
+    return counts
 
 
 def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
@@ -2488,6 +2527,8 @@ def status(state: State, now: float, github_ok: bool, mem_available: int) -> dic
         "github_ok": github_ok,
         "mem_available_mib": mem_available,
         "held_for_memory": len(state.held),
+        "queued": len(state.waits),
+        "in_use_repos": dict(Counter(run.repo for run in runs if not (run.standby or run.light))),
         "draining": state.draining,
         "load_test": read_load_test(),
         **({"pc": peer_status(PEER, now)} if PEER else {}),
@@ -2768,7 +2809,8 @@ PC_SAY_SECONDS = 60
 # run-vm.sh's outbox: 6 GiB for the tar and its header.
 OUTBOX_BYTES = 6 * 1024**3 + 1024**2
 # Lines the PC's console reader sends up; read_console checks them again on the Beelink.
-FORWARDED = (b"KAIZEN-LIVE ", b"KAIZEN-SESSION ", b"HOMELAB-HANDOFF ")
+PEER_ASKS = (b"HOMELAB-HANDOFF ", b"HOMELAB-CAPACITY ")
+FORWARDED = (b"KAIZEN-LIVE ", b"KAIZEN-SESSION ", *PEER_ASKS)
 # On the PC: the door, its key, the slots given now (written by the keeper on Windows, at most
 # the slots installed), each VM's size.
 PEER_HOST_FILE = Path("/etc/homelab-ci/peer")
@@ -3311,21 +3353,25 @@ class PeerStream:
     """A PC VM's console lines and asks, sent up the door as they come; inbox answers come
     back and are written on the VM's inbox as the Beelink wrote them: the item first, the
     header last. The console reader never waits: past a full queue, lines are dropped. A
-    dropped link reconnects and sends the unanswered ask again."""
+    dropped link reconnects and sends the unanswered asks again: the latest of each kind
+    (handoff, capacity), so one kind never replaces the other's ask."""
 
     def __init__(self, runner: str, inbox: Path) -> None:
         self.runner, self.inbox = runner, inbox
         self.lines: queue.Queue[bytes | None] = queue.Queue(512)
-        self.ask: bytes | None = None
-        self.ask_sent = False
+        # Each kind's unanswered ask, and the kinds already sent on this link.
+        self.asks: dict[bytes, bytes] = {}
+        self.sent: set[bytes] = set()
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
         self.thread.start()
 
     def put(self, line: bytes) -> None:
-        if line.startswith(b"HOMELAB-HANDOFF "):
-            self.ask, self.ask_sent = line, False
-            line = b""  # sent from self.ask, once per link
+        if line.startswith(PEER_ASKS):
+            kind = line.split(b" ", 1)[0]
+            self.asks[kind] = line
+            self.sent.discard(kind)
+            line = b""  # sent from self.asks, once per link
         with contextlib.suppress(queue.Full):
             self.lines.put_nowait(line)
 
@@ -3342,9 +3388,8 @@ class PeerStream:
                 assert link.stdin is not None and link.stdout is not None
                 threading.Thread(target=self.answers, args=(link.stdout,), daemon=True).start()
                 link.stdin.write(f"vm {self.runner}\n".encode())
-                if ask := self.ask:
-                    link.stdin.write(ask)
-                    self.ask_sent = True
+                self.sent.clear()
+                self.send_asks(link.stdin)
                 link.stdin.flush()
                 while True:
                     try:
@@ -3355,11 +3400,10 @@ class PeerStream:
                         continue
                     if line is None:
                         break
-                    if not line:
-                        if not (ask := self.ask) or self.ask_sent:
-                            continue
-                        line, self.ask_sent = ask, True
-                    link.stdin.write(line)
+                    if line:
+                        link.stdin.write(line)
+                    else:
+                        self.send_asks(link.stdin)
                     link.stdin.flush()
                 link.stdin.close()
                 link.wait(timeout=10)
@@ -3369,6 +3413,19 @@ class PeerStream:
                 with contextlib.suppress(Exception):
                     link.kill()
                 time.sleep(5)
+
+    def send_asks(self, link: IO[bytes]) -> None:
+        for kind, ask in list(self.asks.items()):
+            if kind not in self.sent:
+                link.write(ask)
+                self.sent.add(kind)
+
+    def answered(self, header: bytes) -> None:
+        """Drop the ask this inbox header answers (its nonce is each ask's third word)."""
+        nonce = header.split(b"\0", 1)[0].split()[2:3]
+        for kind, ask in list(self.asks.items()):
+            if ask.split()[2:3] == nonce:
+                self.asks.pop(kind, None)
 
     def answers(self, stream: IO[bytes]) -> None:
         with contextlib.suppress(OSError, ValueError):
@@ -3394,7 +3451,7 @@ class PeerStream:
                     f.write(header)
                     f.flush()
                     os.fsync(f.fileno())
-                self.ask = None
+                self.answered(header)
 
 
 def pc_slot_count() -> int:

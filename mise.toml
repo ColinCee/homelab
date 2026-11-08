@@ -8,7 +8,7 @@ actionlint = "1.7.12"
 description = "Lint Python, shell, YAML, and Actions"
 run = [
   "uv run ruff check scripts/ stacks/ tests/ && uv run ruff format --check scripts/ stacks/ tests/",
-  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch .github/actions/fc-cache/*.sh",
+  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/ci-capacity .github/actions/fc-cache/*.sh",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
 ]

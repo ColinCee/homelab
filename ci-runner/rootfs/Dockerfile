@@ -153,6 +153,6 @@ RUN for a in ${CACHED_ACTIONS}; do \
  && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/opt/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
  && chown runner:runner /opt/runner/.path
 
-COPY ci-boot ci-trim-cache ci-memwatch /usr/local/sbin/
+COPY ci-boot ci-trim-cache ci-memwatch ci-capacity /usr/local/sbin/
 COPY ci-boot.service ci-trim-cache.service ci-memwatch.service /etc/systemd/system/
-RUN chmod 0755 /usr/local/sbin/ci-boot /usr/local/sbin/ci-trim-cache /usr/local/sbin/ci-memwatch && systemctl enable ci-boot.service ci-trim-cache.service ci-memwatch.service
+RUN chmod 0755 /usr/local/sbin/ci-boot /usr/local/sbin/ci-trim-cache /usr/local/sbin/ci-memwatch /usr/local/sbin/ci-capacity && systemctl enable ci-boot.service ci-trim-cache.service ci-memwatch.service
