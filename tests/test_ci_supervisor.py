@@ -1548,6 +1548,56 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     assert stopped == ["is in the way of a queued job"]
 
 
+def test_a_builders_reviewer_takes_a_standby_booted_when_its_builders_vm_ended(
+    caches, monkeypatch
+) -> None:
+    registered: list[list[str]] = []
+
+    class Registers:
+        def request(self, method: str, path: str, body: dict | None = None) -> dict:
+            if method == "GET":  # every runner has its job, or is still connecting
+                return {"busy": True}
+            assert body is not None
+            registered.append(body["labels"])
+            return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
+
+    (caches / "octo__gears.ext4").touch()
+    for name in ("check_private", "only_colin"):
+        monkeypatch.setattr(sup, name, lambda *a, **k: True)
+    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
+    monkeypatch.setattr(sup, "delete_runner", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+    monkeypatch.setattr(sup, "STATE_DIR", caches)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", caches / "last-repo")
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    widgets = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
+    jobs: list[sup.Job] = []
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "octo/agent" else [])
+    repos = ["octo/agent", "octo/widgets", "octo/gears"]
+    # Task A's Builder runs on widgets' disk; task B's, started after it, on gears'.
+    builder = sup.Launch(0, "octo/agent", 1, "fc-0-1", 0.0, caches / "m0", label=widgets[-1])
+    other = sup.Launch(
+        1, "octo/agent", 2, "fc-1-1", 10.0, caches / "m1", label="fc-cache-octo--gears"
+    )
+    state = sup.State(slots=2, launches={0: builder, 1: other})
+    state.last_repo, state.last_label = "octo/agent", other.label
+    # A's Builder ends before GitHub queues its Reviewer: the standby boots in its slot for
+    # widgets, not for gears, the last job started.
+    monkeypatch.setattr(
+        sup, "running_vms", lambda: {r.unit for r in state.launches.values()} - {builder.unit}
+    )
+    sup.tick(Registers(), state, repos, 600.0)  # type: ignore[arg-type]
+    assert registered == [[*widgets]] and state.launches[0].standby
+    assert sup.recalled_last_job() == ("octo/agent", "fc-cache-octo--widgets")
+
+    # The Reviewer, queued on the next poll, is left to that standby: no VM boots for it and
+    # none is stopped.
+    jobs[:] = [sup.Job("octo/agent", 2, "review", widgets)]
+    sup.tick(Registers(), state, repos, 602.0)  # type: ignore[arg-type]
+    assert len(registered) == 1 and "is in the way of a queued job" not in stopped
+
+
 @pytest.mark.parametrize(("label", "slot"), [("", 0), (sup.LIGHT_LABEL, 2)])
 @pytest.mark.parametrize("busy", [True, False])
 def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
