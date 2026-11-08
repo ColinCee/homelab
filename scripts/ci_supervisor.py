@@ -764,9 +764,8 @@ def launch(
     # A light job neither keeps its repo polled every time nor draws the standby to it.
     if not standby and not light:
         state.used.add(repo)
-    if not standby and not light and (repo, label) != (state.last_repo, state.last_label):
-        state.last_repo, state.last_label = repo, label
-        remember_last_job(repo, label)
+    if not standby and not light:
+        note_last_job(state, repo, label)
     if label == DEPLOY_LABEL:
         if not standby and repo != state.last_deploy_repo:
             state.last_deploy_repo = repo
@@ -794,6 +793,13 @@ def vm_waits(state: State, jobs: Iterable[int], now: float) -> dict[str, dict[st
             "why": wait.why if wait else "",
         }
     return waits
+
+
+def note_last_job(state: State, repo: str, label: str) -> None:
+    """The repo and cache label the build standby boots for next."""
+    if (repo, label) != (state.last_repo, state.last_label):
+        state.last_repo, state.last_label = repo, label
+        remember_last_job(repo, label)
 
 
 def remember_last_job(repo: str, label: str) -> None:
@@ -1306,6 +1312,11 @@ def reap(
         delete_runner(gh, run.repo, run.runner_id, run.runner_name)
         log(f"slot {slot}: {run.runner_name} finished")
         del state.launches[slot]
+        # A task's next build job (its Reviewer after its Builder) asks for the same repo and
+        # cache label seconds after this one ends: the standby booting in the freed slot is
+        # for those, not for the last job started, so the next job need not wait for a boot.
+        if not run.standby and not run.light:
+            note_last_job(state, run.repo, run.label)
 
 
 # Each repo GitHub would not show on the last try, with why; logged only when it changes.
