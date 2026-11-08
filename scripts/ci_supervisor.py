@@ -258,10 +258,10 @@ READY = "a VM ready for it that GitHub has not given the job"
 # quiet repos are asked once a minute, so less is expected.
 UNSEEN_LOG_SECONDS = 90.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
-# wait (see wait_kind), for the Control room and speed reports. Lines older than
-# WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS. "unseen" is the time
-# from GitHub queueing the job to the supervisor first seeing it (a restart counts again
-# from GitHub's queueing).
+# wait (see wait_kind) and the reason of its longest kind, for the Control room and speed
+# reports. Lines older than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
+# "unseen" is the time from GitHub queueing the job to the supervisor first seeing it (a
+# restart counts again from GitHub's queueing).
 WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
 WAIT_KINDS = ("memory", "disk", "slots", "booting", "ready", "unseen", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
@@ -442,8 +442,10 @@ class Wait:
     kind: str = "other"
     seen: float = 0.0
     seconds: dict[str, float] = field(default_factory=dict)
-    # The reason the wait log gives at the last poll that saw it.
+    # The reason the wait log gives at the last poll that saw it, and the latest one for
+    # each kind, so the finished record names the reason of its longest kind.
     why: str = ""
+    whys: dict[str, str] = field(default_factory=dict)
     # Its workflow's name, "" when unknown.
     workflow: str = ""
     # The labels it asks for when no VM has them, else empty.
@@ -451,6 +453,11 @@ class Wait:
 
     def __post_init__(self) -> None:
         self.queued = self.queued or self.since
+
+    def longest_why(self) -> str:
+        """The wait log's reason for the kind it waited longest for ("" if none was logged)."""
+        kinds = sorted(self.whys, key=lambda kind: self.seconds.get(kind, 0.0), reverse=True)
+        return self.whys[kinds[0]] if kinds else self.why
 
     def count(self, now: float) -> None:
         self.seconds[self.kind] = self.seconds.get(self.kind, 0.0) + now - self.seen
@@ -2293,7 +2300,7 @@ def note_waits(
             unseen = wait.seconds["unseen"] = now - queued
         wait.count(now)
         wait.kind = wait_kind(why)
-        wait.why = why
+        wait.why = wait.whys[wait.kind] = why
         wait.unmatched = unmatched.get(job_id, ())
         waited = now - wait.since
         late = unseen >= UNSEEN_LOG_SECONDS
@@ -2377,6 +2384,7 @@ def record_wait(state: State, job_id: int, wait: Wait, now: float) -> None:
     logged once and never stops the poll."""
     line = {"job": job_id, "repo": wait.repo, "since": int(wait.since), "until": int(now)}
     line |= {kind: round(wait.seconds.get(kind, 0.0)) for kind in WAIT_KINDS}
+    line["why"] = wait.longest_why()
     try:
         if now - state.waits_pruned >= WAITS_PRUNE_SECONDS:
             prune_waits(now)
