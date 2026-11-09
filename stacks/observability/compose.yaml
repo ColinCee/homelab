@@ -75,11 +75,9 @@ services:
       # At its defaults it confirms writes before saving them, and a kill lost the last few seconds (ADR 0001).
       ZO_WAL_WRITE_QUEUE_ENABLED: "false"
       ZO_WAL_FSYNC_DISABLED: "false"
-      # As measured in the ADR's trials.
+      # The trials' setup: a 512 MB cache, and the makers' flattening for performance.
       ZO_MEMORY_CACHE_MAX_SIZE: "512"
       ZO_INGEST_FLATTEN_LEVEL: "2"
-      # Alerts may post to the Kaizen Control room on the Docker network only.
-      ZO_SSRF_ALLOWED_CIDRS: 172.16.0.0/12
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
