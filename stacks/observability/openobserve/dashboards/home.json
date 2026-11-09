@@ -1033,7 +1033,7 @@
           "id": "Panel_ID20",
           "type": "table",
           "title": "Most repeated error lines, last hour",
-          "description": "Numbers and ids show as #, so repeats of one error count together.",
+          "description": "Numbers and ids show as #, so repeats of one error count together; each line is cut at 80 characters.",
           "config": {
             "show_legends": false,
             "decimals": 0,
@@ -1042,7 +1042,7 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT regexp_replace(container_name, '^observability-|-1$', '', 'g') AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 100) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) WHERE _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 3600000000 GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
+              "query": "SELECT regexp_replace(container_name, '^observability-|-1$', '', 'g') AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 80) AS y_axis_2, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) WHERE _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 3600000000 GROUP BY x_axis_1, y_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
@@ -1052,12 +1052,6 @@
                     "label": "Container",
                     "alias": "x_axis_1",
                     "column": "x_axis_1",
-                    "color": null
-                  },
-                  {
-                    "label": "Line",
-                    "alias": "x_axis_2",
-                    "column": "x_axis_2",
                     "color": null
                   }
                 ],
@@ -1069,7 +1063,7 @@
                     "color": null
                   },
                   {
-                    "label": "Last (UTC)",
+                    "label": "Line",
                     "alias": "y_axis_2",
                     "column": "y_axis_2",
                     "color": null
