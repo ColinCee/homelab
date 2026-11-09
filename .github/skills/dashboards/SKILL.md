@@ -29,7 +29,7 @@ heading, and size each panel to its content, with no empty space around its valu
 
 ## Queries
 
-- Metric names are lower case (`node_memory_memavailable_bytes`); a test checks.
+- Metric names are lower case (`node_memory_memavailable_bytes`).
 - A matcher like `=""` cannot select a series that lacks the label; `name!=""` works. Use
   `max by (name)` for container metrics, as `docs/observability.md` says.
 - Every PromQL panel runs a range query: OpenObserve drops a query's `query_type`. A number tile
@@ -38,8 +38,8 @@ heading, and size each panel to its content, with no empty space around its valu
 - Logs are the `containers` stream. Alloy resends a container's old lines when it restarts, so
   count `DISTINCT _timestamp, body`; filter with `match_all` words (the text index) before a
   `regexp_like`, which is slow over a day of logs.
-- Alert states are the `triggers` stream (`module = 'alert'`); until the cutover a firing rule
-  shows as `notify_failed`, since its shadow post is refused.
+- Alert states are the `triggers` stream (`module = 'alert'`): a firing rule logs `firing`, or
+  `notify_failed` when its post fails.
 - Before running `apply.py` by hand, rebase on main: it makes OpenObserve match the files you
   have, so an old checkout reverts newer alerts.
 

@@ -302,7 +302,13 @@ def apply_dashboards(call: Call, dashboards: Mapping[str, dict]) -> list[str]:
 
 
 def read_dashboards(folder: Path) -> dict[str, dict]:
-    dashboards = (json.loads(p.read_text(encoding="utf-8")) for p in sorted(folder.glob("*.json")))
+    # A wrong path would read as no dashboards and delete them all.
+    if not folder.is_dir():
+        raise SystemExit(f"{folder}: no such folder")
+    dashboards = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(folder.glob("*.json"))]
+    titles = [d["title"] for d in dashboards]
+    if len(set(titles)) != len(titles):
+        raise SystemExit(f"{folder}: two dashboards share a title")
     return {d["title"]: d for d in dashboards}
 
 

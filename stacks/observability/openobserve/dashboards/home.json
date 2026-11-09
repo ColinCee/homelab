@@ -353,7 +353,7 @@
           "id": "Panel_ID8",
           "type": "metric",
           "title": "Alerts firing",
-          "description": "OpenObserve's alert rules firing now. Until the cutover they post nowhere (their shadow posts are refused), so a firing rule shows here and in the Alerts tab only.",
+          "description": "OpenObserve's alert rules firing now, a rule with several firing series counting once. Until the cutover they post only to the Control room's shadow path, which opens no issues.",
           "config": {
             "show_legends": false,
             "decimals": 0,
@@ -854,7 +854,7 @@
           "id": "Panel_ID18",
           "type": "area-stacked",
           "title": "Memory by group",
-          "description": "Kaizen is its Control room; CI VMs its job machines; Monitoring the observability stack; Apps every other container; System the rest of the host's memory in use, which reads 0 when the groups' own counts add up past it.",
+          "description": "The stack's top is the host's own figure in use. Kaizen is its Control room; CI VMs its job machines (at most what the containers leave); Monitoring the observability stack; Apps every other container; System the rest.",
           "config": {
             "show_legends": true,
             "decimals": 1,
@@ -882,7 +882,7 @@
               }
             },
             {
-              "query": "(sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0))",
+              "query": "(((sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)) < (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))) or (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -939,7 +939,7 @@
               }
             },
             {
-              "query": "clamp_min(max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)), 0)",
+              "query": "clamp_min((max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))) - (((sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)) < (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))) or (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))), 0)",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -970,7 +970,7 @@
           "id": "Panel_ID19",
           "type": "area-stacked",
           "title": "CPU by group, cores",
-          "description": "Kaizen is its Control room; CI VMs its job machines; Monitoring the observability stack; Apps every other container; System the rest of the host's memory in use, which reads 0 when the groups' own counts add up past it.",
+          "description": "The stack's top is the host's own figure in use. Kaizen is its Control room; CI VMs its job machines (at most what the containers leave); Monitoring the observability stack; Apps every other container; System the rest.",
           "config": {
             "show_legends": true,
             "decimals": 2
@@ -997,7 +997,7 @@
               }
             },
             {
-              "query": "(sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0))",
+              "query": "(((sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)) < (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))) or (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1054,7 +1054,7 @@
               }
             },
             {
-              "query": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)), 0)",
+              "query": "clamp_min((max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))) - (((sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)) < (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))) or (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))), 0)",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1527,7 +1527,7 @@
             "panel_time_enabled": true,
             "panel_time_range": {
               "type": "relative",
-              "relativeTimePeriod": "15m"
+              "relativeTimePeriod": "1m"
             }
           },
           "queryType": "promql",
@@ -1573,7 +1573,7 @@
             "panel_time_enabled": true,
             "panel_time_range": {
               "type": "relative",
-              "relativeTimePeriod": "15m"
+              "relativeTimePeriod": "1m"
             }
           },
           "queryType": "promql",
@@ -1955,8 +1955,8 @@
         {
           "id": "Panel_ID39",
           "type": "line",
-          "title": "Traffic by container, bytes a second",
-          "description": "What each container receives.",
+          "title": "Received by container, bytes a second",
+          "description": "What each container receives; Traffic shows the host's in and out.",
           "config": {
             "show_legends": true,
             "decimals": 1,
@@ -2185,11 +2185,12 @@
           "id": "Panel_ID43",
           "type": "metric",
           "title": "Last failure",
-          "description": "Time since a run last failed; empty when none has since the metric began.",
+          "description": "Time since a run last failed.",
           "config": {
             "show_legends": false,
             "decimals": 1,
             "unit": "seconds",
+            "no_value_replacement": "None recorded",
             "panel_time_enabled": true,
             "panel_time_range": {
               "type": "relative",
@@ -2320,7 +2321,7 @@
           "id": "Panel_ID46",
           "type": "table",
           "title": "Runs",
-          "description": "Each night's run: how it ended, how long it took and whether it read every byte back.",
+          "description": "Each day's run: how it ended (empty if it stopped before saying), how long it took and whether it read every byte back.",
           "config": {
             "show_legends": false,
             "decimals": 0,
@@ -2333,7 +2334,7 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT to_char(to_timestamp_micros(min(_timestamp)), '%Y-%m-%d %H:%M') AS x_axis_1, max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN body END) AS x_axis_2, (max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN _timestamp END) - min(_timestamp)) / 1000000 AS y_axis_1, max(CASE WHEN body = 'deep check ok' THEN 'yes' ELSE '' END) AS x_axis_3 FROM (SELECT DISTINCT _timestamp, body FROM containers WHERE container_name = 'backup') GROUP BY date_trunc('day', to_timestamp_micros(_timestamp)) HAVING max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN 1 ELSE 0 END) = 1 ORDER BY x_axis_1 DESC",
+              "query": "SELECT to_char(to_timestamp_micros(min(_timestamp)), '%Y-%m-%d %H:%M') AS x_axis_1, max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN body END) AS x_axis_2, (max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN _timestamp END) - min(_timestamp)) / 1000000 AS y_axis_1, max(CASE WHEN body = 'deep check ok' THEN 'yes' ELSE '' END) AS x_axis_3 FROM (SELECT DISTINCT _timestamp, body FROM containers WHERE container_name = 'backup') GROUP BY date_trunc('day', to_timestamp_micros(_timestamp)) ORDER BY x_axis_1 DESC",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
