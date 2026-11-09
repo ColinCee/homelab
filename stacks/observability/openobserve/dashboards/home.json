@@ -512,12 +512,13 @@
           "description": "Space free on the root disk; amber under 100 GB, where Beelink disk filling up fires (80% used).",
           "config": {
             "show_legends": false,
-            "decimals": 1,
-            "unit": "bytes",
+            "decimals": 0,
+            "unit": "custom",
+            "unit_custom": " GB",
             "mappings": [
               {
                 "type": "lt",
-                "value": "100000000000",
+                "value": "100",
                 "color": "#fab219",
                 "text": ""
               }
@@ -526,7 +527,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"})",
+              "query": "max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / 1e9",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -615,11 +616,12 @@
           "config": {
             "show_legends": false,
             "decimals": 1,
-            "unit": "bytes",
+            "unit": "custom",
+            "unit_custom": " GB",
             "mappings": [
               {
                 "type": "lt",
-                "value": "3000000000",
+                "value": "3",
                 "color": "#fab219",
                 "text": ""
               }
@@ -628,7 +630,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "8000000000 - max(last_over_time(homelab_backup_repository_bytes[26h]))",
+              "query": "8 - max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9",
               "customQuery": true,
               "fields": {
                 "stream": "",
