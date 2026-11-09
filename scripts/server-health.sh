@@ -75,8 +75,9 @@ done
 grafana=http://beelink.tail4f465e.ts.net:3001
 openobserve="${OPENOBSERVE_URL:-}"
 login() {
-  local pw=${OPENOBSERVE_LOGIN//\\/\\\\}
-  pw=${pw//\"/\\\"}
+  # Quoted patterns: bash 5.2 reads an unquoted `\\\\` replacement as one backslash.
+  local pw=${OPENOBSERVE_LOGIN//"\\"/"\\\\"}
+  pw=${pw//"\""/"\\\""}
   printf 'user = "%s"\n' "$pw"
 }
 promql() { # QUERY: the Prometheus API's JSON answer
@@ -87,12 +88,15 @@ promql() { # QUERY: the Prometheus API's JSON answer
   fi
 }
 if [[ -n "$openobserve" ]]; then
-  # A rule fires when its latest run met its condition (both stamps come from the same run, as Kaizen reads them:
-  # auto-kaizen src/kaizen/board/alert_source.py, `firing_in`), and one whose query failed is named too.
+  # As Kaizen reads the list (auto-kaizen src/kaizen/board/alert_source.py, `firing_in`): a rule fires when its
+  # latest run met its condition (both stamps come from the same run); one whose query failed, or not run for
+  # 5 minutes, is named too.
   firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
-    jq -r '[.list[] | select(.enabled != false) |
-      if .last_outcome == "error" then "\(.description) (query fails)"
-      elif (.last_satisfied_at // 0) >= (.last_triggered_at // 0) - 5000000 and .last_satisfied_at then .description
+    jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
+      (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
+      if .last_outcome == "error" then "\($rule) (query fails)"
+      elif $run < $stale then "\($rule) (not run for 5 min)"
+      elif $met > 0 and $met >= $run - 5000000 then $rule
       else empty end] | join(", ")' 2>/dev/null)" ||
     firing="unknown (OpenObserve API unreachable)"
 else
