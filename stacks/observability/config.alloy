@@ -230,18 +230,18 @@ otelcol.exporter.otlphttp "openobserve" {
 }
 
 // ================================
-// Auto Kaizen's Control room
+// Alertmanager
 // ================================
 
-// Auto Kaizen's tasks by state, waits for a machine and agent cost.
-prometheus.scrape "kaizen" {
+// Its notifications_failed_total tells the heartbeat (.github/workflows/heartbeat.yaml) when posts stop reaching
+// Discord.
+prometheus.scrape "alertmanager" {
   targets = [{
-    __address__ = "100.100.146.119:8090",
+    __address__ = "alertmanager:9093",
   }]
   forward_to      = [prometheus.remote_write.default.receiver]
-  scrape_interval = "30s"
-  job_name        = "kaizen"
-  metrics_path    = "/metrics"
+  scrape_interval = "60s"
+  job_name        = "alertmanager"
 }
 
 // ================================
@@ -265,3 +265,4 @@ prometheus.scrape "flight_tracker" {
   forward_to      = [prometheus.remote_write.default.receiver]
   scrape_interval = "60s"
 }
+

@@ -1,0 +1,20 @@
+{{/* One alert per post (alertmanager.yml, group_by), so each reads its first alert. */}}
+
+{{ define "homelab.title" }}{{ with index .Alerts 0 -}}
+{{ if eq $.Status "resolved" }}Cleared: {{ end }}{{ .Annotations.title }}
+{{- range .Labels.SortedPairs }}{{ if and (ne .Name "alertname") (ne .Name "level") }} · {{ .Value }}{{ end }}{{ end }}
+{{- end }}{{ end }}
+
+{{ define "homelab.message" }}{{ with index .Alerts 0 -}}
+{{ if eq $.Status "resolved" -}}
+The number is back within bounds; that does not mean the cause is fixed.
+{{- else -}}
+{{ .Annotations.measure }}: **{{ if eq .Annotations.value "-1" }}no data{{ else }}{{ .Annotations.value }}{{ .Annotations.unit }}{{ end }}**
+**Why it matters:** {{ .Annotations.harm }}
+**What to do:** {{ .Annotations.action }}
+{{- end }}
+[Dashboards]({{ .Annotations.dashboard }})
+{{- end }}{{ end }}
+
+{{/* Colin's Discord user: "Act now" pings him while it fires; "This week" and every Cleared post do not. */}}
+{{ define "homelab.mention" }}{{ if and (eq .Status "firing") (eq .CommonLabels.level "now") }}<@124131392207454208>{{ end }}{{ end }}

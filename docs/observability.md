@@ -23,10 +23,11 @@ What watches what:
 | Component | What it does |
 |-----------|---------------|
 | **Grafana** | Dashboards, Explore, and alert routing |
-| **Prometheus** | Metrics storage for host, containers, CI VMs, Auto Kaizen's Control room and the flight-tracker probe |
+| **Prometheus** | Metrics storage for host, containers, CI VMs and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
 | **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
+| **Alertmanager** | Posts OpenObserve's alerts to Discord, repeats, clears and holds them back; port 9093 |
 | **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
@@ -111,15 +112,9 @@ Prometheus receives metrics from:
   `up{job="ci-vms"}`.
 - **Textfiles:** Alloy's textfile collector reads `/var/lib/homelab-metrics/*.prom`: the CI
   supervisor's `homelab_ci_*` (the ci-runner runbook's "Status files"), the SSD's
-  `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, and the backups' `homelab_backup_*` and
-  `homelab_pc_backup_*`.
-- **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
-  (`job="kaizen"`), every series named `kaizen_*`: tasks by state, machine waits, agent
-  cost, the GitHub App's and the workflows' shared key's hourly calls. In `kaizen_tasks{state}`,
-  `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and
-  `kaizen_machine_wait_seconds_max` count homelab machines only. The Control room's code
-  is in the private auto-kaizen repo, so list the series with
-  `curl -s http://beelink.tail4f465e.ts.net:8090/metrics | grep '^# HELP'`.
+  `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, the backups' `homelab_backup_*` and
+  `homelab_pc_backup_*`, and `homelab_probe_*` from `probes.py`.
+- **Alertmanager:** its own metrics (`job="alertmanager"`), such as posts that failed to reach Discord.
 - **Flight tracker:** Alloy's blackbox exporter probes the public
   `https://api.colincheung.dev/aircraft` every minute
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
@@ -140,31 +135,47 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 ## Alerts
 
-Grafana alerting is provisioned from `stacks/observability/provisioning/alerting/`, and every
-firing and resolved alert goes to Discord's #uptime through the `Discord Private` webhook.
-A deploy that changes these files recreates Grafana,
-which reloads them; they are not polled.
+OpenObserve runs the rules in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml) each minute.
+`openobserve-apply` applies them on deploy, then runs each rule's query once and fails the deploy on an error, since
+OpenObserve sends nothing for a query that fails. A firing rule posts every minute to
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), whose
+`shadow` receiver holds alerts and posts nothing until the switch from Grafana; Grafana's rules in
+`provisioning/alerting/` still post to Discord's #uptime. See Alertmanager's alerts at
+`http://beelink.tail4f465e.ts.net:9093`.
 
-Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a
-host-only URL in the alert embed with HTTP 400.
+### The standard
 
-Each rule in [`rules.yaml`](../stacks/observability/provisioning/alerting/rules.yaml) carries its
-own description and the action to take, which reach the alert's post; read the rule, not a list here.
-Rules on the CI VMs (swapping, slow disk, out of memory, stuck waiting) point at the ci-runner
-runbook's "Why a job waits".
+An alert exists only if all three hold; anything else is a dashboard number:
 
-Host RAM uses `node_memory_MemAvailable_bytes`, not `node_memory_AvailableBytes`. Check the rule's
-query when a dashboard has data but no alert.
+1. Something is harmed now or soon.
+2. Colin can act on it.
+3. The post says what to do.
 
-OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
-applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
-(`live`). It keeps metric names in lower case; a per-series alert's stopped firings mean cleared.
+| Level | When | Post |
+|---|---|---|
+| Act now (`now`) | A user-facing service is down, data is being lost, or something is full within 24 h | Mentions Colin, and again every 4 h while it fires |
+| This week (`week`) | Something is running out or slipping | No mention, again daily |
 
-The #uptime webhook and the Control room's `/alert` both use the provisioned
-`homelab-discord` notification template.
-No-data and evaluation errors are separate alerts, grouped by rule;
-they mean monitoring is unavailable, not that a threshold was crossed.
-A resolved message describes an ended alert, not proof of recovery.
+- An alert fires once its condition has held for the rule's `for`, and clears once it has stayed clear for 10
+  minutes (Alertmanager's `resolve_timeout`); a return within those 10 minutes is the same alert, with no new post.
+  The clear post says "Cleared": the number recovered, not that anything was fixed.
+- Each post says what broke (title and value), why it matters (`harm`), what to do (`action`), and links a dashboard.
+- "Beelink metrics stopped" holds back every other alert while it fires. Only metrics written outside Alloy (the
+  textfiles) carry a `no_data` query.
+- `tests/test_openobserve_alerts.py` checks each rule against this.
+
+Noise budget: at most one post a day across all rules, over 14 days. Replay before adding or loosening a rule
+(Prometheus holds the longer history until OpenObserve has 14 days; without the variable it reads OpenObserve):
+
+```bash
+docker exec -e REPLAY_PROMETHEUS=http://prometheus:9090 observability-openobserve-apply-1   python -I /apply/replay.py /apply/alerts.toml 14
+```
+
+On 9 November 2026 the rules made 4 posts in 14 days.
+
+OpenObserve keeps metric names in lower case. Home Assistant and the `.internal` names are checked by
+[`probes.py`](../stacks/observability/probes.py) on the host's network, since the firewall admits only Tailscale and
+loopback; its results reach the rules through the textfile collector.
 
 ## Common debugging path
 

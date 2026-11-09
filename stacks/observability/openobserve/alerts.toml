@@ -1,292 +1,112 @@
-# OpenObserve's alert rules, one per Grafana rule in ../provisioning/alerting/rules.yaml (same key and title), which
-# stays the live alerter until the cutover. apply.py makes OpenObserve match this file on each deploy.
+# OpenObserve's alert rules, held to the alert standard in docs/observability.md ("Alerts"). apply.py makes
+# OpenObserve match this file on each deploy; every rule posts each minute while it fires to Alertmanager
+# (../alertmanager), which posts to Discord, repeats, clears and holds back.
 #
-# A rule fires when its `promql` is `operator` `threshold` for `for`, and holds through a dip shorter than
-# `keep_firing`. A per-series rule names the labels that tell its series apart in `series`: one alert, and one
-# Kaizen issue, per series. A `no_data` query fires the rule when the metric is gone, as Grafana's NoData did,
-# with the value -1. `extra` holds named queries the Control room runs for the post's numbers.
-# Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`, `needs`) are those Kaizen reads from Grafana's rules.
-# `format` shows the value as Grafana's `value` annotation does: a Python `{:spec}` with text around it, `bytes`, or
-# `down/live` (0, else not); Kaizen applies it (auto-kaizen src/kaizen/board/alert_source.py, `shown`).
+# A rule fires when its `promql` is `operator` `threshold` for `for`. Its value is shown as `measure: value unit`,
+# so the query gives display units, rounded. A per-series rule names the labels that tell its series apart in
+# `series`: one post per series. A `no_data` query fires the rule, shown as "no data", when the metric is gone;
+# only metrics written outside Alloy carry one, since "Beelink metrics stopped" covers Alloy's own.
 
-# Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
-# rule to its route's destinations instead, and needs DISCORD_PRIVATE_WEBHOOK_URL passed to openobserve-apply.
-live = false
+# Where each post links; a rule may name its own `dashboard`.
+dashboard = "http://beelink.tail4f465e.ts.net:5080/web/dashboards?org_identifier=default"
 
-# Where each route goes when live.
-[routes]
-kaizen = ["discord"]
-colin = ["discord"]
-
-# Minutes before a firing alert is sent again. The Control room ignores a repeat of an alert it has open; a resolved
-# message waits for the repeat to end, so Discord's is 30 minutes.
-[repeat]
-kaizen = 0
-
-# Destinations: `${NAME}` is read from the environment, and `body` is the template, `kaizen` (Kaizen's /alert body)
-# or `discord`. The Control room by its name on its Docker network, the one private host OpenObserve allows
-# (ZO_SSRF_ALLOWED_HOSTS).
-[destinations.shadow]
-url = "http://control-room:8090/alert/openobserve/shadow"
-bearer = "${KAIZEN_ALERT_SECRET}"
-body = "kaizen"
-
-[destinations.kaizen]
-url = "http://control-room:8090/alert"
-bearer = "${KAIZEN_ALERT_SECRET}"
-body = "kaizen"
-
-[destinations.discord]
-url = "${DISCORD_PRIVATE_WEBHOOK_URL}"
-body = "discord"
-
-[rules.high-cpu]
-title = "Beelink CPU maxed out"
-route = "kaizen"
-# Busy share of the CPU, minus the CI VMs (they run at low CPU weight on purpose and soak up idle time) and
-# iowait (waiting on disk, not using CPU).
-promql = '''
-(
-  sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
-  - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
-) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})'''
-no_data = '''absent_over_time(node_cpu_seconds_total{job="integrations/unix"}[5m])'''
-operator = ">"
-threshold = 0.8
-# Deploys build images for a few minutes at full CPU, which needs nobody; a runaway process lasts longer.
-for = "20m"
-keep_firing = "10m"
-measure = "CPU use"
-format = "{:.0%}"
-trigger = "over 80% for 20 min"
-chart = '''
-100 * (
-  (
-    sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
-    - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
-  ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
-)'''
-chart_line = 80
-description = "Threshold: above 80% for 20 minutes (5-minute CPU average)."
-action = "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
-
-[rules.high-ram]
-title = "Beelink running out of memory"
-route = "kaizen"
-# OpenObserve keeps metric names in lower case.
-promql = "1 - (node_memory_memavailable_bytes{job=\"integrations/unix\"} / node_memory_memtotal_bytes{job=\"integrations/unix\"})"
-no_data = '''absent_over_time(node_memory_memavailable_bytes{job="integrations/unix"}[5m])'''
-operator = ">"
-threshold = 0.9
-for = "5m"
-keep_firing = "10m"
-measure = "Memory use"
-format = "{:.0%}"
-trigger = "over 90% for 5 min"
-chart = '''
-100 * (
-  1 - (node_memory_memavailable_bytes{job="integrations/unix"} / node_memory_memtotal_bytes{job="integrations/unix"})
-)'''
-chart_line = 90
-description = "Threshold: above 90% for 5 minutes."
-action = "Check the memory chart on Home (containers, CI VMs and the rest), then its Containers section."
-
-[rules.beelink-swapping]
-title = "Beelink swapping, slowing CI VMs"
-route = "kaizen"
-# Swap shares the one SSD with every CI VM's disk, so swapping stalls jobs and holds new VMs back.
-promql = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
-no_data = '''absent_over_time(node_vmstat_pswpout{job="integrations/unix"}[5m])'''
-operator = ">"
-threshold = 1
-for = "30m"
-keep_firing = "10m"
-measure = "Swapped out"
-format = "{:.1f} MB/s"
-trigger = "over 1 MB/s for 30 min"
-chart = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
-chart_line = 1
-description = "Threshold: over 1 MB/s swapped out for 30 minutes."
-action = '''
-Check which VMs or containers hold swap (VmSwap in /proc/*/status) and the CI memory notes in
-docs/runbooks/ci-runner.md.'''
-
-[rules.ci-vm-out-of-memory]
-title = "A CI job ran out of memory"
-route = "kaizen"
-series = ["kind"]
-# From each VM's ci-memwatch, counted by the CI supervisor when the VM ends.
-promql = "sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job=\"integrations/unix\"}[15m]))"
+[rules.beelink-metrics-stopped]
+title = "Beelink metrics stopped"
+level = "now"
+promql = '''absent_over_time(up{job="integrations/unix"}[5m]) or absent_over_time(up{job="docker"}[5m])'''
 operator = ">"
 threshold = 0
 for = "0m"
-closes = "event"
-measure = "Kills in the last 15 min"
-format = "{:.0f}"
-trigger = "any"
-chart = "sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job=\"integrations/unix\"}[15m]))"
-chart_line = 0
-description = "A VM's kernel killed a process for lack of memory: its job failed or ran short."
-action = '''
-Find the VM in the supervisor's log (`journalctl -u homelab-ci-supervisor -g "out-of-memory kills"`), map its
-runner name to the job, and give that job a bigger VM (LIGHT_SIZES in scripts/ci_supervisor.py) or trim it.'''
-
-[rules.ci-vms-near-full]
-title = "CI jobs need nearly all their VM's memory"
-route = "kaizen"
-series = ["kind"]
-# The share of a kind's job VMs whose need passed 80% of their memory, once at least 8 ended in 6 h.
-promql = '''
-(sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
-/ sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
-and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8'''
-operator = ">"
-threshold = 0.25
-for = "30m"
-measure = "Job VMs over 80% of their memory, last 6 h"
-format = "{:.0%}"
-trigger = "over a quarter, for 30 min"
-chart = '''
-(sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
-/ sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
-and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8'''
-chart_line = 0.25
-description = '''
-Over a quarter of this kind's job VMs needed more than 80% of their memory in 6 hours: the next bigger job may
-be killed.'''
-action = '''
-List the near-full VMs (`journalctl -u homelab-ci-supervisor -g "needed at least"`), see which jobs they ran,
-and give that kind more memory (LIGHT_SIZES or vm_size in scripts/ci_supervisor.py) or trim the job.'''
-
-[rules.ci-supervisor-poll-failing]
-title = "The CI supervisor's poll keeps failing"
-route = "kaizen"
-# Polls failed in a row (2 s apart), from the CI supervisor; 0 while they work.
-promql = "max(homelab_ci_poll_failures{job=\"integrations/unix\"})"
-operator = ">"
-threshold = 9
-for = "2m"
-measure = "Polls failed in a row"
-format = "{:.0f}"
-trigger = "10 or more, for 2 min"
-chart = "max(homelab_ci_poll_failures{job=\"integrations/unix\"})"
-chart_line = 10
-description = "Every poll of the CI supervisor has failed: no job VM starts on the Beelink, so every queued job waits."
-action = '''
-Read the error (`journalctl -u homelab-ci-supervisor -g "poll failed"`) and fix its cause in
-scripts/ci_supervisor.py (docs/runbooks/ci-runner.md).'''
-
-[rules.ci-supervisor-poll-failing.extra]
-# Seconds every poll has failed.
-failing_for = "max(homelab_ci_poll_failed_seconds{job=\"integrations/unix\"})"
-
-[rules.beelink-disk-stalled]
-title = "Beelink disk too slow for CI VMs"
-route = "kaizen"
-# The share of time tasks waited on the disk. Over half holds new CI VMs back (DISK_WAIT_LIMIT in
-# ci_supervisor.py), so a half-hour of it means tasks queue.
-promql = "rate(node_pressure_io_waiting_seconds_total{job=\"integrations/unix\"}[5m])"
-no_data = '''absent_over_time(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[5m])'''
-operator = ">"
-threshold = 0.6
-for = "30m"
-keep_firing = "10m"
-measure = "Time waiting on disk"
-format = "{:.0%}"
-trigger = "over 60% for 30 min"
-chart = '''
-100 * (
-  rate(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[5m])
-)'''
-chart_line = 60
-description = "Threshold: tasks waited on the disk over 60% of the time for 30 minutes."
-action = '''
-Check write rate and latency (iostat -dx nvme0n1), when the SSD was last trimmed (journalctl -u fstrim) and the
-CI disk notes in docs/runbooks/ci-runner.md.'''
-
-[rules.high-disk]
-title = "Beelink disk filling up"
-route = "kaizen"
-promql = '''
-1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
-/ node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})'''
-no_data = '''absent_over_time(node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}[5m])'''
-operator = ">"
-threshold = 0.8
-for = "10m"
-measure = "Disk use"
-format = "{:.0%}"
-trigger = "over 80% for 10 min"
-chart = '''
-100 * (
-  1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
-  / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
-)'''
-chart_line = 80
-description = "Threshold: above 80% for 10 minutes."
-action = "Inspect root filesystem usage before removing files; preserve Docker volumes."
-
-[rules.backup-missed]
-title = "Nightly backup didn't run"
-route = "kaizen"
-# Hours since backup.sh last wrote a successful run.
-promql = "(time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600"
-no_data = "absent_over_time(homelab_backup_last_success_timestamp_seconds[5m])"
-operator = ">"
-threshold = 26
-for = "30m"
-closes = "good-news"
-measure = "Last good backup"
-format = "{:.0f} h ago"
-trigger = "over 26 h ago"
-description = "Threshold: no successful restic backup to R2 in the last 26 hours."
-action = "Check `docker logs backup`; see docs/runbooks/backups.md."
-
-[rules.backup-missed.extra]
-# The step the last run failed at, written by backup.sh and removed by the next good run:
-# 1 cap, 2 backup, 3 forget, 4 check, 0 none recorded (the run did not happen).
-failed_step = '''
-max(
-  homelab_backup_last_failure_timestamp_seconds{step="cap"} * 0 + 1
-  or homelab_backup_last_failure_timestamp_seconds{step="backup"} * 0 + 2
-  or homelab_backup_last_failure_timestamp_seconds{step="forget"} * 0 + 3
-  or homelab_backup_last_failure_timestamp_seconds{step="check"} * 0 + 4
-) or vector(0)'''
-
-[rules.backup-storage-high]
-title = "Backup storage nearly full"
-route = "kaizen"
-# Written by backup.sh after each good run; 26 h covers one missed night, which Nightly backup didn't run reports.
-promql = "max(last_over_time(homelab_backup_repository_bytes[26h]))"
-no_data = "absent_over_time(homelab_backup_repository_bytes[26h])"
-operator = ">"
-threshold = 5000000000
-for = "5m"
-measure = "Backup storage"
-format = "bytes"
-trigger = "over 5 GB"
-description = "Threshold: above 5 GB. Uploads stop at 8 GB; R2 bills past 10 GB."
-action = "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
+measure = "Missing for"
+unit = " 5 min or more"
+harm = """
+No alert can see the Beelink while its numbers are missing, so the alerts that read them are held back. \
+A real outage could be going on unseen."""
+action = """
+On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50 observability-alloy-1`, \
+then `docker compose up -d` in /home/colin/code/homelab/stacks/observability."""
 
 [rules.flight-tracker-down]
 title = "Flight Tracker site down"
-route = "kaizen"
-promql = "max(probe_success{job=\"integrations/blackbox/flight-tracker\"})"
-no_data = "absent_over_time(probe_success{job=\"integrations/blackbox/flight-tracker\"}[5m])"
+level = "now"
+promql = '''max(probe_success{job="integrations/blackbox/flight-tracker"})'''
 operator = "<"
 threshold = 1
 for = "10m"
-keep_firing = "10m"
-closes = "good-news"
-measure = "Live radar"
-format = "down/live"
-trigger = "down for 10 min"
-description = "Threshold: https://api.colincheung.dev/aircraft not serving live aircraft for 10 minutes."
-action = "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
+measure = "Live aircraft check passing (1 yes, 0 no)"
+unit = ""
+harm = "https://api.colincheung.dev/aircraft is not serving live aircraft, so the public radar is blank or stale."
+action = """
+Check `docker logs --tail 50 flight-tracker-backend-1` (upstream 403 or 429?) and \
+`docker logs --tail 50 flight-tracker-cloudflared-1`."""
+
+[rules.home-assistant-down]
+title = "Home Assistant down"
+level = "now"
+# From ../probes.py; a check older than 5 minutes counts as failed, since its file outlives it.
+promql = '''
+max(homelab_probe_success{target="home-assistant"})
+* (time() - max(homelab_probe_timestamp_seconds) < bool 300)'''
+no_data = '''absent_over_time(homelab_probe_success{target="home-assistant"}[15m])'''
+operator = "<"
+threshold = 1
+for = "5m"
+measure = "Answering (1 yes, 0 no)"
+unit = ""
+harm = "The house's automations and its app stop working."
+action = """
+Check `docker ps -a --filter name=homeassistant` and `docker logs --tail 50 homeassistant`; restart it with `docker restart homeassistant`. If it is up, the check itself stopped: `docker logs observability-probes-1`."""
+
+[rules.dns-or-names-down]
+title = "DNS or .internal names down"
+level = "now"
+# From ../probes.py: the DNS server answering home.internal, and Caddy serving it.
+promql = '''
+min(homelab_probe_success{target=~"names-(dns|proxy)"})
+* (time() - max(homelab_probe_timestamp_seconds) < bool 300)'''
+no_data = '''absent_over_time(homelab_probe_success{target="names-dns"}[15m])'''
+operator = "<"
+threshold = 1
+for = "5m"
+measure = "Both checks passing (1 yes, 0 no)"
+unit = ""
+harm = "home.internal, openobserve.internal and the other .internal names stop opening on every device."
+action = """
+Check `docker ps -a --filter name=internal-names` and `docker logs --tail 50 internal-names-dns-1` and `internal-names-proxy-1`. If both are up, the check itself stopped: `docker logs observability-probes-1`."""
+
+[rules.high-ram]
+title = "Beelink running out of memory"
+level = "now"
+# OpenObserve keeps metric names in lower case.
+promql = '''
+round(100 * (1 - node_memory_memavailable_bytes{job="integrations/unix"}
+/ node_memory_memtotal_bytes{job="integrations/unix"}))'''
+operator = ">"
+threshold = 90
+for = "5m"
+measure = "Memory use"
+unit = "%"
+harm = "Past this the kernel kills processes, and any container may be the one stopped."
+action = """
+Find the container that grew with `docker stats --no-stream`, then restart it or give it a `mem_limit` in its \
+compose.yaml."""
+
+[rules.restart-loop]
+title = "A container keeps restarting"
+level = "now"
+series = ["name"]
+promql = '''max by (name) (changes(container_start_time_seconds{job="docker",name!=""}[30m]))'''
+operator = ">"
+threshold = 2
+for = "10m"
+measure = "Starts in the last 30 min"
+unit = ""
+harm = "The service in this container is down most of the time."
+action = "Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack."
 
 [rules.new-container]
 title = "Unknown container started"
-route = "colin"
+level = "now"
 series = ["name"]
 # A container outside any Compose project whose name was not seen in the week before its last hour. Stacks run
 # under Compose and reach the Beelink through the reviewed deploy path, so new stacks don't fire; a hand-run
@@ -300,66 +120,100 @@ unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}
 operator = ">"
 threshold = 0
 for = "15m"
-needs = "Is this container yours?"
-measure = "Container"
-format = "{:.0f}"
-description = "This container has run on the Beelink for 15 minutes and was not seen in the week before."
-action = '''
-Expected if you just added a stack or ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and
-`docker inspect` its image and command.'''
+measure = "Containers of this name"
+unit = ""
+harm = "Something started a container outside the reviewed deploy path; if it was not you, someone else can run code here."
+action = """
+Expected if you ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and `docker inspect` its image \
+and command, then stop it."""
+
+[rules.backup-missed]
+title = "Nightly backup didn't run"
+level = "week"
+# Hours since backup.sh last wrote a successful run.
+promql = "round((time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600)"
+no_data = "absent_over_time(homelab_backup_last_success_timestamp_seconds[15m])"
+operator = ">"
+threshold = 26
+for = "30m"
+measure = "Last good backup"
+unit = " h ago"
+harm = "Without a nightly copy in R2, a lost disk loses everything since the last good backup."
+action = "Check `docker logs --tail 100 backup`; see docs/runbooks/backups.md."
+
+[rules.pc-backup-stale]
+title = "PC backup stopped arriving"
+level = "week"
+# Hours since the newest file the PC sent (stacks/backup/systemd/backup-pc-receive.service). 50 h lets one night
+# pass with the PC off.
+promql = "round((time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600)"
+no_data = "absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])"
+operator = ">"
+threshold = 50
+for = "30m"
+measure = "Newest PC backup"
+unit = " h old"
+harm = "The Windows PC's files are no longer copied off it, so a dead PC disk loses them."
+action = """
+Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then \
+`systemctl --user status backup-pc-receive` on the Beelink; see docs/runbooks/backups.md."""
+
+[rules.high-disk]
+title = "Beelink disk filling up"
+level = "week"
+promql = '''
+round(100 * (1 - node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+/ node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"}))'''
+operator = ">"
+threshold = 80
+for = "10m"
+measure = "Disk use"
+unit = "%"
+harm = "A full disk stops every stack writing: OpenObserve, the backups and Home Assistant's history."
+action = """
+Find what grew with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`; prune images or old data, \
+never Docker volumes."""
+
+[rules.backup-storage-high]
+title = "Backup storage nearly full"
+level = "week"
+# Written by backup.sh after each good run; 26 h covers one missed night, which Nightly backup didn't run reports.
+promql = "round(max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9, 0.1)"
+no_data = "absent_over_time(homelab_backup_repository_bytes[26h])"
+operator = ">"
+threshold = 5
+for = "5m"
+measure = "Backup storage"
+unit = " GB"
+harm = "Uploads stop at 8 GB, so backups stop; R2 bills past 10 GB."
+action = "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
 
 [rules.ssd-worn]
 title = "Beelink SSD wearing out"
-route = "colin"
+level = "week"
 # The SSD's own estimate of its rated endurance used (scripts/ssd_wear.py).
 promql = "max(homelab_ssd_percentage_used)"
 operator = ">"
 threshold = 80
-for = "0m"
-needs = "Order a replacement SSD"
+for = "1h"
 measure = "Endurance used"
-format = "{:.0f}%"
-trigger = "over 80%"
-chart = "max(homelab_ssd_percentage_used)"
-chart_line = 80
-description = "The SSD reports over 80% of its rated write endurance used; past 100% it may start failing."
-action = '''
-Order a replacement SSD and plan the move. To see how fast it wears, chart `homelab_ssd_written_bytes_total`.'''
+unit = "%"
+harm = "Past 100% of its rated writes the SSD may start failing, and everything on the Beelink is on it."
+action = "Order a replacement SSD and plan the move. To see how fast it wears, chart `homelab_ssd_written_bytes_total`."
 
 [rules.ssd-wear-stale]
 title = "SSD wear check stopped"
-route = "kaizen"
+level = "week"
 # Minutes since ssd.prom was written. last_over_time carries the file time across a short scrape gap (an Alloy
 # restart); a longer one is no data.
-promql = "(time() - max(last_over_time(node_textfile_mtime_seconds{file=~\".*/ssd.prom\"}[30m]))) / 60"
-no_data = "absent_over_time(node_textfile_mtime_seconds{file=~\".*/ssd.prom\"}[30m])"
+promql = '''round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60)'''
+no_data = '''absent_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m])'''
 operator = ">"
 threshold = 60
 for = "5m"
-closes = "good-news"
 measure = "Last check"
-format = "{:.0f} min ago"
-trigger = "over 60 min ago"
-description = "ssd.prom has not been written for over an hour, so a wearing SSD would go unnoticed."
-action = '''
-Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer` on the
-Beelink; it starts with `sudo ci-runner/install-host.sh`.'''
-
-[rules.pc-backup-stale]
-title = "PC backup stopped arriving"
-route = "kaizen"
-# Hours since the newest file the PC sent (stacks/backup/systemd/backup-pc-receive.service). 50 h lets one night
-# pass with the PC off.
-promql = "(time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600"
-no_data = "absent_over_time(homelab_pc_backup_newest_timestamp_seconds[5m])"
-operator = ">"
-threshold = 50
-for = "30m"
-closes = "good-news"
-measure = "Newest PC backup"
-format = "{:.0f} h old"
-trigger = "over 50 h old"
-description = "No backup file has arrived from the Windows PC in over 50 hours."
-action = '''
-Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then
-`systemctl --user status backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.'''
+unit = " min ago"
+harm = "A wearing SSD would go unnoticed."
+action = """
+Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer` on the \
+Beelink; it starts with `sudo ci-runner/install-host.sh`."""
