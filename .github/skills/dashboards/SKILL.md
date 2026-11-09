@@ -41,9 +41,9 @@ Each colour means one thing on every tab. The hexes live in `tests/test_openobse
 
 | Colour | Means |
 |---|---|
-| Blue, aqua, orange | Monitoring, System, Apps. A container wears its group's colour (the observability stack is Monitoring) |
-| Red | A tile past the threshold of an alert rule with `level = "now"`, or a "now" rule firing |
-| Amber | The same for a `"week"` rule, or a warning with no rule. No colour means fine |
+| Blue, aqua, orange | Monitoring, System, Apps, and each container in its group's colour |
+| Red | A service down, any alert firing, or a tile past a `level = "now"` rule's threshold |
+| Amber | A tile past a `"week"` rule's threshold, or a warning with no rule. None means fine |
 | Gray | One measure (sparklines, Stored over time), or a series Git no longer has |
 | Blue, orange, aqua, yellow | Series of any other kind (Network), in that order |
 
@@ -52,6 +52,8 @@ Each colour means one thing on every tab. The hexes live in `tests/test_openobse
   `fixedColor` for any series not listed. Without a mode, unlisted series get a value gradient.
 - Bars run largest first. Stacks keep a fixed order with the largest at the bottom, and the legend
   follows: PromQL series come in query order, SQL series in the order rows first name them.
+  OpenObserve runs a SQL chart in time slices (the current hour is its own), so a series new in
+  the newest slice comes first whatever its total.
 - Tables sort by their obvious column: the count, or the newest first.
 
 ## Queries
@@ -74,9 +76,10 @@ Each colour means one thing on every tab. The hexes live in `tests/test_openobse
 - Before running `apply.py` by hand, rebase on main: it makes OpenObserve match the files you
   have, so an old checkout reverts newer alerts.
 
-To try a change live, PUT the whole file to `/api/default/dashboards/<id>?folder=<id>&hash=<hash>`
-(ids and hash from `GET /api/default/dashboards?folder=<id>`) from a tab signed in to OpenObserve. Check with `uv run python -m pytest
-tests/test_openobserve_alerts.py`.
+To try a change live, from a tab signed in to OpenObserve PUT the whole file to
+`/api/default/dashboards/<id>?folder=<id>&hash=<hash>` (both ids and the hash from
+`GET /api/default/dashboards?folder=<id>`). Check with
+`uv run python -m pytest tests/test_openobserve_alerts.py`.
 
 ## Grafana
 

@@ -438,7 +438,8 @@ def test_no_two_panels_on_a_tab_overlap_and_all_fit_its_width() -> None:
             cells |= mine
 
 
-# Home's colours: each means one thing on every tab (.github/skills/dashboards/SKILL.md, "Colour").
+# Home's colours (.github/skills/dashboards/SKILL.md, "Colour and order"). OpenObserve takes one
+# colour for both themes: these dataviz steps pass its checks on the light and the dark surface.
 GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
 NOW, WEEK, NEUTRAL = "#d03b3b", "#fab219", "#898781"
 PANELS = [p for tab in IN_GIT["Home"]["tabs"] for p in tab["panels"]]
@@ -473,7 +474,7 @@ def test_groups_containers_and_rules_wear_one_colour_on_every_tab() -> None:
     assert series_colours(rules) == levels
 
 
-def test_tiles_are_red_or_amber_and_everything_else_neutral() -> None:
+def test_tiles_are_red_or_amber_and_unlisted_series_gray() -> None:
     for panel in PANELS:
         config = panel["config"]
         for mapping in config.get("mappings", []):
