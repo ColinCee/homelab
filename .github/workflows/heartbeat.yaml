@@ -1,0 +1,48 @@
+name: Heartbeat
+
+# Passes only while alerting works: every rule ran in the last 5 minutes with no error, Alertmanager is
+# up, and none of its Discord posts failed in the last hour. heartbeat-watch.yaml, on GitHub's machines,
+# posts to Discord when this has not passed for 2 hours (docs/observability.md, "Alerts").
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: heartbeat
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  heartbeat:
+    runs-on: beelink
+    timeout-minutes: 5
+    steps:
+      - name: Check alerting
+        env:
+          # OpenObserve's read-only gateway (stacks/observability/gateway), with the agents' login.
+          GATEWAY: http://100.100.146.119:5081
+          PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
+        run: |
+          pw=${PASSWORD//\\/\\\\}
+          pw=${pw//\"/\\\"}
+          get() { printf 'user = "agents@homelab.internal:%s"\n' "$pw" | curl -sSf -m 20 -K - -G "$GATEWAY$1" "${@:2}"; }
+          value() { get /api/default/prometheus/api/v1/query --data-urlencode "query=$1" | jq -r '.data.result[0].value[1] // "none"'; }
+
+          alerts=$(get /api/v2/default/alerts)
+          stale=$(jq -r --argjson now "$(date +%s)" '.list[] | select(.folder_name == "homelab" and .enabled)
+            | select((.last_outcome_at // 0) / 1e6 < $now - 300 or ((.last_outcome // "") | test("error|fail")))
+            | "\(.name): \(.last_outcome // "never ran")"' <<< "$alerts")
+          count=$(jq '[.list[] | select(.folder_name == "homelab" and .enabled)] | length' <<< "$alerts")
+          up=$(value 'max(up{job="alertmanager"})')
+          failed=$(value 'sum(increase(alertmanager_notifications_failed_total{integration="discord"}[1h])) or vector(0)')
+          echo "Rules: $count; Alertmanager up: $up; failed Discord posts in the last hour: $failed"
+
+          ok=true
+          [[ "$count" -gt 0 ]] || { echo "::error::OpenObserve lists no homelab rules"; ok=false; }
+          [[ -z "$stale" ]] || { echo "::error::Rules that did not run cleanly in 5 minutes:"; echo "$stale"; ok=false; }
+          [[ "$up" == "1" ]] || { echo "::error::Alertmanager is not up"; ok=false; }
+          awk -v f="$failed" 'BEGIN { exit !(f == "none" || f < 0.5) }' || { echo "::error::Posts to Discord failed"; ok=false; }
+          $ok
