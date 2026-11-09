@@ -699,7 +699,10 @@
             "decimals": 1,
             "unit": "bytes",
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "Monitoring",
@@ -793,7 +796,10 @@
             "show_legends": true,
             "decimals": 2,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "Monitoring",
@@ -907,7 +913,10 @@
             "show_legends": true,
             "decimals": 0,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "backup",
@@ -1113,7 +1122,10 @@
             "show_legends": true,
             "decimals": 2,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "backup",
@@ -1226,7 +1238,10 @@
             "decimals": 1,
             "unit": "bytes",
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "backup",
@@ -1338,7 +1353,10 @@
             "show_legends": true,
             "decimals": 2,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "Monitoring",
@@ -1413,7 +1431,10 @@
             "decimals": 1,
             "unit": "bytes",
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "Monitoring",
@@ -1494,7 +1515,10 @@
             "decimals": 1,
             "unit": "bytes",
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "enp1s0 in",
@@ -1574,7 +1598,10 @@
             "decimals": 1,
             "unit": "bytes",
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "backup",
@@ -1686,7 +1713,10 @@
             "show_legends": true,
             "decimals": 2,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "SYN retransmits",
@@ -2152,7 +2182,10 @@
             "show_legends": true,
             "decimals": 0,
             "color": {
-              "mode": "palette-classic-by-series",
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ],
               "colorBySeries": [
                 {
                   "value": "beelink-metrics-stopped",
