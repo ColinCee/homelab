@@ -37,6 +37,11 @@
       "minimumReleaseAge": "0 days"
     },
     {
+      "description": "Lock file refreshes, pins and digests carry no release time either, so the 3-day wait would hold them forever.",
+      "matchUpdateTypes": ["lockFileMaintenance", "pin", "pinDigest", "digest"],
+      "minimumReleaseAge": "0 days"
+    },
+    {
       "groupName": "uv",
       "matchPackageNames": ["uv", "ghcr.io/astral-sh/uv"]
     },
