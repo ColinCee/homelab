@@ -3,7 +3,7 @@
 # no host keys, no credentials: each VM learns its job from Firecracker's MMDS.
 # The tools jobs need are baked in (pinned in versions.env) and package caches
 # come from the repo's cache disk at /cache.
-FROM ubuntu:24.04@sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852
+FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c
 
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -32,7 +32,7 @@ RUN v=${RUNNER_VERSION#v} \
  && apt-get clean && rm -rf /var/lib/apt/lists/* \
  && chown -R runner:runner /opt/runner
 
-# The system libraries Playwright's Chromium needs on Ubuntu 24.04 (the tools and
+# The system libraries Playwright's Chromium needs on Ubuntu 26.04 (the tools and
 # chromium lists `playwright install-deps chromium` installs), so a job only runs
 # `playwright install chromium` to get the browser itself.
 RUN apt-get update \

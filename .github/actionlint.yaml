@@ -1,3 +1,4 @@
 self-hosted-runner:
   labels:
     - beelink
+    - ubuntu-26.04 # GitHub-hosted, newer than actionlint 1.7.12 knows
