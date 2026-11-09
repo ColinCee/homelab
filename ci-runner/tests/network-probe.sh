@@ -40,7 +40,7 @@ expect ok dns getent hosts github.com
 for target in \
   10.200.0.1:22 10.200.0.1:53 @HOST_LAN@:22 @HOST_LAN@:8123 \
   192.168.1.1:80 192.168.1.1:53 @TAILNET@:22 @TAILNET@:3001 @TAILNET@:5080 \
-  @TAILNET@:8123 100.100.100.100:53 172.17.0.1:80 172.21.0.1:3000 \
+  @TAILNET@:5081 @TAILNET@:8123 100.100.100.100:53 172.17.0.1:80 172.21.0.1:3000 \
   172.22.0.1:9090 172.23.0.1:3100; do
   expect blocked "$target" tcp "${target%:*}" "${target#*:}"
 done

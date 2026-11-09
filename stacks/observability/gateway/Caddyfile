@@ -1,0 +1,56 @@
+# OpenObserve for its readers (compose.yaml, openobserve-gateway). Open source OpenObserve has only admin logins,
+# so each reader logs in here with its own, may read only its own paths, and the request goes on with root's login.
+# Anything else is refused. Logins: start.sh. Tests: tests/test_openobserve_gateway.py.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+(openobserve) {
+	reverse_proxy {$OPENOBSERVE:openobserve:5080} {
+		header_up Authorization "Basic {$ROOT_AUTH}"
+	}
+}
+
+:{$GATEWAY_PORT:5080} {
+	map {header.Authorization} {reader} {
+		"Basic {$KAIZEN_AUTH}" kaizen
+		"Basic {$STATS_AUTH}" stats
+		"Basic {$AGENTS_AUTH}" agents
+		default none
+	}
+
+	# Paths compare exactly as they arrive: a `path` matcher compares a cleaned copy, but the request goes on as sent,
+	# so `/proxy/default/https:/x/../../api/...` would pass for the query and reach OpenObserve's URL fetcher.
+	# Public stats reads one query, as it did from Prometheus.
+	@query {
+		vars {reader} stats kaizen agents
+		method GET
+		expression `{http.request.uri.path} == "/api/default/prometheus/api/v1/query"`
+	}
+	# The Control room's charts and alert list; server-health's and agents' too.
+	@kaizen {
+		vars {reader} kaizen agents
+		method GET
+		expression `{http.request.uri.path} in ["/api/default/prometheus/api/v1/query_range", "/api/v2/default/alerts"]`
+	}
+	@agents {
+		vars {reader} agents
+		method GET
+		expression `{http.request.uri.path}.matches("^/api/default/prometheus/api/v1/(series|labels|label/[a-zA-Z_][a-zA-Z0-9_]*/values)$")`
+	}
+
+	handle @query {
+		import openobserve
+	}
+	handle @kaizen {
+		import openobserve
+	}
+	handle @agents {
+		import openobserve
+	}
+	handle {
+		respond 403
+	}
+}
