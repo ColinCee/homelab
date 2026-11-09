@@ -40,7 +40,7 @@ jobs:
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5
         if: steps.pins.outputs.only != 'true'
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
       # so each run reuses them instead of compiling for ~10 seconds.
