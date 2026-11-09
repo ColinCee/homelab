@@ -11,16 +11,6 @@
 	respond @refused 403
 }
 
-http://kaizen.internal {
-	import tailnet_only
-	# The Control room takes actions only for its own host names, and for an Origin that matches
-	# the Host; another site's Origin is left as it is, so it is still refused.
-	reverse_proxy 100.100.146.119:8090 {
-		header_up Host 100.100.146.119:8090
-		header_up Origin ^http://kaizen\.internal$ http://100.100.146.119:8090
-	}
-}
-
 http://grafana.internal {
 	import tailnet_only
 	reverse_proxy 100.100.146.119:3001

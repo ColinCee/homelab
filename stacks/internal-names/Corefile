@@ -1,12 +1,12 @@
 internal:53 {
     template IN A internal {
-        match ^(kaizen|grafana|openobserve|home)\.internal\.$
+        match ^(grafana|openobserve|home)\.internal\.$
         answer "{{ .Name }} 60 IN A 100.100.146.119"
         fallthrough
     }
     # An empty answer, not NXDOMAIN, for other types of these names, so clients keep the A record.
     template ANY ANY internal {
-        match ^(kaizen|grafana|openobserve|home)\.internal\.$
+        match ^(grafana|openobserve|home)\.internal\.$
         rcode NOERROR
         fallthrough
     }

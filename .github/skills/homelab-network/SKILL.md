@@ -1,6 +1,6 @@
 ---
 name: homelab-network
-description: "Use when reaching a homelab device or service over Tailscale (Beelink, Grafana, Home Assistant, Kaizen's Control room, the desktop's pages), saving its address in code or docs, adding an .internal name, or changing who may reach what."
+description: "Use when reaching a homelab device or service over Tailscale (Beelink, Grafana, Home Assistant, the desktop's pages), saving its address in code or docs, adding an .internal name, or changing who may reach what."
 ---
 
 # Homelab network
@@ -13,7 +13,6 @@ beside the code repos; pull first), `04-dev/homelab/network.md` and
 
 | Service | Type | Save in code, docs and dashboards |
 |---|---|---|
-| Kaizen Control room | `http://kaizen.internal` | `http://beelink.tail4f465e.ts.net:8090` |
 | Grafana | `http://grafana.internal` | `http://beelink.tail4f465e.ts.net:3001` |
 | Home Assistant | `http://home.internal` | `http://beelink.tail4f465e.ts.net:8123` |
 | Beelink shell | `ssh beelink` | `beelink.tail4f465e.ts.net` |
