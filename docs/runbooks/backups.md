@@ -10,7 +10,8 @@ disposable.
 | Source | Why |
 |--------|-----|
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
-| Grafana volume | Users and UI-made changes (`grafana.db`). Dashboards are in Git. |
+| Grafana volume | Users and UI changes (`grafana.db`). |
+| OpenObserve's `db` folder | Users, alerts, dashboards. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | Control room volume | The last state Auto Kaizen's Control room read. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |

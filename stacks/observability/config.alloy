@@ -203,6 +203,13 @@ loki.write "default" {
 // The same logs to OpenObserve, over OTLP.
 otelcol.receiver.loki "openobserve" {
   output {
+    logs = [otelcol.processor.batch.openobserve.input]
+  }
+}
+
+// One request per line filled the exporter's queue.
+otelcol.processor.batch "openobserve" {
+  output {
     logs = [otelcol.exporter.otlphttp.openobserve.input]
   }
 }
