@@ -26,7 +26,7 @@ OWNED = "homelab-"
 NO_DATA = -1
 # Fields the Control room reads from a rule, sent as OpenObserve's context attributes: the
 # template's `{name}` placeholders.
-POST = ("route", "measure", "trigger", "chart", "chart_line", "closes", "needs")
+POST = ("route", "measure", "format", "trigger", "chart", "chart_line", "closes", "needs")
 
 Call = Callable[[str, str, object], Any]
 

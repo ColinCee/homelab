@@ -6,6 +6,8 @@
 # Kaizen issue, per series. A `no_data` query fires the rule when the metric is gone, as Grafana's NoData did,
 # with the value -1. `extra` holds named queries the Control room runs for the post's numbers.
 # Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`, `needs`) are those Kaizen reads from Grafana's rules.
+# `format` shows the value as Grafana's `value` annotation does: a Python `{:spec}` with text around it, `bytes`, or
+# `down/live` (0, else not); Kaizen applies it (auto-kaizen src/kaizen/board/alert_source.py, `shown`).
 
 # Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
 # rule to its route's destinations instead, and needs DISCORD_PRIVATE_WEBHOOK_URL passed to openobserve-apply.
@@ -59,6 +61,7 @@ threshold = 0.8
 for = "20m"
 keep_firing = "10m"
 measure = "CPU use"
+format = "{:.0%}"
 trigger = "over 80% for 20 min"
 chart = '''
 100 * (
@@ -82,6 +85,7 @@ threshold = 0.9
 for = "5m"
 keep_firing = "10m"
 measure = "Memory use"
+format = "{:.0%}"
 trigger = "over 90% for 5 min"
 chart = '''
 100 * (
@@ -102,6 +106,7 @@ threshold = 1
 for = "30m"
 keep_firing = "10m"
 measure = "Swapped out"
+format = "{:.1f} MB/s"
 trigger = "over 1 MB/s for 30 min"
 chart = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
 chart_line = 1
@@ -121,6 +126,7 @@ threshold = 0
 for = "0m"
 closes = "event"
 measure = "Kills in the last 15 min"
+format = "{:.0f}"
 trigger = "any"
 chart = "sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job=\"integrations/unix\"}[15m]))"
 chart_line = 0
@@ -142,6 +148,7 @@ operator = ">"
 threshold = 0.25
 for = "30m"
 measure = "Job VMs over 80% of their memory, last 6 h"
+format = "{:.0%}"
 trigger = "over a quarter, for 30 min"
 chart = '''
 (sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
@@ -164,6 +171,7 @@ operator = ">"
 threshold = 9
 for = "2m"
 measure = "Polls failed in a row"
+format = "{:.0f}"
 trigger = "10 or more, for 2 min"
 chart = "max(homelab_ci_poll_failures{job=\"integrations/unix\"})"
 chart_line = 10
@@ -188,6 +196,7 @@ threshold = 0.6
 for = "30m"
 keep_firing = "10m"
 measure = "Time waiting on disk"
+format = "{:.0%}"
 trigger = "over 60% for 30 min"
 chart = '''
 100 * (
@@ -210,6 +219,7 @@ operator = ">"
 threshold = 0.8
 for = "10m"
 measure = "Disk use"
+format = "{:.0%}"
 trigger = "over 80% for 10 min"
 chart = '''
 100 * (
@@ -231,6 +241,7 @@ threshold = 26
 for = "30m"
 closes = "good-news"
 measure = "Last good backup"
+format = "{:.0f} h ago"
 trigger = "over 26 h ago"
 description = "Threshold: no successful restic backup to R2 in the last 26 hours."
 action = "Check `docker logs backup`; see docs/runbooks/backups.md."
@@ -256,6 +267,7 @@ operator = ">"
 threshold = 5000000000
 for = "5m"
 measure = "Backup storage"
+format = "bytes"
 trigger = "over 5 GB"
 description = "Threshold: above 5 GB. Uploads stop at 8 GB; R2 bills past 10 GB."
 action = "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
@@ -271,6 +283,7 @@ for = "10m"
 keep_firing = "10m"
 closes = "good-news"
 measure = "Live radar"
+format = "down/live"
 trigger = "down for 10 min"
 description = "Threshold: https://api.colincheung.dev/aircraft not serving live aircraft for 10 minutes."
 action = "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
@@ -293,6 +306,7 @@ threshold = 0
 for = "15m"
 needs = "Is this container yours?"
 measure = "Container"
+format = "{:.0f}"
 description = "This container has run on the Beelink for 15 minutes and was not seen in the week before."
 action = '''
 Expected if you just added a stack or ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and
@@ -308,6 +322,7 @@ threshold = 80
 for = "0m"
 needs = "Order a replacement SSD"
 measure = "Endurance used"
+format = "{:.0f}%"
 trigger = "over 80%"
 chart = "max(homelab_ssd_percentage_used)"
 chart_line = 80
@@ -327,6 +342,7 @@ threshold = 60
 for = "5m"
 closes = "good-news"
 measure = "Last check"
+format = "{:.0f} min ago"
 trigger = "over 60 min ago"
 description = "ssd.prom has not been written for over an hour, so a wearing SSD would go unnoticed."
 action = '''
@@ -345,6 +361,7 @@ threshold = 50
 for = "30m"
 closes = "good-news"
 measure = "Newest PC backup"
+format = "{:.0f} h old"
 trigger = "over 50 h old"
 description = "No backup file has arrived from the Windows PC in over 50 hours."
 action = '''
@@ -365,6 +382,7 @@ threshold = 20
 for = "1m"
 keep_firing = "10m"
 measure = "Longest wait for a VM"
+format = "{:.0f} min"
 trigger = "over 20 min"
 chart = '''
 max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
@@ -401,6 +419,7 @@ operator = ">"
 threshold = 3
 for = "15m"
 measure = "Since last merge"
+format = "{:.1f} h"
 trigger = "over 3 h with tasks queued"
 description = "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
 action = "Open the Control room (http://beelink.tail4f465e.ts.net:8090); look for a failing step or held change."
@@ -417,6 +436,7 @@ operator = ">"
 threshold = 60
 for = "5m"
 measure = "Since the Watcher last ran"
+format = "{:.0f} min"
 trigger = "over 60 min"
 description = "Threshold: the Watcher, due every 20 minutes, has not worked for an hour."
 action = '''
@@ -447,6 +467,7 @@ threshold = 80
 for = "1m"
 closes = "event"
 measure = "App's GitHub calls used"
+format = "{:.0f}%"
 trigger = "over 80% of the hour's limit with over 15 min until it resets"
 chart = '''
 max(max_over_time(kaizen_github_app_calls_used{job="kaizen"}[2m]))
@@ -473,6 +494,7 @@ threshold = 1
 for = "5m"
 closes = "good-news"
 measure = "Control room"
+format = "down/up"
 trigger = "down for 5 min"
 description = "Threshold: the Control room could not be scraped for 5 minutes, so alerts are not reaching the #alerts forum."
 action = "On the Beelink: docker ps -a | grep control-room, then docker logs on it."
@@ -494,6 +516,7 @@ threshold = 20
 for = "1m"
 closes = "event"
 measure = "Shared key's calls left"
+format = "{:.0f}%"
 trigger = "under 20% with over 15 min until it resets"
 description = '''
 Threshold: every Auto Kaizen workflow shares one key of 5,000 GitHub calls an hour, and under a fifth is left
@@ -514,6 +537,7 @@ threshold = 4
 for = "1m"
 closes = "event"
 measure = "Failed runs, one cause"
+format = "{:.0f} runs"
 trigger = "5 or more in an hour"
 description = "Threshold: 5 or more runs of Kaizen's workflows failed in the last hour with one cause."
 action = "Find the step that logs it, and why; an outside error that keeps coming back is ours to work around."
@@ -528,6 +552,7 @@ operator = ">"
 threshold = 3
 for = "1m"
 measure = "Owner runs, nothing new"
+format = "{:.0f} runs"
 trigger = "4 or more"
 description = '''
 Threshold: the goal's owner ran 4 or more times while nothing changed for it: no task opened and no task's run
@@ -544,6 +569,7 @@ operator = ">"
 threshold = 1
 for = "5m"
 measure = "Tasks stopped alike"
+format = "{:.0f} tasks"
 trigger = "2 or more"
 description = '''
 Threshold: 2 or more tasks wait on Colin or their goal owner, stopped for one reason. One reason across tasks is
@@ -559,6 +585,7 @@ operator = ">"
 threshold = 0
 for = "10m"
 measure = "Silent tasks"
+format = "{:.0f} tasks"
 trigger = "1 or more for 10 min"
 description = '''
 Threshold: a task's run finished over 40 minutes ago without writing its Run record, and nothing runs it now,
@@ -576,6 +603,7 @@ threshold = 40
 for = "5m"
 closes = "event"
 measure = "Agent cost, last hour"
+format = "${:.0f}"
 trigger = "over $40"
 chart = "max(max_over_time(kaizen_agent_cost_usd_last_hour{job=\"kaizen\"}[2m]))"
 chart_line = 40
@@ -594,6 +622,7 @@ threshold = 10
 for = "5m"
 closes = "good-news"
 measure = "Since the last look"
+format = "{:.0f} min"
 trigger = "over 10 min"
 description = '''
 Threshold: the Control room is up but has not looked for signs of waste or stalls for 10 minutes, so the other
