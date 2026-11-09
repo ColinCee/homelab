@@ -38,16 +38,9 @@ def test_a_chart_queries_what_its_rule_alerts_on() -> None:
             float(rule["annotations"]["chart_line"])
 
 
-def test_only_the_outage_skips_kaizen_and_colins_alerts_group_per_thing() -> None:
+def test_every_alert_goes_to_discord() -> None:
     policy = yaml.safe_load((ALERTING / "policies.yaml").read_text(encoding="utf-8"))["policies"][0]
-    outage, colin = policy["routes"]
-    # Colin's alerts still go to Kaizen, one group per container.
-    assert colin["receiver"] == "Kaizen" and "name" in colin["group_by"]
-    assert colin["object_matchers"] == [["route", "=", "colin"]]
-    [[label, op, name]] = outage["object_matchers"]
-    assert (label, op) == ("alertname", "=")
-    assert name == "Kaizen Control room unreachable"
-    assert name in {r["title"] for r in RULES}
+    assert policy["receiver"] == "Discord Private" and "routes" not in policy
 
 
 def test_alerts_only_colin_can_act_on_say_what_to_ask_him() -> None:
