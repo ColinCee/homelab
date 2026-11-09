@@ -5,7 +5,8 @@
 # runner user, runs the handoff action's prepare, a put and a get with sudo dropped, and
 # ci-capacity, on loop devices at /dev/vdb and /dev/vdc read with direct reads, as in a VM
 # (on tmpfs a direct read cannot fail). This side answers the asks on the console as the CI
-# supervisor does. Needs Docker and sudo; CI runs it on pull requests that change either.
+# supervisor does. Needs Docker and sudo; CI runs it on pull requests that change the image
+# or the handoff action.
 set -euo pipefail
 
 repo=$(cd "$(dirname "$0")/../.." && pwd)
@@ -19,7 +20,7 @@ if [[ -z $image ]]; then
   set +a
   args=()
   while IFS='=' read -r name _; do
-    [[ $name =~ ^[A-Z0-9_]+$ ]] && args+=(--build-arg "$name")
+    if [[ $name =~ ^[A-Z0-9_]+$ ]]; then args+=(--build-arg "$name"); fi
   done < "$repo/ci-runner/versions.env"
   docker build -q -t "$image" "${args[@]}" "$repo/ci-runner/rootfs" > /dev/null
 fi
@@ -28,8 +29,8 @@ tmp=$(mktemp -d -p /var/tmp)
 loops=()
 answerer=""
 cleanup() {
-  [[ -n $answerer ]] && kill "$answerer" 2> /dev/null
-  for loop in "${loops[@]}"; do sudo losetup -d "$loop"; done
+  if [[ -n $answerer ]]; then kill "$answerer" 2> /dev/null || true; fi
+  for loop in "${loops[@]}"; do sudo losetup -d "$loop" || true; done
   sudo rm -rf "$tmp"
 }
 trap cleanup EXIT
@@ -75,8 +76,9 @@ job='set -euo pipefail
 export RUNNER_TEMP=$(mktemp -d) GITHUB_RUN_ID=70 GITHUB_RUN_ATTEMPT=1
 h=/handoff/handoff.sh
 cd "$RUNNER_TEMP"
-out=$(bash $h prepare 2>&1) && echo "$out"
-[[ $out != *::warning::* ]] || { echo "FAIL prepare: $out"; exit 1; }
+out=$(bash $h prepare 2>&1) || { echo "FAIL prepare: $out"; exit 1; }
+echo "$out"
+[[ $out != *::warning::* ]] || { echo "FAIL prepare warned"; exit 1; }
 for disk in /dev/vdb /dev/vdc; do
   [[ $(stat -c %U $disk) == runner ]] || { echo "FAIL prepare left $disk to $(stat -c %U $disk)"; exit 1; }
 done
@@ -89,7 +91,7 @@ cmp items/verdict.json got/verdict.json || { echo "FAIL get gave back something 
 counts=$(CAPACITY_WAIT=30 ci-capacity) || { echo "FAIL ci-capacity"; exit 1; }
 [[ $counts == "{\"machines\": 1}" ]] || { echo "FAIL ci-capacity printed $counts"; exit 1; }
 echo PASS handoffs in the job image'
-timeout 300 docker run --rm --user runner \
+timeout -k 10 300 docker run --rm --init --user runner \
   --device "$outbox:/dev/vdb" --device "$inbox:/dev/vdc" \
   -v "$repo/.github/actions/handoff:/handoff:ro" -v "$tmp/console:/console" \
   -e HANDOFF_CONSOLE=/console -e CAPACITY_CONSOLE=/console \

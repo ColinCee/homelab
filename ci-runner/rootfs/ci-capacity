@@ -34,7 +34,7 @@ done
 [[ ${BASH_REMATCH[1]} == ok ]] || { echo "ci-capacity: the CI supervisor has no counts (${BASH_REMATCH[1]})" >&2; exit 1; }
 bytes=${BASH_REMATCH[2]}
 # Whole 4 KiB blocks up to the end of the counts, no more, as handoff.sh get: a block read
-# after head has its bytes is written to a closed pipe, and pipefail failed most asks.
+# after head has its bytes is written to a closed pipe, which pipefail makes a failure.
 cmd=("$dd" if="$disk" bs=1M "iflag=skip_bytes,count_bytes${direct:+,$direct}" skip=512 count=$(((bytes + 4095) / 4096 * 4096)) status=none)
 if [[ -r $disk ]]; then "${cmd[@]}"; else $sudo "${cmd[@]}"; fi | head -c "$bytes"
 echo

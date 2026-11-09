@@ -49,8 +49,10 @@ jobs:
           python3 "$script" HEAD^1 HEAD
       # The CI VMs' image, and the handoff action jobs run in it, reach the hosts only
       # after merge, so a change to either builds the image here and hands files in it.
+      # The pull request's copy of the test runs: a protocol change needs its test changed.
       - name: Check handoffs in the CI job image
         if: github.event_name == 'pull_request'
+        timeout-minutes: 30
         run: |
           git diff --quiet HEAD^1 HEAD -- ci-runner/rootfs ci-runner/versions.env .github/actions/handoff \
             ci-runner/tests/test-handoff-image.sh && exit 0
