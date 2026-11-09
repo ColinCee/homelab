@@ -29,7 +29,7 @@ What watches what:
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
 | **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
-| **OpenObserve gateway** | Readers' only way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
+| **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for

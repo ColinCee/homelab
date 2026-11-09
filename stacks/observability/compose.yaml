@@ -94,8 +94,9 @@ services:
       # Its alerts post to the Kaizen Control room here.
       - kaizen-prometheus
 
-  # The only holder of OpenObserve's root login: each reader logs in here with its own and reads only its own paths
-  # (gateway/Caddyfile). The Control room on its network, public stats on theirs, server-health and agents on Tailscale.
+  # How OpenObserve's readers reach it without root's login: each logs in here with its own and reads only its own
+  # paths (gateway/Caddyfile). The Control room on its network, public stats on theirs, server-health and agents on
+  # Tailscale.
   openobserve-gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped

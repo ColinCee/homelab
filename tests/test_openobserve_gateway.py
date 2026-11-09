@@ -59,12 +59,12 @@ class OpenObserve(http.server.BaseHTTPRequestHandler):
 
 
 def run_gateway(
-    port: int, upstream: int, detach: bool = True, **passwords: str
+    port: int, upstream: int, remove: bool = True, **passwords: str
 ) -> subprocess.CompletedProcess[str]:
     """The gateway as compose.yaml runs it, on the host's network."""
     env = {f"OPENOBSERVE_{k.upper()}_PASSWORD": v for k, v in passwords.items()}
     env |= {"GATEWAY_PORT": str(port), "OPENOBSERVE": f"127.0.0.1:{upstream}"}
-    command = ["docker", "run", *(["-d"] if detach else []), "--rm", "--network", "host"]
+    command = ["docker", "run", "-d", *(["--rm"] if remove else []), "--network", "host"]
     command += ["--read-only", "--user", "65534:65534"]
     command += ["--cap-drop", "ALL", "--security-opt", "no-new-privileges:true"]
     command += ["--tmpfs", "/data:uid=65534,gid=65534", "--tmpfs", "/config:uid=65534,gid=65534"]
@@ -91,6 +91,8 @@ def gateway() -> Iterator[int]:
                 break
             except OSError:
                 time.sleep(0.2)
+        else:
+            pytest.fail("the gateway did not start listening in 20 s")
         yield port
     finally:
         subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=60)
@@ -112,7 +114,7 @@ def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict]
         ("kaizen", "GET", QUERY),
         ("kaizen", "GET", RANGE),
         ("kaizen", "GET", ALERTS),
-        ("kaizen", "GET", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
+        ("kaizen", "GET", ALERTS + "?page_size=100"),
         ("agents", "GET", RANGE),
         ("agents", "GET", ALERTS),
         ("agents", "GET", "/api/default/prometheus/api/v1/label/job/values?match[]=up"),
@@ -143,6 +145,14 @@ def test_a_reader_reads_its_paths_with_roots_login_sent_on(
         ("agents", "POST", "/api/default/_search"),
         ("agents", "GET", ALERTS + "/../../../api/default/users"),
         ("agents", "GET", ALERTS + "/%2e%2e/%2e%2e/%2e%2e/api/default/users"),
+        # Cleaned, this is the query; sent on as it came, it is OpenObserve's URL fetcher.
+        ("stats", "GET", "/proxy/default/https:/example.com/x/../../../../../" + QUERY[1:]),
+        ("stats", "GET", "/" + QUERY),
+        ("stats", "GET", QUERY.upper()),
+        ("stats", "HEAD", QUERY),
+        ("kaizen", "GET", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
+        ("kaizen", "GET", ALERTS + "/incidents"),
+        ("agents", "GET", "/api/default/prometheus/api/v1/label/x/../../../../users/values"),
     ],
 )
 def test_a_write_or_another_path_is_refused(
@@ -167,5 +177,12 @@ def test_a_wrong_login_is_refused(gateway: int, auth: str | None) -> None:
 
 def test_a_missing_password_stops_the_gateway() -> None:
     # An empty password would make the login `stats@homelab.internal:` match.
-    ran = run_gateway(free_port(), free_port(), detach=False, **(PASSWORDS | {"stats": ""}))
-    assert ran.returncode != 0 and "OPENOBSERVE_STATS_PASSWORD" in ran.stderr
+    started = run_gateway(free_port(), free_port(), remove=False, **(PASSWORDS | {"stats": ""}))
+    container = started.stdout.strip()
+    try:
+        waited = subprocess.run(
+            ["docker", "wait", container], capture_output=True, text=True, timeout=30
+        )
+        assert waited.stdout.strip() not in ("", "0")
+    finally:
+        subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=60)
