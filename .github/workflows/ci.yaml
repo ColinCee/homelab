@@ -37,6 +37,16 @@ jobs:
           script="$RUNNER_TEMP/adr_frozen.py"
           git show HEAD^1:scripts/adr_frozen.py > "$script" 2>/dev/null || exit 0
           python3 "$script" HEAD^1 HEAD
+      # A changed release in ci-runner/versions.env is downloaded and checked
+      # against its hash, so a stale hash fails here, not in the image build
+      # after merge. The base commit's copy judges, as above.
+      - name: Check versions.env hashes
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff --quiet HEAD^1 HEAD -- ci-runner/versions.env && exit 0
+          script="$RUNNER_TEMP/versions_hash.py"
+          git show HEAD^1:scripts/versions_hash.py > "$script" 2>/dev/null || exit 0
+          python3 "$script" HEAD^1 HEAD
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
