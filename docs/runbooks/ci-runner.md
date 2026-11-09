@@ -24,14 +24,13 @@ GitHub can still hand a job without an `fc-cache-` label to a VM booted with one
 repo; that job then starts with the named repo's disk.
 
 The VM is Ubuntu 26.04 with the GitHub runner and these already on the job's `PATH`, so a job needs no setup
-actions: git, build tools, the system `python3`, `python` (uv's, `PYTHON_VERSION`), Node 24 LTS, uv, Python 3.15,
+actions: git, build tools, Node, uv, one Python as `python` and `python3`,
 JDK 25 (`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, `gh`, gitleaks, shellcheck, `file`, `bwrap`, socat, passwordless
 `sudo`, and Docker with buildx and compose (the engine starts on a job's first `docker` call; no sudo needed).
 Versions are pinned in [`versions.env`](../../ci-runner/versions.env). mise installs whatever else a repo's
 `mise.toml` lists. Playwright's Chromium libraries are installed, so `playwright install chromium` needs no
 `install-deps`. The actions the CI repos use (`CACHED_ACTIONS`) are unpacked in the image; a tag that has moved on
-downloads as usual until the list is refreshed. A change to the image reaches jobs once it is rebuilt, which
-`update.sh` does when `versions.env` changes.
+downloads as usual until the list is refreshed.
 
 The fastest job shape, as cortex's `.github/workflows/linux.yml`: checkout, one step that runs
 `uv sync --locked --no-install-project` and copies `node_modules` from the cache disk when `package-lock.json`
@@ -169,8 +168,7 @@ current a host is.
 - **Stopping every VM** on purpose: `sudo ci-runner/stop-vms.sh`.
 - **First time on a host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
   of main; the first update then rebuilds the image (several minutes).
-- **Never leave a loop waiting to change the Beelink from your own connection**; run any wait as a named systemd
-  unit. One outlived the session that thought it had stopped it.
+- **Run any wait on the Beelink as a named systemd unit**, never a loop on your own connection.
 
 ### Changing the number of slots
 
@@ -366,6 +364,7 @@ remove `kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-run
 | `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
 | `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
 | `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished, since they outlive it (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
+| `test-handoff-image.sh` | Handoffs and `ci-capacity` work in the image on directly read loop devices, as in a VM; CI runs it when a pull request changes the image or handoffs |
 | `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and Grafana once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the
