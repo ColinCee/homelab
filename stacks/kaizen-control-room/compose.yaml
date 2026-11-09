@@ -25,6 +25,8 @@ services:
       KAIZEN_DISCORD_TOKEN_FILE: /run/secrets/kaizen_discord_token
       KAIZEN_ALERTS_FORUM: "1567861139142877295"
       KAIZEN_DISCORD_COLIN: "124131392207454208"
+      # The rules firing now, read each minute to find a lost resolve (auto-kaizen src/kaizen/board/alert.py).
+      KAIZEN_ALERTS_FIRING_URL: http://100.100.146.119:3001/api/prometheus/grafana/api/v1/alerts
       # Number alerts' charts, from Prometheus over the network below (auto-kaizen src/kaizen/chart.py).
       KAIZEN_PROMETHEUS: http://prometheus:9090
     secrets:

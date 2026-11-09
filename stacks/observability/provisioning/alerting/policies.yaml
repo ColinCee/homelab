@@ -2,12 +2,14 @@ apiVersion: 1
 policies:
   - orgId: 1
     receiver: Kaizen
-    group_by: ['alertname', 'rulename']
+    # One notification per series, so each is its own Kaizen issue: the labels
+    # that tell a rule's series apart (rules.yaml).
+    group_by: ['alertname', 'rulename', 'kind', 'name', 'cause', 'goal', 'reason']
     group_wait: 30s
     group_interval: 5m
-    # Rare repeats to Kaizen: a firing on an alert issue open over 12 hours reads
-    # as a lost resolve and opens a new issue, and an alert can stay on for days.
-    # 5 days is as long as Grafana keeps its record of what it sent.
+    # Rare repeats to Kaizen: it reads Grafana's firing list each minute, so a
+    # lost resolve is found there. 5 days is as long as Grafana keeps its record
+    # of what it sent.
     repeat_interval: 120h
     routes:
       # The Control room posts every other alert to Discord, so its own outage

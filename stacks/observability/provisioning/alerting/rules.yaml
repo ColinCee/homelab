@@ -187,6 +187,7 @@ groups:
         execErrState: Error
         for: 0m
         annotations:
+          closes: event
           summary: "Out-of-memory kills in {{ $labels.kind }} VMs"
           measure: "Kills in the last 15 min"
           trigger: "any"
@@ -455,6 +456,7 @@ groups:
         execErrState: Error
         for: 30m
         annotations:
+          closes: good-news
           summary: "Beelink off-site backup"
           measure: "Last good backup"
           trigger: "over 26 h ago"
@@ -543,6 +545,7 @@ groups:
         # A dip under 10 minutes is not a clear, so one problem stays one alert.
         keepFiringFor: 10m
         annotations:
+          closes: good-news
           summary: "Flight tracker live radar"
           measure: "Live radar"
           trigger: "down for 10 min"
@@ -680,6 +683,7 @@ groups:
         execErrState: Error
         for: 5m
         annotations:
+          closes: good-news
           summary: "SSD wear check stopped"
           measure: "Last check"
           trigger: "over 60 min ago"
@@ -723,6 +727,7 @@ groups:
         execErrState: Error
         for: 30m
         annotations:
+          closes: good-news
           summary: "PC backup"
           measure: "Newest PC backup"
           trigger: "over 50 h old"
@@ -1089,6 +1094,7 @@ groups:
         execErrState: Error
         for: 1m
         annotations:
+          closes: event
           summary: "Share of the Kaizen GitHub App's hourly calls used"
           measure: "App's GitHub calls used"
           trigger: "over 80% of the hour's limit with over 15 min until it resets"
@@ -1140,6 +1146,7 @@ groups:
         execErrState: Error
         for: 5m
         annotations:
+          closes: good-news
           summary: "Kaizen Control room scrape"
           measure: "Control room"
           trigger: "down for 5 min"
@@ -1210,6 +1217,7 @@ groups:
         execErrState: Error
         for: 1m
         annotations:
+          closes: event
           summary: "Share of the workflows' shared GitHub key's hourly calls left"
           measure: "Shared key's calls left"
           trigger: "under 20% with over 15 min until it resets"
@@ -1254,6 +1262,7 @@ groups:
         execErrState: Error
         for: 1m
         annotations:
+          closes: event
           summary: "Failed Kaizen runs in the last hour for one cause"
           measure: "Failed runs, one cause"
           trigger: "5 or more in an hour"
@@ -1425,6 +1434,7 @@ groups:
         execErrState: Error
         for: 5m
         annotations:
+          closes: event
           summary: "What Kaizen's agents cost in the last hour"
           measure: "Agent cost, last hour"
           trigger: "over $40"
@@ -1470,6 +1480,7 @@ groups:
         execErrState: Error
         for: 5m
         annotations:
+          closes: good-news
           summary: "Minutes since the Control room last looked for waste"
           measure: "Since the last look"
           trigger: "over 10 min"
