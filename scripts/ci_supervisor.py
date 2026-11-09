@@ -74,8 +74,9 @@ def light_runner_labels(label: str) -> tuple[str, ...]:
 
 # A merge job waits for a pull request's CI, two rounds at most.
 LIGHT_TIMEOUT_SECONDS = 3 * 3600
-# How many light VMs (2 by default) wait ready for the last 2 GiB light job's repo, so a task's
-# agent steps start in seconds. /etc/homelab-ci/light-standbys changes it with no code change.
+# How many light VMs (3 by default) wait ready for the last 2 GiB light job's repo, so a task's
+# agent steps start in seconds (with 2, review and land jobs waited longest of any kind for a
+# VM). /etc/homelab-ci/light-standbys changes it with no code change.
 LIGHT_STANDBY_COUNT_FILE = Path("/etc/homelab-ci/light-standbys")
 LAST_LIGHT_REPO_FILE = Path("/var/lib/homelab-ci/last-light-repo")
 # Likewise for the deploy standby, which waits for the last deploy job's repo.
@@ -2559,7 +2560,7 @@ def standby_count() -> int:
 
 
 def light_standby_count() -> int:
-    return count_in(LIGHT_STANDBY_COUNT_FILE, default=2)
+    return count_in(LIGHT_STANDBY_COUNT_FILE, default=3)
 
 
 def deploy_standby_count() -> int:

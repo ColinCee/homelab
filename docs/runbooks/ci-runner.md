@@ -257,7 +257,7 @@ GitHub-hosted runners and take it off the token's repository access.
   It gives way first: none boots while a job
   waits for memory or the disk, and an idle one is stopped for a light job it cannot take with no
   light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
-  minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (2 by
+  minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (3 by
   default, 0 for none); one boots a poll, each only while its memory fits.
 - **One deploy VM and one small VM wait ready.** One light slot is kept for deploys and one for small jobs while
   no standby of theirs is up: other light jobs and the light standby never take them, though a deploy may use any

@@ -2772,9 +2772,9 @@ def test_a_queued_job_knows_its_run_is_past_its_first_step() -> None:
 
 
 @pytest.mark.parametrize(
-    ("free_mib", "standbys"), [(1 << 20, 2), (sup.DEFAULT_MEMORY_RESERVE_MIB + 2500, 1)]
+    ("free_mib", "standbys"), [(1 << 20, 3), (sup.DEFAULT_MEMORY_RESERVE_MIB + 2500, 1)]
 )
-def test_two_light_standbys_wait_when_memory_allows(
+def test_three_light_standbys_wait_by_default_when_memory_allows(
     pools, monkeypatch, free_mib: int, standbys: int
 ) -> None:
     queue, started = pools
