@@ -78,6 +78,10 @@ services:
       # The trials' setup: a 512 MB cache, and the makers' flattening for performance.
       ZO_MEMORY_CACHE_MAX_SIZE: "512"
       ZO_INGEST_FLATTEN_LEVEL: "2"
+      # Its memory table (a quarter of the 2 GiB) held 10 minutes of the host's metrics before writing them out, and
+      # overflowed: refused writes. Two minutes fit.
+      ZO_MAX_FILE_RETENTION_TIME: "120"
+      ZO_TELEMETRY: "false"
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
