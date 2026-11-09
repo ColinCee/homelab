@@ -1,8 +1,7 @@
 name: Heartbeat
 
-# Passes only while alerting works: every rule ran in the last 5 minutes with no error, Alertmanager is
-# up, and none of its Discord posts failed in the last hour. heartbeat-watch.yaml, on GitHub's machines,
-# posts to Discord when this has not passed for 2 hours (docs/observability.md, "Alerts").
+# Passes only while alerting works. heartbeat-watch.yaml, on GitHub's machines, posts to Discord when this
+# has not passed for 2 hours (docs/observability.md).
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -12,8 +11,7 @@ concurrency:
   group: heartbeat
   cancel-in-progress: false
 
-permissions:
-  contents: read
+permissions: {}
 
 jobs:
   heartbeat:
@@ -21,6 +19,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Check alerting
+        # With pipefail, so a failed query fails the check instead of reading as empty.
+        shell: bash
         env:
           # OpenObserve's read-only gateway (stacks/observability/gateway), with the agents' login.
           GATEWAY: http://100.100.146.119:5081

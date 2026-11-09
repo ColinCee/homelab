@@ -88,17 +88,16 @@ def post(text: str) -> None:
 def main() -> None:
     now = datetime.now(UTC).timestamp()
     runs = api("/actions/workflows/heartbeat.yaml/runs?status=success&per_page=100")
-    successes = [seconds(r["updated_at"]) for r in runs["workflow_runs"]]
-    watches = api("/actions/workflows/heartbeat-watch.yaml/runs?per_page=10")["workflow_runs"]
+    # Before its first pass, the heartbeat counts from when it was added, so a new one is no alarm.
+    successes = [seconds(r["updated_at"]) for r in runs["workflow_runs"]] or [
+        seconds(api("/actions/workflows/heartbeat.yaml")["created_at"])
+    ]
+    # Only a scheduled watch that passed: a dry run posts nothing, a failed post is tried again.
+    watches = api(
+        "/actions/workflows/heartbeat-watch.yaml/runs?event=schedule&status=success&per_page=10"
+    )["workflow_runs"]
     me = os.environ["GITHUB_RUN_ID"]
-    previous = next(
-        (
-            seconds(r["created_at"])
-            for r in watches
-            if str(r["id"]) != me and r["status"] == "completed"
-        ),
-        None,
-    )
+    previous = next((seconds(r["created_at"]) for r in watches if str(r["id"]) != me), None)
     kind = decide(successes, now, previous)
     print(f"Heartbeat last passed {overdue(successes, now) + STALE:.0f} s ago; post: {kind}")
     if kind is None:

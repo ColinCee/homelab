@@ -75,8 +75,7 @@ automatically. Non-major versions can still break behavior, especially before
 
 The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
 pending updates) to its job summary. On the first Monday of each month it also
-prunes unused Docker images and test-restores a file from backup. A failed or
-stuck deploy stops Auto Kaizen's homelab work until fixed; see
+prunes unused Docker images and test-restores a file from backup. See
 [observability](docs/observability.md) for what watches what.
 
 ## Maintain and extend

@@ -19,8 +19,6 @@ flowchart TB
   renovate[Renovate] -->|merges version bumps| main
   kaizen[Auto Kaizen] -->|merges what passed its checks| main
   main --> guard -->|Colin, Renovate, Auto Kaizen| deploy --> stacks
-  deploy -.->|failed deploy stops its line| kaizen
-  main -.->|stuck deploy, seen by Kaizen's Watcher| kaizen
   privaterepos[Private repos' CI] --> cirunner
   you[Colin, via Tailscale] --> stacks
   public[Public, via Cloudflare Tunnel] --> stacks

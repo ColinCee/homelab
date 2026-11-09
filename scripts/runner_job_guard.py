@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse any job on the Beelink deploy runner except the deploy workflows on main.
+"""Refuse any job on the Beelink deploy runner except the listed workflows on main.
 
 Runs as the runner's job-started hook (ACTIONS_RUNNER_HOOK_JOB_STARTED), before the
 job's first step. A failing hook only marks the job failed: the runner still runs later
