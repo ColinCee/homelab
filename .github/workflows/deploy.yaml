@@ -48,6 +48,7 @@ jobs:
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
           # The auto-kaizen Discord bot's token, for the #alerts forum; "unset" keeps the Control room quiet.
           KAIZEN_DISCORD_TOKEN: ${{ secrets.KAIZEN_DISCORD_TOKEN || 'unset' }}
+          OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}

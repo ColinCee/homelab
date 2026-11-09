@@ -26,6 +26,11 @@ http://grafana.internal {
 	reverse_proxy 100.100.146.119:3001
 }
 
+http://openobserve.internal {
+	import tailnet_only
+	reverse_proxy 100.100.146.119:5080
+}
+
 # Home Assistant trusts proxies on loopback (http: trusted_proxies in its configuration.yaml on Beelink).
 http://home.internal {
 	import tailnet_only

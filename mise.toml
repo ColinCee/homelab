@@ -19,7 +19,7 @@ run = "uv run ruff format scripts/ stacks/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/public_stats_key.py scripts/control_room_timing.py scripts/pin_only.py scripts/adr_frozen.py scripts/ssd_wear.py stacks/observability/public_stats.py"
+run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/public_stats_key.py scripts/control_room_timing.py scripts/pin_only.py scripts/adr_frozen.py scripts/ssd_wear.py scripts/docs_size.py stacks/observability/public_stats.py stacks/observability/openobserve/apply.py"
 
 [tasks.test]
 description = "Run unit tests"
@@ -29,6 +29,10 @@ run = "uv run python -m pytest tests/ -q"
 description = "Validate Compose without changing local secrets"
 run = "scripts/validate-compose.sh"
 
+[tasks."docs:size"]
+description = "Fail when a doc grows past docs-size.json"
+run = "uv run python -m scripts.docs_size"
+
 [tasks.check]
 description = "Run CI checks"
-depends = ["lint", "typecheck", "test", "validate:compose"]
+depends = ["lint", "typecheck", "test", "docs:size", "validate:compose"]

@@ -2,8 +2,7 @@
 
 Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
 provisioning under `stacks/observability/` own exact settings and retention.
-Alloy collects both logs and metrics to avoid separate collectors. Tracing and
-multi-tenant metrics infrastructure are unnecessary for this single host.
+Alloy collects both logs and metrics to avoid separate collectors.
 OpenObserve is to replace Grafana, Prometheus and Loki
 ([ADR 0001](adr/0001-openobserve.md)).
 
@@ -28,7 +27,8 @@ What watches what:
 | **Grafana** | Dashboards, Explore, and alert routing |
 | **Prometheus** | Metrics storage for host, containers, CI VMs, Auto Kaizen's Control room and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
-| **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
+| **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
+| **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
@@ -52,8 +52,9 @@ Add panels to it rather than adding dashboards. From the top:
   CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
-To remove a rule, also list its uid under `deleteRules` in `rules.yaml`: Grafana keeps
-a rule that is only deleted from the file.
+To remove a rule, also list its uid under `deleteRules` in `rules.yaml` (a contact
+point: `deleteContactPoints` in `contactpoints.yaml`): Grafana keeps one that is only
+deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -108,30 +109,20 @@ Prometheus receives metrics from:
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
   only while it runs a VM, so counting them counts running VMs, the ones
   waiting ready included. Its relabel keeps only those series, so there is no
-  `up{job="ci-vms"}`. What each job needed inside its VM, and its out-of-memory kills, come
-  through the host's textfile collector (`homelab_ci_vm*`), as do the longest-waiting queued job's
-  minutes per reason (`homelab_ci_wait_seconds{kind}`), each workflow's longest wait since GitHub
-  queued it (`homelab_ci_queued_seconds{repo,workflow}`) and the VMs running jobs
-  (`homelab_ci_vms_busy` of `homelab_ci_vm_slots`); see the ci-runner runbook. The host SSD's
-  lifetime bytes written and read, wear and spare (`homelab_ssd_*{device="nvme0"}`) come the same way,
-  from `ssd.prom`.
+  `up{job="ci-vms"}`.
+- **Textfiles:** Alloy's textfile collector reads `/var/lib/homelab-metrics/*.prom`: the CI
+  supervisor's `homelab_ci_*` (the ci-runner runbook's "Status files"), the SSD's
+  `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, and the backups' `homelab_backup_*` and
+  `homelab_pc_backup_*`.
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
-  (`job="kaizen"`): `kaizen_tasks{state}` (working, waiting_for_machine,
-  stuck, needs_colin, merged_today), `kaizen_machine_wait_seconds_max`,
-  `kaizen_agent_cost_usd_today`, `kaizen_last_merge_timestamp_seconds`, and
-  `kaizen_tasks_read_timestamp_seconds` (its last good read of GitHub), and the
-  Kaizen GitHub App's hourly calls (`kaizen_github_app_calls_used`, `_limit`,
-  `_reset_timestamp_seconds`), the workflows' shared key's
-  (`kaizen_github_workflow_key_calls_remaining`, `_limit`, `_reset_timestamp_seconds`,
-  `_read_timestamp_seconds`), and signs of waste or a stall that the "Kaizen factory"
-  rules read: `kaizen_workflow_failures_last_hour{cause}`,
-  `kaizen_goal_owner_runs_since_change{goal}`, `kaizen_stopped_tasks_alike{reason}`,
-  `kaizen_silent_tasks`, `kaizen_agent_cost_usd_last_hour` and
-  `kaizen_anomaly_read_timestamp_seconds`. Those rules carry `route: factory`, which the
-  Kaizen payload passes on, so the Control room files them for its factory manager.
-  `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and the
-  longest wait count homelab machines only. The Control room's code lives in the
-  private auto-kaizen repo.
+  (`job="kaizen"`), every series named `kaizen_*`: tasks by state, machine waits, agent
+  cost, the GitHub App's and the workflows' shared key's hourly calls, and the signs of
+  waste or a stall that the "Kaizen factory" rules read. Those rules carry `route: factory`,
+  which the Control room passes to its factory manager. In `kaizen_tasks{state}`,
+  `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and
+  `kaizen_machine_wait_seconds_max` count homelab machines only. The Control room's code
+  is in the private auto-kaizen repo, so list the series with
+  `curl -s http://beelink.tail4f465e.ts.net:8090/metrics | grep '^# HELP'`.
 - **Flight tracker:** Alloy's blackbox exporter probes the public
   `https://api.colincheung.dev/aircraft` every minute
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
@@ -167,65 +158,35 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
 `test_alert`.
 
-The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
-straight to the `Discord Private` webhook (Discord's #uptime channel), as does
-Healthchecks.io's Beelink up/down. A rule labelled
-`route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
-out) goes only to #uptime, with no Kaizen issue. Every other alert,
-no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
-deploy stops Auto Kaizen.
-After deploying alerting file changes, reload them with Grafana's authenticated
-`POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
-are not polled. A Grafana-only restart also reloads them.
+#uptime (the `Discord Private` webhook) holds only what must arrive while the Beelink or the
+Control room may be down: Kaizen Control room unreachable and Healthchecks.io's Beelink up/down.
+A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
+starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
+Every other alert, no-data and evaluation errors included, gets only the Control room's one
+post. A deploy that changes these files recreates Grafana,
+which reloads them; they are not polled.
 
-Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
-hostname. Discord validates the URL in Grafana's alert embed and rejects
-host-only URLs with HTTP 400.
+Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a
+host-only URL in the alert embed with HTTP 400.
 
-The shipped rules cover host-level pressure such as:
+Each rule in [`rules.yaml`](../stacks/observability/provisioning/alerting/rules.yaml) carries its
+own description and the action to take, which reach the alert's post; read the rule, not a list here.
+Rules on the CI VMs (swapping, slow disk, out of memory, stuck waiting) point at the ci-runner
+runbook's "Why a job waits".
 
-- high CPU
-- high RAM
-- high disk usage
-- **Beelink swapping, slowing Kaizen's VMs**: over 1 MB/s swapped out for 30 minutes; swap
-  shares the SSD with every CI VM's disk
-- **Beelink disk too slow for Kaizen's VMs**: tasks waited on the disk over 60% of the time for
-  30 minutes; over half holds new CI VMs back
-- **A Kaizen job ran out of memory**: a CI VM's kernel killed a process for lack of memory
-- **Kaizen jobs need nearly all their VM's memory**: over a quarter of one kind's job VMs
-  needed over 80% of their memory in 6 hours (at least 8 VMs)
-- **Flight Tracker site down**: the live-data probe has failed for 10 minutes
-- **Unknown container started**: a container outside any Compose project whose name
-  was not seen in the week before has run for 15 minutes, as one planted by an intruder
-  would; stacks (new or redeployed) run under Compose and quick `docker run` checks
-  stop sooner, so neither fires
-- **Beelink SSD wearing out**: the SSD reports over 80% of its rated write endurance used.
-  A 15-minute timer records its wear and lifetime writes, and **SSD wear check stopped**
-  fires when it has not for an hour
-- **PC backup stopped arriving**: no file from the Windows PC in 50 hours
-- **Kaizen tasks stuck waiting for a test VM**: a Kaizen task has waited over 20 minutes
-  for a homelab CI machine; its text gives the minutes per reason (see the ci-runner runbook's
-  "Why a job waits")
-- **Kaizen hasn't merged anything in 3 hours**: Kaizen tasks have been running or waiting for 3
-  hours and nothing has merged in that time
-- **Kaizen's GitHub App running out of calls**: the App has used over 80% of its hourly
-  GitHub calls with over 15 minutes until they reset; at the limit every Builder fails until
-  then. In the hour's last 15 minutes it stays quiet, as the calls come back soon
-- **Kaizen Control room unreachable**: Prometheus has not reached the Control room for
-  5 minutes, so alerts are not reaching the #alerts forum
+Host RAM uses `node_memory_MemAvailable_bytes`, not `node_memory_AvailableBytes`. Check the rule's
+query when a dashboard has data but no alert.
 
-Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
-does not exist in Alloy's Unix exporter. Verify the rule's exact query in
-Prometheus when a dashboard has data but an alert does not.
+OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
+applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
+(`live`). It keeps metric names in lower case, selects no series by a label it lacks, and repeats a
+per-series alert's firing each minute without a resolve, so stopped firings mean cleared.
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
-`homelab-discord` notification template. Threshold alerts show whatever the rule's `value` annotation holds and the
-threshold duration.
-No-data and evaluation errors remain separate alerts, grouped by affected rule;
-they mean monitoring is unavailable, not that a resource threshold was crossed.
-Resolved messages describe an ended alert, not proof of recovery. Check the
-current evaluation before declaring the resource healthy. Tests are explicitly
-labelled and do not represent resource incidents.
+`homelab-discord` notification template.
+No-data and evaluation errors are separate alerts, grouped by affected rule;
+they mean monitoring is unavailable, not that a threshold was crossed.
+A resolved message describes an ended alert, not proof of recovery.
 
 ## Common debugging path
 

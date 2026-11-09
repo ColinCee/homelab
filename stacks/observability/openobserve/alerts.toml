@@ -1,0 +1,601 @@
+# OpenObserve's alert rules, one per Grafana rule in ../provisioning/alerting/rules.yaml (same key and title), which
+# stays the live alerter until the cutover. apply.py makes OpenObserve match this file on each deploy.
+#
+# A rule fires when its `promql` is `operator` `threshold` for `for`, and holds through a dip shorter than
+# `keep_firing`. A per-series rule names the labels that tell its series apart in `series`: one alert, and one
+# Kaizen issue, per series. A `no_data` query fires the rule when the metric is gone, as Grafana's NoData did,
+# with the value -1. `extra` holds named queries the Control room runs for the post's numbers.
+# Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`, `needs`) are those Kaizen reads from Grafana's rules.
+
+# Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
+# rule to its route's destinations instead, and needs DISCORD_PRIVATE_WEBHOOK_URL passed to openobserve-apply.
+live = false
+
+# Where each route goes when live.
+[routes]
+kaizen = ["kaizen"]
+factory = ["kaizen"]
+colin = ["kaizen"]
+# The Control room posts every other alert, so its own outage also goes straight to Discord.
+uptime = ["discord", "kaizen"]
+
+# Minutes before a firing alert is sent again. The Control room ignores a repeat of an alert it has open; a resolved
+# message waits for the repeat to end, so Discord's is 30 minutes.
+[repeat]
+kaizen = 0
+uptime = 30
+
+# Destinations: `${NAME}` is read from the environment, and `body` is the template, `kaizen` (Kaizen's /alert body)
+# or `discord`. The Control room by its name on its Docker network, the one private host OpenObserve allows
+# (ZO_SSRF_ALLOWED_HOSTS).
+[destinations.shadow]
+url = "http://control-room:8090/alert/openobserve/shadow"
+bearer = "${KAIZEN_ALERT_SECRET}"
+body = "kaizen"
+
+[destinations.kaizen]
+url = "http://control-room:8090/alert"
+bearer = "${KAIZEN_ALERT_SECRET}"
+body = "kaizen"
+
+[destinations.discord]
+url = "${DISCORD_PRIVATE_WEBHOOK_URL}"
+body = "discord"
+
+[rules.high-cpu]
+title = "Beelink CPU maxed out"
+route = "kaizen"
+# Busy share of the CPU, minus the CI VMs (they run at low CPU weight on purpose and soak up idle time) and
+# iowait (waiting on disk, not using CPU).
+promql = '''
+(
+  sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
+  - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
+) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})'''
+no_data = '''absent_over_time(node_cpu_seconds_total{job="integrations/unix"}[5m])'''
+operator = ">"
+threshold = 0.8
+# Deploys build images for a few minutes at full CPU, which needs nobody; a runaway process lasts longer.
+for = "20m"
+keep_firing = "10m"
+measure = "CPU use"
+trigger = "over 80% for 20 min"
+chart = '''
+100 * (
+  (
+    sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
+    - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
+  ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})
+)'''
+chart_line = 80
+description = "Threshold: above 80% for 20 minutes (5-minute CPU average)."
+action = "Check the CPU chart on Home (containers, CI VMs and the rest), then its Containers section."
+
+[rules.high-ram]
+title = "Beelink running out of memory"
+route = "kaizen"
+# OpenObserve keeps metric names in lower case.
+promql = "1 - (node_memory_memavailable_bytes{job=\"integrations/unix\"} / node_memory_memtotal_bytes{job=\"integrations/unix\"})"
+no_data = '''absent_over_time(node_memory_memavailable_bytes{job="integrations/unix"}[5m])'''
+operator = ">"
+threshold = 0.9
+for = "5m"
+keep_firing = "10m"
+measure = "Memory use"
+trigger = "over 90% for 5 min"
+chart = '''
+100 * (
+  1 - (node_memory_memavailable_bytes{job="integrations/unix"} / node_memory_memtotal_bytes{job="integrations/unix"})
+)'''
+chart_line = 90
+description = "Threshold: above 90% for 5 minutes."
+action = "Check the memory chart on Home (containers, CI VMs and the rest), then its Containers section."
+
+[rules.beelink-swapping]
+title = "Beelink swapping, slowing Kaizen's VMs"
+route = "kaizen"
+# Swap shares the one SSD with every CI VM's disk, so swapping stalls jobs and holds new VMs back.
+promql = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
+no_data = '''absent_over_time(node_vmstat_pswpout{job="integrations/unix"}[5m])'''
+operator = ">"
+threshold = 1
+for = "30m"
+keep_firing = "10m"
+measure = "Swapped out"
+trigger = "over 1 MB/s for 30 min"
+chart = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
+chart_line = 1
+description = "Threshold: over 1 MB/s swapped out for 30 minutes."
+action = '''
+Check which VMs or containers hold swap (VmSwap in /proc/*/status) and the CI memory notes in
+docs/runbooks/ci-runner.md.'''
+
+[rules.ci-vm-out-of-memory]
+title = "A Kaizen job ran out of memory"
+route = "kaizen"
+series = ["kind"]
+# From each VM's ci-memwatch, counted by the CI supervisor when the VM ends.
+promql = "sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job=\"integrations/unix\"}[15m]))"
+operator = ">"
+threshold = 0
+for = "0m"
+closes = "event"
+measure = "Kills in the last 15 min"
+trigger = "any"
+chart = "sum by (kind) (increase(homelab_ci_vm_oom_kills_total{job=\"integrations/unix\"}[15m]))"
+chart_line = 0
+description = "A VM's kernel killed a process for lack of memory: its job failed or ran short."
+action = '''
+Find the VM in the supervisor's log (`journalctl -u homelab-ci-supervisor -g "out-of-memory kills"`), map its
+runner name to the job, and give that job a bigger VM (LIGHT_SIZES in scripts/ci_supervisor.py) or trim it.'''
+
+[rules.ci-vms-near-full]
+title = "Kaizen jobs need nearly all their VM's memory"
+route = "kaizen"
+series = ["kind"]
+# The share of a kind's job VMs whose need passed 80% of their memory, once at least 8 ended in 6 h.
+promql = '''
+(sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
+/ sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
+and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8'''
+operator = ">"
+threshold = 0.25
+for = "30m"
+measure = "Job VMs over 80% of their memory, last 6 h"
+trigger = "over a quarter, for 30 min"
+chart = '''
+(sum by (kind) (increase(homelab_ci_vms_near_full_total{job="integrations/unix"}[6h]))
+/ sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])))
+and sum by (kind) (increase(homelab_ci_vms_ended_total{job="integrations/unix"}[6h])) >= 8'''
+chart_line = 0.25
+description = '''
+Over a quarter of this kind's job VMs needed more than 80% of their memory in 6 hours: the next bigger job may
+be killed.'''
+action = '''
+List the near-full VMs (`journalctl -u homelab-ci-supervisor -g "needed at least"`), see which jobs they ran,
+and give that kind more memory (LIGHT_SIZES or vm_size in scripts/ci_supervisor.py) or trim the job.'''
+
+[rules.ci-supervisor-poll-failing]
+title = "The CI supervisor's poll keeps failing"
+route = "kaizen"
+# Polls failed in a row (2 s apart), from the CI supervisor; 0 while they work.
+promql = "max(homelab_ci_poll_failures{job=\"integrations/unix\"})"
+operator = ">"
+threshold = 9
+for = "2m"
+measure = "Polls failed in a row"
+trigger = "10 or more, for 2 min"
+chart = "max(homelab_ci_poll_failures{job=\"integrations/unix\"})"
+chart_line = 10
+description = "Every poll of the CI supervisor has failed: no job VM starts on the Beelink, so every queued job waits."
+action = '''
+Read the error (`journalctl -u homelab-ci-supervisor -g "poll failed"`) and fix its cause in
+scripts/ci_supervisor.py (docs/runbooks/ci-runner.md).'''
+
+[rules.ci-supervisor-poll-failing.extra]
+# Seconds every poll has failed.
+failing_for = "max(homelab_ci_poll_failed_seconds{job=\"integrations/unix\"})"
+
+[rules.beelink-disk-stalled]
+title = "Beelink disk too slow for Kaizen's VMs"
+route = "kaizen"
+# The share of time tasks waited on the disk. Over half holds new CI VMs back (DISK_WAIT_LIMIT in
+# ci_supervisor.py), so a half-hour of it means tasks queue.
+promql = "rate(node_pressure_io_waiting_seconds_total{job=\"integrations/unix\"}[5m])"
+no_data = '''absent_over_time(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[5m])'''
+operator = ">"
+threshold = 0.6
+for = "30m"
+keep_firing = "10m"
+measure = "Time waiting on disk"
+trigger = "over 60% for 30 min"
+chart = '''
+100 * (
+  rate(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[5m])
+)'''
+chart_line = 60
+description = "Threshold: tasks waited on the disk over 60% of the time for 30 minutes."
+action = '''
+Check write rate and latency (iostat -dx nvme0n1), when the SSD was last trimmed (journalctl -u fstrim) and the
+CI disk notes in docs/runbooks/ci-runner.md.'''
+
+[rules.high-disk]
+title = "Beelink disk filling up"
+route = "kaizen"
+promql = '''
+1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+/ node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})'''
+no_data = '''absent_over_time(node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}[5m])'''
+operator = ">"
+threshold = 0.8
+for = "10m"
+measure = "Disk use"
+trigger = "over 80% for 10 min"
+chart = '''
+100 * (
+  1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+  / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})
+)'''
+chart_line = 80
+description = "Threshold: above 80% for 10 minutes."
+action = "Inspect root filesystem usage before removing files; preserve Docker volumes."
+
+[rules.backup-missed]
+title = "Nightly backup didn't run"
+route = "kaizen"
+# Hours since backup.sh last wrote a successful run.
+promql = "(time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600"
+no_data = "absent_over_time(homelab_backup_last_success_timestamp_seconds[5m])"
+operator = ">"
+threshold = 26
+for = "30m"
+closes = "good-news"
+measure = "Last good backup"
+trigger = "over 26 h ago"
+description = "Threshold: no successful restic backup to R2 in the last 26 hours."
+action = "Check `docker logs backup`; see docs/runbooks/backups.md."
+
+[rules.backup-missed.extra]
+# The step the last run failed at, written by backup.sh and removed by the next good run:
+# 1 cap, 2 backup, 3 forget, 4 check, 0 none recorded (the run did not happen).
+failed_step = '''
+max(
+  homelab_backup_last_failure_timestamp_seconds{step="cap"} * 0 + 1
+  or homelab_backup_last_failure_timestamp_seconds{step="backup"} * 0 + 2
+  or homelab_backup_last_failure_timestamp_seconds{step="forget"} * 0 + 3
+  or homelab_backup_last_failure_timestamp_seconds{step="check"} * 0 + 4
+) or vector(0)'''
+
+[rules.backup-storage-high]
+title = "Backup storage nearly full"
+route = "kaizen"
+# Written by backup.sh after each good run; 26 h covers one missed night, which Nightly backup didn't run reports.
+promql = "max(last_over_time(homelab_backup_repository_bytes[26h]))"
+no_data = "absent_over_time(homelab_backup_repository_bytes[26h])"
+operator = ">"
+threshold = 5000000000
+for = "5m"
+measure = "Backup storage"
+trigger = "over 5 GB"
+description = "Threshold: above 5 GB. Uploads stop at 8 GB; R2 bills past 10 GB."
+action = "Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md."
+
+[rules.flight-tracker-down]
+title = "Flight Tracker site down"
+route = "kaizen"
+promql = "max(probe_success{job=\"integrations/blackbox/flight-tracker\"})"
+no_data = "absent_over_time(probe_success{job=\"integrations/blackbox/flight-tracker\"}[5m])"
+operator = "<"
+threshold = 1
+for = "10m"
+keep_firing = "10m"
+closes = "good-news"
+measure = "Live radar"
+trigger = "down for 10 min"
+description = "Threshold: https://api.colincheung.dev/aircraft not serving live aircraft for 10 minutes."
+action = "Check `docker logs flight-tracker-backend-1` (upstream 403/429?) and `flight-tracker-cloudflared-1`."
+
+[rules.new-container]
+title = "Unknown container started"
+route = "colin"
+series = ["name"]
+# A container outside any Compose project whose name was not seen in the week before its last hour. Stacks run
+# under Compose and reach the Beelink through the reviewed deploy path, so new stacks don't fire; a hand-run
+# `docker run` carries no project label. Quick checks by people and agents stop within minutes, so `for: 15m`
+# lets them pass. In OpenObserve no matcher, `=""` included, selects a series that lacks the label, so the
+# containers with a project are taken away instead.
+promql = '''
+count by (name) (container_last_seen{job="docker",name!=""})
+unless count by (name) (container_last_seen{job="docker",name!="",container_label_com_docker_compose_project!=""})
+unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))'''
+operator = ">"
+threshold = 0
+for = "15m"
+needs = "Is this container yours?"
+measure = "Container"
+description = "This container has run on the Beelink for 15 minutes and was not seen in the week before."
+action = '''
+Expected if you just added a stack or ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and
+`docker inspect` its image and command.'''
+
+[rules.ssd-worn]
+title = "Beelink SSD wearing out"
+route = "colin"
+# The SSD's own estimate of its rated endurance used (scripts/ssd_wear.py).
+promql = "max(homelab_ssd_percentage_used)"
+operator = ">"
+threshold = 80
+for = "0m"
+needs = "Order a replacement SSD"
+measure = "Endurance used"
+trigger = "over 80%"
+chart = "max(homelab_ssd_percentage_used)"
+chart_line = 80
+description = "The SSD reports over 80% of its rated write endurance used; past 100% it may start failing."
+action = '''
+Order a replacement SSD and plan the move. To see how fast it wears, chart `homelab_ssd_written_bytes_total`.'''
+
+[rules.ssd-wear-stale]
+title = "SSD wear check stopped"
+route = "kaizen"
+# Minutes since ssd.prom was written. last_over_time carries the file time across a short scrape gap (an Alloy
+# restart); a longer one is no data.
+promql = "(time() - max(last_over_time(node_textfile_mtime_seconds{file=~\".*/ssd.prom\"}[30m]))) / 60"
+no_data = "absent_over_time(node_textfile_mtime_seconds{file=~\".*/ssd.prom\"}[30m])"
+operator = ">"
+threshold = 60
+for = "5m"
+closes = "good-news"
+measure = "Last check"
+trigger = "over 60 min ago"
+description = "ssd.prom has not been written for over an hour, so a wearing SSD would go unnoticed."
+action = '''
+Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer` on the
+Beelink; it starts with `sudo ci-runner/install-host.sh`.'''
+
+[rules.pc-backup-stale]
+title = "PC backup stopped arriving"
+route = "kaizen"
+# Hours since the newest file the PC sent (stacks/backup/systemd/backup-pc-receive.service). 50 h lets one night
+# pass with the PC off.
+promql = "(time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600"
+no_data = "absent_over_time(homelab_pc_backup_newest_timestamp_seconds[5m])"
+operator = ">"
+threshold = 50
+for = "30m"
+closes = "good-news"
+measure = "Newest PC backup"
+trigger = "over 50 h old"
+description = "No backup file has arrived from the Windows PC in over 50 hours."
+action = '''
+Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then
+`systemctl --user status backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.'''
+
+[rules.kaizen-machine-wait]
+title = "Kaizen tasks stuck waiting for a test VM"
+route = "kaizen"
+# The longest a running task has waited for a homelab machine, from the Control room. [2m] rides out a missed
+# scrape while it redeploys. Only while it has read GitHub in the last 10 minutes: a stale Control room keeps
+# counting a wait that may have ended.
+promql = '''
+max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
+and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)'''
+operator = ">"
+threshold = 20
+for = "1m"
+keep_firing = "10m"
+measure = "Longest wait for a VM"
+trigger = "over 20 min"
+chart = '''
+max(max_over_time(kaizen_machine_wait_seconds_max{job="kaizen"}[2m])) / 60
+and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)'''
+chart_line = 20
+description = "Threshold: a task has waited over 20 minutes for a homelab CI machine."
+action = '''
+See "Why a job waits" in docs/runbooks/ci-runner.md; `journalctl -u homelab-ci-supervisor` on the Beelink has
+each job's reason.'''
+
+# The CI runner's longest-waiting queued job: its minutes so far per kind of wait (homelab_ci_wait_seconds, from
+# the supervisor). What the kinds leave of the task's wait is time still waiting or pending on GitHub.
+[rules.kaizen-machine-wait.extra]
+unseen = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"unseen\"}) / 60 or on() vector(0)"
+slots = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"slots\"}) / 60 or on() vector(0)"
+memory = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"memory\"}) / 60 or on() vector(0)"
+disk = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"disk\"}) / 60 or on() vector(0)"
+booting = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"booting\"}) / 60 or on() vector(0)"
+ready = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"ready\"}) / 60 or on() vector(0)"
+other = "max(homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"other\"}) / 60 or on() vector(0)"
+# A job asking for a runner label no VM has: its repo and labels are the series' labels. `> 0`, as
+# OpenObserve ignores a matcher on a label no series of the metric has yet.
+unmatched = "max by (repo, labels) (homelab_ci_wait_seconds{job=\"integrations/unix\",kind=\"other\",repo!=\"\"}) > 0"
+
+[rules.kaizen-not-merging]
+title = "Kaizen hasn't merged anything in 3 hours"
+route = "kaizen"
+# Hours since the last merge, or 0 unless tasks have been running or waiting for the whole last 3 hours, so work
+# starting after an idle night does not count as not merging.
+promql = '''
+(time() - max(max_over_time(kaizen_last_merge_timestamp_seconds{job="kaizen"}[2m]))) / 3600
+* on() min_over_time((sum(kaizen_tasks{job="kaizen",state=~"working|waiting_for_machine|stuck"}) > bool 0)[3h:1m])'''
+operator = ">"
+threshold = 3
+for = "15m"
+measure = "Since last merge"
+trigger = "over 3 h with tasks queued"
+description = "Threshold: tasks have been running or waiting for 3 hours, and nothing has merged in that time."
+action = "Open the Control room (http://beelink.tail4f465e.ts.net:8090); look for a failing step or held change."
+
+[rules.kaizen-watcher-stopped]
+title = "Kaizen's Watcher stopped running"
+route = "kaizen"
+# Minutes since Auto Kaizen's Watcher, due every 20 minutes, last worked (from the Control room). Needs neither
+# GitHub's machines nor the Watcher. Only while the Control room read GitHub in the last 10 minutes.
+promql = '''
+(time() - max(max_over_time(kaizen_watcher_success_timestamp_seconds{job="kaizen"}[2m]))) / 60
+and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)'''
+operator = ">"
+threshold = 60
+for = "5m"
+measure = "Since the Watcher last ran"
+trigger = "over 60 min"
+description = "Threshold: the Watcher, due every 20 minutes, has not worked for an hour."
+action = '''
+Waiting for a VM means a capacity problem: see "Why a job waits" in docs/runbooks/ci-runner.md. No waiting job
+means GitHub is not starting jobs: github.com/ColinCee/auto-kaizen/actions names the cause (billing, an outage).'''
+
+# Minutes GitHub has queued Auto Kaizen's longest-waiting job and the Watcher's own job for a test VM (-1: not
+# waiting), and the VMs running jobs, from the CI supervisor.
+[rules.kaizen-watcher-stopped.extra]
+kaizen = "max(homelab_ci_queued_seconds{job=\"integrations/unix\",repo=\"ColinCee/auto-kaizen\"}) / 60 or on() vector(0)"
+watcher = '''
+max(homelab_ci_queued_seconds{job="integrations/unix",repo="ColinCee/auto-kaizen",workflow="watch"}) / 60
+or on() vector(-1)'''
+busy = "max(homelab_ci_vms_busy{job=\"integrations/unix\"}) or on() vector(0)"
+slots = "max(homelab_ci_vm_slots{job=\"integrations/unix\"}) or on() vector(0)"
+
+[rules.kaizen-github-app-calls]
+title = "Kaizen's GitHub App running out of calls"
+route = "factory"
+# Late in the hour the calls come back within minutes, so only high use with over 15 minutes still to go risks
+# the limit.
+promql = '''
+max(max_over_time(kaizen_github_app_calls_used{job="kaizen"}[2m]))
+/ max(max_over_time(kaizen_github_app_calls_limit{job="kaizen"}[2m])) * 100
+and on() ((max(kaizen_github_app_calls_reset_timestamp_seconds{job="kaizen"}) - time()) / 60 > 15)'''
+operator = ">"
+threshold = 80
+for = "1m"
+closes = "event"
+measure = "App's GitHub calls used"
+trigger = "over 80% of the hour's limit with over 15 min until it resets"
+chart = '''
+max(max_over_time(kaizen_github_app_calls_used{job="kaizen"}[2m]))
+/ max(max_over_time(kaizen_github_app_calls_limit{job="kaizen"}[2m])) * 100'''
+chart_line = 80
+description = '''
+Threshold: Kaizen's GitHub App has used over 80% of its hourly calls with over 15 minutes left in the hour; at
+the limit every Builder fails.'''
+action = '''
+On Home, the Kaizen GitHub App calls panel shows when use climbed, and the Control room restarts panel below it
+shows whether a restart came just before; find the Kaizen job calling GitHub most and slow it.'''
+
+[rules.kaizen-github-app-calls.extra]
+# Minutes until the calls come back.
+reset = "(max(kaizen_github_app_calls_reset_timestamp_seconds{job=\"kaizen\"}) - time()) / 60 or on() vector(0)"
+
+[rules.kaizen-control-room-down]
+title = "Kaizen Control room unreachable"
+route = "uptime"
+promql = "max(up{job=\"kaizen\"})"
+no_data = "absent_over_time(up{job=\"kaizen\"}[5m])"
+operator = "<"
+threshold = 1
+for = "5m"
+closes = "good-news"
+measure = "Control room"
+trigger = "down for 5 min"
+description = "Threshold: the Control room could not be scraped for 5 minutes, so alerts are not reaching the #alerts forum."
+action = "On the Beelink: docker ps -a | grep control-room, then docker logs on it."
+
+# Signs that Auto Kaizen itself wastes or stalls, served by its Control room (auto-kaizen's src/kaizen/anomaly.py,
+# whose *_AT constants are these thresholds): factory problems the factory manager fixes.
+[rules.kaizen-workflow-key-calls]
+title = "Kaizen's shared workflow key running out of calls"
+route = "factory"
+# Percent left, as the Watcher last counted it; only while that count is under 90 minutes old (a Watcher waiting
+# out an empty key runs up to 65 minutes before it counts again), and with over 15 minutes until it resets.
+promql = '''
+min(min_over_time(kaizen_github_workflow_key_calls_remaining{job="kaizen"}[2m]))
+/ max(max_over_time(kaizen_github_workflow_key_calls_limit{job="kaizen"}[2m])) * 100
+and on() (time() - max(kaizen_github_workflow_key_calls_read_timestamp_seconds{job="kaizen"}) < 5400)
+and on() ((max(kaizen_github_workflow_key_calls_reset_timestamp_seconds{job="kaizen"}) - time()) / 60 > 15)'''
+operator = "<"
+threshold = 20
+for = "1m"
+closes = "event"
+measure = "Shared key's calls left"
+trigger = "under 20% with over 15 min until it resets"
+description = '''
+Threshold: every Auto Kaizen workflow shares one key of 5,000 GitHub calls an hour, and under a fifth is left
+with over 15 minutes to go. At none, workflows fail and the Watcher sits out.'''
+action = "Find the workflow spending it: the Watcher's 'used N of 5000' line, and which step reads GitHub most."
+
+[rules.kaizen-workflow-key-calls.extra]
+reset = "(max(kaizen_github_workflow_key_calls_reset_timestamp_seconds{job=\"kaizen\"}) - time()) / 60 or on() vector(0)"
+
+[rules.kaizen-workflow-failures]
+title = "Kaizen workflows failing for one cause"
+route = "factory"
+series = ["cause"]
+# Failed runs of any workflow in the last hour, by the cause of their first failed job.
+promql = "max by (cause) (max_over_time(kaizen_workflow_failures_last_hour{job=\"kaizen\"}[2m]))"
+operator = ">"
+threshold = 4
+for = "1m"
+closes = "event"
+measure = "Failed runs, one cause"
+trigger = "5 or more in an hour"
+description = "Threshold: 5 or more runs of Kaizen's workflows failed in the last hour with one cause."
+action = "Find the step that logs it, and why; an outside error that keeps coming back is ours to work around."
+
+[rules.kaizen-goal-owner-reruns]
+title = "A Kaizen goal owner reruns with nothing new"
+route = "factory"
+series = ["goal"]
+# Each ongoing goal's owner runs since the goal or one of its tasks last changed.
+promql = "max by (goal) (max_over_time(kaizen_goal_owner_runs_since_change{job=\"kaizen\"}[2m]))"
+operator = ">"
+threshold = 3
+for = "1m"
+measure = "Owner runs, nothing new"
+trigger = "4 or more"
+description = '''
+Threshold: the goal's owner ran 4 or more times while nothing changed for it: no task opened and no task's run
+ended. Each run is an agent paid for.'''
+action = "Read the goal's Recheck: and Owner: lines: what it waits on, and why that wakes it."
+
+[rules.kaizen-stopped-alike]
+title = "Kaizen tasks stopped for one reason"
+route = "factory"
+series = ["reason"]
+# Tasks stopped for Colin or their goal owner, by the cause of their last run's stop.
+promql = "max by (reason) (max_over_time(kaizen_stopped_tasks_alike{job=\"kaizen\"}[2m]))"
+operator = ">"
+threshold = 1
+for = "5m"
+measure = "Tasks stopped alike"
+trigger = "2 or more"
+description = '''
+Threshold: 2 or more tasks wait on Colin or their goal owner, stopped for one reason. One reason across tasks is
+likely Kaizen's own fault, not theirs.'''
+action = "Find what the tasks share (a conflict with main, a red main, a step) and fix that once."
+
+[rules.kaizen-silent-tasks]
+title = "Kaizen tasks left with nothing moving them"
+route = "factory"
+# Open tasks whose newest finished run left no Run record, and that nothing runs.
+promql = "max(max_over_time(kaizen_silent_tasks{job=\"kaizen\"}[2m]))"
+operator = ">"
+threshold = 0
+for = "10m"
+measure = "Silent tasks"
+trigger = "1 or more for 10 min"
+description = '''
+Threshold: a task's run finished over 40 minutes ago without writing its Run record, and nothing runs it now,
+so no goal owner, Watcher or retry will move it.'''
+action = "The Control room's /state lists the tasks; read the run's Record step log for why its note was not written."
+
+[rules.kaizen-agent-cost]
+title = "Kaizen's agents spending fast"
+route = "factory"
+# Agent runs that ended in the last hour. The busiest real hours of a week cost about $26 (90th percentile); the
+# night of waste reached $45 to $58.
+promql = "max(max_over_time(kaizen_agent_cost_usd_last_hour{job=\"kaizen\"}[2m]))"
+operator = ">"
+threshold = 40
+for = "5m"
+closes = "event"
+measure = "Agent cost, last hour"
+trigger = "over $40"
+chart = "max(max_over_time(kaizen_agent_cost_usd_last_hour{job=\"kaizen\"}[2m]))"
+chart_line = 40
+description = "Threshold: agents' runs that ended in the last hour cost over $40, past any busy hour of real work."
+action = "kaizen-speed --agents --since <an hour ago> names the workflow and agent spending it."
+
+[rules.kaizen-signs-stale]
+title = "Kaizen's waste checks stopped"
+route = "factory"
+# Minutes since the Control room last looked for these signs, while it is up: a dead look reads as calm.
+promql = '''
+(time() - max(max_over_time(kaizen_anomaly_read_timestamp_seconds{job="kaizen"}[2m]))) / 60
+and on() (max(up{job="kaizen"}) == 1)'''
+operator = ">"
+threshold = 10
+for = "5m"
+closes = "good-news"
+measure = "Since the last look"
+trigger = "over 10 min"
+description = '''
+Threshold: the Control room is up but has not looked for signs of waste or stalls for 10 minutes, so the other
+factory alerts cannot fire.'''
+action = "docker logs on the Control room: its anomaly look's error repeats there."

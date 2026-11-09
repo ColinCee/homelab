@@ -67,7 +67,15 @@ run_backup() {
     step=forget && restic forget --host beelink --prune \
       --keep-daily 7 --keep-weekly 4 --keep-monthly 6 &&
     step=check && verify &&
-    echo "repository size: $(repo_bytes) bytes of $MAX_REPO_BYTES allowed"
+    record_size
+}
+
+# Grafana's Backup storage nearly full alert reads the log line, OpenObserve's the metric.
+record_size() {
+  bytes=$(repo_bytes) && [ -n "$bytes" ] || return 0
+  echo "repository size: $bytes bytes of $MAX_REPO_BYTES allowed"
+  write_metric "$SIZE_FILE" homelab_backup_repository_bytes "$bytes" ||
+    echo "could not write $SIZE_FILE" >&2
 }
 
 report() {
@@ -93,6 +101,7 @@ METRICS_FILE=/metrics/backup.prom
 FAILURE_FILE=/metrics/backup-failure.prom
 # The weekly report reads this, not the log, for the same reason.
 DEEP_CHECK_FILE=/metrics/backup-deep-check.prom
+SIZE_FILE=/metrics/backup-size.prom
 
 # write_metric FILE NAME VALUE
 write_metric() {
@@ -128,6 +137,7 @@ once)
 loop)
   seed_metric || echo "could not seed $METRICS_FILE" >&2
   touch /tmp/ready
+  [ -f "$SIZE_FILE" ] || record_size
   while true; do
     sleep "$(seconds_until "${BACKUP_TIME:-02:30}")"
     report || true
