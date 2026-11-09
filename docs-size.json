@@ -1,11 +1,11 @@
 {
- "AGENTS.md": 456,
+ "AGENTS.md": 457,
  "docs/architecture.md": 448,
  "docs/ci-runner-performance.md": 2065,
  "docs/observability.md": 1423,
  "docs/public-stats.md": 689,
  "docs/runbooks/backups.md": 942,
- "docs/runbooks/ci-runner.md": 4306,
+ "docs/runbooks/ci-runner.md": 4327,
  "docs/runbooks/deploying-services.md": 1836,
  "docs/runbooks/security-audit.md": 464,
  "README.md": 689
