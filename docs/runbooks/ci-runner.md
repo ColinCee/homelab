@@ -177,8 +177,8 @@ current a host is.
 | File | Default | Sets |
 |---|---|---|
 | `/etc/homelab-ci/slots` | 5 | Build VMs at once |
-| `/etc/homelab-ci/light-slots` | 5; on the Beelink at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered; 0 on the PC | Light VMs at once |
-| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 2, 1, 1 (0 for none) | VMs kept booted and waiting |
+| `/etc/homelab-ci/light-slots` | 5 (none while the file is missing); on the Beelink at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered; 0 on the PC | Light VMs at once |
+| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 2, 1, 1 (0 for none) | VMs kept booted and waiting; a build standby always has 4 vCPUs |
 | `/etc/homelab-ci/memory-reserve-mib` | 3072 | Memory left for the home's services |
 
 Change slot counts only through `install-host.sh`, so the network has a tap for every slot:
@@ -365,7 +365,7 @@ remove `kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-run
 |---|---|
 | `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
 | `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
-| `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped and its VMs finished (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
+| `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished, since they outlive it (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
 | `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and Grafana once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the

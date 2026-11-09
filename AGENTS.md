@@ -6,7 +6,7 @@ and how to run them locally, `docs/` for architecture and runbooks, and
 
 Checks: `mise run check`
 
-That runs what CI's check job runs: lint, typecheck, test and validate:compose
+That runs what CI's check job runs: lint, typecheck, test, docs:size and validate:compose
 (Compose validation needs Docker). Run it before pushing.
 
 - Keep the simplest working solution. Do not add generic frameworks, wrappers,
