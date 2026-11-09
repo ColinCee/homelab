@@ -11,14 +11,14 @@ disposable.
 |--------|-----|
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
 | Grafana volume | Users and UI changes (`grafana.db`). |
-| OpenObserve's `db` folder | Users, alerts, dashboards. |
+| OpenObserve `db` folder | Users, alerts, dashboards. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | Control room volume | The last state Auto Kaizen's Control room read. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
 Left out on purpose: the Home Assistant recorder database (a live copy would be
 inconsistent), logs, Grafana plugins, and stored metrics and logs. Secrets come
-from GitHub on each deploy.
+from GitHub.
 
 Retention is 7 daily, 4 weekly and 6 monthly snapshots; each run also prunes
 and verifies the repository. On Sundays the verification is a deep check that
