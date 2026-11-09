@@ -16,9 +16,9 @@ disposable.
 | Control room volume | The last state Auto Kaizen's Control room read. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
-Left out on purpose: the Home Assistant recorder database (sensor history; a
-live copy would be inconsistent), logs, Grafana plugins, Prometheus metrics and
-Loki logs. Secrets are rendered from GitHub on each deploy.
+Left out on purpose: the Home Assistant recorder database (a live copy would be
+inconsistent), logs, Grafana plugins, and stored metrics and logs. Secrets come
+from GitHub on each deploy.
 
 Retention is 7 daily, 4 weekly and 6 monthly snapshots; each run also prunes
 and verifies the repository. On Sundays the verification is a deep check that
