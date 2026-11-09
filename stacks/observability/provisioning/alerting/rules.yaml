@@ -1,4 +1,7 @@
 apiVersion: 1
+# A rule's `closes` annotation tells Auto Kaizen how its issue closes: `event`
+# (its clear changes nothing) or `good-news` (an hour after it clears); none
+# means it waits for a fix or 12 hours clear.
 groups:
   - orgId: 1
     name: Infrastructure

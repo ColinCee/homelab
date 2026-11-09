@@ -61,7 +61,7 @@ jobs:
               -H "Content-Type: application/json" --data-binary "$body"
           }
           send firing
-          # Long enough for the responder to read the issue before it closes.
+          # Long enough for the responder to read the issue before it clears.
           sleep 180
           send resolved
 
