@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse any job on the Beelink deploy runner except the deploy workflows on main.
+"""Refuse any job on the Beelink deploy runner except the listed workflows on main.
 
 Runs as the runner's job-started hook (ACTIONS_RUNNER_HOOK_JOB_STARTED), before the
 job's first step. A failing hook only marks the job failed: the runner still runs later
@@ -28,7 +28,7 @@ REF = "refs/heads/main"
 EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
     f"{REPOSITORY}/.github/workflows/{name}@{REF}"
-    for name in ("deploy.yaml", "server-health.yaml", "remediate.yaml")
+    for name in ("deploy.yaml", "server-health.yaml", "remediate.yaml", "heartbeat.yaml")
 )
 # Who may start a job here: Colin; Renovate merging its own pull requests; and Auto Kaizen,
 # Colin's agents, merging changes that passed CI, its Reviewer and its red-line checks

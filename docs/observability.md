@@ -15,8 +15,11 @@ What watches what:
 | Problem | Who warns |
 |---|---|
 | Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
-| Deploy failed | `deploy.yaml` stops Auto Kaizen's homelab line |
-| Deploy queued over 15 minutes or failed before its first step | Auto Kaizen's Watcher stops the homelab line |
+| Alerting stopped: a rule not run or failing, Alertmanager down, posts not reaching Discord, or the Beelink off | [`heartbeat.yaml`](../.github/workflows/heartbeat.yaml) checks every 15 minutes on the Beelink; [`heartbeat-watch.yaml`](../.github/workflows/heartbeat-watch.yaml), on GitHub's machines, posts to #uptime with a mention when it has not passed for 2 hours |
+| Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
+
+GitHub turns off a public repository's scheduled workflows after 60 days with no commits, which would stop both
+heartbeat workflows without a post; Renovate's merges keep the repository active.
 
 ## What's deployed
 

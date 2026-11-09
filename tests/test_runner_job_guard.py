@@ -4,6 +4,7 @@ from scripts import runner_job_guard as guard
 
 DEPLOY = "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main"
 HEALTH = "ColinCee/homelab/.github/workflows/server-health.yaml@refs/heads/main"
+HEARTBEAT = "ColinCee/homelab/.github/workflows/heartbeat.yaml@refs/heads/main"
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,7 @@ def _env(**overrides: str) -> dict[str, str]:
         _env(),
         _env(GITHUB_EVENT_NAME="schedule", GITHUB_WORKFLOW_REF=HEALTH),
         _env(GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_WORKFLOW_REF=HEALTH),
+        _env(GITHUB_EVENT_NAME="schedule", GITHUB_WORKFLOW_REF=HEARTBEAT),
         _env(
             GITHUB_ACTOR="renovate[bot]",
             GITHUB_ACTOR_ID="29139614",
