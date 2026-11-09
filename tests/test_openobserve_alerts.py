@@ -58,6 +58,7 @@ def test_beelink_metrics_stopped_holds_back_every_other_alert() -> None:
 def test_only_a_firing_act_now_post_mentions_colin() -> None:
     mention = re.search(r'define "homelab.mention" \}\}(.*?)\{\{ end \}\}\{\{ end \}\}', TEMPLATE)
     assert mention and '(eq .Status "firing") (eq .CommonLabels.level "now")' in mention[1]
+    assert ALERTMANAGER["route"]["receiver"] == "discord"
     discord = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord")
     assert discord["discord_configs"][0]["send_resolved"] is True
 

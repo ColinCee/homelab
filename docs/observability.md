@@ -25,7 +25,7 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 
 | Component | What it does |
 |-----------|---------------|
-| **Grafana** | Dashboards, Explore, and alert routing |
+| **Grafana** | Dashboards and Explore; its alert rules are paused |
 | **Prometheus** | Metrics storage for host, containers, CI VMs and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
@@ -54,10 +54,6 @@ Add panels to it rather than adding dashboards. From the top:
 - **Collapsed sections**, which load only when opened: alerts, containers,
   CI VMs, network and backups over time, with their logs
 
-The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
-To remove a rule, also list its uid under `deleteRules` in `rules.yaml` (a contact
-point: `deleteContactPoints` in `contactpoints.yaml`): Grafana keeps one that is only
-deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -141,9 +137,9 @@ max by (name) (container_last_seen{job="docker", name!=""})
 OpenObserve runs the rules in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml) each minute.
 `openobserve-apply` applies them on deploy, then runs each rule's query once and fails the deploy on an error, since
 OpenObserve sends nothing for a query that fails. A firing rule posts every minute to
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), whose
-`shadow` receiver holds alerts and posts nothing until the switch from Grafana; Grafana's rules in
-`provisioning/alerting/` still post to Discord's #uptime. Alertmanager publishes no port, since its API takes
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), which
+posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Grafana's rules in
+`provisioning/alerting/` are paused and go with Grafana. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
 
