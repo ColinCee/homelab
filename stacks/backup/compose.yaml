@@ -51,7 +51,6 @@ services:
         volume:
           subpath: db
       - heatmap-data:/data/flight-tracker:ro
-      - control-room-data:/data/kaizen-control-room:ro
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
       - /home/colin/pc-backups:/data/pc-backups:ro
 
@@ -67,7 +66,3 @@ volumes:
   heatmap-data:
     external: true
     name: flight-tracker_heatmap-data
-  # Not external: backup deploys before the Control room (stacks go in name order), so on its first deploy under this
-  # name the volume may not exist yet; either stack creates it, the other uses it.
-  control-room-data:
-    name: kaizen-control-room_data
