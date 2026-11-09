@@ -1372,7 +1372,7 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT name AS x_axis_1, max(grp) AS breakdown_1, max(cores) AS y_axis_1 FROM (SELECT name, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS grp, (max(value) - min(value)) / NULLIF((max(_timestamp) - min(_timestamp)) / 1000000.0, 0) AS cores FROM \"container_cpu_usage_seconds_total\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000 GROUP BY name, __hash__) GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10",
+              "query": "SELECT name AS x_axis_1, max(grp) AS breakdown_1, max(cores) AS y_axis_1 FROM (SELECT name, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS grp, sum(step) / ((max(_timestamp) - min(_timestamp)) / 1000000.0) AS cores FROM (SELECT name, __hash__, container_label_com_docker_compose_project, _timestamp, CASE WHEN lag(value) OVER (PARTITION BY __hash__ ORDER BY _timestamp) IS NULL THEN 0 WHEN value >= lag(value) OVER (PARTITION BY __hash__ ORDER BY _timestamp) THEN value - lag(value) OVER (PARTITION BY __hash__ ORDER BY _timestamp) ELSE value END AS step FROM \"container_cpu_usage_seconds_total\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000) GROUP BY name, __hash__ HAVING count(*) > 1) GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10",
               "customQuery": true,
               "fields": {
                 "stream": "container_cpu_usage_seconds_total",
