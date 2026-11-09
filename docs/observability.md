@@ -158,17 +158,13 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
 `test_alert`.
 
-The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
-straight to the `Discord Private` webhook (Discord's #uptime channel), as does
-Healthchecks.io's Beelink up/down. A rule labelled
-`route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
-out) gets its #alerts post, but its issue starts no responder and the post asks Colin its
-`needs` annotation (a few words), mentioning him once. #uptime holds only what must arrive while
-the Beelink or the Control room may be down. Every other alert,
-no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
-deploy stops Auto Kaizen.
-A deploy that changes these files recreates Grafana (its config hash), which reloads them;
-unlike dashboards, they are not polled.
+#uptime (the `Discord Private` webhook) holds only what must arrive while the Beelink or the
+Control room may be down: Kaizen Control room unreachable and Healthchecks.io's Beelink up/down.
+A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
+starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
+Every other alert, no-data and evaluation errors included, gets only the Control room's one
+post. A failed deploy stops Auto Kaizen. A deploy that changes these files recreates Grafana,
+which reloads them; they are not polled.
 
 Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
 hostname. Discord validates the URL in Grafana's alert embed and rejects
