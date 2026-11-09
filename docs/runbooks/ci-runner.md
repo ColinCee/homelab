@@ -178,7 +178,7 @@ current a host is.
 |---|---|---|
 | `/etc/homelab-ci/slots` | 5 | Build VMs at once |
 | `/etc/homelab-ci/light-slots` | 5 (none while the file is missing); on the Beelink at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered; 0 on the PC | Light VMs at once |
-| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 2, 1, 1 (0 for none) | VMs kept booted and waiting; a build standby always has 4 vCPUs |
+| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 3, 1, 1 (0 for none) | VMs kept booted and waiting; a build standby always has 4 vCPUs |
 | `/etc/homelab-ci/memory-reserve-mib` | 3072 | Memory left for the home's services |
 
 Change slot counts only through `install-host.sh`, so the network has a tap for every slot:
