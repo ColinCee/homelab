@@ -18,7 +18,7 @@ when opened. The Home tab, from the top:
 1. Is anything wrong: a tile per service (Flight tracker, Home Assistant, DNS and proxy, Backup,
    Alerts), red when down, showing how long it has been up or down.
 2. Headroom: CPU, memory, swap, disk and backup storage now with a trend over the time range, and
-   when the disk and the backup storage fill at their 7-day rate.
+   the space free on the disk and under the backup storage's 8 GB.
 3. Who uses the box: memory and CPU over 24 h, stacked by group: Monitoring, System and Apps.
 4. Errors in the logs: error lines per hour by container, and the most repeated in the last hour.
 
@@ -54,11 +54,13 @@ Each colour means one thing on every tab. The hexes live in `tests/test_openobse
   follows: PromQL series come in query order, SQL series in the order rows first name them.
   OpenObserve runs a SQL chart in time slices (the current hour is its own), so a series new in
   the newest slice comes first whatever its total.
-- Tables sort by their obvious column: the count, or the newest first.
+- Tables sort by their obvious column: the count, or the newest first. A row is one line
+  (`wrap_table_cells: false`), with long text cut in SQL and in the last column.
 
 ## Queries
 
 - Metric names are lower case (`node_memory_memavailable_bytes`).
+- The `bytes` unit counts in 1024s; show GB as the alerts count them (`/ 1e9`, custom unit ` GB`).
 - A matcher like `=""` cannot select a series that lacks the label; `name!=""` works. Use
   `max by (name)` for container metrics, as `docs/observability.md` says.
 - Every PromQL panel runs a range query over the dashboard's time: OpenObserve drops a query's
