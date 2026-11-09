@@ -184,7 +184,7 @@ per-series alert's firing each minute without a resolve, so stopped firings mean
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
 `homelab-discord` notification template.
-No-data and evaluation errors are separate alerts, grouped by series;
+No-data and evaluation errors are separate alerts, grouped by rule;
 they mean monitoring is unavailable, not that a threshold was crossed.
 A resolved message describes an ended alert, not proof of recovery.
 
