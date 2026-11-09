@@ -34,54 +34,6 @@
         {
           "id": "Panel_ID2",
           "type": "metric",
-          "title": "Control room",
-          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days).",
-          "config": {
-            "show_legends": false,
-            "decimals": 1,
-            "unit": "seconds",
-            "mappings": [
-              {
-                "type": "lt",
-                "value": "0",
-                "color": "#c62828",
-                "text": ""
-              }
-            ]
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "((time() - max_over_time(timestamp((max(up{job=\"kaizen\"}) or vector(0)) < 1)[7d:1m])) and on() ((max(up{job=\"kaizen\"}) or vector(0)) == 1)) or ((time() - min_over_time(timestamp(max(up{job=\"kaizen\"}))[7d:1m])) and on() ((max(up{job=\"kaizen\"}) or vector(0)) == 1)) or -(time() - max_over_time(timestamp((max(up{job=\"kaizen\"}) or vector(0)) == 1)[7d:1m])) or vector(-604800)",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 0,
-            "y": 2,
-            "w": 64,
-            "h": 6,
-            "i": 2
-          }
-        },
-        {
-          "id": "Panel_ID3",
-          "type": "metric",
           "title": "Flight tracker",
           "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Down means the public site does not answer with live data.",
           "config": {
@@ -120,15 +72,15 @@
             }
           ],
           "layout": {
-            "x": 64,
+            "x": 0,
             "y": 2,
             "w": 64,
             "h": 6,
-            "i": 3
+            "i": 2
           }
         },
         {
-          "id": "Panel_ID4",
+          "id": "Panel_ID3",
           "type": "metric",
           "title": "Home Assistant",
           "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Up means its container runs.",
@@ -168,15 +120,15 @@
             }
           ],
           "layout": {
-            "x": 128,
+            "x": 64,
             "y": 2,
             "w": 64,
             "h": 6,
-            "i": 4
+            "i": 3
           }
         },
         {
-          "id": "Panel_ID5",
+          "id": "Panel_ID4",
           "type": "metric",
           "title": "DNS and proxy",
           "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). The .internal names: up means both containers run.",
@@ -216,63 +168,15 @@
             }
           ],
           "layout": {
-            "x": 0,
-            "y": 8,
+            "x": 128,
+            "y": 2,
             "w": 64,
             "h": 6,
-            "i": 5
+            "i": 4
           }
         },
         {
-          "id": "Panel_ID6",
-          "type": "metric",
-          "title": "CI runner",
-          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Up means at least one job VM runs (ready ones included).",
-          "config": {
-            "show_legends": false,
-            "decimals": 1,
-            "unit": "seconds",
-            "mappings": [
-              {
-                "type": "lt",
-                "value": "0",
-                "color": "#c62828",
-                "text": ""
-              }
-            ]
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "((time() - max_over_time(timestamp((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) < 1)[7d:1m])) and on() ((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)) or ((time() - min_over_time(timestamp(max(up{job=\"integrations/unix\"}))[7d:1m])) and on() ((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)) or -(time() - max_over_time(timestamp((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)[7d:1m])) or vector(-604800)",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 64,
-            "y": 8,
-            "w": 64,
-            "h": 6,
-            "i": 6
-          }
-        },
-        {
-          "id": "Panel_ID7",
+          "id": "Panel_ID5",
           "type": "metric",
           "title": "Backup",
           "description": "Time since the last good nightly backup; red past 26 h, when the backup alert fires.",
@@ -312,18 +216,18 @@
             }
           ],
           "layout": {
-            "x": 128,
+            "x": 0,
             "y": 8,
             "w": 64,
             "h": 6,
-            "i": 7
+            "i": 5
           }
         },
         {
-          "id": "Panel_ID8",
+          "id": "Panel_ID6",
           "type": "metric",
           "title": "Alerts",
-          "description": "OpenObserve's alert rules firing now, a rule with several firing series counting once. Until the cutover they post only to the Control room's shadow path, which opens no issues.",
+          "description": "OpenObserve's alert rules firing now; a rule with several firing series counts once.",
           "config": {
             "show_legends": false,
             "decimals": 0,
@@ -366,15 +270,15 @@
             }
           ],
           "layout": {
-            "x": 0,
-            "y": 14,
-            "w": 192,
+            "x": 64,
+            "y": 8,
+            "w": 128,
             "h": 6,
-            "i": 8
+            "i": 6
           }
         },
         {
-          "id": "Panel_ID9",
+          "id": "Panel_ID7",
           "type": "markdown",
           "title": "Headroom, with when the disk and backups fill at their 7-day rate",
           "description": "",
@@ -386,18 +290,18 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 20,
+            "y": 14,
             "w": 192,
             "h": 2,
-            "i": 9
+            "i": 7
           },
           "markdownContent": ""
         },
         {
-          "id": "Panel_ID10",
+          "id": "Panel_ID8",
           "type": "metric",
           "title": "CPU",
-          "description": "Share of the CPU in use, CI VMs included; the CPU alert fires past 80% without them.",
+          "description": "Share of the CPU in use; the CPU alert fires past 80%.",
           "config": {
             "show_legends": false,
             "decimals": 1,
@@ -440,14 +344,14 @@
           ],
           "layout": {
             "x": 0,
-            "y": 22,
+            "y": 16,
             "w": 48,
             "h": 12,
-            "i": 10
+            "i": 8
           }
         },
         {
-          "id": "Panel_ID11",
+          "id": "Panel_ID9",
           "type": "metric",
           "title": "Memory",
           "description": "Share of memory in use; the memory alert fires past 90%.",
@@ -493,14 +397,14 @@
           ],
           "layout": {
             "x": 48,
-            "y": 22,
+            "y": 16,
             "w": 48,
             "h": 6,
-            "i": 11
+            "i": 9
           }
         },
         {
-          "id": "Panel_ID12",
+          "id": "Panel_ID10",
           "type": "metric",
           "title": "Swap",
           "description": "Swap in use, holding pages; the swapping alert watches pages going out, not this.",
@@ -538,14 +442,14 @@
           ],
           "layout": {
             "x": 48,
-            "y": 28,
+            "y": 22,
             "w": 48,
             "h": 6,
-            "i": 12
+            "i": 10
           }
         },
         {
-          "id": "Panel_ID13",
+          "id": "Panel_ID11",
           "type": "metric",
           "title": "Disk",
           "description": "Share of the root disk in use; the disk alert fires past 80%.",
@@ -591,14 +495,14 @@
           ],
           "layout": {
             "x": 96,
-            "y": 22,
+            "y": 16,
             "w": 48,
             "h": 6,
-            "i": 13
+            "i": 11
           }
         },
         {
-          "id": "Panel_ID14",
+          "id": "Panel_ID12",
           "type": "metric",
           "title": "Full in",
           "description": "When the root disk fills at its 7-day rate; red under 30 days.",
@@ -646,14 +550,14 @@
           ],
           "layout": {
             "x": 96,
-            "y": 28,
+            "y": 22,
             "w": 48,
             "h": 6,
-            "i": 14
+            "i": 12
           }
         },
         {
-          "id": "Panel_ID15",
+          "id": "Panel_ID13",
           "type": "metric",
           "title": "Backup",
           "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
@@ -699,14 +603,14 @@
           ],
           "layout": {
             "x": 144,
-            "y": 22,
+            "y": 16,
             "w": 48,
             "h": 6,
-            "i": 15
+            "i": 13
           }
         },
         {
-          "id": "Panel_ID16",
+          "id": "Panel_ID14",
           "type": "metric",
           "title": "Full in",
           "description": "When the backup repository reaches the 8 GB cap at its 7-day rate; red under 30 days.",
@@ -754,14 +658,14 @@
           ],
           "layout": {
             "x": 144,
-            "y": 28,
+            "y": 22,
             "w": 48,
             "h": 6,
-            "i": 16
+            "i": 14
           }
         },
         {
-          "id": "Panel_ID17",
+          "id": "Panel_ID15",
           "type": "markdown",
           "title": "Who uses the box, last 24 hours",
           "description": "",
@@ -773,18 +677,18 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 34,
+            "y": 28,
             "w": 192,
             "h": 2,
-            "i": 17
+            "i": 15
           },
           "markdownContent": ""
         },
         {
-          "id": "Panel_ID18",
+          "id": "Panel_ID16",
           "type": "area-stacked",
           "title": "Memory by group",
-          "description": "The stack's top is the host's own figure in use. Kaizen is its Control room; CI VMs its job machines (at most what the containers leave); Monitoring the observability stack; Apps every other container; System the rest.",
+          "description": "The stack's top is the host's own figure in use. Monitoring is the observability stack; Apps every other container; System the rest.",
           "config": {
             "show_legends": true,
             "decimals": 1,
@@ -792,44 +696,6 @@
           },
           "queryType": "promql",
           "queries": [
-            {
-              "query": "(sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"})) or vector(0))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Kaizen"
-              }
-            },
-            {
-              "query": "(((sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)) < (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))) or (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "CI VMs"
-              }
-            },
             {
               "query": "(sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
               "customQuery": true,
@@ -850,7 +716,7 @@
               }
             },
             {
-              "query": "sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"})) or vector(0)) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -869,7 +735,7 @@
               }
             },
             {
-              "query": "clamp_min((max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))) - (((sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)) < (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))) or (max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})))), 0)",
+              "query": "clamp_min(max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})), 0)",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -890,61 +756,23 @@
           ],
           "layout": {
             "x": 0,
-            "y": 36,
+            "y": 30,
             "w": 96,
             "h": 12,
-            "i": 18
+            "i": 16
           }
         },
         {
-          "id": "Panel_ID19",
+          "id": "Panel_ID17",
           "type": "area-stacked",
           "title": "CPU by group, cores",
-          "description": "The stack's top is the host's own figure in use. Kaizen is its Control room; CI VMs its job machines (at most what the containers leave); Monitoring the observability stack; Apps every other container; System the rest.",
+          "description": "The stack's top is the host's own figure in use. Monitoring is the observability stack; Apps every other container; System the rest.",
           "config": {
             "show_legends": true,
             "decimals": 2
           },
           "queryType": "promql",
           "queries": [
-            {
-              "query": "(sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"}[5m]))) or vector(0))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Kaizen"
-              }
-            },
-            {
-              "query": "(((sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)) < (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))) or (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "CI VMs"
-              }
-            },
             {
               "query": "(sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
               "customQuery": true,
@@ -965,7 +793,7 @@
               }
             },
             {
-              "query": "sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"}[5m]))) or vector(0)) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -984,7 +812,7 @@
               }
             },
             {
-              "query": "clamp_min((max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))) - (((sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)) < (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))) or (max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))))), 0)",
+              "query": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))), 0)",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1005,14 +833,14 @@
           ],
           "layout": {
             "x": 96,
-            "y": 36,
+            "y": 30,
             "w": 96,
             "h": 12,
-            "i": 19
+            "i": 17
           }
         },
         {
-          "id": "Panel_ID20",
+          "id": "Panel_ID18",
           "type": "markdown",
           "title": "Errors in the logs",
           "description": "",
@@ -1024,15 +852,15 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 48,
+            "y": 42,
             "w": 192,
             "h": 2,
-            "i": 20
+            "i": 18
           },
           "markdownContent": ""
         },
         {
-          "id": "Panel_ID21",
+          "id": "Panel_ID19",
           "type": "stacked",
           "title": "Error lines per hour, by container",
           "description": "Lines that log an error, a fatal or a Python exception.",
@@ -1086,14 +914,14 @@
           ],
           "layout": {
             "x": 0,
-            "y": 50,
+            "y": 44,
             "w": 96,
             "h": 12,
-            "i": 21
+            "i": 19
           }
         },
         {
-          "id": "Panel_ID22",
+          "id": "Panel_ID20",
           "type": "table",
           "title": "Most repeated error lines, last hour",
           "description": "Numbers and ids show as #, so repeats of one error count together.",
@@ -1152,187 +980,10 @@
           ],
           "layout": {
             "x": 96,
-            "y": 50,
+            "y": 44,
             "w": 96,
             "h": 12,
-            "i": 22
-          }
-        },
-        {
-          "id": "Panel_ID23",
-          "type": "markdown",
-          "title": "",
-          "description": "",
-          "config": {
-            "show_legends": true,
-            "decimals": 1
-          },
-          "queryType": "",
-          "queries": [],
-          "layout": {
-            "x": 0,
-            "y": 62,
-            "w": 192,
-            "h": 4,
-            "i": 23
-          },
-          "markdownContent": "**Kaizen** · [open the Control room](http://beelink.tail4f465e.ts.net:8090)"
-        },
-        {
-          "id": "Panel_ID24",
-          "type": "metric",
-          "title": "Working",
-          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"working\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 0,
-            "y": 66,
-            "w": 48,
-            "h": 6,
-            "i": 24
-          }
-        },
-        {
-          "id": "Panel_ID25",
-          "type": "metric",
-          "title": "Waiting",
-          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"waiting_for_machine\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 48,
-            "y": 66,
-            "w": 48,
-            "h": 6,
-            "i": 25
-          }
-        },
-        {
-          "id": "Panel_ID26",
-          "type": "metric",
-          "title": "For you",
-          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"needs_colin\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 96,
-            "y": 66,
-            "w": 48,
-            "h": 6,
-            "i": 26
-          }
-        },
-        {
-          "id": "Panel_ID27",
-          "type": "metric",
-          "title": "Spend",
-          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
-          "config": {
-            "show_legends": false,
-            "decimals": 2,
-            "unit": "currency-dollar"
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(kaizen_agent_cost_usd_today{job=\"kaizen\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 144,
-            "y": 66,
-            "w": 48,
-            "h": 6,
-            "i": 27
+            "i": 20
           }
         }
       ]
@@ -1342,7 +993,7 @@
       "name": "Containers",
       "panels": [
         {
-          "id": "Panel_ID28",
+          "id": "Panel_ID21",
           "type": "line",
           "title": "CPU by container, cores",
           "description": "Each container's CPU use.",
@@ -1377,11 +1028,11 @@
             "y": 0,
             "w": 96,
             "h": 14,
-            "i": 28
+            "i": 21
           }
         },
         {
-          "id": "Panel_ID29",
+          "id": "Panel_ID22",
           "type": "line",
           "title": "Memory by container",
           "description": "Each container's working set, the memory it cannot give back.",
@@ -1417,11 +1068,11 @@
             "y": 0,
             "w": 96,
             "h": 14,
-            "i": 29
+            "i": 22
           }
         },
         {
-          "id": "Panel_ID30",
+          "id": "Panel_ID23",
           "type": "h-bar",
           "title": "Top 10 by CPU now, cores",
           "description": "The busiest containers over the last 5 minutes.",
@@ -1433,7 +1084,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "topk(10, max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))",
+              "query": "topk(10, max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m] @ end())))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1456,12 +1107,12 @@
             "x": 0,
             "y": 14,
             "w": 96,
-            "h": 12,
-            "i": 30
+            "h": 20,
+            "i": 23
           }
         },
         {
-          "id": "Panel_ID31",
+          "id": "Panel_ID24",
           "type": "h-bar",
           "title": "Top 10 by memory now",
           "description": "The containers holding the most memory.",
@@ -1474,7 +1125,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "topk(10, max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
+              "query": "topk(10, max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"} @ end()))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1497,269 +1148,8 @@
             "x": 96,
             "y": 14,
             "w": 96,
-            "h": 12,
-            "i": 31
-          }
-        }
-      ]
-    },
-    {
-      "tabId": "ci-vms",
-      "name": "CI VMs",
-      "panels": [
-        {
-          "id": "Panel_ID32",
-          "type": "metric",
-          "title": "VMs",
-          "description": "Job VMs running now, the ready ones waiting for a job included.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 0,
-            "y": 0,
-            "w": 48,
-            "h": 6,
-            "i": 32
-          }
-        },
-        {
-          "id": "Panel_ID33",
-          "type": "metric",
-          "title": "Busy",
-          "description": "Job VMs running a job now.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(homelab_ci_vms_busy{job=\"integrations/unix\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 48,
-            "y": 0,
-            "w": 48,
-            "h": 6,
-            "i": 33
-          }
-        },
-        {
-          "id": "Panel_ID34",
-          "type": "metric",
-          "title": "Slots",
-          "description": "The most job VMs the supervisor runs at once.",
-          "config": {
-            "show_legends": false,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max(homelab_ci_vm_slots{job=\"integrations/unix\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 96,
-            "y": 0,
-            "w": 48,
-            "h": 6,
-            "i": 34
-          }
-        },
-        {
-          "id": "Panel_ID35",
-          "type": "metric",
-          "title": "Memory",
-          "description": "Memory the job VMs hold now.",
-          "config": {
-            "show_legends": false,
-            "decimals": 1,
-            "unit": "bytes"
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": ""
-              }
-            }
-          ],
-          "layout": {
-            "x": 144,
-            "y": 0,
-            "w": 48,
-            "h": 6,
-            "i": 35
-          }
-        },
-        {
-          "id": "Panel_ID36",
-          "type": "line",
-          "title": "Job VMs running",
-          "description": "VMs running, ready ones included, and those running a job.",
-          "config": {
-            "show_legends": true,
-            "decimals": 0
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Running"
-              }
-            },
-            {
-              "query": "max(homelab_ci_vms_busy{job=\"integrations/unix\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Running a job"
-              }
-            }
-          ],
-          "layout": {
-            "x": 0,
-            "y": 6,
-            "w": 96,
-            "h": 12,
-            "i": 36
-          }
-        },
-        {
-          "id": "Panel_ID37",
-          "type": "area-stacked",
-          "title": "Memory by VM",
-          "description": "Each job VM's memory, by slot.",
-          "config": {
-            "show_legends": true,
-            "decimals": 1,
-            "unit": "bytes"
-          },
-          "queryType": "promql",
-          "queries": [
-            {
-              "query": "max by (id) (container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"})",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "{id}"
-              }
-            }
-          ],
-          "layout": {
-            "x": 96,
-            "y": 6,
-            "w": 96,
-            "h": 12,
-            "i": 37
+            "h": 20,
+            "i": 24
           }
         }
       ]
@@ -1769,7 +1159,7 @@
       "name": "Network",
       "panels": [
         {
-          "id": "Panel_ID38",
+          "id": "Panel_ID25",
           "type": "line",
           "title": "Traffic, bytes a second",
           "description": "The host's wired network and Tailscale, in and out.",
@@ -1824,11 +1214,11 @@
             "y": 0,
             "w": 96,
             "h": 12,
-            "i": 38
+            "i": 25
           }
         },
         {
-          "id": "Panel_ID39",
+          "id": "Panel_ID26",
           "type": "line",
           "title": "Received by container, bytes a second",
           "description": "What each container receives; Traffic shows the host's in and out.",
@@ -1864,11 +1254,11 @@
             "y": 0,
             "w": 96,
             "h": 12,
-            "i": 39
+            "i": 26
           }
         },
         {
-          "id": "Panel_ID40",
+          "id": "Panel_ID27",
           "type": "line",
           "title": "Network checks, a second",
           "description": "Retried connection attempts, resets sent and connections dropped while queued: each climbs when something cannot connect.",
@@ -1941,7 +1331,7 @@
             "y": 12,
             "w": 192,
             "h": 10,
-            "i": 40
+            "i": 27
           }
         }
       ]
@@ -1951,7 +1341,7 @@
       "name": "Backups",
       "panels": [
         {
-          "id": "Panel_ID41",
+          "id": "Panel_ID28",
           "type": "metric",
           "title": "Last ok",
           "description": "Time since the last good nightly backup; red past 26 h.",
@@ -1995,11 +1385,11 @@
             "y": 0,
             "w": 48,
             "h": 6,
-            "i": 41
+            "i": 28
           }
         },
         {
-          "id": "Panel_ID42",
+          "id": "Panel_ID29",
           "type": "metric",
           "title": "Verified",
           "description": "Time since restic last read back every byte (weekly); red past 8 days.",
@@ -2043,11 +1433,11 @@
             "y": 0,
             "w": 48,
             "h": 6,
-            "i": 42
+            "i": 29
           }
         },
         {
-          "id": "Panel_ID43",
+          "id": "Panel_ID30",
           "type": "metric",
           "title": "Failed",
           "description": "Time since a run last failed.",
@@ -2091,11 +1481,11 @@
             "y": 0,
             "w": 48,
             "h": 6,
-            "i": 43
+            "i": 30
           }
         },
         {
-          "id": "Panel_ID44",
+          "id": "Panel_ID31",
           "type": "metric",
           "title": "Stored",
           "description": "The repository's size; uploads stop at 8 GB.",
@@ -2131,11 +1521,11 @@
             "y": 0,
             "w": 48,
             "h": 6,
-            "i": 44
+            "i": 31
           }
         },
         {
-          "id": "Panel_ID45",
+          "id": "Panel_ID32",
           "type": "line",
           "title": "Stored over time",
           "description": "The repository's size after each good run.",
@@ -2171,11 +1561,11 @@
             "y": 6,
             "w": 96,
             "h": 12,
-            "i": 45
+            "i": 32
           }
         },
         {
-          "id": "Panel_ID46",
+          "id": "Panel_ID33",
           "type": "table",
           "title": "Runs",
           "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, how long it took and whether it read every byte back.",
@@ -2236,7 +1626,7 @@
             "y": 6,
             "w": 96,
             "h": 12,
-            "i": 46
+            "i": 33
           }
         }
       ]
@@ -2246,7 +1636,7 @@
       "name": "Alerts",
       "panels": [
         {
-          "id": "Panel_ID47",
+          "id": "Panel_ID34",
           "type": "table",
           "title": "Alerts that fired",
           "description": "Each rule that fired in the time range, and when; still firing if its last time is this minute.",
@@ -2307,11 +1697,11 @@
             "y": 0,
             "w": 120,
             "h": 14,
-            "i": 47
+            "i": 34
           }
         },
         {
-          "id": "Panel_ID48",
+          "id": "Panel_ID35",
           "type": "stacked",
           "title": "Rules firing, by hour",
           "description": "Minutes each rule fired in each hour.",
@@ -2368,7 +1758,7 @@
             "y": 0,
             "w": 72,
             "h": 14,
-            "i": 48
+            "i": 35
           }
         }
       ]

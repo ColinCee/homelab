@@ -394,7 +394,7 @@ def test_a_changed_dashboard_is_updated_and_a_removed_one_deleted() -> None:
     by_hand = {"dashboard_id": "9", "folder_id": "default", "title": "By hand", "hash": "1"}
     fake.dashboards["9"] = by_hand
     changed = copy.deepcopy(IN_GIT)
-    changed["Home"]["tabs"][0]["panels"][1]["title"] = "Kaizen's Control room"
+    changed["Home"]["tabs"][0]["panels"][1]["title"] = "Flight tracker site"
     assert apply.apply_dashboards(fake, changed) == ["updated dashboard Home"]
     assert apply.apply_dashboards(fake, {}) == ["deleted dashboard Home"]
     assert [d["title"] for d in fake.dashboards.values()] == ["By hand"]

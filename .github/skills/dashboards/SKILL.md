@@ -15,16 +15,14 @@ Open it at `http://openobserve.internal` (save `http://beelink.tail4f465e.ts.net
 The top answers "is anything wrong, and where?"; detail sits in the other tabs, which load only
 when opened. The Home tab, from the top:
 
-1. Is anything wrong: a tile per service (Control room, Flight tracker, Home Assistant, DNS and
-   proxy, CI runner, Backup, Alerts), red when down, showing how long it has been up or down.
+1. Is anything wrong: a tile per service (Flight tracker, Home Assistant, DNS and proxy, Backup,
+   Alerts), red when down, showing how long it has been up or down.
 2. Headroom: CPU, memory, swap, disk and backup storage now with a trend over the time range, and
    when the disk and the backup storage fill at their 7-day rate.
-3. Who uses the box: memory and CPU over 24 h, stacked by group: Kaizen, CI VMs, Monitoring, Apps
-   and System.
+3. Who uses the box: memory and CPU over 24 h, stacked by group: Monitoring, Apps and System.
 4. Errors in the logs: error lines per hour by container, and the most repeated in the last hour.
-5. Kaizen: one line of numbers and a link to the Control room, which holds its charts.
 
-The other tabs: Containers, CI VMs, Network, Backups, Alerts. Put a new panel in its section or
+The other tabs: Containers, Network, Backups, Alerts. Put a new panel in its section or
 tab, or add a tab, rather than another dashboard. Group numbers that belong together under a
 heading, and size each panel to its content, with no empty space around its values.
 
@@ -43,6 +41,8 @@ Every number must read whole at 1200 px wide:
   `max by (name)` for container metrics, as `docs/observability.md` says.
 - Every PromQL panel runs a range query over the dashboard's time: OpenObserve drops a query's
   `query_type`. A tile shows the last value; a `sparkline` adds the trend.
+- A chart of "now", like a top 10, pins its query with `@ end()`; otherwise each step picks its own
+  top 10 and the chart shows them all.
 - Red on a tile is a value mapping (`lt` or `gt`) with a colour and no text.
 - Logs are the `containers` stream. Alloy resends a container's old lines when it restarts, so
   count `DISTINCT _timestamp, body`; filter with `match_all` words (the text index) before a
