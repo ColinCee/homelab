@@ -40,9 +40,6 @@ services:
       - prometheus-data:/prometheus
     networks:
       - default
-      - public-stats
-      # The Kaizen Control room reads alert charts here (stacks/kaizen-control-room).
-      - kaizen-prometheus
 
   loki:
     image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
@@ -147,6 +144,8 @@ services:
     environment:
       OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
       KAIZEN_ALERT_SECRET: ${KAIZEN_ALERT_SECRET:?}
+      # The Control room's outage goes straight to Discord (alerts.toml, routes).
+      DISCORD_PRIVATE_WEBHOOK_URL: ${DISCORD_PRIVATE_WEBHOOK_URL:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -248,6 +247,8 @@ services:
       FLIGHTS_URL: https://api.colincheung.dev/aircraft
       PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
       PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
+      PROMETHEUS_URL: http://openobserve-gateway:5080/api/default/prometheus
+      PROMETHEUS_LOGIN: stats@homelab.internal:${OPENOBSERVE_STATS_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -261,12 +262,12 @@ services:
       - /tmp
     volumes:
       - ./public_stats.py:/public_stats.py:ro
-    # Its own network, shared with Prometheus only: it reaches Prometheus and,
-    # outbound, the internet, but not Grafana, Loki or Alloy.
+    # Its own network, shared with OpenObserve's gateway only, where its login reads one query; outbound, the
+    # internet.
     networks:
       - public-stats
     depends_on:
-      - prometheus
+      - openobserve-gateway
 
 networks:
   docker-api:

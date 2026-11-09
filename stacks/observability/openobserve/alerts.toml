@@ -1,5 +1,5 @@
-# OpenObserve's alert rules, one per Grafana rule in ../provisioning/alerting/rules.yaml (same key and title), which
-# stays the live alerter until the cutover. apply.py makes OpenObserve match this file on each deploy.
+# OpenObserve's alert rules, one per Grafana rule in ../provisioning/alerting/rules.yaml (same key and title, paused
+# there). apply.py makes OpenObserve match this file on each deploy.
 #
 # A rule fires when its `promql` is `operator` `threshold` for `for`, and holds through a dip shorter than
 # `keep_firing`. A per-series rule names the labels that tell its series apart in `series`: one alert, and one
@@ -9,9 +9,9 @@
 # `format` shows the value as Grafana's `value` annotation does: a Python `{:spec}` with text around it, `bytes`, or
 # `down/live` (0, else not); Kaizen applies it (auto-kaizen src/kaizen/board/alert_source.py, `shown`).
 
-# Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
-# rule to its route's destinations instead, and needs DISCORD_PRIVATE_WEBHOOK_URL passed to openobserve-apply.
-live = false
+# Each rule goes to its route's destinations. `false` sends every rule to `shadow` alone instead, which Kaizen logs
+# without opening issues.
+live = true
 
 # Where each route goes when live.
 [routes]

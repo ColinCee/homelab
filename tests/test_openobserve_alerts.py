@@ -150,8 +150,8 @@ def by_title(fake: FakeOpenObserve) -> dict[str, dict]:
     return {a["context_attributes"]["title"]: a for a in fake.alerts.values()}
 
 
-def test_until_the_cutover_every_rule_goes_only_to_the_shadow_path() -> None:
-    fake, changes = applied(CONFIG)
+def test_not_live_every_rule_goes_only_to_the_shadow_path() -> None:
+    fake, changes = applied(CONFIG | {"live": False})
     assert len(fake.alerts) == len(RULES) and "created folder homelab" in changes
     assert {d for a in fake.alerts.values() for d in a["destinations"]} == {"homelab-shadow"}
     assert set(fake.destinations) == {"homelab-shadow"}
@@ -200,7 +200,7 @@ def test_a_listed_alert_that_names_no_folder_is_not_deleted() -> None:
 
 
 def test_live_rules_go_to_their_routes_and_shadow_is_removed() -> None:
-    fake, _ = applied(CONFIG)
+    fake, _ = applied(CONFIG | {"live": False})
     live = copy.deepcopy(CONFIG) | {"live": True}
     changes = applied(live, fake)[1]
     assert "deleted destination homelab-shadow" in changes

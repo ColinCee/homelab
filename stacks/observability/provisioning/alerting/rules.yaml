@@ -1,6 +1,7 @@
 apiVersion: 1
 # A rule's `closes` annotation (`event` or `good-news`) tells Auto Kaizen how its
 # issue closes: see its docs/alerts.md, "When an alert closes".
+# Every rule is paused: OpenObserve alerts from ../../openobserve/alerts.toml, and this file goes with Grafana.
 groups:
   - orgId: 1
     name: Infrastructure
@@ -10,6 +11,7 @@ groups:
     rules:
       - uid: high-cpu
         title: Beelink CPU maxed out
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -67,6 +69,7 @@ groups:
 
       - uid: high-ram
         title: Beelink running out of memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -113,6 +116,7 @@ groups:
 
       - uid: beelink-swapping
         title: Beelink swapping, slowing Kaizen's VMs
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -160,6 +164,7 @@ groups:
 
       - uid: ci-vm-out-of-memory
         title: A Kaizen job ran out of memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -206,6 +211,7 @@ groups:
 
       - uid: ci-vms-near-full
         title: Kaizen jobs need nearly all their VM's memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -258,6 +264,7 @@ groups:
 
       - uid: ci-supervisor-poll-failing
         title: The CI supervisor's poll keeps failing
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -314,6 +321,7 @@ groups:
 
       - uid: beelink-disk-stalled
         title: Beelink disk too slow for Kaizen's VMs
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -364,6 +372,7 @@ groups:
 
       - uid: high-disk
         title: Beelink disk filling up
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -411,6 +420,7 @@ groups:
 
       - uid: backup-missed
         title: Nightly backup didn't run
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -475,6 +485,7 @@ groups:
 
       - uid: backup-storage-high
         title: Backup storage nearly full
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -517,6 +528,7 @@ groups:
 
       - uid: flight-tracker-down
         title: Flight Tracker site down
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -559,6 +571,7 @@ groups:
 
       - uid: new-container
         title: Unknown container started
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -609,6 +622,7 @@ groups:
 
       - uid: ssd-worn
         title: Beelink SSD wearing out
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -655,6 +669,7 @@ groups:
 
       - uid: ssd-wear-stale
         title: SSD wear check stopped
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -699,6 +714,7 @@ groups:
 
       - uid: pc-backup-stale
         title: PC backup stopped arriving
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -749,6 +765,7 @@ groups:
     rules:
       - uid: kaizen-machine-wait
         title: Kaizen tasks stuck waiting for a test VM
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -906,6 +923,7 @@ groups:
 
       - uid: kaizen-not-merging
         title: Kaizen hasn't merged anything in 3 hours
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -951,6 +969,7 @@ groups:
 
       - uid: kaizen-watcher-stopped
         title: Kaizen's Watcher stopped running
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1043,6 +1062,7 @@ groups:
 
       - uid: kaizen-github-app-calls
         title: Kaizen's GitHub App running out of calls
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1119,6 +1139,7 @@ groups:
 
       - uid: kaizen-control-room-down
         title: Kaizen Control room unreachable
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1168,6 +1189,7 @@ groups:
     rules:
       - uid: kaizen-workflow-key-calls
         title: Kaizen's shared workflow key running out of calls
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1235,6 +1257,7 @@ groups:
 
       - uid: kaizen-workflow-failures
         title: Kaizen workflows failing for one cause
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1277,6 +1300,7 @@ groups:
 
       - uid: kaizen-goal-owner-reruns
         title: A Kaizen goal owner reruns with nothing new
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1320,6 +1344,7 @@ groups:
 
       - uid: kaizen-stopped-alike
         title: Kaizen tasks stopped for one reason
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1363,6 +1388,7 @@ groups:
 
       - uid: kaizen-silent-tasks
         title: Kaizen tasks left with nothing moving them
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1406,6 +1432,7 @@ groups:
 
       - uid: kaizen-agent-cost
         title: Kaizen's agents spending fast
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -1451,6 +1478,7 @@ groups:
 
       - uid: kaizen-signs-stale
         title: Kaizen's waste checks stopped
+        isPaused: true
         condition: C
         data:
           - refId: A

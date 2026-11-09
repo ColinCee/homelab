@@ -49,15 +49,16 @@ jobs:
         env:
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET }}
           KEY: test-${{ github.run_id }}
-        # The same route and payload as Grafana's kaizen-alert receiver: it opens
-        # an `alert` issue in Auto Kaizen, whose responder answers "test".
+        # The same route and body as OpenObserve's alerts (stacks/observability/openobserve/apply.py,
+        # template_body): it opens an `alert` issue in Auto Kaizen, whose responder answers "test".
         # The secret reaches curl as a config on stdin, never as an argument.
         run: |
           send() {
             body=$(jq -n --arg s "$1" --arg k "$KEY" \
-              '{status: $s, key: $k, title: "Test alert", text: "Server health test_alert: a delivery check, nothing is wrong."}')
+              '{source: "openobserve", status: $s, title: "Test alert", labels: {key: $k}, route: "kaizen",
+                text: "Server health test_alert: a delivery check, nothing is wrong.", post: {name: "Test alert"}, extra: "{}"}')
             printf 'header = "Authorization: Bearer %s"\n' "$KAIZEN_ALERT_SECRET" |
-              curl -sS -K - -o /dev/null -w "Kaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert \
+              curl -sS -K - -o /dev/null -w "Kaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert/openobserve \
               -H "Content-Type: application/json" --data-binary "$body"
           }
           send firing
@@ -69,6 +70,9 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           MAINTENANCE: ${{ inputs.maintenance }}
+          # Firing alerts and metrics through OpenObserve's read-only gateway, with the agents' login.
+          OPENOBSERVE_URL: http://100.100.146.119:5081
+          OPENOBSERVE_LOGIN: agents@homelab.internal:${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
         run: |
           if [[ "$MAINTENANCE" == "true" ]] || { [[ "$EVENT" == "schedule" ]] && (( 10#$(date -u +%d) <= 7 )); }; then
             scripts/server-health.sh --maintenance

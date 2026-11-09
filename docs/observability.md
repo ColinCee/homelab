@@ -52,10 +52,6 @@ Add panels to it rather than adding dashboards. From the top:
 - **Collapsed sections**, which load only when opened: alerts, containers,
   CI VMs, network and backups over time, with their logs
 
-The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
-To remove a rule, also list its uid under `deleteRules` in `rules.yaml` (a contact
-point: `deleteContactPoints` in `contactpoints.yaml`): Grafana keeps one that is only
-deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -144,49 +140,31 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 ## Alerts
 
-Grafana alerting is provisioned from
-`stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
-point: every firing and resolved alert, except the few below, goes to the Kaizen Control room's
-`/alert`, which opens an `alert` issue per alert series in the private
-auto-kaizen repo and closes it once fixed (its `docs/alerts.md`). Each new one starts Auto
-Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
-restart one broken container, and opens a Kaizen task for the lasting fix (or to
-tune a noisy rule). The Control room keeps one post per alert in Discord's
-#alerts forum through the auto-kaizen bot (`KAIZEN_DISCORD_TOKEN` secret): its
-state tags, what the responder found, and a line per event; it mentions Colin
-only when he must act. The repo is public, so `Remediate` logs states and counts
-only; read container logs in Grafana. Grafana and the Control room share the
-`KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
-`test_alert`.
+OpenObserve alerts from [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), which
+`openobserve-apply` applies on deploy (deleting what the file dropped). Each rule carries its own
+description and the action to take, which reach the alert's post; read the rule, not a list here. Every
+firing and clear goes to the Kaizen Control room's `/alert/openobserve`, which opens an `alert` issue per
+alert series in the private auto-kaizen repo and closes it once fixed (its `docs/alerts.md`). Each new one
+starts Auto Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may restart one broken
+container, and opens a Kaizen task for the lasting fix (or to tune a noisy rule). The Control room keeps one
+post per alert in Discord's #alerts forum through the auto-kaizen bot (`KAIZEN_DISCORD_TOKEN` secret),
+mentioning Colin only when he must act. The repo is public, so `Remediate` logs states and counts only.
+OpenObserve and the Control room share the `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server
+health → `test_alert`.
+
+OpenObserve sends nothing for a query that fails, and a per-series rule sends no clear, so the Control room
+reads its alert list each minute through the gateway: a failed query becomes "Monitoring error", an
+unreadable list "OpenObserve unreachable", and a series whose minute repeats stop counts as cleared.
+OpenObserve keeps metric names in lower case.
 
 #uptime (the `Discord Private` webhook) holds only what must arrive while the Beelink or the
-Control room may be down: Kaizen Control room unreachable and Healthchecks.io's Beelink up/down.
-A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
-starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
-Every other alert, no-data and evaluation errors included, gets only the Control room's one
-post. A deploy that changes these files recreates Grafana,
-which reloads them; they are not polled.
-
-Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a
-host-only URL in the alert embed with HTTP 400.
-
-Each rule in [`rules.yaml`](../stacks/observability/provisioning/alerting/rules.yaml) carries its
-own description and the action to take, which reach the alert's post; read the rule, not a list here.
+Control room may be down: Kaizen Control room unreachable, repeated every 30 minutes, and
+Healthchecks.io's Beelink up/down. A `route: colin` rule (only Colin can act: Unknown container started,
+Beelink SSD wearing out) starts no responder; its #alerts post asks him its `needs` field, mentioning him once.
 Rules on the CI VMs (swapping, slow disk, out of memory, stuck waiting) point at the ci-runner
-runbook's "Why a job waits".
+runbook's "Why a job waits". A resolved message describes an ended alert, not proof of recovery.
 
-Host RAM uses `node_memory_MemAvailable_bytes`, not `node_memory_AvailableBytes`. Check the rule's
-query when a dashboard has data but no alert.
-
-OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
-applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
-(`live`). It keeps metric names in lower case; a per-series alert's stopped firings mean cleared.
-
-The #uptime webhook and the Control room's `/alert` both use the provisioned
-`homelab-discord` notification template.
-No-data and evaluation errors are separate alerts, grouped by rule;
-they mean monitoring is unavailable, not that a threshold was crossed.
-A resolved message describes an ended alert, not proof of recovery.
+Grafana's rules in `provisioning/alerting/` are paused, and go with Grafana.
 
 ## Common debugging path
 

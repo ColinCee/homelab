@@ -43,8 +43,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           KAIZEN_APP_ID: ${{ vars.KAIZEN_APP_ID }}
           KAIZEN_APP_KEY: ${{ secrets.KAIZEN_APP_KEY }}
-          # Shared by Grafana and the Kaizen Control room's /alert, which refuses the "unset" placeholder:
-          # until the secret is set, alerts reach Discord only.
+          # Shared by OpenObserve and the Kaizen Control room's /alert paths, which refuse the "unset" placeholder.
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
           # The auto-kaizen Discord bot's token, for the #alerts forum; "unset" keeps the Control room quiet.
           KAIZEN_DISCORD_TOKEN: ${{ secrets.KAIZEN_DISCORD_TOKEN || 'unset' }}

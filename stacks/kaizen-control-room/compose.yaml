@@ -25,13 +25,12 @@ services:
       KAIZEN_DISCORD_TOKEN_FILE: /run/secrets/kaizen_discord_token
       KAIZEN_ALERTS_FORUM: "1567861139142877295"
       KAIZEN_DISCORD_COLIN: "124131392207454208"
-      # The rules firing now, read each minute to find a lost resolve (auto-kaizen src/kaizen/board/alert_source.py).
-      KAIZEN_ALERTS_FIRING_URL: http://100.100.146.119:3001/api/prometheus/grafana/api/v1/alerts
-      # Number alerts' charts, from Prometheus over the network below (auto-kaizen src/kaizen/discord/chart.py).
-      KAIZEN_PROMETHEUS: http://prometheus:9090
-      # OpenObserve through its read-only gateway, over the network below: its alert list and a rule's extra numbers
-      # (auto-kaizen src/kaizen/board/alert_source.py; the shadow's until the cutover).
+      # OpenObserve through its read-only gateway, over the network below: its alert list each minute, to find a lost
+      # resolve and a failed query (auto-kaizen src/kaizen/board/alert_source.py), and its Prometheus API for number
+      # alerts' charts and extra numbers (src/kaizen/discord/chart.py).
       KAIZEN_OPENOBSERVE: http://openobserve-gateway:5080
+      KAIZEN_ALERTS_FIRING_URL: http://openobserve-gateway:5080/api/v2/default/alerts
+      KAIZEN_PROMETHEUS: http://openobserve-gateway:5080/api/default/prometheus
       KAIZEN_OPENOBSERVE_LOGIN_FILE: /run/secrets/kaizen_openobserve_login
     secrets:
       - kaizen_app_key
@@ -43,7 +42,7 @@ services:
       - default
       - kaizen-prometheus
 
-# Shared with the observability stack's Prometheus, OpenObserve and its gateway, which join it. Made here, as this
+# Shared with the observability stack's OpenObserve and its gateway, which join it. Made here, as this
 # stack deploys first.
 networks:
   kaizen-prometheus:
