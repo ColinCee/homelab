@@ -52,8 +52,9 @@ Add panels to it rather than adding dashboards. From the top:
   CI VMs, network and backups over time, with their logs
 
 The alert rules live in Grafana's "Alert rules" folder, which holds no dashboards.
-To remove a rule, also list its uid under `deleteRules` in `rules.yaml`: Grafana keeps
-a rule that is only deleted from the file.
+To remove a rule, also list its uid under `deleteRules` in `rules.yaml` (a contact
+point: `deleteContactPoints` in `contactpoints.yaml`): Grafana keeps one that is only
+deleted from the file.
 Grafana gives a top-level provisioned dashboard no viewer access, so the
 deploy workflow grants the Viewer role view access to Home after each deploy of
 the observability stack.
@@ -157,16 +158,13 @@ only; read container logs in Grafana. Grafana and the Control room share the
 `KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
 `test_alert`.
 
-The Control room cannot post its own outage, so Kaizen Control room unreachable also goes
-straight to the `Discord Private` webhook (Discord's #uptime channel), as does
-Healthchecks.io's Beelink up/down. A rule labelled
-`route: colin` (one only Colin can act on: Unknown container started, Beelink SSD wearing
-out) goes only to #uptime, with no Kaizen issue. Every other alert,
-no-data and evaluation-error alerts included, gets only the Control room's one post. A failed
-deploy stops Auto Kaizen.
-After deploying alerting file changes, reload them with Grafana's authenticated
-`POST /api/admin/provisioning/alerting/reload` API; unlike dashboards, these files
-are not polled. A Grafana-only restart also reloads them.
+#uptime (the `Discord Private` webhook) holds only what must arrive while the Beelink or the
+Control room may be down: Kaizen Control room unreachable and Healthchecks.io's Beelink up/down.
+A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
+starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
+Every other alert, no-data and evaluation errors included, gets only the Control room's one
+post. A failed deploy stops Auto Kaizen. A deploy that changes these files recreates Grafana,
+which reloads them; they are not polled.
 
 Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
 hostname. Discord validates the URL in Grafana's alert embed and rejects

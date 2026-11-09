@@ -593,6 +593,8 @@ groups:
           measure: "Container"
           value: "{{ $labels.name }}"
           description: "Container {{ $labels.name }} has run on the Beelink for 15 minutes and was not seen in the week before."
+          # route: colin alerts ask Colin this in their #alerts post (a few words).
+          needs: "Is {{ $labels.name }} yours?"
           action: >-
             Expected if you just added a stack or ran one by hand. Otherwise check
             `docker ps -a --filter name={{ $labels.name }}` and `docker inspect` its image and command.
@@ -638,6 +640,7 @@ groups:
           chart_line: "80"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}%{{ end }}"
           description: "The SSD reports over 80% of its rated write endurance used; past 100% it may start failing."
+          needs: "Order a replacement SSD"
           action: >-
             Order a replacement SSD and plan the move. To see how fast it wears, chart
             `homelab_ssd_written_bytes_total` in Grafana.
