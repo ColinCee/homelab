@@ -2,8 +2,7 @@
 
 Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
 provisioning under `stacks/observability/` own exact settings and retention.
-Alloy collects both logs and metrics to avoid separate collectors. Tracing and
-multi-tenant metrics infrastructure are unnecessary for this single host.
+Alloy collects both logs and metrics to avoid separate collectors.
 OpenObserve is to replace Grafana, Prometheus and Loki
 ([ADR 0001](adr/0001-openobserve.md)).
 
@@ -28,7 +27,8 @@ What watches what:
 | **Grafana** | Dashboards, Explore, and alert routing |
 | **Prometheus** | Metrics storage for host, containers, CI VMs, Auto Kaizen's Control room and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
-| **Alloy** | Scrapes metrics and ships Docker logs into Prometheus/Loki |
+| **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
+| **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
