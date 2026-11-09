@@ -1995,6 +1995,24 @@ def test_the_light_standby_gives_its_memory_to_a_build_and_never_boots_while_one
     assert started == []  # nor another light standby in the free light slot
 
 
+def test_three_idle_light_standbys_give_their_memory_to_a_build_waiting_for_it(
+    host, monkeypatch
+) -> None:
+    queue, started, _ = host
+    monkeypatch.setattr(sup, "standby_count", lambda: 0)
+    stopped: list[int] = []
+    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(run.slot))
+    state = sup.State(slots=2, light_slots=3, last_light_repo="o/ok")
+    for slot in (2, 3, 4):
+        state.launches[slot] = sup.Launch(
+            slot, "o/ok", slot, f"fc-{slot}", 0.0, None, True, label=sup.LIGHT_LABEL
+        )  # type: ignore[arg-type]
+    queue(jobs=1, free_mib=1024)  # a free build slot, but the build needs the standbys' memory
+    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
+    assert stopped == [2, 3, 4], stopped
+    assert started == []  # no standby boots in their place while the build waits
+
+
 def test_the_last_light_jobs_repo_is_kept_and_polled_every_time(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
     monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
