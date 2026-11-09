@@ -23,7 +23,7 @@ needs, and a light VM never takes a build job. The light standby also takes smal
 GitHub can still hand a job without an `fc-cache-` label to a VM booted with one when both are queued in the same
 repo; that job then starts with the named repo's disk.
 
-The VM is Ubuntu 24.04 with the GitHub runner and these already on the job's `PATH`, so a job needs no setup
+The VM is Ubuntu 26.04 with the GitHub runner and these already on the job's `PATH`, so a job needs no setup
 actions: git, build tools, the system `python3`, `python` (uv's, `PYTHON_VERSION`), Node 24 LTS, uv, Python 3.15,
 JDK 25 (`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, `gh`, gitleaks, shellcheck, `file`, `bwrap`, socat, passwordless
 `sudo`, and Docker with buildx and compose (the engine starts on a job's first `docker` call; no sudo needed).
