@@ -63,3 +63,9 @@ def test_annotations_name_only_their_rules_queries() -> None:
         for text in rule["annotations"].values():
             for name in re.findall(r"\$values\.(\w+)", text):
                 assert name in refs, f"{rule['uid']}: no query {name}"
+
+
+def test_a_rules_closes_kind_is_one_kaizen_reads() -> None:
+    # auto-kaizen src/kaizen/board/alert.py: anything else counts as a state rule.
+    kinds = {r["annotations"]["closes"] for r in RULES if "closes" in r["annotations"]}
+    assert kinds <= {"event", "good-news"}

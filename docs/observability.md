@@ -146,8 +146,8 @@ max by (name) (container_last_seen{job="docker", name!=""})
 Grafana alerting is provisioned from
 `stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
 point: every firing and resolved alert, except the few below, goes to the Kaizen Control room's
-`/alert`, which opens (or, for a repeat, comments on) an `alert` issue in the
-private auto-kaizen repo and closes it on resolve. Each new one starts Auto
+`/alert`, which opens an `alert` issue per alert series in the private
+auto-kaizen repo and closes it once fixed (its `docs/alerts.md`). Each new one starts Auto
 Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
 restart one broken container, and opens a Kaizen task for the lasting fix (or to
 tune a noisy rule). The Control room keeps one post per alert in Discord's
@@ -184,7 +184,7 @@ per-series alert's firing each minute without a resolve, so stopped firings mean
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
 `homelab-discord` notification template.
-No-data and evaluation errors are separate alerts, grouped by affected rule;
+No-data and evaluation errors are separate alerts, grouped by rule;
 they mean monitoring is unavailable, not that a threshold was crossed.
 A resolved message describes an ended alert, not proof of recovery.
 
