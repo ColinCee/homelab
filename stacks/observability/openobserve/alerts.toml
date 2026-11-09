@@ -5,7 +5,7 @@
 # `keep_firing`. A per-series rule names the labels that tell its series apart in `series`: one alert, and one
 # Kaizen issue, per series. A `no_data` query fires the rule when the metric is gone, as Grafana's NoData did,
 # with the value -1. `extra` holds named queries the Control room runs for the post's numbers.
-# Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`) are those Kaizen reads from Grafana's rules.
+# Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`, `needs`) are those Kaizen reads from Grafana's rules.
 
 # Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
 # rule to its route's destinations instead.
@@ -15,7 +15,7 @@ live = false
 [routes]
 kaizen = ["kaizen"]
 factory = ["kaizen"]
-colin = ["discord"]
+colin = ["kaizen"]
 # The Control room posts every other alert, so its own outage also goes straight to Discord.
 uptime = ["discord", "kaizen"]
 
@@ -23,7 +23,6 @@ uptime = ["discord", "kaizen"]
 # message waits for the repeat to end, so Discord's is 30 minutes.
 [repeat]
 kaizen = 0
-colin = 30
 uptime = 30
 
 # Destinations: `${NAME}` is read from the environment, and `body` is the template, `kaizen` (Kaizen's /alert body)
@@ -292,6 +291,7 @@ unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}
 operator = ">"
 threshold = 0
 for = "15m"
+needs = "Is this container yours?"
 measure = "Container"
 description = "This container has run on the Beelink for 15 minutes and was not seen in the week before."
 action = '''
@@ -306,6 +306,7 @@ promql = "max(homelab_ssd_percentage_used)"
 operator = ">"
 threshold = 80
 for = "0m"
+needs = "Order a replacement SSD"
 measure = "Endurance used"
 trigger = "over 80%"
 chart = "max(homelab_ssd_percentage_used)"

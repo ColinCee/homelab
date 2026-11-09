@@ -163,7 +163,7 @@ Control room may be down: Kaizen Control room unreachable and Healthchecks.io's 
 A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
 starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
 Every other alert, no-data and evaluation errors included, gets only the Control room's one
-post. A failed deploy stops Auto Kaizen. A deploy that changes these files recreates Grafana,
+post. A deploy that changes these files recreates Grafana,
 which reloads them; they are not polled.
 
 Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a
@@ -175,12 +175,12 @@ Rules on the CI VMs (swapping, slow disk, out of memory, stuck waiting) point at
 runbook's "Why a job waits".
 
 Host RAM uses `node_memory_MemAvailable_bytes`, not `node_memory_AvailableBytes`. Check the rule's
-exact query when a dashboard has data and an alert none.
+query when a dashboard has data but no alert.
 
 OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
 applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
 (`live`). It keeps metric names in lower case, selects no series by a label it lacks, and repeats a
-per-series alert's firing each minute, never its resolve: the Control room must take stopped firings as cleared.
+per-series alert's firing each minute without a resolve, so stopped firings mean cleared.
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
 `homelab-discord` notification template.

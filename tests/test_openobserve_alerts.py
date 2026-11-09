@@ -42,6 +42,7 @@ def test_every_grafana_rule_has_one_with_its_title_route_and_closes() -> None:
         # Grafana's no-data alert; the backup's size is a new metric, missing when the backup stops.
         silent = grafana["noDataState"] == "OK" and uid != "backup-storage-high"
         assert ("no_data" not in rule) == silent, uid
+        assert ("needs" in rule) == ("needs" in grafana["annotations"]), uid
         assert rule["for"] in (grafana["for"], "0m" if grafana["for"] == "0s" else None), uid
 
 
@@ -191,7 +192,7 @@ def test_live_rules_go_to_their_routes_and_shadow_is_removed() -> None:
     changes = applied(live, fake)[1]
     assert "deleted destination homelab-shadow" in changes
     alerts = by_title(fake)
-    assert alerts["Beelink SSD wearing out"]["destinations"] == ["homelab-discord"]
+    assert alerts["Beelink SSD wearing out"]["destinations"] == ["homelab-kaizen"]
     assert alerts["Kaizen Control room unreachable"]["destinations"] == [
         "homelab-discord",
         "homelab-kaizen",
@@ -238,6 +239,7 @@ def test_a_per_series_alert_sends_its_labels_and_kaizens_post_fields() -> None:
         "chart": "",
         "chart_line": "0",
         "closes": "event",
+        "needs": "",
     }
     assert body["status"] == "firing" and body["route"] == "kaizen"
 
