@@ -15,7 +15,6 @@
 
 :{$GATEWAY_PORT:5080} {
 	map {header.Authorization} {reader} {
-		"Basic {$KAIZEN_AUTH}" kaizen
 		"Basic {$STATS_AUTH}" stats
 		"Basic {$AGENTS_AUTH}" agents
 		default none
@@ -25,13 +24,13 @@
 	# so `/proxy/default/https:/x/../../api/...` would pass for the query and reach OpenObserve's URL fetcher.
 	# Public stats reads one query, as it did from Prometheus.
 	@query {
-		vars {reader} stats kaizen agents
+		vars {reader} stats agents
 		method GET
 		expression `{http.request.uri.path} == "/api/default/prometheus/api/v1/query"`
 	}
-	# The Control room's charts and alert list; server-health's and agents' too.
-	@kaizen {
-		vars {reader} kaizen agents
+	# Charts and the alert list, for server-health, the heartbeat and agents.
+	@alerts {
+		vars {reader} agents
 		method GET
 		expression `{http.request.uri.path} in ["/api/default/prometheus/api/v1/query_range", "/api/v2/default/alerts"]`
 	}
@@ -44,7 +43,7 @@
 	handle @query {
 		import openobserve
 	}
-	handle @kaizen {
+	handle @alerts {
 		import openobserve
 	}
 	handle @agents {

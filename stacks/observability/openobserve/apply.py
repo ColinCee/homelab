@@ -1,11 +1,12 @@
-"""Makes OpenObserve's alerts, their templates and destinations match alerts.toml.
+"""Runs each rule's query once, then makes OpenObserve's alerts, their templates and destination
+match alerts.toml.
 
     apply.py alerts.toml
 
 Alerts live in the `homelab` folder, named by their key in alerts.toml. One there that the file
 no longer has is deleted, and so are `homelab-` templates and destinations nothing uses. Prints
-each change; exits non-zero on the first refused call. Reads OPENOBSERVE_URL, OPENOBSERVE_USER,
-OPENOBSERVE_PASSWORD and the secrets alerts.toml names."""
+each change; exits non-zero on the first refused call or a query that fails. Reads
+OPENOBSERVE_URL, OPENOBSERVE_USER and OPENOBSERVE_PASSWORD."""
 
 import base64
 import json
@@ -15,6 +16,7 @@ import sys
 import time
 import tomllib
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -22,11 +24,16 @@ from typing import Any
 ORG = "default"
 FOLDER = "homelab"
 OWNED = "homelab-"
-# The value a rule's `no_data` query gives when its metric is gone.
+DESTINATION = OWNED + "alertmanager"
+# Alertmanager on the stack's network, the private host OpenObserve allows (ZO_SSRF_ALLOWED_HOSTS).
+ALERTMANAGER = "http://alertmanager:9093/api/v2/alerts"
+# The value a rule's `no_data` query gives when its metric is gone, shown as "no data".
 NO_DATA = -1
-# Fields the Control room reads from a rule, sent as OpenObserve's context attributes: the
-# template's `{name}` placeholders.
-POST = ("route", "measure", "format", "trigger", "chart", "chart_line", "closes", "needs")
+LEVELS = ("now", "week")
+# How long a rule keeps firing after its condition clears, so a dip shorter than this is no clear.
+HOLD = "10m"
+# A rule's fields that reach its post, as context attributes: the template's `{name}`s.
+POST = ("level", "title", "measure", "unit", "harm", "action", "dashboard")
 
 Call = Callable[[str, str, object], Any]
 
@@ -56,47 +63,25 @@ def client(url: str, user: str, password: str) -> Call:
     return call
 
 
-def seconds(duration: str | None) -> int:
-    if not duration:
-        return 0
+def seconds(duration: str) -> int:
     match = re.fullmatch(r"(\d+)([smh])", duration)
     if not match:
         raise SystemExit(f"{duration}: not a duration like 10m")
     return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
-def expand(text: str, env: Mapping[str, str]) -> str:
-    def value(match: re.Match[str]) -> str:
-        if match[1] not in env:
-            raise SystemExit(f"{match[1]} is not set")
-        return env[match[1]]
-
-    return re.sub(r"\$\{(\w+)\}", value, text)
+def template_name(series: list[str]) -> str:
+    return OWNED + "-".join(["alertmanager", *series])
 
 
-def template_name(body: str, series: list[str]) -> str:
-    return OWNED + "-".join([body, *series])
-
-
-def template_body(body: str, series: list[str]) -> str:
-    """A body of `{placeholder}`s, each filled JSON-escaped; a series label is one on its alert."""
-    if body == "discord":
-        named = "".join(f" {{{label}}}" for label in series)
-        line = f"**{{title}}**{named}: {{alert_status}}, {{measure}} {{alert_agg_value}}"
-        return json.dumps({"content": line + "\n{text}"})
-    post = {"name": "{title}", "value": "{alert_agg_value}"}
-    post |= {field: f"{{{field}}}" for field in POST if field != "route"}
+def template_body(series: list[str]) -> str:
+    """Alertmanager's alert list, of `{placeholder}`s OpenObserve fills JSON-escaped. With no
+    endsAt, Alertmanager ends the alert `resolve_timeout` after its last post."""
+    labels = {"alertname": "{alert_name}", "level": "{level}"}
+    labels |= {label: f"{{{label}}}" for label in series}
+    annotations = {field: f"{{{field}}}" for field in POST if field != "level"}
     return json.dumps(
-        {
-            "source": "openobserve",
-            "status": "{alert_status}",
-            "title": "{title}",
-            "labels": {label: f"{{{label}}}" for label in series},
-            "route": "{route}",
-            "text": "{text}",
-            "post": post,
-            "extra": "{extra}",
-        }
+        [{"labels": labels, "annotations": annotations | {"value": "{alert_agg_value}"}}]
     )
 
 
@@ -107,63 +92,40 @@ def stream(promql: str) -> str:
     return next(n for n in names if n not in {"and", "or", "unless", "bool", "offset", "e"})
 
 
-def desired(config: Mapping[str, Any], env: Mapping[str, str]) -> tuple[dict, dict, list[dict]]:
+def query(rule: Mapping[str, Any], held: bool = True) -> tuple[str, str, float]:
+    """The PromQL OpenObserve runs, and the condition on its value. Held, `for` and the hold are in
+    the query: OpenObserve's own pending time restarts after any dip, and its keep_firing_for never
+    sends the resolve. It fires while the value stayed past the threshold for `for` at any time in
+    the last 10 minutes, so a dip under that is no clear and a spike is no onset."""
+    promql = " ".join(rule["promql"].split())
+    operator, threshold = rule["operator"], rule["threshold"]
+    if held:
+        low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
+        if seconds(rule["for"]):
+            promql = f"{low}_over_time(({promql})[{rule['for']}:1m])"
+        promql = f"{high}_over_time(({promql})[{HOLD}:1m])"
+    if "no_data" in rule:
+        no_data = " ".join(rule["no_data"].split())
+        promql = f"({promql}) {operator} {threshold} or on() ({no_data}) * {NO_DATA}"
+        operator, threshold = ">=", NO_DATA
+    return promql, operator, threshold
+
+
+def desired(config: Mapping[str, Any]) -> tuple[dict, dict, list[dict]]:
     """Templates, destinations and alerts by name, as OpenObserve's API takes them."""
-    live = config["live"]
     templates: dict[str, dict] = {}
-    destinations: dict[str, dict] = {}
     alerts = []
     for uid, rule in config["rules"].items():
-        targets = config["routes"][rule["route"]] if live else ["shadow"]
+        if rule["level"] not in LEVELS:
+            raise SystemExit(f"{uid}: level is {rule['level']!r}, not one of {LEVELS}")
         series = rule.get("series", [])
-        bodies = set()
-        for target in targets:
-            spec = config["destinations"][target]
-            bodies.add(spec["body"])
-            name = OWNED + target
-            templates[template_name(spec["body"], [])] = {"body": template_body(spec["body"], [])}
-            headers = (
-                {"Authorization": "Bearer " + expand(spec["bearer"], env)}
-                if "bearer" in spec
-                else {}
-            )
-            destinations[name] = {
-                "url": expand(spec["url"], env),
-                "method": "post",
-                "type": "http",
-                "template": template_name(spec["body"], []),
-                "headers": headers,
-            }
-        template = None
-        if series:
-            # OpenObserve sends an alert's own template to all its destinations: one body.
-            if len(bodies) != 1:
-                raise SystemExit(f"{uid}: a per-series rule needs destinations of one body")
-            body = bodies.pop()
-            template = template_name(body, series)
-            templates[template] = {"body": template_body(body, series)}
-        query = " ".join(rule["promql"].split())
-        operator, threshold = rule["operator"], rule["threshold"]
-        pending = seconds(rule.get("for"))
-        if keep := rule.get("keep_firing"):
-            # OpenObserve's keep_firing_for never sends the resolve, so the query holds instead:
-            # it fires while the value stayed past the threshold for `for` at any time in the
-            # last `keep_firing`, so a dip under that is no clear but a spike is no onset.
-            low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
-            held = f"{low}_over_time(({query})[{rule['for']}:1m])"
-            query = f"{high}_over_time(({held})[{keep}:1m])"
-            pending = 0
-        if "no_data" in rule:
-            no_data = " ".join(rule["no_data"].split())
-            query = f"({query}) {operator} {threshold} or on() ({no_data}) * {NO_DATA}"
-            operator, threshold = ">=", NO_DATA
-        text = " ".join(" ".join([rule.get("description", ""), rule.get("action", "")]).split())
-        context = {field: str(rule.get(field, "")) for field in POST}
-        context |= {
-            "title": rule["title"],
-            "text": text,
-            "extra": json.dumps(rule.get("extra", {})),
-        }
+        template = template_name(series)
+        templates[template] = {"body": template_body(series)}
+        promql, operator, threshold = query(rule)
+        context = {field: " ".join(str(rule.get(field, "")).split()) for field in POST}
+        # A unit's leading space is part of it ("5 h ago", "93%").
+        context["unit"] = rule["unit"]
+        context["dashboard"] = rule.get("dashboard", config["dashboard"])
         alerts.append(
             {
                 # OpenObserve refuses spaces and quotes in a name, so the title is a context field.
@@ -175,7 +137,7 @@ def desired(config: Mapping[str, Any], env: Mapping[str, str]) -> tuple[dict, di
                 "description": rule["title"],
                 "query_condition": {
                     "type": "promql",
-                    "promql": query,
+                    "promql": promql,
                     "promql_condition": {
                         "column": "value",
                         "operator": operator,
@@ -183,26 +145,33 @@ def desired(config: Mapping[str, Any], env: Mapping[str, str]) -> tuple[dict, di
                     },
                     "promql_multi_alert": bool(series),
                 },
+                # Posted every minute while it fires: Alertmanager repeats, clears and holds back.
                 "trigger_condition": {
                     "period": 1,
                     "operator": ">=",
                     "threshold": 1,
                     "frequency": 1,
                     "frequency_type": "minutes",
-                    "silence": config["repeat"].get(rule["route"], config["repeat"]["kaizen"])
-                    if live
-                    else 0,
+                    "silence": 0,
                 },
-                "pending_period_sec": pending,
+                "pending_period_sec": 0,
                 "keep_firing_for": 0,
-                # OpenObserve refuses it on a per-series alert, which never sends a resolve: the
-                # Control room takes a series whose repeats stop as cleared.
-                "notify_on_recovery": not series,
-                "destinations": [OWNED + t for t in targets],
+                "notify_on_recovery": False,
+                "destinations": [DESTINATION],
                 "template": template,
                 "context_attributes": context,
             }
         )
+    destinations = {
+        DESTINATION: {
+            "url": ALERTMANAGER,
+            "method": "post",
+            "type": "http",
+            "template": template_name([]),
+            "headers": {},
+        }
+    }
+    templates.setdefault(template_name([]), {"body": template_body([])})
     return templates, destinations, alerts
 
 
@@ -211,13 +180,13 @@ def differs(want: object, have: Any) -> bool:
     back an empty or false field as missing."""
     if isinstance(want, dict):
         return not isinstance(have, dict) or any(differs(v, have.get(k)) for k, v in want.items())
-    if want in (None, "", False) and have in (None, "", False):
+    if want in (None, "", False, 0) and have in (None, "", False, 0):
         return False
     return want != have
 
 
-def apply(call: Call, config: Mapping[str, Any], env: Mapping[str, str]) -> list[str]:
-    templates, destinations, alerts = desired(config, env)
+def apply(call: Call, config: Mapping[str, Any]) -> list[str]:
+    templates, destinations, alerts = desired(config)
     changes: list[str] = []
     # OpenObserve refuses an alert on a stream it has no data for yet, as for a new metric; such an
     # alert is filed under `up` until a later run finds its own.
@@ -282,6 +251,23 @@ def apply(call: Call, config: Mapping[str, Any], env: Mapping[str, str]) -> list
     return changes
 
 
+def failed_queries(call: Call, config: Mapping[str, Any]) -> list[str]:
+    """Rules whose query OpenObserve cannot run: as an alert it would only be marked `error`, and
+    send nothing."""
+    failed = []
+    for uid, rule in config["rules"].items():
+        promql = query(rule)[0]
+        path = f"/api/{ORG}/prometheus/api/v1/query?" + urllib.parse.urlencode({"query": promql})
+        try:
+            answer = call("GET", path, None)
+        except Refused as error:
+            failed.append(f"{uid}: {str(error)[:300]}")
+            continue
+        if answer.get("status") != "success":
+            failed.append(f"{uid}: {json.dumps(answer)[:300]}")
+    return failed
+
+
 def wait_until_ready(call: Call, timeout: float = 90) -> None:
     """Until OpenObserve answers and holds the `up` stream that alerts fall back to (first deploy).
     Under deploy's 120 s `up --wait`, so this message is the one in the log."""
@@ -308,17 +294,13 @@ def main() -> None:
         os.environ["OPENOBSERVE_PASSWORD"],
     )
     wait_until_ready(call)
+    # Before applying, so a rule that cannot run never replaces the one before it.
+    if failed := failed_queries(call, config):
+        raise SystemExit("These rules' queries fail:\n" + "\n".join(failed))
     try:
-        changes = apply(call, config, os.environ)
+        changes = apply(call, config)
     except Refused as error:
-        # A refusal may quote a destination's URL, and Discord's is its secret:
-        # masked before the cut, so no part of it is printed.
-        message = str(error)
-        for spec in config["destinations"].values():
-            for name in re.findall(r"\$\{(\w+)\}", " ".join(map(str, spec.values()))):
-                if value := os.environ.get(name):
-                    message = message.replace(value, f"${{{name}}}")
-        raise SystemExit(f"OpenObserve refused {message[:500]}") from None
+        raise SystemExit(f"OpenObserve refused {str(error)[:500]}") from None
     print("\n".join(changes) or "OpenObserve's alerts already match", flush=True)
 
 

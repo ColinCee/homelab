@@ -1,5 +1,6 @@
-"""OpenObserve's rules (stacks/observability/openobserve/alerts.toml) match Grafana's until the
-cutover, and apply.py makes OpenObserve match them through its API."""
+"""Every alert rule (stacks/observability/openobserve/alerts.toml) meets the alert standard in
+docs/observability.md, Alertmanager carries out its lifecycle, and apply.py makes OpenObserve
+match the rules through its API."""
 
 import copy
 import json
@@ -15,45 +16,62 @@ from stacks.observability.openobserve import apply
 STACK = Path(__file__).parent.parent / "stacks/observability"
 CONFIG = tomllib.loads((STACK / "openobserve/alerts.toml").read_text(encoding="utf-8"))
 RULES = CONFIG["rules"]
-GRAFANA = {
-    r["uid"]: r
-    for g in yaml.safe_load(
-        (STACK / "provisioning/alerting/rules.yaml").read_text(encoding="utf-8")
-    )["groups"]
-    for r in g["rules"]
-}
-ENV = {"KAIZEN_ALERT_SECRET": "s3cret", "DISCORD_PRIVATE_WEBHOOK_URL": "https://discord.test/hook"}
+ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
+TEMPLATE = (STACK / "alertmanager/discord.tmpl").read_text(encoding="utf-8")
+DASHBOARDS = "http://beelink.tail4f465e.ts.net:5080/web/dashboards"
 
 
 def flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def test_every_grafana_rule_has_one_with_its_title_route_and_closes() -> None:
-    assert RULES.keys() == GRAFANA.keys()
-    for uid, rule in RULES.items():
-        grafana = GRAFANA[uid]
-        assert rule["title"] == grafana["title"], uid
-        outage = grafana["title"] == "Kaizen Control room unreachable"
-        assert rule["route"] == ("uptime" if outage else grafana["labels"].get("route", "kaizen"))
-        if "closes" in grafana["annotations"]:
-            assert rule.get("closes") == grafana["annotations"]["closes"], uid
-        assert rule.get("keep_firing") == grafana.get("keepFiringFor"), uid
-        # Grafana's no-data alert; the backup's size is a new metric, missing when the backup stops.
-        silent = grafana["noDataState"] == "OK" and uid != "backup-storage-high"
-        assert ("no_data" not in rule) == silent, uid
-        assert ("needs" in rule) == ("needs" in grafana["annotations"]), uid
-        assert rule["format"], uid
-        assert rule["for"] in (grafana["for"], "0m" if grafana["for"] == "0s" else None), uid
+@pytest.mark.parametrize("uid", RULES)
+def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(uid: str) -> None:
+    rule = RULES[uid]
+    assert rule["level"] in ("now", "week")
+    assert len(rule["title"].split()) <= 8, "say the symptom in a few words"
+    assert rule["measure"] and "unit" in rule
+    # A sentence each, not a placeholder.
+    assert len(rule["harm"].split()) >= 6 and len(rule["action"].split()) >= 6
+    apply.seconds(rule["for"])
+    assert rule.get("dashboard", CONFIG["dashboard"]).startswith(DASHBOARDS)
 
 
-def test_a_chart_queries_what_its_rule_alerts_on() -> None:
+def test_levels_repeat_as_the_standard_says_and_each_post_ends_on_its_own() -> None:
+    route = ALERTMANAGER["route"]
+    assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
+    assert route["routes"] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
+    # Over a missed evaluation or two; the hold itself is in the query.
+    assert apply.seconds(ALERTMANAGER["global"]["resolve_timeout"]) <= apply.seconds(apply.HOLD)
+
+
+def test_beelink_metrics_stopped_holds_back_every_other_alert() -> None:
+    assert "beelink-metrics-stopped" in RULES
+    assert ALERTMANAGER["inhibit_rules"] == [
+        {
+            "source_matchers": ['alertname="beelink-metrics-stopped"'],
+            "target_matchers": ['alertname!="beelink-metrics-stopped"'],
+        }
+    ]
+
+
+def test_only_a_firing_act_now_post_mentions_colin() -> None:
+    mention = re.search(r'define "homelab.mention" \}\}(.*?)\{\{ end \}\}\{\{ end \}\}', TEMPLATE)
+    assert mention and '(eq .Status "firing") (eq .CommonLabels.level "now")' in mention[1]
+    discord = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord")
+    assert discord["discord_configs"][0]["send_resolved"] is True
+
+
+def test_no_data_is_kept_for_metrics_alloy_does_not_make() -> None:
+    # A gone Alloy metric is "Beelink metrics stopped"; a textfile metric's writer can stop alone.
     for uid, rule in RULES.items():
-        if "chart" in rule:
-            # The rule's own query, at most scaled to the box's unit, or its measure without a gate.
-            chart, promql = flat(rule["chart"]), flat(rule["promql"])
-            assert promql in chart or promql.startswith(chart), uid
-            float(rule["chart_line"])
+        if "no_data" in rule:
+            assert re.search(r"homelab_|node_textfile", rule["no_data"]), uid
+            window = re.search(r"\[(\d+[mh])\]", rule["no_data"])
+            # Longer than the inhibit's own window, so it never fires before it.
+            assert window and apply.seconds(window[1]) > 5 * 60, uid
+        else:
+            assert not re.search(r"homelab_(backup|pc_backup|probe)", rule["promql"]), uid
 
 
 def test_a_per_series_rule_alerts_per_label_it_names() -> None:
@@ -77,7 +95,8 @@ class FakeOpenObserve:
         self.alerts: dict[str, dict] = {}
         self.calls: list[str] = []
         self.refuse = ""
-        # Every metric the rules read except the backup's new one.
+        self.failing_query = ""
+        # Every metric the rules read except the backup's size.
         self.streams = {apply.stream(r["promql"]) for r in RULES.values()} | {"up"}
         self.streams -= {"homelab_backup_repository_bytes"}
 
@@ -88,6 +107,10 @@ class FakeOpenObserve:
         body = copy.deepcopy(body)
         if path == "/api/default/streams?type=metrics":
             return {"list": [{"name": n} for n in self.streams]}
+        if path.startswith("/api/default/prometheus/api/v1/query?"):
+            if self.failing_query and self.failing_query in path:
+                raise apply.Refused(f"{method} {path}: 400 bad query")
+            return {"status": "success", "data": {"result": []}}
         if m := re.fullmatch(r"/api/default/alerts/(templates|destinations)(?:/(.+))?", path):
             store = getattr(self, m[1])
             if method == "GET":
@@ -113,7 +136,7 @@ class FakeOpenObserve:
                 alert = copy.deepcopy(self.alerts[alert_id])
                 if not alert["query_condition"]["promql_multi_alert"]:
                     del alert["query_condition"]["promql_multi_alert"]
-                return alert | {"template": alert["template"] or ""}
+                return alert
             if method == "GET":
                 return {
                     "list": [
@@ -134,7 +157,7 @@ class FakeOpenObserve:
             assert body["destinations"] and all(
                 d in self.destinations for d in body["destinations"]
             )
-            assert body["template"] in (None, *self.templates)
+            assert body["template"] in self.templates
             assert body["stream_name"] in self.streams
             self.alerts[alert_id] = body
             return {"code": 200}
@@ -143,22 +166,41 @@ class FakeOpenObserve:
 
 def applied(config: dict, fake: FakeOpenObserve | None = None) -> tuple[FakeOpenObserve, list[str]]:
     fake = fake or FakeOpenObserve()
-    return fake, apply.apply(fake, config, ENV)
+    return fake, apply.apply(fake, config)
 
 
 def by_title(fake: FakeOpenObserve) -> dict[str, dict]:
     return {a["context_attributes"]["title"]: a for a in fake.alerts.values()}
 
 
-def test_until_the_cutover_every_rule_goes_only_to_the_shadow_path() -> None:
+def test_every_rule_posts_each_minute_to_alertmanager_alone() -> None:
     fake, changes = applied(CONFIG)
     assert len(fake.alerts) == len(RULES) and "created folder homelab" in changes
-    assert {d for a in fake.alerts.values() for d in a["destinations"]} == {"homelab-shadow"}
-    assert set(fake.destinations) == {"homelab-shadow"}
-    shadow = fake.destinations["homelab-shadow"]
-    assert shadow["url"].endswith("/alert/openobserve/shadow")
-    assert shadow["headers"] == {"Authorization": "Bearer s3cret"}
-    assert all(a["trigger_condition"]["silence"] == 0 for a in fake.alerts.values())
+    assert set(fake.destinations) == {"homelab-alertmanager"}
+    assert (
+        fake.destinations["homelab-alertmanager"]["url"] == "http://alertmanager:9093/api/v2/alerts"
+    )
+    for alert in fake.alerts.values():
+        assert alert["destinations"] == ["homelab-alertmanager"]
+        assert alert["trigger_condition"]["silence"] == 0 and not alert["notify_on_recovery"]
+
+
+def test_the_old_destinations_and_templates_are_removed() -> None:
+    fake = FakeOpenObserve()
+    fake.destinations |= {
+        n: {"name": n} for n in ("homelab-shadow", "homelab-kaizen", "homelab-discord")
+    }
+    fake.templates |= {
+        n: {"name": n} for n in ("homelab-kaizen", "homelab-kaizen-kind", "someone-elses")
+    }
+    changes = applied(CONFIG, fake)[1]
+    for name in ("homelab-shadow", "homelab-kaizen", "homelab-discord"):
+        assert f"deleted destination {name}" in changes
+    assert set(fake.templates) == {
+        "homelab-alertmanager",
+        "homelab-alertmanager-name",
+        "someone-elses",
+    }
 
 
 def test_a_second_run_changes_nothing() -> None:
@@ -171,43 +213,21 @@ def test_a_second_run_changes_nothing() -> None:
 def test_a_changed_rule_updates_only_its_alert() -> None:
     fake, _ = applied(CONFIG)
     changed = copy.deepcopy(CONFIG)
-    changed["rules"]["high-disk"]["threshold"] = 0.85
+    changed["rules"]["high-disk"]["threshold"] = 85
     assert applied(changed, fake)[1] == ["updated alert high-disk"]
-    condition = by_title(fake)["Beelink disk filling up"]["query_condition"]
-    assert ") > 0.85 or on()" in condition["promql"]
+    assert (
+        by_title(fake)["Beelink disk filling up"]["query_condition"]["promql_condition"]["value"]
+        == 85
+    )
 
 
 def test_a_rule_git_removed_is_deleted_and_others_are_left_alone() -> None:
     fake, _ = applied(CONFIG)
-    fake.templates["someone-elses"] = {"name": "someone-elses", "body": "{}"}
     fake.alerts["x"] = {"name": "by-hand", "folder_id": "other", "destinations": []}
     fewer = copy.deepcopy(CONFIG)
     del fewer["rules"]["ssd-worn"]
     assert applied(fewer, fake)[1] == ["deleted alert ssd-worn"]
-    assert "someone-elses" in fake.templates and "x" in fake.alerts
-
-
-def test_a_listed_alert_that_names_no_folder_is_not_deleted() -> None:
-    fake, _ = applied(CONFIG)
-
-    def call(method: str, path: str, body: object = None) -> object:
-        got = fake(method, path, body)
-        if method == "GET" and path.startswith("/api/v2/default/alerts?"):
-            got["list"].append({"alert_id": "x", "name": "by-hand"})  # type: ignore[index]
-        return got
-
-    assert apply.apply(call, CONFIG, ENV) == []
-
-
-def test_live_rules_go_to_their_routes_and_shadow_is_removed() -> None:
-    fake, _ = applied(CONFIG)
-    live = copy.deepcopy(CONFIG) | {"live": True}
-    changes = applied(live, fake)[1]
-    assert "deleted destination homelab-shadow" in changes
-    alerts = by_title(fake)
-    assert alerts["Beelink SSD wearing out"]["destinations"] == ["homelab-discord"]
-    assert fake.destinations["homelab-discord"]["url"] == "https://discord.test/hook"
-    assert fake.destinations["homelab-discord"]["headers"] == {}
+    assert "x" in fake.alerts
 
 
 def test_an_alert_on_a_metric_with_no_data_yet_is_filed_under_up_until_it_has_some() -> None:
@@ -224,60 +244,73 @@ def test_a_refused_call_stops_the_run() -> None:
         applied(CONFIG, fake)
 
 
-def filled(template: str, alert: dict, labels: dict[str, str]) -> dict:
+def test_a_rule_whose_query_fails_is_named() -> None:
+    fake, _ = applied(CONFIG)
+    assert apply.failed_queries(fake, CONFIG) == []
+    fake.failing_query = "homelab_ssd_percentage_used"
+    assert [f.split(":")[0] for f in apply.failed_queries(fake, CONFIG)] == ["ssd-worn"]
+
+
+def test_a_level_outside_the_standard_stops_the_run() -> None:
+    wrong = copy.deepcopy(CONFIG)
+    wrong["rules"]["ssd-worn"]["level"] = "later"
+    with pytest.raises(SystemExit):
+        applied(wrong)
+
+
+def filled(template: str, alert: dict, labels: dict[str, str]) -> list:
     """The body OpenObserve sends: each placeholder becomes its value, JSON-escaped."""
     values = {**alert["context_attributes"], **labels, "alert_name": alert["name"]}
-    values |= {"alert_status": "firing", "alert_agg_value": "7"}
+    values |= {"alert_agg_value": "7"}
     return json.loads(re.sub(r"\{(\w+)\}", lambda m: json.dumps(values[m[1]])[1:-1], template))
 
 
-def test_a_per_series_alert_sends_its_labels_and_kaizens_post_fields() -> None:
+def test_a_per_series_alert_reaches_alertmanager_with_its_labels_and_post() -> None:
     fake, _ = applied(CONFIG)
-    alert = by_title(fake)["A CI job ran out of memory"]
-    assert alert["query_condition"]["promql_multi_alert"] and not alert["notify_on_recovery"]
-    body = filled(fake.templates[alert["template"]]["body"], alert, {"kind": 'li"ght'})
-    assert body["labels"] == {"kind": 'li"ght'}
-    assert body["post"] | {"chart": ""} == {
-        "name": "A CI job ran out of memory",
-        "value": "7",
-        "measure": "Kills in the last 15 min",
-        "format": "{:.0f}",
-        "trigger": "any",
-        "chart": "",
-        "chart_line": "0",
-        "closes": "event",
-        "needs": "",
+    alert = by_title(fake)["A container keeps restarting"]
+    assert alert["query_condition"]["promql_multi_alert"]
+    [body] = filled(fake.templates[alert["template"]]["body"], alert, {"name": 'we"b'})
+    assert body["labels"] == {"alertname": "restart-loop", "level": "now", "name": 'we"b'}
+    assert body["annotations"]["value"] == "7" and body["annotations"]["dashboard"].startswith(
+        DASHBOARDS
+    )
+    assert set(body["annotations"]) == {
+        "title",
+        "measure",
+        "unit",
+        "harm",
+        "action",
+        "dashboard",
+        "value",
     }
-    assert body["status"] == "firing" and body["route"] == "kaizen"
-
-
-def test_a_single_series_alert_sends_its_extra_queries_and_its_resolve() -> None:
-    fake, _ = applied(CONFIG)
-    alert = by_title(fake)["Nightly backup didn't run"]
-    assert alert["notify_on_recovery"] and alert["template"] is None
-    body = filled(fake.templates["homelab-kaizen"]["body"], alert, {})
-    assert body["labels"] == {}
-    assert set(json.loads(body["extra"])) == {"failed_step"}
+    # No end time: Alertmanager ends it resolve_timeout after the last post.
+    assert "endsAt" not in body
 
 
 def test_a_no_data_rule_fires_on_a_missing_metric() -> None:
     fake, _ = applied(CONFIG)
     condition = by_title(fake)["PC backup stopped arriving"]["query_condition"]
-    assert condition["promql"] == (
-        "((time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600) > 50 or on() "
-        "(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[5m])) * -1"
+    assert condition["promql"].endswith(
+        ") > 50 or on() (absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])) * -1"
     )
     assert condition["promql_condition"] == {"column": "value", "operator": ">=", "value": -1}
 
 
-def test_rules_hold_for_grafanas_for_and_keep_firing() -> None:
+def test_for_and_the_hold_are_in_the_query() -> None:
     fake, _ = applied(CONFIG)
     alerts = by_title(fake)
-    cpu = alerts["Beelink CPU maxed out"]
-    # Held 20 minutes at some time in the last 10: the hold is in the query.
-    assert cpu["pending_period_sec"] == 0 and cpu["keep_firing_for"] == 0
-    assert cpu["query_condition"]["promql"].startswith("(max_over_time((min_over_time((( sum(")
-    assert "[20m:1m]))[10m:1m])) > 0.8 or on()" in cpu["query_condition"]["promql"]
+    ram = alerts["Beelink running out of memory"]
+    # Held 5 minutes at some time in the last 10: a dip is no clear, a spike no onset.
+    assert ram["pending_period_sec"] == 0 and ram["keep_firing_for"] == 0
+    assert ram["query_condition"]["promql"].startswith("max_over_time((min_over_time((round(")
+    assert ram["query_condition"]["promql"].endswith("[5m:1m]))[10m:1m])")
     site = alerts["Flight Tracker site down"]["query_condition"]["promql"]
-    assert site.startswith("(min_over_time((max_over_time((max(probe_success")
-    assert alerts["Beelink disk filling up"]["pending_period_sec"] == 600
+    assert site.startswith("min_over_time((max_over_time((max(probe_success")
+    # No `for`: only the hold.
+    worn = alerts["Beelink metrics stopped"]["query_condition"]["promql"]
+    assert worn.startswith("max_over_time((absent_over_time(")
+
+
+def test_a_unit_keeps_its_leading_space() -> None:
+    fake, _ = applied(CONFIG)
+    assert by_title(fake)["Nightly backup didn't run"]["context_attributes"]["unit"] == " h ago"

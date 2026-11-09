@@ -22,7 +22,7 @@ STACK = Path(__file__).parent.parent / "stacks/observability"
 SERVICE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["services"][
     "openobserve-gateway"
 ]
-PASSWORDS = {"root": "r00t", "kaizen": "k", "stats": "s", "agents": "a"}
+PASSWORDS = {"root": "r00t", "stats": "s", "agents": "a"}
 QUERY = "/api/default/prometheus/api/v1/query?query=up"
 RANGE = "/api/default/prometheus/api/v1/query_range?query=up&start=0&end=1&step=60"
 ALERTS = "/api/v2/default/alerts"
@@ -111,11 +111,9 @@ def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict]
     ("reader", "method", "path"),
     [
         ("stats", "GET", QUERY),
-        ("kaizen", "GET", QUERY),
-        ("kaizen", "GET", RANGE),
-        ("kaizen", "GET", ALERTS),
-        ("kaizen", "GET", ALERTS + "?page_size=100"),
+        ("agents", "GET", QUERY),
         ("agents", "GET", RANGE),
+        ("agents", "GET", ALERTS + "?page_size=100"),
         ("agents", "GET", ALERTS),
         ("agents", "GET", "/api/default/prometheus/api/v1/label/job/values?match[]=up"),
     ],
@@ -134,11 +132,11 @@ def test_a_reader_reads_its_paths_with_roots_login_sent_on(
         # Another reader's paths.
         ("stats", "GET", RANGE),
         ("stats", "GET", ALERTS),
-        ("kaizen", "GET", "/api/default/prometheus/api/v1/series?match[]=up"),
+        ("stats", "GET", "/api/default/prometheus/api/v1/series?match[]=up"),
         # Writes, and anything not listed.
-        ("kaizen", "POST", ALERTS),
-        ("kaizen", "PUT", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
-        ("kaizen", "PATCH", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja/trigger"),
+        ("agents", "POST", ALERTS),
+        ("agents", "PUT", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
+        ("agents", "PATCH", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja/trigger"),
         ("agents", "POST", "/api/default/prometheus/api/v1/write"),
         ("agents", "POST", QUERY),
         ("agents", "GET", "/api/default/users"),
@@ -150,8 +148,8 @@ def test_a_reader_reads_its_paths_with_roots_login_sent_on(
         ("stats", "GET", "/" + QUERY),
         ("stats", "GET", QUERY.upper()),
         ("stats", "HEAD", QUERY),
-        ("kaizen", "GET", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
-        ("kaizen", "GET", ALERTS + "/incidents"),
+        ("agents", "GET", ALERTS + "/3LqoVCD0QoPHJkKv8Ze2TBJl9Ja"),
+        ("agents", "GET", ALERTS + "/incidents"),
         ("agents", "GET", "/api/default/prometheus/api/v1/label/x/../../../../users/values"),
     ],
 )
@@ -165,9 +163,9 @@ def test_a_write_or_another_path_is_refused(
     "auth",
     [
         None,
-        basic("kaizen", "wrong"),
+        basic("agents", "wrong"),
         basic("root", PASSWORDS["root"]),
-        basic("kaizen", ""),
+        basic("agents", ""),
         "Basic ",
     ],
 )
