@@ -168,8 +168,7 @@ current a host is.
 - **Stopping every VM** on purpose: `sudo ci-runner/stop-vms.sh`.
 - **First time on a host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
   of main; the first update then rebuilds the image (several minutes).
-- **Never leave a loop waiting to change the Beelink from your own connection**; run any wait as a named systemd
-  unit.
+- **Run any wait on the Beelink as a named systemd unit**, never a loop on your own connection.
 
 ### Changing the number of slots
 
@@ -365,7 +364,7 @@ remove `kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-run
 | `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
 | `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
 | `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished, since they outlive it (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
-| `test-handoff-image.sh` | A job's handoffs and `ci-capacity` work in the image, on loop devices read directly as in a VM; CI runs it on pull requests that change the image or the handoff action |
+| `test-handoff-image.sh` | Handoffs and `ci-capacity` work in the image on directly read loop devices, as in a VM; CI runs it when a pull request changes the image or handoffs |
 | `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and Grafana once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the
