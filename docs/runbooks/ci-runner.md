@@ -164,8 +164,8 @@ current a host is.
   `sudo rm /etc/homelab-ci/pinned`: `sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>`.
 - **Kernel upgrade:** the VMs boot the Beelink's kernel, so rebuild by hand (`sudo ci-runner/build-rootfs.sh`, then
   delete `/var/lib/homelab-ci/images/commit` so the PC takes it).
-- **Firecracker or runner upgrade:** Renovate opens the PR; put the new release hash in `versions.env` by hand,
-  merge, and run the audit.
+- **Version upgrade:** Renovate opens the PR; CI (`scripts/versions_hash.py`) prints the release hash to paste
+  in `versions.env`; merge, and run the audit.
 - **Stopping every VM** on purpose: `sudo ci-runner/stop-vms.sh`.
 - **First time on a host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
   of main; the first update then rebuilds the image (several minutes).

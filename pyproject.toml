@@ -33,6 +33,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "scripts/ci_supervisor.py" = "py312"
 "scripts/control_room_timing.py" = "py312"
 "scripts/pin_only.py" = "py312"
+"scripts/versions_hash.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
