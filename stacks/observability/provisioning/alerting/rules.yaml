@@ -43,6 +43,8 @@ groups:
         # Deploys build images for a few minutes at full CPU (twice on 4 Nov),
         # which needs nobody; a runaway process lasts longer.
         for: 20m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink CPU usage"
           measure: "CPU use"
@@ -90,6 +92,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 5m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink RAM usage"
           measure: "Memory use"
@@ -135,6 +139,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 30m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink swap writes"
           measure: "Swapped out"
@@ -247,6 +253,62 @@ groups:
         labels:
           severity: warning
 
+      - uid: ci-supervisor-poll-failing
+        title: The CI supervisor's poll keeps failing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              # Polls failed in a row (2 s apart), from the CI supervisor; 0 while they work.
+              expr: max(homelab_ci_poll_failures{job="integrations/unix"})
+              instant: true
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_poll_failed_seconds{job="integrations/unix"})
+              instant: true
+              refId: B
+          - refId: C
+            relativeTimeRange:
+              from: 0
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [9]
+              refId: C
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "The CI supervisor's poll keeps failing: no job VM starts"
+          measure: "Polls failed in a row"
+          trigger: "10 or more, for 2 min"
+          chart: |
+            max(homelab_ci_poll_failures{job="integrations/unix"})
+          chart_line: "10"
+          value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }}{{ end }}"
+          description: >-
+            Every poll of the CI supervisor has failed for {{ with $values.B }}{{ humanizeDuration .Value }}{{ end }}:
+            no job VM starts on the Beelink, so every queued job waits.
+          action: >-
+            Read the error (`journalctl -u homelab-ci-supervisor -g "poll failed"`) and fix its cause in
+            scripts/ci_supervisor.py (docs/runbooks/ci-runner.md).
+        labels:
+          severity: critical
+
       - uid: beelink-disk-stalled
         title: Beelink disk too slow for Kaizen's VMs
         condition: C
@@ -278,6 +340,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 30m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink disk waits"
           measure: "Time waiting on disk"
@@ -476,6 +540,8 @@ groups:
         noDataState: Alerting
         execErrState: Error
         for: 10m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Flight tracker live radar"
           measure: "Live radar"
@@ -496,13 +562,13 @@ groups:
               to: 0
             datasourceUid: prometheus
             model:
-              # A container whose name was not seen in the week before its last hour.
-              # Compose keeps names across deploys, so redeploys don't fire. Quick
-              # `docker run` checks by people and agents get random names but stop
-              # within minutes, so `for: 15m` lets them pass (30 days to 6 Nov: 35 new
-              # names, 32 such checks; the 3 that ran on were new stacks).
+              # A container outside any Compose project whose name was not seen in the
+              # week before its last hour. Stacks run under Compose and reach the
+              # Beelink through the reviewed deploy path, so new stacks don't fire; a
+              # hand-run `docker run` carries no project label. Quick checks by people
+              # and agents stop within minutes, so `for: 15m` lets them pass.
               expr: >-
-                count by (name) (container_last_seen{job="docker",name!=""})
+                count by (name) (container_last_seen{job="docker",name!="",container_label_com_docker_compose_project=""})
                 unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))
               instant: true
               refId: A
@@ -740,6 +806,17 @@ groups:
               expr: max(homelab_ci_wait_seconds{job="integrations/unix",kind="other"}) / 60 or on() vector(0)
               instant: true
               refId: other
+          # The longest-waiting job asking for a runner label no VM has: its repo and labels
+          # ride on the "other" kind, for the description. 0 with no labels when none waits.
+          - refId: unmatched
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max by (repo, labels) (homelab_ci_wait_seconds{job="integrations/unix",kind="other",repo!=""}) or on() vector(0)
+              instant: true
+              refId: unmatched
           - refId: ready
             relativeTimeRange:
               from: 300
@@ -791,6 +868,8 @@ groups:
         noDataState: OK
         execErrState: Error
         for: 1m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Longest Kaizen wait for a homelab machine"
           measure: "Longest wait for a VM"
@@ -810,6 +889,8 @@ groups:
             {{ with $values.booting }}{{ printf "%.0f" .Value }}{{ end }} for its VM to boot,
             {{ with $values.ready }}{{ printf "%.0f" .Value }}{{ end }} with its VM ready but no job from GitHub and
             {{ with $values.other }}{{ printf "%.0f" .Value }}{{ end }} for a runner label no VM has.
+            {{ with $values.unmatched }}{{ if .Labels.repo }}A job in {{ .Labels.repo }} asks for labels
+            {{ .Labels.labels }}, which no VM has: it never starts here until its runs-on changes.{{ end }}{{ end }}
             {{ with $values.gap }}{{ printf "%.0f" .Value }}{{ end }} min of the wait has no runner reason:
             the job is still waiting or pending on GitHub, not yet queued for any runner.
           action: "See \"Why a job waits\" in docs/runbooks/ci-runner.md; `journalctl -u homelab-ci-supervisor` on the Beelink has each job's reason."
@@ -879,6 +960,46 @@ groups:
                 and on() (time() - max(max_over_time(kaizen_tasks_read_timestamp_seconds{job="kaizen"}[2m])) < 600)
               instant: true
               refId: A
+          # Why: minutes since GitHub queued Auto Kaizen's longest-waiting job and the Watcher's own
+          # job for a test VM, and the VMs running jobs (homelab_ci_queued_seconds and
+          # homelab_ci_vms_busy, written by the CI supervisor), for the description. 0 when nothing
+          # waits or the file is missing, so the reason never makes the rule no-data.
+          - refId: kaizen
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_queued_seconds{job="integrations/unix",repo="ColinCee/auto-kaizen"}) / 60 or on() vector(0)
+              instant: true
+              refId: kaizen
+          - refId: watcher
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_queued_seconds{job="integrations/unix",repo="ColinCee/auto-kaizen",workflow="watch"}) / 60 or on() vector(-1)
+              instant: true
+              refId: watcher
+          - refId: busy
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_vms_busy{job="integrations/unix"}) or on() vector(0)
+              instant: true
+              refId: busy
+          - refId: slots
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: max(homelab_ci_vm_slots{job="integrations/unix"}) or on() vector(0)
+              instant: true
+              refId: slots
           - refId: C
             relativeTimeRange:
               from: 0
@@ -892,7 +1013,7 @@ groups:
                     type: gt
                     params: [60]
               refId: C
-        # No number yet (a Control room older than the metric): quiet; the off-host Kaizen watchdog still checks.
+        # No number yet (a Control room older than the metric): quiet; Kaizen Control room unreachable covers a Control room that is down.
         noDataState: OK
         execErrState: Error
         for: 5m
@@ -901,8 +1022,15 @@ groups:
           measure: "Since the Watcher last ran"
           trigger: "over 60 min"
           value: "{{ with $values.A }}{{ printf \"%.0f\" .Value }} min{{ end }}"
-          description: "Threshold: the Watcher, due every 20 minutes, has not worked for an hour, so GitHub is not starting Kaizen's jobs."
-          action: "Open github.com/ColinCee/auto-kaizen/actions: a refused job names the cause (billing, an outage, no machine)."
+          description: >-
+            Threshold: the Watcher, due every 20 minutes, has not worked for an hour.
+            {{ with $values.watcher }}{{ if ge .Value 0.0 }}Its job has waited {{ printf "%.0f" .Value }} min for a test VM.
+            {{- else }}Its job is not waiting for a test VM.{{ end }}{{ end }}
+            Auto Kaizen's longest-waiting job has queued {{ with $values.kaizen }}{{ printf "%.0f" .Value }}{{ end }} min for a test VM,
+            with {{ with $values.busy }}{{ printf "%.0f" .Value }}{{ end }} of {{ with $values.slots }}{{ printf "%.0f" .Value }}{{ end }} VMs busy.
+          action: >-
+            Waiting for a VM means a capacity problem: see "Why a job waits" in docs/runbooks/ci-runner.md.
+            No waiting job means GitHub is not starting jobs: github.com/ColinCee/auto-kaizen/actions names the cause (billing, an outage).
         labels:
           severity: warning
 

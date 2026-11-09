@@ -43,6 +43,13 @@ services:
       - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
       - grafana-data:/data/grafana:ro
+      # Users, alerts and dashboards only; its logs and metrics are left out, as Prometheus's and Loki's are.
+      - type: volume
+        source: openobserve-data
+        target: /data/openobserve
+        read_only: true
+        volume:
+          subpath: db
       - heatmap-data:/data/flight-tracker:ro
       - control-room-data:/data/kaizen-control-room:ro
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
@@ -54,6 +61,9 @@ volumes:
   grafana-data:
     external: true
     name: observability_grafana-data
+  openobserve-data:
+    external: true
+    name: observability_openobserve-data
   heatmap-data:
     external: true
     name: flight-tracker_heatmap-data

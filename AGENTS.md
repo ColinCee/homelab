@@ -6,7 +6,7 @@ and how to run them locally, `docs/` for architecture and runbooks, and
 
 Checks: `mise run check`
 
-That runs what CI's check job runs: lint, typecheck, test and validate:compose
+That runs what CI's check job runs: lint, typecheck, test, docs:size and validate:compose
 (Compose validation needs Docker). Run it before pushing.
 
 - Keep the simplest working solution. Do not add generic frameworks, wrappers,
@@ -19,9 +19,9 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
   after checks and the release-age gate pass; major updates remain manual.
 - Never source generated `.env` files or expose secrets. Private operational
   records belong in the separate notes repository, not this public repository.
-- Do not add image polling or stack-specific deployment branches. Git and
-  Renovate own pinned image revisions; Compose and stack-owned units own
-  application operations.
+- Do not add image polling or stack-specific deployment branches. Git owns
+  pinned image revisions (moved by Renovate, and by the auto-kaizen app for the
+  Control room); Compose and stack-owned units own application operations.
 - Prepare Tailscale policy changes, but leave `scripts/tailscale_policy.py`
   credential entry and live approval to the user's own terminal. Never request
   a Bitwarden vault session or run these prompts through an agent tool.
@@ -40,6 +40,10 @@ That runs what CI's check job runs: lint, typecheck, test and validate:compose
 - Use the existing `mise` tasks for relevant checks. Keep tests for meaningful
   behavior, not implementation details.
 - Update the relevant operational doc when behavior changes. Keep necessary
-  rationale beside its instructions or code, not in ADRs or a decision log.
-  Delete obsolete guidance; archive only for a concrete retention need.
+  rationale beside its instructions or code; a decision between designs gets a
+  record in `docs/adr/` (the doc-upkeep skill's "Decision records").
+  Delete obsolete guidance (decision records stay; see above); archive only
+  for a concrete retention need.
   Track future work in issues rather than another roadmap.
+- Docs may not grow past `docs-size.json` (`mise run docs:size`): cut first; if growth
+  is needed, `mise run docs:size -- --update` and say why in the pull request.

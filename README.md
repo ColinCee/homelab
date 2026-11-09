@@ -71,13 +71,13 @@ automatically. Non-major versions can still break behavior, especially before
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/kaizen-control-room/` | Auto Kaizen's Control room: a live view of Kaizen's work, on Tailscale only |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
-| `stacks/internal-names/` | Short names for the desktop and MacBook (`http://control.internal`, `grafana.internal`, `home.internal`): a DNS server Tailscale sends `.internal` to, and a proxy |
+| `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [homelab-network skill](.github/skills/homelab-network/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
 
 The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
 pending updates) to its job summary. On the first Monday of each month it also
-prunes unused Docker images and test-restores a file from backup. The **Deploy
-watchdog** runs off-host after every deploy (and every 15 minutes as a backup):
-it alerts Discord about stuck deploys and stops Auto Kaizen after a failed one.
+prunes unused Docker images and test-restores a file from backup. A failed or
+stuck deploy stops Auto Kaizen's homelab work until fixed; see
+[observability](docs/observability.md) for what watches what.
 
 ## Maintain and extend
 
@@ -87,7 +87,7 @@ it alerts Discord about stuck deploys and stops Auto Kaizen after a failed one.
 - [Security audit](docs/runbooks/security-audit.md): checking Beelink for compromise.
 - [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
 - [Public stats](docs/public-stats.md): the few numbers pushed to colincheung.dev's home page, and what they expose.
-- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work; no parallel roadmap or decision log.
+- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work, and [docs/adr](docs/adr/) records decisions between designs; no parallel roadmap.
 - Private operational records live in the workspace's `notes/04-dev/homelab/`.
 
 Keep current instructions and necessary rationale together. Configuration owns

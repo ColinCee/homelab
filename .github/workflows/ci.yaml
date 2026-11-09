@@ -29,10 +29,18 @@ jobs:
           if git show HEAD^1:scripts/pin_only.py > "$script" && python3 "$script" HEAD^1 HEAD; then
             echo "only=true" >> "$GITHUB_OUTPUT"
           fi
+      # An accepted decision record changes only in its status line; the base
+      # commit's copy judges, as above.
+      - name: Check accepted decision records are unchanged
+        if: github.event_name == 'pull_request'
+        run: |
+          script="$RUNNER_TEMP/adr_frozen.py"
+          git show HEAD^1:scripts/adr_frozen.py > "$script" 2>/dev/null || exit 0
+          python3 "$script" HEAD^1 HEAD
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
-      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5
+      - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5
         if: steps.pins.outputs.only != 'true'
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
       # so each run reuses them instead of compiling for ~10 seconds.

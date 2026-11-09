@@ -27,8 +27,7 @@ jobs:
       - name: Note when the deploy started
         run: echo "DEPLOY_STARTED=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
+      # Every step runs from the server checkout, so the job makes no checkout of its own.
       - name: Select exact revision
         env:
           DEPLOY_REF: ${{ github.sha }}
@@ -49,6 +48,7 @@ jobs:
           KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
           # The auto-kaizen Discord bot's token, for the #alerts forum; "unset" keeps the Control room quiet.
           KAIZEN_DISCORD_TOKEN: ${{ secrets.KAIZEN_DISCORD_TOKEN || 'unset' }}
+          OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
@@ -91,6 +91,7 @@ jobs:
         if: steps.control-room-changed.outputs.changed == 'true'
         continue-on-error: true
         run: |
+          cd /home/colin/code/homelab
           nohup python3 scripts/control_room_timing.py --watch "$RUNNER_TEMP/control-room-state.jsonl" \
             --state-url http://100.100.146.119:8090/state > /dev/null 2>&1 &
 
@@ -126,7 +127,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           READY_AT: ${{ fromJSON(steps.deploy.outputs.ready_at || '{}')['kaizen-control-room'] || '' }}
         run: |
-          python3 scripts/control_room_timing.py \
+          python3 /home/colin/code/homelab/scripts/control_room_timing.py \
             --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED" \
             --ready-at "$READY_AT" --answers "$RUNNER_TEMP/control-room-state.jsonl"
 

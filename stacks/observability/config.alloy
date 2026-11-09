@@ -103,6 +103,14 @@ prometheus.remote_write "default" {
   endpoint {
     url = "http://prometheus:9090/api/v1/write"
   }
+  // OpenObserve takes over at the cutover (docs/adr/0001-openobserve.md).
+  endpoint {
+    url = "http://openobserve:5080/api/default/prometheus/api/v1/write"
+    basic_auth {
+      username = "root@homelab.internal"
+      password = sys.env("OPENOBSERVE_PASSWORD")
+    }
+  }
 }
 
 // ================================
@@ -149,7 +157,7 @@ loki.source.docker "containers" {
 }
 
 loki.process "docker" {
-  forward_to = [loki.write.default.receiver]
+  forward_to = [loki.write.default.receiver, otelcol.receiver.loki.openobserve.receiver]
 
   // Parse JSON log lines (silently passes through non-JSON lines)
   stage.json {
@@ -189,6 +197,35 @@ loki.process "docker" {
 loki.write "default" {
   endpoint {
     url = "http://loki:3100/loki/api/v1/push"
+  }
+}
+
+// The same logs to OpenObserve, over OTLP.
+otelcol.receiver.loki "openobserve" {
+  output {
+    logs = [otelcol.processor.batch.openobserve.input]
+  }
+}
+
+// One request per line filled the exporter's queue.
+otelcol.processor.batch "openobserve" {
+  output {
+    logs = [otelcol.exporter.otlphttp.openobserve.input]
+  }
+}
+
+otelcol.auth.basic "openobserve" {
+  username = "root@homelab.internal"
+  password = sys.env("OPENOBSERVE_PASSWORD")
+}
+
+otelcol.exporter.otlphttp "openobserve" {
+  client {
+    endpoint = "http://openobserve:5080/api/default"
+    auth     = otelcol.auth.basic.openobserve.handler
+    headers  = {
+      "stream-name" = "containers",
+    }
   }
 }
 

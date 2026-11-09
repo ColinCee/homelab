@@ -29,7 +29,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 "scripts/tailscale_policy.py" = "py312"
 "scripts/deploy.py" = "py312"
 "scripts/generate_env.py" = "py312"
-"scripts/deploy_watchdog.py" = "py312"
 "scripts/runner_job_guard.py" = "py312"
 "scripts/ci_supervisor.py" = "py312"
 "scripts/control_room_timing.py" = "py312"

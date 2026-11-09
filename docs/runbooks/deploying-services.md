@@ -18,15 +18,10 @@ require CI on pull requests before merging. A pull request that only moves
 gets only Compose validation of the stacks it touches in the `check` job
 ([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
 
-A deploy that changes the Control room's pinned image also reports how many
-seconds passed from its auto-kaizen merge to the new version going live, split
-into the image build, the homelab pull request and the deploy, as a "Control
-room live" notice and a table in the run's summary
-([`control_room_timing.py`](../../scripts/control_room_timing.py)). Live is the
-first `/state` answer naming the commit baked into the pinned image, at or after
-the Control room stack came up (its `ready_at` from the deploy step); a watcher
-logs `/state` from before the deploy, so stacks deployed after it do not count.
-It only measures, and a measuring failure never fails the deploy.
+A deploy that changes the Control room's pinned image reports how long it took from the auto-kaizen
+merge to live, split into its parts, in the run's summary
+([`control_room_timing.py`](../../scripts/control_room_timing.py)); a measuring failure never fails
+the deploy.
 
 ## Ownership and deployment contract
 
@@ -94,9 +89,11 @@ Repository write access is therefore privileged, even for private repositories.
 Keep PR CI off the deploy runner: public repositories' CI on GitHub-hosted
 runners, private repositories' CI only in the
 [Firecracker VMs](ci-runner.md), which hold no secrets, deploy access or home
-network. Keep Beelink deployment restricted to trusted `main`. Renovate auto-merges eligible dependency PRs after checks; other changes
-are human-directed. Admins can bypass the ruleset, including via agents using
-their credentials. Renovate has no such bypass. Workflow conditions alone are
+network. Keep Beelink deployment restricted to trusted `main`. After checks, Renovate auto-merges eligible dependency PRs and the
+`auto-kaizen` app its own (Control room image pins, and agent changes its
+Reviewer passes); other changes are human-directed.
+Admins can bypass the ruleset, including via agents using their credentials.
+Neither bot has that bypass. Workflow conditions alone are
 not access controls.
 
 This avoids giving hosted CI tailnet access or maintaining another deployment
@@ -187,39 +184,14 @@ Deployment discovers user-unit pairs under
 reloads the user manager, and enables each timer. It does not remove unmanaged
 units or run arbitrary stack hooks.
 
-For externally built services, CI in the source repo publishes to GHCR.
-The flight-tracker image reference includes a digest: pulling it does not
-follow changes to the `latest` tag. The old `flight-tracker-poll.timer` was
-therefore redundant and is no longer installed. A new image requires updating
-the digest in Git; Git and Renovate own that update path.
+For externally built services, CI in the source repo publishes to GHCR and the
+image is pinned by digest, so a new image needs the digest updated in Git (by
+Renovate, or by the auto-kaizen app for the Control room).
 
 Do not copy the image-polling pattern for new services. User timers require
 `loginctl enable-linger colin` on the host to run without a login session.
 They write the `*.prom` files Alloy reads into `/var/lib/homelab-metrics`,
 which `ci-runner/install-host.sh` makes writable to all.
-
-### One-time retirement of the old flight-tracker timer
-
-Deployment deliberately does not delete user units it did not discover: that
-would make a Git deletion silently destructive. Before or during the first
-rollout of this cleanup, inspect and explicitly retire the old timer on
-Beelink:
-
-```bash
-systemctl --user disable --now flight-tracker-poll.timer
-rm -f ~/.config/systemd/user/flight-tracker-poll.service \
-      ~/.config/systemd/user/flight-tracker-poll.timer
-systemctl --user daemon-reload
-systemctl --user list-timers flight-tracker-poll.timer
-```
-
-The final command should report no installed timer. If the unit was never
-installed, still check the user-unit directory before removing anything. If
-`XDG_CONFIG_HOME` is set on the host, use its `systemd/user` directory instead
-of `~/.config/systemd/user`.
-
-Grafana loads dashboard JSON from the read-only mounted directory. It polls for
-updates; no API uploader or separate dashboard-sync command is needed.
 
 ## Docker startup ordering
 
