@@ -186,6 +186,18 @@ def test_a_rule_git_removed_is_deleted_and_others_are_left_alone() -> None:
     assert "someone-elses" in fake.templates and "x" in fake.alerts
 
 
+def test_a_listed_alert_that_names_no_folder_is_not_deleted() -> None:
+    fake, _ = applied(CONFIG)
+
+    def call(method: str, path: str, body: object = None) -> object:
+        got = fake(method, path, body)
+        if method == "GET" and path.startswith("/api/v2/default/alerts?"):
+            got["list"].append({"alert_id": "x", "name": "by-hand"})  # type: ignore[index]
+        return got
+
+    assert apply.apply(call, CONFIG, ENV) == []
+
+
 def test_live_rules_go_to_their_routes_and_shadow_is_removed() -> None:
     fake, _ = applied(CONFIG)
     live = copy.deepcopy(CONFIG) | {"live": True}

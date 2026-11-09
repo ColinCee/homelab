@@ -50,7 +50,7 @@ def client(url: str, user: str, password: str) -> Call:
             with urllib.request.urlopen(request, timeout=60) as response:
                 text = response.read().decode()
         except urllib.error.HTTPError as error:
-            raise Refused(f"{method} {path}: {error.code} {error.read().decode()[:500]}") from None
+            raise Refused(f"{method} {path}: {error.code} {error.read().decode()}") from None
         return json.loads(text) if text else None
 
     return call
@@ -255,7 +255,7 @@ def apply(call: Call, config: Mapping[str, Any], env: Mapping[str, str]) -> list
         )["folderId"]
         changes.append(f"created folder {FOLDER}")
     listed = call("GET", f"/api/v2/{ORG}/alerts?folder={folder}", None)["list"]
-    have_alerts = {a["name"]: a["alert_id"] for a in listed if a.get("folder_id", folder) == folder}
+    have_alerts = {a["name"]: a["alert_id"] for a in listed if a.get("folder_id") == folder}
     for want in alerts:
         name = want["name"]
         if name not in have_alerts:
@@ -311,13 +311,14 @@ def main() -> None:
     try:
         changes = apply(call, config, os.environ)
     except Refused as error:
-        # A refusal may quote a destination's URL, and Discord's is its secret.
+        # A refusal may quote a destination's URL, and Discord's is its secret:
+        # masked before the cut, so no part of it is printed.
         message = str(error)
         for spec in config["destinations"].values():
             for name in re.findall(r"\$\{(\w+)\}", " ".join(map(str, spec.values()))):
                 if value := os.environ.get(name):
                     message = message.replace(value, f"${{{name}}}")
-        raise SystemExit(f"OpenObserve refused {message}") from None
+        raise SystemExit(f"OpenObserve refused {message[:500]}") from None
     print("\n".join(changes) or "OpenObserve's alerts already match", flush=True)
 
 

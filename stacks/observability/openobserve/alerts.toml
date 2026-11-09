@@ -8,7 +8,7 @@
 # Post fields (`measure`, `trigger`, `chart`, `chart_line`, `closes`, `needs`) are those Kaizen reads from Grafana's rules.
 
 # Until the cutover every rule goes to `shadow` alone, which Kaizen logs without opening issues. `true` sends each
-# rule to its route's destinations instead.
+# rule to its route's destinations instead, and needs DISCORD_PRIVATE_WEBHOOK_URL passed to openobserve-apply.
 live = false
 
 # Where each route goes when live.

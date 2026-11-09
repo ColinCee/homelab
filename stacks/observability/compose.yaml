@@ -111,7 +111,6 @@ services:
     environment:
       OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
       KAIZEN_ALERT_SECRET: ${KAIZEN_ALERT_SECRET:?}
-      DISCORD_PRIVATE_WEBHOOK_URL: ${DISCORD_PRIVATE_WEBHOOK_URL:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
