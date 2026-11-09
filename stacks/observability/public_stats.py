@@ -26,7 +26,6 @@ STACKS = (
     "flight-tracker",
     "home-assistant",
     "internal-names",
-    "kaizen-control-room",
     "observability",
 )
 EVERY_S = 300

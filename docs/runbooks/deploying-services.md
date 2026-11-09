@@ -18,11 +18,6 @@ require CI on pull requests before merging. A pull request that only moves
 gets only Compose validation of the stacks it touches in the `check` job
 ([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
 
-A deploy that changes the Control room's pinned image reports how long it took from the auto-kaizen
-merge to live, split into its parts, in the run's summary
-([`control_room_timing.py`](../../scripts/control_room_timing.py)); a measuring failure never fails
-the deploy.
-
 ## Ownership and deployment contract
 
 This is a Git-defined homelab with self-contained stacks and one shared

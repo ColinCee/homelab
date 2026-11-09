@@ -69,7 +69,6 @@ automatically. Non-major versions can still break behavior, especially before
 | `stacks/home-assistant/` | Home automation, with host networking for mDNS; Bluetooth is off |
 | `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
-| `stacks/kaizen-control-room/` | Auto Kaizen's Control room: a live view of Kaizen's work, on Tailscale only |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 | `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [homelab-network skill](.github/skills/homelab-network/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
 

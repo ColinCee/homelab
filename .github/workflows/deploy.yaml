@@ -22,11 +22,7 @@ jobs:
     permissions:
       contents: read
       packages: read # Pull private GHCR images
-      pull-requests: read # Find the pull request behind this push, for the Control room's timing
     steps:
-      - name: Note when the deploy started
-        run: echo "DEPLOY_STARTED=$(date -u +%FT%TZ)" >> "$GITHUB_ENV"
-
       # Every step runs from the server checkout, so the job makes no checkout of its own.
       - name: Select exact revision
         env:
@@ -41,17 +37,9 @@ jobs:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          KAIZEN_APP_ID: ${{ vars.KAIZEN_APP_ID }}
-          KAIZEN_APP_KEY: ${{ secrets.KAIZEN_APP_KEY }}
-          # Shared by Grafana and the Kaizen Control room's /alert, which refuses the "unset" placeholder:
-          # until the secret is set, alerts reach Discord only.
-          KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET || 'unset' }}
-          # The auto-kaizen Discord bot's token, for the #alerts forum; "unset" keeps the Control room quiet.
-          KAIZEN_DISCORD_TOKEN: ${{ secrets.KAIZEN_DISCORD_TOKEN || 'unset' }}
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           # Readers' logins to OpenObserve's read-only gateway (stacks/observability/gateway).
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
-          OPENOBSERVE_KAIZEN_PASSWORD: ${{ secrets.OPENOBSERVE_KAIZEN_PASSWORD }}
           OPENOBSERVE_STATS_PASSWORD: ${{ secrets.OPENOBSERVE_STATS_PASSWORD }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
           R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
@@ -74,31 +62,6 @@ jobs:
           printf '%s' "$GHCR_TOKEN" \
             | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
-      # How long a Control room change took from its auto-kaizen merge to answering here.
-      # Measuring never fails a deploy.
-      - id: control-room-changed
-        continue-on-error: true
-        env:
-          BEFORE: ${{ github.event.before }}
-        run: |
-          cd /home/colin/code/homelab
-          # A missing or unknown before commit counts as changed.
-          if git diff --quiet "$BEFORE" "$GITHUB_SHA" -- stacks/kaizen-control-room/compose.yaml 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      # Logs each /state answer while the stacks deploy, so live is read from when the Control room came up,
-      # not after the stacks deployed after it. The runner stops it when the job ends.
-      - name: Watch the Control room's /state
-        if: steps.control-room-changed.outputs.changed == 'true'
-        continue-on-error: true
-        run: |
-          cd /home/colin/code/homelab
-          nohup python3 scripts/control_room_timing.py --watch "$RUNNER_TEMP/control-room-state.jsonl" \
-            --state-url http://100.100.146.119:8090/state > /dev/null 2>&1 &
-
       # Only stacks changed since the last full deploy (all when shared deploy files changed);
       # the marker lives outside the checkout, which each deploy resets. This push's own stacks
       # go first, after any stack creating a network or volume they use.
@@ -110,30 +73,6 @@ jobs:
           cd /home/colin/code/homelab
           scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed" \
             --first-changed-since "$BEFORE"
-
-      - id: kaizen-read-key
-        if: steps.control-room-changed.outputs.changed == 'true'
-        continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ vars.KAIZEN_APP_ID }}
-          private-key: ${{ secrets.KAIZEN_APP_KEY }}
-          owner: ColinCee
-          repositories: auto-kaizen
-          permission-contents: read
-          permission-actions: read
-
-      - name: Time the Control room from merge to live
-        if: steps.kaizen-read-key.outputs.token
-        continue-on-error: true
-        env:
-          KAIZEN_TOKEN: ${{ steps.kaizen-read-key.outputs.token }}
-          GITHUB_TOKEN: ${{ github.token }}
-          READY_AT: ${{ fromJSON(steps.deploy.outputs.ready_at || '{}')['kaizen-control-room'] || '' }}
-        run: |
-          python3 /home/colin/code/homelab/scripts/control_room_timing.py \
-            --state-url http://100.100.146.119:8090/state --deploy-started "$DEPLOY_STARTED" \
-            --ready-at "$READY_AT" --answers "$RUNNER_TEMP/control-room-state.jsonl"
 
       # Grafana gives a top-level provisioned dashboard no viewer access, and
       # provisioning cannot grant it, so each deploy of Grafana's stack lets viewers open Home.
@@ -156,35 +95,3 @@ jobs:
             sleep 2
           done
           echo "::warning::Could not grant viewers access to Grafana's Home"
-
-      # Kaizen's line stop: a failed deploy stops Kaizen's work on the homelab until it is fixed, and a good one restarts it.
-      - id: kaizen-key
-        if: always()
-        continue-on-error: true
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          app-id: ${{ vars.KAIZEN_APP_ID }}
-          private-key: ${{ secrets.KAIZEN_APP_KEY }}
-          owner: ColinCee
-          repositories: auto-kaizen
-          permission-contents: write
-          permission-issues: read
-
-      - name: Tell Kaizen
-        continue-on-error: true
-        if: always() && steps.kaizen-key.outputs.token
-        env:
-          GH_TOKEN: ${{ steps.kaizen-key.outputs.token }}
-          EVENT: ${{ job.status == 'success' && 'line-stop-close' || 'line-stop-open' }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          # A good deploy restarts the line only if it is stopped: each message starts a Kaizen job on the Beelink.
-          # A failed look-up sends no close (the safe side) and never holds up an open.
-          if [ "$EVENT" = line-stop-close ]; then
-            stopped=$(gh issue list -R ColinCee/auto-kaizen --label line-stop --state open \
-              --search '"Repo: ColinCee/homelab" in:body' --json number --jq '.[0].number // empty') || exit 0
-            [ -n "$stopped" ] || exit 0
-          fi
-          reason=$([ "$EVENT" = line-stop-close ] && echo "Deployed: $RUN_URL" || echo "The homelab deploy failed: $RUN_URL")
-          jq -n --arg e "$EVENT" --arg r "$reason" '{event_type: $e, client_payload: {repo: "ColinCee/homelab", reason: $r}}' \
-            | gh api repos/ColinCee/auto-kaizen/dispatches --input -
