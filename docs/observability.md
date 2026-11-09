@@ -180,8 +180,7 @@ exact query when a dashboard has data and an alert none.
 OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
 applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
 (`live`). It keeps metric names in lower case, selects no series by a label it lacks, and repeats a
-per-series alert's firing each minute but never sends its resolve: the Control room reads stopped firings as
-cleared.
+per-series alert's firing each minute, never its resolve: the Control room must take stopped firings as cleared.
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
 `homelab-discord` notification template.

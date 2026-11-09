@@ -72,9 +72,9 @@ run_backup() {
 
 # Grafana's Backup storage nearly full alert reads the log line, OpenObserve's the metric.
 record_size() {
-  bytes=$(repo_bytes) || return 0
+  bytes=$(repo_bytes) && [ -n "$bytes" ] || return 0
   echo "repository size: $bytes bytes of $MAX_REPO_BYTES allowed"
-  [ -n "$bytes" ] && write_metric "$SIZE_FILE" homelab_backup_repository_bytes "$bytes" ||
+  write_metric "$SIZE_FILE" homelab_backup_repository_bytes "$bytes" ||
     echo "could not write $SIZE_FILE" >&2
 }
 

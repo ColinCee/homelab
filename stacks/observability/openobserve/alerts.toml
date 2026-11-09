@@ -53,6 +53,7 @@ promql = '''
   sum(rate(node_cpu_seconds_total{mode!~"idle|iowait",job="integrations/unix"}[5m]))
   - (sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m])) or vector(0))
 ) / count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})'''
+no_data = '''absent_over_time(node_cpu_seconds_total{job="integrations/unix"}[5m])'''
 operator = ">"
 threshold = 0.8
 # Deploys build images for a few minutes at full CPU, which needs nobody; a runaway process lasts longer.
@@ -76,6 +77,7 @@ title = "Beelink running out of memory"
 route = "kaizen"
 # OpenObserve keeps metric names in lower case.
 promql = "1 - (node_memory_memavailable_bytes{job=\"integrations/unix\"} / node_memory_memtotal_bytes{job=\"integrations/unix\"})"
+no_data = '''absent_over_time(node_memory_memavailable_bytes{job="integrations/unix"}[5m])'''
 operator = ">"
 threshold = 0.9
 for = "5m"
@@ -95,6 +97,7 @@ title = "Beelink swapping, slowing Kaizen's VMs"
 route = "kaizen"
 # Swap shares the one SSD with every CI VM's disk, so swapping stalls jobs and holds new VMs back.
 promql = "rate(node_vmstat_pswpout{job=\"integrations/unix\"}[5m]) * 4096 / 1e6"
+no_data = '''absent_over_time(node_vmstat_pswpout{job="integrations/unix"}[5m])'''
 operator = ">"
 threshold = 1
 for = "30m"
@@ -180,6 +183,7 @@ route = "kaizen"
 # The share of time tasks waited on the disk. Over half holds new CI VMs back (DISK_WAIT_LIMIT in
 # ci_supervisor.py), so a half-hour of it means tasks queue.
 promql = "rate(node_pressure_io_waiting_seconds_total{job=\"integrations/unix\"}[5m])"
+no_data = '''absent_over_time(node_pressure_io_waiting_seconds_total{job="integrations/unix"}[5m])'''
 operator = ">"
 threshold = 0.6
 for = "30m"
@@ -202,6 +206,7 @@ route = "kaizen"
 promql = '''
 1 - (node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
 / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"})'''
+no_data = '''absent_over_time(node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}[5m])'''
 operator = ">"
 threshold = 0.8
 for = "10m"

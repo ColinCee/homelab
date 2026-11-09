@@ -39,6 +39,9 @@ def test_every_grafana_rule_has_one_with_its_title_route_and_closes() -> None:
         if "closes" in grafana["annotations"]:
             assert rule.get("closes") == grafana["annotations"]["closes"], uid
         assert rule.get("keep_firing") == grafana.get("keepFiringFor"), uid
+        # Grafana's no-data alert; the backup's size is a new metric, missing when the backup stops.
+        silent = grafana["noDataState"] == "OK" and uid != "backup-storage-high"
+        assert ("no_data" not in rule) == silent, uid
         assert rule["for"] in (grafana["for"], "0m" if grafana["for"] == "0s" else None), uid
 
 
@@ -168,8 +171,8 @@ def test_a_changed_rule_updates_only_its_alert() -> None:
     changed = copy.deepcopy(CONFIG)
     changed["rules"]["high-disk"]["threshold"] = 0.85
     assert applied(changed, fake)[1] == ["updated alert high-disk"]
-    condition = by_title(fake)["Beelink disk filling up"]["query_condition"]["promql_condition"]
-    assert condition["value"] == 0.85
+    condition = by_title(fake)["Beelink disk filling up"]["query_condition"]
+    assert ") > 0.85 or on()" in condition["promql"]
 
 
 def test_a_rule_git_removed_is_deleted_and_others_are_left_alone() -> None:
@@ -262,8 +265,10 @@ def test_rules_hold_for_grafanas_for_and_keep_firing() -> None:
     fake, _ = applied(CONFIG)
     alerts = by_title(fake)
     cpu = alerts["Beelink CPU maxed out"]
-    assert cpu["pending_period_sec"] == 1200 and cpu["keep_firing_for"] == 0
-    assert cpu["query_condition"]["promql"].startswith("max_over_time((( sum(rate(")
-    assert cpu["query_condition"]["promql"].endswith("[10m:1m])")
+    # Held 20 minutes at some time in the last 10: the hold is in the query.
+    assert cpu["pending_period_sec"] == 0 and cpu["keep_firing_for"] == 0
+    assert cpu["query_condition"]["promql"].startswith("(max_over_time((min_over_time((( sum(")
+    assert "[20m:1m]))[10m:1m])) > 0.8 or on()" in cpu["query_condition"]["promql"]
     site = alerts["Flight Tracker site down"]["query_condition"]["promql"]
-    assert site.startswith("(min_over_time((max(probe_success")
+    assert site.startswith("(min_over_time((max_over_time((max(probe_success")
+    assert alerts["Beelink disk filling up"]["pending_period_sec"] == 600

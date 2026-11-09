@@ -144,11 +144,15 @@ def desired(config: Mapping[str, Any], env: Mapping[str, str]) -> tuple[dict, di
             templates[template] = {"body": template_body(body, series)}
         query = " ".join(rule["promql"].split())
         operator, threshold = rule["operator"], rule["threshold"]
+        pending = seconds(rule.get("for"))
         if keep := rule.get("keep_firing"):
-            # OpenObserve's keep_firing_for never sends the resolve, so the query holds the worst
-            # minute of the window instead: a dip under it is no clear, while firing or before.
-            worst = "min" if operator.startswith("<") else "max"
-            query = f"{worst}_over_time(({query})[{keep}:1m])"
+            # OpenObserve's keep_firing_for never sends the resolve, so the query holds instead:
+            # it fires while the value stayed past the threshold for `for` at any time in the
+            # last `keep_firing`, so a dip under that is no clear but a spike is no onset.
+            low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
+            held = f"{low}_over_time(({query})[{rule['for']}:1m])"
+            query = f"{high}_over_time(({held})[{keep}:1m])"
+            pending = 0
         if "no_data" in rule:
             no_data = " ".join(rule["no_data"].split())
             query = f"({query}) {operator} {threshold} or on() ({no_data}) * {NO_DATA}"
@@ -189,7 +193,7 @@ def desired(config: Mapping[str, Any], env: Mapping[str, str]) -> tuple[dict, di
                     if live
                     else 0,
                 },
-                "pending_period_sec": seconds(rule.get("for")),
+                "pending_period_sec": pending,
                 "keep_firing_for": 0,
                 # OpenObserve refuses it on a per-series alert, which never sends a resolve: the
                 # Control room takes a series whose repeats stop as cleared.
@@ -278,34 +282,42 @@ def apply(call: Call, config: Mapping[str, Any], env: Mapping[str, str]) -> list
     return changes
 
 
-def wait_until_up(url: str, timeout: float = 150) -> None:
+def wait_until_ready(call: Call, timeout: float = 90) -> None:
+    """Until OpenObserve answers and holds the `up` stream that alerts fall back to (first deploy).
+    Under deploy's 120 s `up --wait`, so this message is the one in the log."""
     deadline = time.monotonic() + timeout
     while True:
         try:
-            with urllib.request.urlopen(url + "/healthz", timeout=5):
+            streams = call("GET", f"/api/{ORG}/streams?type=metrics", None)["list"]
+            if any(s["name"] == "up" for s in streams):
                 return
-        except OSError:
-            if time.monotonic() > deadline:
-                raise SystemExit(
-                    f"OpenObserve at {url} did not answer in {timeout:.0f} s"
-                ) from None
-            time.sleep(3)
+        except OSError, Refused:
+            pass
+        if time.monotonic() > deadline:
+            raise SystemExit(f"OpenObserve had no `up` metric after {timeout:.0f} s")
+        time.sleep(3)
 
 
 def main() -> None:
     with open(sys.argv[1], "rb") as file:
         config = tomllib.load(file)
     url = os.environ.get("OPENOBSERVE_URL", "http://openobserve:5080")
-    wait_until_up(url)
     call = client(
         url,
         os.environ.get("OPENOBSERVE_USER", "root@homelab.internal"),
         os.environ["OPENOBSERVE_PASSWORD"],
     )
+    wait_until_ready(call)
     try:
         changes = apply(call, config, os.environ)
     except Refused as error:
-        raise SystemExit(f"OpenObserve refused {error}") from None
+        # A refusal may quote a destination's URL, and Discord's is its secret.
+        message = str(error)
+        for spec in config["destinations"].values():
+            for name in re.findall(r"\$\{(\w+)\}", " ".join(map(str, spec.values()))):
+                if value := os.environ.get(name):
+                    message = message.replace(value, f"${{{name}}}")
+        raise SystemExit(f"OpenObserve refused {message}") from None
     print("\n".join(changes) or "OpenObserve's alerts already match", flush=True)
 
 
