@@ -64,17 +64,16 @@ it the snapshots cannot be decrypted, and GitHub will not show it again.
 
 Each successful run logs `backup ok` and writes its time to
 `/var/lib/homelab-metrics/backup.prom`, which Alloy exports to Prometheus as
-`homelab_backup_last_success_timestamp_seconds`. The Grafana rule **Backup
-Missed** fires to Discord when that is over 26 hours old, which covers failed
+`homelab_backup_last_success_timestamp_seconds`. **Nightly backup didn't run**
+fires when that is over 26 hours old, which covers failed
 runs, a stopped container and a server that was down overnight. A failed run
 logs `backup FAILED at <step>` and writes its time to
 `/var/lib/homelab-metrics/backup-failure.prom` as
 `homelab_backup_last_failure_timestamp_seconds{step="cap|backup|forget|check"}`;
 the next good run removes it. The alert names that step, or says no failure was
 recorded when the run never happened, and the `Remediate` workflow's diagnose
-prints these files. It used to
-count `backup ok` lines in Loki, but on 2026-10-10 Loki missed the line and
-the alert fired while backups were succeeding.
+prints these files. Do not alert on `backup ok` log lines instead: Loki can
+miss a line and fire while backups succeed.
 
 ## Size cap
 

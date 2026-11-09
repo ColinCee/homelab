@@ -137,9 +137,14 @@ That is why the runner defaults to 5 slots (from 3): most jobs are agent
 sessions waiting on the network, and five jobs at that rate (an extrapolation
 from the four-job run, not measured) would fit the 16 GB with the 3 GiB reserve
 for the home's services. The supervisor's memory check (`memory_reserve_mib`)
-holds a VM back when they do not. No 5-slot load test has run yet; it must pass
-on the host before 5 is used
-(see [Changing the number of slots](runbooks/ci-runner.md#changing-the-number-of-slots)).
+holds a VM back when they do not. The host load-tests each slot count before using
+it ([Changing the number of slots](runbooks/ci-runner.md#changing-the-number-of-slots)); on 7 November
+2026 the Beelink ran 4 build slots and passed at 4.
+
+Under that load test, before the VMs' CPU weight moved to their shared cgroup (4 November), Grafana's
+worst response was 0.7 to 3.8 s at 3 to 5 slots, with 5 failed requests in some runs. With that fixed,
+Grafana still answered 503 20 to 50 s after the VMs started, most likely while the kernel wrote out the
+image copies; VMs now boot from snapshots of the images instead.
 
 The suite in one 4-vCPU VM by number of test workers: 1: 10.5 s, 2: 7.4 s,
 3: 7.0 s, 4: 6.7 s, 6: 7.4 s. About 5 s cannot be split up (Python starting,
