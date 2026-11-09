@@ -1,113 +1,68 @@
 # CI runner (Firecracker)
 
-Live since 2026-10-14, serving cortex. A cortex run goes from created to done
-in about 20 seconds, against 26 to 29 on GitHub's runner for the same commit.
-
-How fast it is, against other sandboxes and GitHub's runners: [CI runner performance](../ci-runner-performance.md).
-
-CI for private repositories runs on the homelab's server, and Auto Kaizen's builds also on
-Colin's PC when it gives slots ([PC build slots](#pc-build-slots)), each job in its own throwaway
-Firecracker microVM. Public repositories keep using GitHub-hosted runners, and
-the deploy runner is separate (see [Deploying services](deploying-services.md)).
+CI for Colin's private repositories, each job in its own throwaway Firecracker microVM on the Beelink, and Auto
+Kaizen's builds also on Colin's PC when it gives slots ([PC build slots](#pc-build-slots)). Public repositories use
+GitHub-hosted runners; the deploy runner is separate ([Deploying services](deploying-services.md)). How fast it is:
+[CI runner performance](../ci-runner-performance.md).
 
 ## Using it
 
-A job asks for the runner by its label:
+A job asks for a VM by label. A private repository's workflow never names a GitHub-hosted runner, not even as a
+fallback (those runs are billed and can be refused), and a pull-request job uses no repository secrets.
 
-```yaml
-jobs:
-  check:
-    runs-on: [self-hosted, linux, x64, homelab-fc]
-```
+| `runs-on` | For | VM |
+|---|---|---|
+| `[self-hosted, linux, x64, homelab-fc]` | Builds and tests | 4 vCPU and 4 GiB alone, 2 and 2 GiB beside other jobs; the repo's cache disk |
+| `[..., homelab-fc-light]` | Auto Kaizen's merge and agent steps | 1 vCPU, 2 GiB, no cache disk, 3-hour timeout |
+| `[..., homelab-fc-small]` | A light job that runs no agent (peaks under 700 MiB) | 1 vCPU, 1 GiB |
+| `[..., homelab-fc-deploy]` | A merge's deploy | 1 vCPU, 1 GiB, a standby no other job can take |
+| add `fc-cache-<owner>--<name>` (lowercase) to a build | A job working on another served repo's code | That repo's cache disk, if it is served, private and has one; else none |
 
-A private repository's workflow never names a GitHub-hosted runner, not even as a
-fallback, since those runs are billed and can be refused; a pull-request job uses
-no repository secrets.
+Light, small and deploy jobs run in light slots of their own, so a merge waiting on CI never takes the slot CI
+needs, and a light VM never takes a build job. The light standby also takes small jobs, which then run at 2 GiB. A job that runs out of memory loses the greedy process, not the VM.
+GitHub can still hand a job without an `fc-cache-` label to a VM booted with one when both are queued in the same
+repo; that job then starts with the named repo's disk.
 
-The VM is Ubuntu 24.04 with the GitHub runner, git, build tools, the system
-python3 and `python` (uv's Python, PYTHON_VERSION; Ubuntu's own is not installed), shellcheck, `file` and passwordless `sudo`, with Node 24 LTS, uv, Python 3.15, a JDK 25 (Temurin, at
-`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, the GitHub CLI (`gh`), gitleaks, bubblewrap
-(`bwrap`), socat and Docker with its buildx and compose
-plugins (the engine starts on a job's first `docker` call, so `docker build`,
-`docker run -p` and `docker push` work as on GitHub's runner, without sudo)
-already installed (pinned in `versions.env`) and on the job's `PATH`, so a job
-needs no setup actions. mise installs whatever else a repo's `mise.toml` lists. The libraries Playwright's
-Chromium needs are installed too, so a job runs `playwright install chromium`
-and needs no `install-deps` step. The actions the CI repos use
-(`CACHED_ACTIONS` in `versions.env`) are unpacked in the image, so "Set up job"
-does not download them; a tag that has moved on is downloaded as usual until
-the list is refreshed and the image rebuilt. A change to the image's tools or
-actions reaches jobs once the image is rebuilt, which `update.sh` does when `versions.env` changes.
+The VM is Ubuntu 24.04 with the GitHub runner and these already on the job's `PATH`, so a job needs no setup
+actions: git, build tools, the system `python3`, `python` (uv's, `PYTHON_VERSION`), Node 24 LTS, uv, Python 3.15,
+JDK 25 (`JAVA_HOME=/opt/jdk`), mise, bun, pnpm, `gh`, gitleaks, shellcheck, `file`, `bwrap`, socat, passwordless
+`sudo`, and Docker with buildx and compose (the engine starts on a job's first `docker` call; no sudo needed).
+Versions are pinned in [`versions.env`](../../ci-runner/versions.env). mise installs whatever else a repo's
+`mise.toml` lists. Playwright's Chromium libraries are installed, so `playwright install chromium` needs no
+`install-deps`. The actions the CI repos use (`CACHED_ACTIONS`) are unpacked in the image; a tag that has moved on
+downloads as usual until the list is refreshed. A change to the image reaches jobs once it is rebuilt, which
+`update.sh` does when `versions.env` changes.
 
-The fastest shape for a job, as cortex's `.github/workflows/linux.yml` does it:
-checkout, then one step that runs `uv sync --locked --no-install-project` and
-copies `node_modules` from the cache disk when `package-lock.json` matches the
-one beside it (falling back to `npm ci`), then the tests. Measured results are
-in [CI runner performance](../ci-runner-performance.md).
+The fastest job shape, as cortex's `.github/workflows/linux.yml`: checkout, one step that runs
+`uv sync --locked --no-install-project` and copies `node_modules` from the cache disk when `package-lock.json`
+matches the one beside it (else `npm ci`), then the tests.
 
 ### Cache disk
 
-Each VM gets its repo's **cache disk** at `/cache`: uv's and npm's caches and
-the Python environment from the repo's last green push to its default branch.
-Each VM gets a snapshot of it (`ci-runner/vm-disks.sh`, like the root disk), so a
-job can install into it but nothing it writes outlives the VM, and a branch can
-never change what the next job starts from. The VM points `UV_CACHE_DIR` (`/cache/uv`),
-`npm_config_cache` (`/cache/npm`) and `UV_PROJECT_ENVIRONMENT` (`/cache/venv`)
-at it, so `uv sync` and `npm ci` find almost everything in place.
+Each build VM gets its repo's cache disk at `/cache`: uv's and npm's caches and the Python environment from the
+repo's last green push to its default branch. `UV_CACHE_DIR` (`/cache/uv`), `npm_config_cache` (`/cache/npm`) and
+`UV_PROJECT_ENVIRONMENT` (`/cache/venv`) point at it. Each VM writes to its own snapshot, so nothing a job writes
+outlives the VM and a branch never changes what the next job starts from. Do not restore GitHub's caches as well;
+without a disk yet, `/cache` starts empty and the job downloads as usual.
 
-How it is made, without the host running any of the repo's code:
-
-1. Every VM gets an empty **outbox**: a raw disk, after its other disks, kept on
-   the host after the VM as `/var/lib/homelab-ci/outbox/<runner name>.tar`. A green
-   push to the default branch tars `/cache` onto it with the shared action, the
-   job's last step, which does nothing on any other event:
-
-   ```yaml
-   - uses: ColinCee/homelab/.github/actions/fc-cache@main
-     with:
-       paths: web/node_modules web/package-lock.json # optional workspace paths
-   ```
-
-   It tars every readable top-level folder of `/cache` (not `lost+found`, nor
-   one a given path starts with: the disk holds the last copy of `web/` there)
-   and the given paths, then writes a header naming its run. It never fails the
-   job: a cache it cannot save (too big, a path missing) is a warning, and the
-   next jobs start from the last one. Nothing goes through GitHub, whose artifact
-   storage has a quota that, once full, fails every upload.
-2. Once the VM has ended, the supervisor reads the header and asks GitHub about
-   that run: it takes the tar only if the run was a push to the default branch and
-   its job on this VM's runner passed (it waits up to an hour for GitHub to show the
-   job finished), and only if the run is newer than the disk's. It unpacks it
-   (plain files, folders and links only, nothing outside the folder; a file or link
-   held twice takes its later entry) and builds
-   `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4`, root-owned and read-only
-   to others. VMs started after that use it. Every outbox is deleted once judged.
-
-A job working on another served repo's code can ask for that repo's disk with
-one extra label, `fc-cache-<owner>--<name>` in lowercase:
+To save it, make this the job's last step; it does nothing except on a push to the default branch, and never fails
+the job (a cache too big or a missing path is a warning):
 
 ```yaml
-    runs-on: [self-hosted, linux, x64, homelab-fc, fc-cache-octo--widgets]
+- uses: ColinCee/homelab/.github/actions/fc-cache@main
+  with:
+    paths: web/node_modules web/package-lock.json # optional workspace paths
 ```
 
-Its VM registers with that label too, and a VM without it never counts as
-covering the job. The VM gets the named repo's disk only if that repo is
-served, private and has a disk; otherwise it gets no cache disk and the job
-still runs. Labels cannot stop GitHub handing a job without the label to such
-a VM when both are queued in the same repo; that job then starts with the named
-repo's disk, and the supervisor boots another VM for the labelled job.
-
-A job should not restore GitHub's caches as well. Without a cache disk yet,
-`/cache` starts empty and the job downloads as usual. The default branch's job
-also puts `node_modules` and its `package-lock.json` on the disk (the action's
-`paths`), copied rather than linked so TypeScript's incremental build info
-stays valid.
+`node_modules` is copied, not linked, so TypeScript's incremental build info stays valid. The action tars `/cache`
+onto the VM's outbox disk; once the VM ends, the supervisor takes it only from a passing push job on the default
+branch newer than the disk's, and builds `/var/lib/homelab-ci/caches/<owner>__<repo>.ext4` without running any of
+the repo's code (`unpack_cache` and `build_cache_image` in [`ci_supervisor.py`](../../scripts/ci_supervisor.py)). Nothing goes through GitHub
+artifacts, whose storage quota, once full, fails every upload.
 
 ### Handoffs
 
-Files a job hands to later jobs, in place of GitHub artifacts (whose storage quota,
-once full, fails every upload). `put` never fails the job; `get` fails if the item
-is not there, or not for this job:
+Files a job hands to later jobs, in place of GitHub artifacts:
 
 ```yaml
 - uses: ColinCee/homelab/.github/actions/handoff@main
@@ -125,188 +80,42 @@ is not there, or not for this job:
     path: ${{ runner.temp }}/in
 ```
 
-1. `put` writes every item the job has put so far onto the VM's outbox (as the
-   cache does, header last). Once the VM has ended, the supervisor files each item
-   under `/var/lib/homelab-ci/handoff/<owner>__<repo>/<run>/<job>/`, with the job
-   name GitHub shows for that VM's runner, whatever the job's result: no job can put
-   under another's name. It is deleted after its `days`; past 20 GiB a repo's new
-   items are dropped. A job puts handoffs or a cache, not both, and only a build
-   VM's cache is taken, never a light one's.
-2. `get` prints an ask on the console. The VM's console reader asks GitHub which job
-   runs on that VM, and answers on the VM's read-only **inbox** disk (the item after
-   512 bytes, then a header): the item if that job is one of its `readers` (same run)
-   or `later` readers, `none` once the job that would put it has finished and its
-   outbox is filed, else it waits up to `wait` seconds. A VM still cannot open any
-   connection to the Beelink. `wait` is at most 1800 seconds. `later` readers
-   are honoured only for a run of the default branch that is not a pull request's,
-   and a VM gets at most 50 answers.
-3. Item names are `a-z`, `0-9` and `-`; job names need no spaces, so a matrix or
-   called workflow's job (`build (3.12)`, `call / build`) cannot put or be named in
-   `from`. Handoffs are root's alone on the Beelink (`0700`).
+- `put` never fails the job; `get` fails if the item is not there, or not for this job. `get` waits up to `wait`
+  seconds (at most 1800) and answers `none` once the putting job has finished and its outbox is filed.
+- Items are filed under `/var/lib/homelab-ci/handoff/<owner>__<repo>/<run>/<job>/` with the job name GitHub shows
+  for that VM's runner, so no job can put under another's name. Root only (`0700`).
+- `later` readers count only for a default-branch run that is not a pull request's. Past 20 GiB a repo's new items
+  are dropped.
+- A job puts handoffs or a cache, not both, and only a build VM's cache is taken.
+- Job names need no spaces: a matrix or called workflow's job (`build (3.12)`, `call / build`) cannot put or be
+  named in `from`.
+- A VM gets at most 50 answers (handoffs and `ci-capacity` together) and still cannot open any connection to the
+  Beelink: asks go out on its console, answers come back on a read-only inbox disk.
 
 ### Free build machines
 
-`ci-capacity` in any job VM prints the build machines' counts as JSON, no repo names, so a job (Auto Kaizen's
-task start) can see how many are free before it starts work:
+`ci-capacity` in any job VM prints the build machines' counts as JSON, no repo names, so Auto Kaizen's task start
+can see how many are free:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1, "queued": 0, "held_for_memory": 0,
  "in_use_other_repos": 1, "pc_up": 1, "pc_slots": 6, "pc_in_use": 2}
 ```
 
-It asks on the console, as `get` does, and the console reader answers on the inbox from `machines.json` (see
-Operating for each field; `pc_up` is 1 or 0, and `in_use_other_repos` counts the build VMs running jobs of repos
-other than the asking job's). It counts as one of the VM's 50 answers, and fails within 15
-seconds (`CAPACITY_WAIT`) when nothing answers: a host whose supervisor predates it, or no `machines.json`
-with `slots` and `updated`.
+Fields are as in [`machines.json`](#status-files); `in_use_other_repos` counts build VMs running other repos' jobs.
+It fails within 15 seconds (`CAPACITY_WAIT`) when nothing answers. Auto Kaizen runs no more tasks at once than the
+build slots (5, set in its `build.yml` and `watch.yml`): change them together.
 
-There are five slots unless `/etc/homelab-ci/slots` says otherwise (see
-Operating). Auto Kaizen runs no more tasks at once than this number, set in its
-`build.yml` and `watch.yml`; change them with it. A job running alone gets 4 vCPUs and 4 GiB; a job
-that starts while others run gets 2 vCPUs and 2 GiB. A job that needs more memory loses the greedy
-process, not the VM.
+### What runs where
 
-Light jobs ask for `[self-hosted, linux, x64, homelab-fc-light]` instead (Auto Kaizen's merge and agents: 2 GiB),
-or `homelab-fc-small` for a job that runs no agent (1 GiB; such jobs peak under 700 MiB), or `homelab-fc-deploy` for
-a merge's deploy (1 GiB); small and deploy jobs each have a standby of their own. They run in light slots of
-their own, numbered after the build slots (`/etc/homelab-ci/light-slots`, 0 for none): 1 vCPU, no cache disk, a
-3-hour timeout (a merge waits for CI), and a light standby of their own (see Design). A light VM registers without `homelab-fc`, so it never takes a build job, and a
-merge waiting on CI never takes the slot that CI needs. Slots and memory go to the oldest job first, except that a
-later job of a run that already finished a build job (a task's review) goes before a new run's first build, until that
-build has been queued 10 minutes (`FIRST_BUILD_WAIT_MAX`), and a task run's light jobs past its first step (its review
-and merge) go before other workflows' light and small jobs (goal owners, Planners) until those have been queued 5 minutes
-(`LIGHT_OTHER_WAIT_MAX`). GitHub, not the supervisor, picks which of a repo's queued jobs a VM for that repo and label
-takes, so this order decides which repo's VM boots and gets memory first; a light job whose VM
-fits starts even past a build waiting for memory, so a task's first step and merge step never wait behind builds; light
-VMs never outgrow their own slots (see [Why a job waits](#why-a-job-waits)).
-
-A VM starts only when the host's available memory (`MemAvailable` in
-`/proc/meminfo`), less the VM's size, still leaves 3 GiB for the home's own
-services; `/etc/homelab-ci/memory-reserve-mib` changes that amount. A booted VM
-touches far less than its size and gives file cache back: `ci-trim-cache` in the
-VM drops its cache once it passes a quarter of its memory, and the balloon
-device's free page reporting returns the freed pages to the host. So this counts
-what is really free, not the sizes added up. When a VM ends, the journal says how
-much host memory it touched at most, cache included, and what it wrote to the SSD, its disks' writes plus the
-outbox and inbox (`slot N: VM ended (exit 0), its memory peaked at X MiB of Y, it wrote Z MiB`; `?` when a counter
-cannot be read), and what its job needed, cache left out, with the kernel's out-of-memory kills
-(`slot N: <runner> (<kind>) needed at least X MiB of Y, K out-of-memory kills`, from `ci-memwatch` in the VM).
-The second sizes VMs by kind of job: its counts go to Grafana (`homelab_ci_vms_ended_total`,
-`homelab_ci_vms_near_full_total` and `homelab_ci_vm_oom_kills_total` by kind), which alerts on any kill and on a
-kind whose jobs often need over 80% of their memory. A VM never swaps: its memory cap (guest RAM plus 256 MiB) also counts
-the host's cache of its disk, which goes first (`run-vm.sh`). No VM starts either while tasks waited on the disk for
-over half of the last minute (`some avg60` in `/proc/pressure/io`), and over a quarter, one
-a minute; the reason is beside `DISK_WAIT_LIMIT` in the supervisor. A job without the memory
-or the disk stays queued and is tried again on the
-next poll (see [Why a job waits](#why-a-job-waits)). A standby gives way first: none boots
-while a job waits, and one waiting for another repo is stopped to
-make room; the deploy and small standbys are the exception (see Design).
-
-Only Colin's private repositories the token can see are served (its repository
-access is the list; `served_repos` in the supervisor), and only those nobody else can
-write to: a repo with any other collaborator or a deploy key that can write is skipped
-(checked every minute and before its first VM), so only Colin
-and his own apps (Kaizen, Renovate) can start a job here. Repos that have had a job here
-are polled every 2 s (a standby booted for a repo does not count); the rest once a minute,
-a few per poll, and the minutely repo listing runs beside the poll, so neither delays a
-queued job's VM. The polled repos are asked all at once, each on its own thread over a
-connection kept open, so a poll takes about as long as one repo's answers. A poll slower than 5 s is
-logged (`slow poll:`) with its GitHub requests and its slowest repos. Only while private: privacy is
-checked on every poll, and once a repo is public no new VM starts for it and its
-idle ones are stopped. Before making a repo public, move its workflows to
-GitHub-hosted runners and take it off the token's repository access.
-
-## Design
-
-- **One VM per job, never reused.** The supervisor polls GitHub every 2
-  seconds (unchanged answers are free) for queued jobs with the label and boots
-  a VM for each, up to two at once. The VM's disks are device-mapper snapshots of the images, not copies
-  (`ci-runner/vm-disks.sh`): it starts in seconds, reads the image from the
-  page cache all VMs share, and its writes go to a deleted file thrown away
-  with everything the job wrote. A starting VM covers a queued job of its repo and
-  label only until GitHub shows its runner with a job, for at most 2 minutes, so a
-  second job of the same kind gets its own VM within a poll. The supervisor runs from
-  the host's copy, which takes a merged change to `scripts/ci_supervisor.py` within a minute (see
-  [Changing the Beelink while jobs run](#changing-the-beelink-while-jobs-run)).
-  However the job ends, the VM ends, within seconds. A VM left
-  without a job (cancelled before it started, or taken by another runner) is
-  stopped about 30 to 40 seconds after it boots.
-- **Build VMs wait ready.** With a build slot free, a standby VM is kept booted and registered
-  for a repo and cache label, with that label's cache disk, so the next job asking for the same
-  starts in about a second instead of waiting for the next poll, a VM to boot and its runner to
-  start (about 11 seconds). Its label is, first, the last build job's once that job's VM has ended
-  (kept in `/var/lib/homelab-ci/last-repo`, so a restart puts it back there), then each running
-  build job's, oldest first: a task's Reviewer, queued seconds after its Builder ends, takes the
-  standby booted while its Builder ran, even when another task's build started in between. Up to
-  two wait, one boot a poll: one for each of those repos and labels first, then a second for the
-  first of them, so two tasks of the busiest repo starting builds together both find one booted
-  (that second one stops for a newly wanted repo or label with none).
-  One boots only while free build slots outnumber the build jobs waiting for one and memory
-  above the reserve allows; none boots while a job waits for memory, or for a label one of the
-  PC's ready runners already waits for. Each costs about 450 MB of RAM while idle, and always
-  has 4 vCPUs.
-  Once it takes a job it is an ordinary job VM and a new standby boots in a
-  free slot. A build job wanting another repo or label, with no slot free, stops
-  it; an idle standby is replaced every 45 minutes, and stopped if its
-  repo stops being private. `/etc/homelab-ci/standbys` sets how many wait (2 by default).
-- **Two light VMs wait ready.** With a light slot free, a light standby waits
-  registered for the repo of the last `homelab-fc-light` job (kept in
-  `/var/lib/homelab-ci/last-light-repo`; that repo is polled every 2 s), so a task's
-  agent steps start in seconds. It also registers
-  `homelab-fc-small`, so it takes its repo's light and small jobs (a small one then runs at 2 GiB).
-  It gives way first: none boots while a job
-  waits for memory or the disk, and an idle one is stopped for a light job it cannot take with no
-  light slot free or for a build job waiting for memory that was queued before its own light jobs. It is replaced every 45
-  minutes like the standby. `/etc/homelab-ci/light-standbys` sets how many wait (2 by
-  default, 0 for none); one boots a poll, each only while its memory fits.
-- **One deploy VM and one small VM wait ready.** One light slot is kept for deploys and one for small jobs while
-  no standby of theirs is up: other light jobs and the light standby never take them, though a deploy may use any
-  free light slot. A standby that takes its job keeps no slot, so the next one boots in the first light slot to free
-  up. At least one light slot is left for 2 GiB jobs: with two light slots only the deploy one is kept, with one none.
-  There a deploy standby waits registered with
-  `homelab-fc-deploy` alone for the repo of the last deploy job (kept in `/var/lib/homelab-ci/last-deploy-repo`,
-  `ColinCee/auto-kaizen` until there is one; polled every 2 s), so a merge's deploy starts in seconds and no task
-  job can take it first. It is the one VM a merge's deploy needs, so it never gives way to other jobs or to a job
-  waiting for memory, and boots while jobs wait for memory if its 1 GiB still leaves the reserve: without that, busy
-  hours stopped or held it and a deploy waited up to 135 s for a VM. Only another repo's deploy, its repo going public
-  or its 45-minute replacement stops it; it boots again after taking a job. `/etc/homelab-ci/deploy-standbys` sets how
-  many wait (1 by default, 0 for none, which keeps no slot). The small standby is the same for `homelab-fc-small` and
-  the repo of the last small job (`/var/lib/homelab-ci/last-small-repo`, `/etc/homelab-ci/small-standbys`), so each
-  task's first step and other jobs that run no agent start in seconds while builds hold the memory and 2 GiB jobs
-  the other light slots: before it, a task's first step waited a typical 55 s for a VM, mostly for those.
-- **Just-in-time registration.** For each VM the supervisor asks GitHub for a
-  runner registration that is good for exactly one job and passes only that to
-  the VM. The GitHub token never leaves the host.
-- **Jobs have the internet, not the home network.** VMs reach the internet
-  through NAT. The host itself, the LAN, the tailnet, Docker networks, the
-  other slots and the home's public address (the router answers on it from
-  inside) are dropped. A VM may only use its own address, and nothing, the host
-  included, can open a connection to a VM. The iptables accept is limited to
-  the uplink, so it opens nothing private even without the nftables table.
-- **Firecracker is jailed.** The jailer runs it as the slot's own user
-  (`fc-slotN`), chrooted, with Firecracker's syscall filter, no capabilities
-  and a memory cap. All VMs share one cgroup (`firecracker`) at CPU weight 20,
-  below the services' 100 (`system.slice`): weight only counts between siblings.
-- **One VM per slot.** A lock stops two runs sharing a slot; if a run dies,
-  the next one kills whatever it left behind.
-- **Installed from main only.** Everything lives root-owned under
-  `/usr/local/lib/homelab-ci`, `/var/lib/homelab-ci` and `/etc/homelab-ci`. Only
-  `update.sh` changes it, from a commit on `main` (which needs its `check` to pass);
-  stack deploys never touch it.
-
-| Piece | Where |
-|-------|-------|
-| Versions, release hashes | [`ci-runner/versions.env`](../../ci-runner/versions.env) |
-| Host setup | [`ci-runner/install-host.sh`](../../ci-runner/install-host.sh) |
-| Network rules | [`ci-runner/net/`](../../ci-runner/net/), table `inet homelab_ci`, `homelab-ci-net.service` |
-| VM image | [`ci-runner/rootfs/`](../../ci-runner/rootfs/), built by [`build-rootfs.sh`](../../ci-runner/build-rootfs.sh) |
-| Boot one VM | [`ci-runner/run-vm.sh`](../../ci-runner/run-vm.sh) |
-| Supervisor | [`scripts/ci_supervisor.py`](../../scripts/ci_supervisor.py), `homelab-ci-supervisor.service` |
-| Checks | [`ci-runner/tests/`](../../ci-runner/tests/): `audit.sh`, `test-network.sh`, `test-tools.sh`, `test-load.sh` |
-
-Each slot has its own tap device and a private address pair of its own.
+Only Colin's private repositories that the token can see and that nobody else can write to are served
+(`served_repos`): a repo with another collaborator or a writable deploy key is skipped. Once a repo is public no
+new VM starts for it and its idle ones stop. Before making one public, move its workflows to GitHub-hosted runners
+and take it off the token's repository access.
 
 ## Operating
+
+### First install
 
 From a checkout of `main` on the host:
 
@@ -319,46 +128,93 @@ sudo systemctl enable --now homelab-ci-supervisor.service
 journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -t homelab-ci-vm -f
 ```
 
-`install-host.sh` also trims the SSD hourly instead of weekly: the VMs' throwaway write files churn about
-0.5 TB a day, and untrimmed they slow every write (`systemd/fstrim-hourly.conf`). On the Beelink it also installs
-`homelab-ssd-wear.timer`, which every 15 minutes reads the SSD's health log (`scripts/ssd_wear.py`, as root, needing
-only read access to `/dev/nvme0`) and writes its lifetime bytes and wear to `ssd.prom` for Grafana; check it with
-`systemctl status homelab-ssd-wear.service`.
+`install-host.sh` also trims the SSD hourly, since the VMs' throwaway disks churn about 0.5 TB a day and untrimmed
+they slow every write, and on the Beelink installs `homelab-ssd-wear.timer`, which writes the SSD's wear to
+`ssd.prom` for Grafana every 15 minutes (`systemctl status homelab-ssd-wear.service`).
 
-`/etc/homelab-ci/slots` holds how many VMs run at once (5 when the file is
-missing or not a number). `install-host.sh` writes it, keeping its value unless
-run as `sudo SLOTS=4 ci-runner/install-host.sh`, and makes that many slot users
-and taps; the supervisor reads it when it starts and when a load test's drain ends, and `setup-net.sh` and
-`test-load.sh` read it too (a `SLOTS` variable wins). `/etc/homelab-ci/light-slots`
-works the same way (`LIGHT_SLOTS`, 5 by default; the supervisor counts none until the file exists), except that on
-the Beelink it is raised to `LIGHT_SLOTS_MIN` in `ci-runner/slots.sh` and never lowered, and the PC keeps 0: raising
-that number and merging raises the Beelink's light slots. The users and taps cover both. Change either only through `install-host.sh`, so the network always has a
-tap for every slot. With N build slots the VMs use up to 2 + 2N GiB on paper (12 GiB for 5), plus 1-2 GiB per light
-slot (10 light slots beside 4 build slots are over the 13 GiB above the reserve on paper, sized in `slots.sh`);
-light VMs mostly wait and builds get memory in that start order. A job touches far less
-than its size (about 1 GB, see [the measurements](../ci-runner-performance.md)),
-and the memory check above holds a VM back before the services' reserve is
-reached, so 5 fits the 16 GiB host while jobs mostly wait on the network. A host
-that already has the file keeps its number: to move one from 3 to 5, follow
-[Changing the number of slots](#changing-the-number-of-slots).
-
-The GitHub token is a fine-grained token with Administration read and write (to
-create one-job registrations) and Actions read. Its repository access is the list
-of served repositories: the supervisor serves every private repository of Colin's
-the token can see, checked every minute, and nothing else. Store it without it reaching the screen or shell history:
+The GitHub token is fine-grained, with Administration read and write (for one-job registrations) and Actions
+read. Store it without it reaching the screen or shell history:
 
 ```bash
 bash -c 'read -rsp "Token: " t; echo; printf "%s" "$t" | sudo tee "$TOKEN_FILE" >/dev/null; sudo chmod 600 "$TOKEN_FILE"'  # TOKEN_FILE: see the supervisor
 ```
 
-To serve another repository (sign it up), add it to the token's repository access
-in GitHub (Settings, Developer settings, Fine-grained tokens): within a minute its
-jobs asking for `homelab-fc` get VMs. Nothing changes on the host.
+To serve another repository, add it to the token's repository access (GitHub Settings, Developer settings,
+Fine-grained tokens): within a minute its `homelab-fc` jobs get VMs. Nothing changes on the host.
 
-After every poll, failed ones too, the supervisor replaces
-`/var/lib/homelab-ci/status/machines.json` (folder 0755, file 0644, written to a
-temporary file and renamed, so a reader never sees half of it). The Control room
-mounts the folder read-only at `/machines`. It holds only counts and repo names:
+### Changing the Beelink while jobs run
+
+A change goes in by merging it. Within a minute or two each host takes it (`homelab-ci-update.timer` runs
+`update.sh --follow`): the Beelink reads main's commit, and the PC reads the commit and job image the Beelink runs,
+so it never takes a commit before its image is built. A code change is live on both in about 2 minutes; one that
+rebuilds the image, in about 5. `ci-runner/update-hosts.sh`, from Colin's PC, runs that pass on both now and shows
+what it did. `update.sh` refuses a commit not on main or older than the installed one, names the pull requests
+each install ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file says how
+current a host is.
+
+- **Running jobs carry on.** Each VM is its own systemd unit (`homelab-ci-vm-<runner name>`), and a restarted
+  supervisor takes the running VMs back in seconds.
+- **Without a restart:** `run-vm.sh`, `vm-disks.sh`, `stop-vms.sh`, Firecracker and a rebuilt image go in while
+  jobs run; new VMs get them.
+- **With a restart:** the supervisor, network rules, systemd units or slot counts. The rules reload with the home's
+  public address in one transaction, so running VMs never see it unblocked.
+- **A change whose install or image fails twice** is tried again an hour after its last failure. A second `install-host.sh` waits
+  for the first and names it.
+- **Going back** is a hand step on each host, Beelink first, which pins the host there until
+  `sudo rm /etc/homelab-ci/pinned`: `sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>`.
+- **Kernel upgrade:** the VMs boot the Beelink's kernel, so rebuild by hand (`sudo ci-runner/build-rootfs.sh`, then
+  delete `/var/lib/homelab-ci/images/commit` so the PC takes it).
+- **Firecracker or runner upgrade:** Renovate opens the PR; put the new release hash in `versions.env` by hand,
+  merge, and run the audit.
+- **Stopping every VM** on purpose: `sudo ci-runner/stop-vms.sh`.
+- **First time on a host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
+  of main; the first update then rebuilds the image (several minutes).
+- **Never leave a loop waiting to change the Beelink from your own connection**; run any wait as a named systemd
+  unit. One outlived the session that thought it had stopped it.
+
+### Changing the number of slots
+
+| File | Default | Sets |
+|---|---|---|
+| `/etc/homelab-ci/slots` | 5 | Build VMs at once |
+| `/etc/homelab-ci/light-slots` | 5; on the Beelink at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered; 0 on the PC | Light VMs at once |
+| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 2, 1, 1 (0 for none) | VMs kept booted and waiting |
+| `/etc/homelab-ci/memory-reserve-mib` | 3072 | Memory left for the home's services |
+
+Change slot counts only through `install-host.sh`, so the network has a tap for every slot:
+
+1. `sudo SLOTS=5 ci-runner/install-host.sh` (or `LIGHT_SLOTS=`; raising `LIGHT_SLOTS_MIN` and merging raises the
+   Beelink's). It makes the slot users and taps and restarts the supervisor.
+2. `sudo ci-runner/tests/audit.sh` must pass.
+
+The Beelink then load-tests the new count itself: `update.sh` starts `homelab-ci-load-test.service` when
+`/var/lib/homelab-ci/load-test.json` has no result for this count and this `test-load.sh`. The unit drains the host
+(no new VMs, standbys stopped, up to 65 minutes for running VMs to end), runs `test-load.sh`, and a `FAIL` lowers
+`/etc/homelab-ci/slots` by one, never below 3, which the next pass tests. Follow it with
+`journalctl -u homelab-ci-load-test`.
+
+With N build slots the VMs use up to 2 + 2N GiB on paper, plus 1 to 2 GiB per light slot, more than the host has.
+That works because a job touches far less than its size (about 1 GB) and a VM starts only when the host's
+`MemAvailable`, less the VM's size, still leaves the reserve, so builds get memory in start order and light VMs
+mostly wait.
+
+### Status files
+
+The supervisor writes these for the Control room, Grafana and speed reports. What each field counts is in the
+function named.
+
+| File | Holds | Code |
+|---|---|---|
+| `/var/lib/homelab-ci/status/machines.json` (0644, replaced after every poll) | Slots, VMs busy and waiting ready, cache disks, free memory, jobs queued and held, the PC's slots, the last load test. Counts and repo names only | `status` |
+| `status/waits.jsonl` (0644, 30 days) | One line per job that waited, when it stops: seconds per kind of wait and the reason for the longest | `wait_kind` |
+| `status/live.json` | Each running auto-kaizen Builder's and Reviewer's latest console line (auto-kaizen's `docs/live-view.md`) | `LIVE_LINE` |
+| `status/sessions/<runner name>.jsonl` (root only, 30 MB cap, 30 days) | Auto-kaizen agents' whole sessions for the Control room's chat page (auto-kaizen's `docs/live-session.md`) | `SESSION_LINE` |
+| `/var/lib/homelab-metrics/ci-waits.prom` | The longest-waiting job's seconds per kind, each workflow's longest queued job, busy VMs, failed polls | `homelab_ci_*` |
+| `/var/lib/homelab-metrics/ci-vm-memory.prom` | VMs ended, near full (over 80%) and out-of-memory kills by kind of job | `MEMORY_METRICS` |
+| `/etc/homelab-ci/waits.json` in each VM | How long its repo and label's queued jobs had waited and why | `vm_waits` |
+
+`machines.json` looks like this; `held_for_memory` counts jobs held for memory or a busy disk, `queued` every
+queued job not started yet, and `github_ok` is false when the last poll failed or was rate limited:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
@@ -368,254 +224,76 @@ mounts the folder read-only at `/machines`. It holds only counts and repo names:
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
-`in_use` counts build VMs started for a job, `standby` the ones waiting ready,
-`light_slots`, `light_in_use` and `light_standby` the light slots, the light VMs
-running a job and the ones waiting ready, `deploy_standby` and `small_standby` the deploy and small VMs waiting ready,
-`cache_disks` the repos with a disk in the caches folder, and `github_ok` is
-false when the last poll failed or was rate limited. `mem_available_mib` is the
-host's free memory when the file was written, and `held_for_memory` counts queued
-jobs not started because that memory would have dipped into the services' reserve, or the disk was busy;
-`queued` counts every queued job seen here and not started yet, for any reason, and `in_use_repos` splits `in_use`
-by repo. `pc` (only on a host that serves
-the PC) says whether the PC was heard lately, the slots it gives and how many of its runners have a job. A failed write is logged
-once and tried again next poll; it never holds up the poll. `draining` is true while the
-load test has the host ([Changing the number of slots](#changing-the-number-of-slots)), and
-`load_test` is its last record (null before the first).
+The console reader keeps only lines in the exact live and session formats, from VMs booted for
+`ColinCee/auto-kaizen`, and files a session by the VM it came from, never by the line, so one VM cannot write into
+another's. Everything else on the console is dropped unlogged.
 
-Beside it, `waits.jsonl` (0644) gets one line for each job that waited here, when it
-stops waiting, for the Control room and speed reports:
-
-```json
-{"job": 123, "repo": "ColinCee/example", "since": 1792999400, "until": 1793000000,
- "memory": 420, "disk": 60, "slots": 0, "booting": 100, "ready": 20, "unseen": 4, "other": 0,
- "why": "memory (1500 MiB free above the 3072 MiB reserve, a VM needs 2048)"}
-```
-
-`since` and `until` are when the supervisor first saw the job queued and when it stopped
-waiting; the rest are the seconds it waited for memory (a job queued behind one held for
-memory counts too), for the busy disk, for a free slot, for its VM to boot, with its VM's
-runner online and idle but no job from GitHub (`ready`), and for anything else (a label no VM
-has). `unseen` is from GitHub queueing the job (its `created_at`) to the supervisor first seeing
-it, so the kinds add up to the wait since GitHub queued it. A supervisor restart starts a job's
-count here again, and its `unseen` then covers the time before. `why` is the
-[wait log's reason](#why-a-job-waits) for the kind it waited longest for. Every job
-that waited gets this line, including one taken by a standby or by a VM booted for another
-job, whose `waits.json` in the VM (fixed when the VM boots) lacks it.
-Lines over 30 days old are dropped at most once an hour; a failed write is logged once.
-
-Also beside it, `live.json` holds what each running auto-kaizen Builder or Reviewer is
-doing, the line its VM prints on its console (format in auto-kaizen's
-`docs/live-view.md`). One background reader per VM reads that console for the
-VM's whole life, so the console never stalls, and keeps only lines in that exact
-format, at most 4 KB each, from VMs booted for `ColinCee/auto-kaizen`; everything
-else is dropped unlogged. A VM's entry goes when it ends:
-
-```json
-{"updated": 1793000000,
- "lines": [{"task": 105, "who": "builder", "at": 1792999990, "heard": 1792999998, "text": "runs the tests (uv run pytest -q)"}]}
-```
-
-The same reader saves each `KAIZEN-SESSION 1 <JSON object>` line (printable ASCII only)
-from an auto-kaizen VM to `sessions/<runner name>.jsonl` in that folder: the agents'
-whole sessions, for the Control room's live chat page (auto-kaizen's
-`docs/live-session.md`). The file is named by the VM the line came from, never by the
-line, so one VM cannot write into another's. Folder 0750 and files 0640, root only, since
-sessions can carry private notes. A file stops growing at 30 MB, and files not written to
-for 30 days are deleted. A failed save is logged once and the console keeps being read.
-
-`update.sh` rebuilds the image after a change under `ci-runner/rootfs/`, `build-rootfs.sh` or
-`versions.env`; after a kernel upgrade, since the VMs boot the Beelink's kernel, rebuild it by hand
-(`sudo ci-runner/build-rootfs.sh`, then delete `/var/lib/homelab-ci/images/commit` so the PC takes it). For a Firecracker or runner upgrade,
-Renovate opens the PR; put the new release hash in `versions.env` by hand. Then
-merge it and run the audit.
+When a VM ends, the journal says how much host memory it touched, what it wrote to the SSD, and what its job needed
+with its out-of-memory kills: `slot N: VM ended (exit 0), its memory peaked at X MiB of Y, it wrote Z MiB` and
+`slot N: <runner> (<kind>) needed at least X MiB of Y, K out-of-memory kills`. Its own lines are in
+`journalctl -t homelab-ci-vm`.
 
 ### Why a job waits
 
-The supervisor's journal logs each queued job it has not started, when it first waits
-and then every 3 minutes, with how long it has waited since the supervisor first saw it
-(a restart starts the count again) and why. A job GitHub had queued 90 s or more before the
-supervisor saw it is logged at once, with `(GitHub had queued it Xm before)`:
-
-| Line ends with | Means |
-|---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM: more slots (light ones by raising `LIGHT_SLOTS_MIN`), or shorter jobs. A light job that is not a deploy adds `, one more kept for deploys` and `, one more kept for small jobs` for each slot kept for another label's standby not yet up |
-| `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve |
-| `an older light job waiting for memory` | A light job queued after a 2 GiB light job that is held for memory |
-| `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) |
-| `a VM booting for it` | Its VM is booting; logged only after 3 minutes |
-| `a VM ready for it that GitHub has not given the job` | Its VM's runner (or a standby, or a PC ready runner) is online and idle, and GitHub has not handed it the job; logged only after 3 minutes |
-| `no VM has its labels (...)` | It asks for a label our VMs lack: it never starts here; fix its `runs-on`. The alert below names the longest-waiting such job's repo and labels |
-
-A job that was logged gets `stopped waiting after Xm, Ym since GitHub queued it` once its VM
-starts or it is cancelled.
-
-Each job VM is also told, when it starts, how long the queued jobs of its repo and label had
-waited here and why: `/etc/homelab-ci/waits.json` in the VM, readable by any job, maps each job
-id (at most 50, oldest first) to `{"seconds": N, "why": "<the reason above>"}`, with `"why": ""`
-for a job first seen that poll; `{}` when the metadata has none or it is not a JSON object. A job can copy its own entry into
-its record. It reaches VMs once the next update (`install-host.sh` and the image rebuild) runs.
-
-The "stuck waiting for a test VM" alert's text gives the longest-waiting queued job's minutes
-so far per kind of wait, from `homelab_ci_wait_seconds{kind}` (kinds as in `waits.jsonl`, all 0
-when nothing waits; the longest is the one GitHub queued first), which the supervisor writes to
-`ci-waits.prom` in the textfile folder at most every 15 s. While a job asks for a label no VM has,
-the `other` kind also carries the `repo` and `labels` (comma-separated) of the longest-waiting such
-job, and the alert's text names them, so the job to fix needs no journal search. The alert's own number is the Control
-room's: since GitHub created the task's next homelab job, while it is queued, waiting or
-pending. The supervisor sees only queued jobs, so what the Control room has beyond the kinds
-added up is given as minutes with no runner reason: a job still waiting or pending on GitHub
-(a concurrency group, say), which no runner can take yet. A large one with every kind at 0
-means look at the task's run on GitHub, not the runner.
-
-The same file has, per repo and workflow, the seconds since GitHub queued its longest-waiting job
-(`homelab_ci_queued_seconds{repo,workflow}`, only while one waits) and how many of the VM slots
-run a job (`homelab_ci_vms_busy`, `homelab_ci_vm_slots`). The "Kaizen's Watcher stopped running"
-alert names from them how long the Watcher's own job and Auto Kaizen's longest job have waited
-for a VM: a waiting job means a capacity problem; none means GitHub is not starting jobs.
-It also has the polls failed in a row (`homelab_ci_poll_failures`, 0 while polls work; a rate
-limit is not one) and the seconds since the first of them (`homelab_ci_poll_failed_seconds`),
-written within 15 s of a failed poll too. No VM starts while every poll fails, so the "CI
-supervisor's poll keeps failing" alert fires at 10 or more for 2 minutes. An ended VM's
-bookkeeping (its memory count, files, runner removal, the standby's next repo) never fails the
-poll: its failure is logged as `slot N: <runner> bookkeeping failed: ...` and the slot is freed.
-For each job:
+The supervisor's journal logs each queued job it has not started, when it first waits and every 3 minutes after:
 
 ```bash
 journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped waiting'
 ```
 
-From what they show: mostly slots means more slots
-([Changing the number of slots](#changing-the-number-of-slots)) or shorter jobs; memory or
-disk means fewer or smaller VMs, not more; booting means slow boots; ready means GitHub was
-slow to hand the VM its job; unseen means the job sat waiting or pending on GitHub before it
-was queued, or the supervisor polled the repo late (`slow poll:` lines) or restarted; a label
-no VM has means fixing that job's `runs-on`. Raise the alert's 20 minutes only when the waits
-are expected, such as a burst of tasks on full slots.
+| Line ends with | Means | Do |
+|---|---|---|
+| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM; a light job adds `, one more kept for deploys` or `for small jobs` per slot kept for a standby not yet up | More slots, or shorter jobs |
+| `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve | Fewer or smaller VMs, not more |
+| `an older light job waiting for memory` | Queued behind a 2 GiB light job held for memory | As memory |
+| `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) | As memory |
+| `a VM booting for it` | Logged after 3 minutes only | Slow boots |
+| `a VM ready for it that GitHub has not given the job` | Its runner is online and idle; logged after 3 minutes only | GitHub is slow |
+| `no VM has its labels (...)` | It never starts here | Fix its `runs-on` |
 
-## Checks
+`(GitHub had queued it Xm before)` marks a job the supervisor first saw 90 s or more after GitHub queued it: it sat
+waiting or pending on GitHub, the supervisor polled the repo late (`slow poll:` lines) or restarted. A logged job
+gets `stopped waiting after Xm, Ym since GitHub queued it` once it starts or is cancelled.
 
-- **`audit.sh`** is the gate. It checks host settings, what a slot user could
-  read or write after escaping a VM (the token, Docker, Colin's home, the
-  image), that the image holds no keys or tokens and its runner user owns uv's
-  Python folder, how a live Firecracker is
-  confined, that a VM is told only its task, and runs the network test.
-- **`test-network.sh`** boots a VM that must reach GitHub, PyPI and npm, must
-  time out on every private address and the public address, and must not get
-  out with another address. It then connects to the VM from a container and
-  from the host and checks that the drop rule counted it. Every check must pass.
-- **`test-tools.sh`** boots a VM and runs each baked-in tool (Node, uv, Java,
-  mise, bun, pnpm, `docker compose`, `docker buildx`, python3, shellcheck, `file`, gh, gitleaks,
-  `bwrap`, socat) as the runner user with the job's `PATH`,
-  then builds a small image with Docker (BuildKit's `RUN --mount`), runs it with a published port and fetches its page.
-  Run it after `build-rootfs.sh`, with the supervisor stopped
-  (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished (VMs outlive the
-  supervisor: wait for them, or stop them with `sudo ci-runner/stop-vms.sh`): it boots
-  in slot 0, and fails with "slot 0 is busy" while a job holds it.
-- **`test-load.sh`** boots a VM in every slot (the count in
-  `/etc/homelab-ci/slots`) at the size a job gets while others run (2 vCPUs,
-  2 GiB), each spinning every CPU and holding all but 128 MiB of its free
-  memory, while timing Home Assistant and Grafana once a second. It prints each
-  service's median and worst response with the second it came (counted from
-  when the VMs start), each failed request as `code@second`, the host's lowest
-  `MemAvailable` and most data waiting to be written to disk during the run, then one `PASS` or `FAIL` line naming the slot
-  count. It fails, exiting 1 with the reasons on that line, when a VM does not
-  boot or finish its burn, any request fails, or a worst response is over
-  `MAX_RESPONSE` seconds (1 by default). On 4 November 2026, before the VMs'
-  CPU weight moved to their shared cgroup, Grafana's worst was 0.7 to 3.8 s at
-  3 to 5 slots, with 5 failed requests in some runs. With that fixed, Grafana
-  still answered 503 20 to 50 s after the VMs started, at any slot count, most
-  likely while the kernel wrote out the image copies. VMs now boot from
-  snapshots of the images instead of copies (5 Nov), and the loaded timings
-  start when the VMs start.
-
-## Changing the Beelink while jobs run
-
-A change goes in by merging it: within a minute or two each host takes it on its own (`homelab-ci-update.timer`
-runs `update.sh --follow`). The Beelink reads main's commit; the PC reads the commit and job image the Beelink runs,
-so it never takes a commit before its image is built. `ci-runner/update-hosts.sh`, from Colin's PC, runs that pass on
-both now and shows what it did. `update.sh` fetches the commit with git and refuses one not on main or older than the
-installed one. It runs `install-host.sh` only when `ci-runner/` or `scripts/` changed, naming the pull requests it
-ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file says how current a host
-is. A change whose install or image fails twice is tried again an hour after its last failure. The Beelink rebuilds
-the job image, at low disk priority, only when `build-rootfs.sh`, `rootfs/` or `versions.env` changed; the PC then
-copies it through the door (compressed to about 1.2 GB: about 2 minutes at the 10 MB/s measured between them; at most
-4 an hour, 20 minutes each) and switches only if it hashes to the Beelink's `images/sha256`. The PC takes the code
-first, so until the copy lands its new VMs boot the old image; a PC that was off or paused catches up the same way.
-A code change is live on both in about 2 minutes; one that rebuilds the image, in about 5. Going back is a hand step
-on each host, Beelink first: `sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>`, which holds the host
-there (`/etc/homelab-ci/pinned`) until `sudo rm /etc/homelab-ci/pinned`. The first time on a host, `update.sh` is
-not there yet: run `sudo ci-runner/install-host.sh` once from a checkout of main; the Beelink's first update then
-rebuilds the image (several minutes) because it has no `images/commit`. Never leave a loop waiting to change the Beelink from your
-own connection: on 5 Nov one outlived the session that thought it had stopped it.
-
-- **Running jobs carry on through any change.** Each VM is a systemd unit of its own
-  (`homelab-ci-vm-<runner name>`), not the supervisor's child, with its record in
-  `/run/homelab-ci/vms/`. A restarted supervisor takes the running VMs back and carries
-  on watching them; a restart takes seconds and cuts off nothing (on 5 Nov, before this,
-  three restarts cut off 20 running jobs).
-- **Without a restart:** `run-vm.sh`, `vm-disks.sh`, `stop-vms.sh`, Firecracker and
-  a rebuilt VM image (`build-rootfs.sh`) go in while jobs run. New VMs get them;
-  running ones keep what they started with.
-- **With a restart:** a change to the supervisor, the network rules, the systemd
-  units or the slot counts restarts the supervisor. The rules reload together with
-  the home's public address in one transaction, so running VMs never see that address
-  unblocked.
-- **One at a time:** a second `install-host.sh` waits for the first and names it.
-- **Stopping every VM** on purpose (to clear the host): `sudo ci-runner/stop-vms.sh`.
-- **A VM's own lines** (its errors and memory peak) are in `journalctl -t homelab-ci-vm`.
-
-## Changing the number of slots
-
-1. Write the new number: `sudo SLOTS=5 ci-runner/install-host.sh`, which also
-   makes that many slot users and taps and restarts the supervisor.
-2. `sudo ci-runner/tests/audit.sh` must pass.
-
-The Beelink then load-tests the count itself. Each `update.sh` pass asks the supervisor
-(`start-load-test-if-due`) and starts `homelab-ci-load-test.service` when
-`/var/lib/homelab-ci/load-test.json` has no result for the current slot count and
-`test-load.sh` (hashed), or only a "not run" one over 6 hours old; systemd starts it at most 3 times
-in 6 hours, whatever goes wrong. The unit drains the host:
-the supervisor starts no VM and stops its standbys while `/run/homelab-ci/load-test-drain`
-exists, and the unit waits up to 65 minutes for running VMs to end. It then runs `test-load.sh`
-at every slot, holding `update.sh`'s lock so no install or image build adds load, writes
-`{slots, passed, ran, line, at, commit, test}` to `load-test.json`, and removes the drain file
-however it ends (`ExecStopPost`). The supervisor shows the record in `machines.json`
-(`load_test`) and gives it to each VM at `/etc/homelab-ci/load-test.json`. A `FAIL` lowers
-`/etc/homelab-ci/slots` by one, never below 3; the supervisor takes the lower count when the
-drain ends, and the next pass tests it. Follow it with `journalctl -u homelab-ci-load-test`.
+The "stuck waiting for a test VM" alert gives the longest-waiting job's minutes per kind of wait, and for a missing
+label its repo and labels. Its own number is the Control room's, counted from when GitHub created the task's next
+job; minutes beyond the kinds added up mean the job is still waiting or pending on GitHub (a concurrency group),
+which no runner can take, so look at the task's run on GitHub. Raise its 20 minutes only when the waits are
+expected, such as a burst of tasks on full slots. The "Kaizen's Watcher stopped running" alert says how long the
+Watcher's job and Auto Kaizen's longest job have waited for a VM: a waiting job means a capacity problem, none means
+GitHub is not starting jobs. No VM starts while every poll fails, so "CI supervisor's poll keeps failing" fires
+after 10 failures in a row for 2 minutes.
 
 ## PC build slots
 
 Colin's gaming PC gives Auto Kaizen extra build slots from a Hyper-V Ubuntu VM, `kaizen-ci` (VHDX on D:, nested
 virtualisation, its own NAT switch 192.168.250.0/24, no shared folders or guest file copy). It runs the same
-Firecracker VMs and network rules as the Beelink, `install-host.sh` with `ROLE=pc`, and keeps ready runners: one
-idle registered VM per slot it gives, so GitHub hands a build job (`homelab-fc`) to whichever idle runner it picks.
-Light jobs stay on the Beelink.
+Firecracker VMs and network rules (`install-host.sh` with `ROLE=pc`) and keeps one idle registered runner per slot it
+gives, so GitHub hands a `homelab-fc` build to whichever it picks. Light jobs stay on the Beelink.
 
-- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH on port 2222 of its Tailscale
-  address (Tailscale SSH answers port 22 and would skip the forced command), from the PC's, forced into `socat` to the supervisor's socket (`/run/homelab-ci-peer/peer.sock`). Through it the PC also asks
-  which commit and image the Beelink runs (`version`) and copies the image (`image`). There the Beelink
-  registers each `pc-<slot>-<time>` runner (at most `/etc/homelab-ci/peer-slots-max`) with the cache label of
-  the first waiting build in start order (else the last build's), counts the idle ones as cover for builds queued under a minute
-  (and boots no build standby while one waits), swaps one idle 5 minutes for a waiting build of another label, reads its VM's live lines,
-  sessions and handoff asks with the same checks as a local VM's, files its outbox, and sends its cache disk when it
-  changes. It deletes a PC runner still offline 10 minutes after registering (the PC is off) or idle 45 minutes. The PC's slots
-  are in `machines.json` under `pc`.
+- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH on port 2222 of the Beelink's
+  Tailscale address (Tailscale SSH answers port 22 and would skip the forced command), forced into `socat` to the
+  supervisor's socket. Through it the Beelink registers the PC's `pc-<slot>-<time>` runners (at most
+  `/etc/homelab-ci/peer-slots-max`), reads their VMs' live lines, sessions and handoff asks with the same checks as a
+  local VM's, files their outboxes and sends cache disks; the PC also asks which commit and image to run. A PC
+  runner still offline 10 minutes after registering, or idle 45 minutes, is deleted (`peer_*` in the supervisor).
+- **Image:** copied from the Beelink compressed (about 1.2 GB, about 2 minutes at the 10 MB/s measured between
+  them, at most 4 an hour) and used only if it hashes to the Beelink's `images/sha256`. Until it lands, new PC VMs
+  boot the old image.
 - **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
   off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
   set once in Hyper-V for the most slots it will give.
-- **Gaming:** `keeper.ps1`, run by `keeper-tray.pyw` from Colin's Startup folder (a dot in the Windows notification
-  area: green busy, amber paused, grey off, red restarting; its menu sets the slots or quits), gives 0 slots while
-  a full-screen app has the screen for 15 s or another `gpu` lease is held. The tray app judges full screen
-  (Windows' full-screen flag, or the front window covering its whole monitor, so a full-screen video or slideshow
-  pauses jobs too) and must be running: without it nothing pauses, and the keeper logs that. GPU load is no
-  signal, the desktop alone sits near 30% on this card. It caps the guest at 10% of the CPU at once, and gives the slots back after 5 quiet minutes. Ready
-  runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns it as machine
-  trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, shown after
+- **Gaming:** `keeper.ps1`, run by `keeper-tray.pyw` from Colin's Startup folder (a tray dot: green busy, amber
+  paused, grey off, red restarting; its menu sets the slots or quits), gives 0 slots while a full-screen app has the
+  screen for 15 s or another `gpu` lease is held, caps the guest at 10% of the CPU, and gives the slots back after 5
+  quiet minutes. The tray app judges full screen (Windows' flag, or the front window covering its monitor, so a
+  full-screen video pauses jobs too) and must be running, or nothing pauses. GPU load is no signal: the desktop alone
+  sits near 30%. Ready runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns
+  it as machine trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, after
   `kaizen-ci` in the band above Claude's prompt, is the PC runners busy/online (`‖` while paused).
 - **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` (with Colin's `gh`) to 5 plus the PC VMs up (down
-  at once, up after 10 minutes). If the PC dies with it raised, extra tasks wait for a machine; `gh variable set KAIZEN_TASK_SLOTS
-  --body 5 -R ColinCee/auto-kaizen` sets it back.
+  at once, up after 10 minutes). If the PC dies with it raised, extra tasks wait for a machine;
+  `gh variable set KAIZEN_TASK_SLOTS --body 5 -R ColinCee/auto-kaizen` sets it back.
 
 Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his; the rest an agent does):
 
@@ -624,9 +302,9 @@ Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his;
    keeper starts it and caps its CPU).
 2. In the guest, from a checkout of `main`: `sudo apt install docker.io` (its network rules need Docker's chain),
    then `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh`; the job image
-   comes from the Beelink with the first update. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the door's
-   address in `/etc/homelab-ci/peer` (`ssh://ci-peer@<the Beelink's Tailscale address>:2222`) and that port's host
-   key in root's `known_hosts`.
+   comes from the Beelink with the first update. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the
+   door's address in `/etc/homelab-ci/peer` (`ssh://ci-peer@<the Beelink's Tailscale address>:2222`) and that port's
+   host key in root's `known_hosts`.
 3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the
    guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
    `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).
@@ -640,7 +318,55 @@ Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off,
 remove `kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink
 (closes the door), and set the task cap to 5.
 
-## Review
+## Design
 
-Every quarter, and after every Firecracker, kernel or runner upgrade: run
-`audit.sh`, and the [security audit](security-audit.md) checks.
+- **One VM per job, never reused.** The supervisor polls GitHub every 2 seconds for queued jobs with its labels
+  (repos that have never had a job here once a minute) and boots a VM for each. A VM's disks are device-mapper
+  snapshots of the images ([`vm-disks.sh`](../../ci-runner/vm-disks.sh)), so it starts in seconds and its writes are
+  thrown away with it. However the job ends, the VM ends within seconds; one left without a job is stopped about
+  30 to 40 seconds after boot.
+- **VMs wait ready.** Standbys are kept booted and registered for the repos and labels likely next, so a job starts
+  in about a second instead of about 11. Build standbys follow the last build job, then each running one (a task's
+  Reviewer finds one booted while its Builder ran); each costs about 450 MB idle and is replaced every 45 minutes.
+  Standbys give way to waiting jobs, except the deploy and small ones, which a merge's deploy and a task's first step
+  need. Which boots when is `standby_wants` and the light, deploy and small counterparts in the supervisor.
+- **Oldest job first, with two exceptions.** A started task run's later jobs (its review, merge) go before a new
+  run's first build or other workflows' light jobs, for at most 10 or 5 minutes (`start_order`). GitHub, not the
+  supervisor, picks which of a repo's queued jobs a VM takes.
+- **The home's services come first.** A VM starts only while it leaves the memory reserve and while tasks waited on
+  the disk under half the last minute (one a minute over a quarter; `DISK_WAIT_LIMIT`). A VM never swaps: its memory
+  cap also counts the host's cache of its disk ([`run-vm.sh`](../../ci-runner/run-vm.sh)). In the VM, `ci-trim-cache`
+  drops file cache past a quarter of its memory and the balloon returns freed pages, so the reserve check sees what
+  is really free. All VMs share one cgroup at CPU weight 20, below the services' 100.
+- **Just-in-time registration.** Each VM gets a runner registration good for exactly one job. The GitHub token never
+  leaves the host.
+- **Jobs have the internet, not the home network.** VMs reach the internet through NAT. The host, the LAN, the
+  tailnet, Docker networks, other slots and the home's public address (the router answers on it from inside) are
+  dropped. A VM may use only its own address, and nothing, the host included, can open a connection to a VM. The
+  iptables accept is limited to the uplink, so it opens nothing private even without the nftables table.
+- **Firecracker is jailed:** as the slot's own user (`fc-slotN`), chrooted, with its syscall filter, no
+  capabilities and a memory cap. A lock stops two runs sharing a slot; a dead run's leftovers are killed by the next.
+- **Installed from main only.** Everything lives root-owned under `/usr/local/lib/homelab-ci`, `/var/lib/homelab-ci`
+  and `/etc/homelab-ci`. Only `update.sh` changes it, from a commit on `main`; stack deploys never touch it.
+
+| Piece | Where |
+|-------|-------|
+| Versions, release hashes | [`ci-runner/versions.env`](../../ci-runner/versions.env) |
+| Host setup | [`ci-runner/install-host.sh`](../../ci-runner/install-host.sh) |
+| Network rules | [`ci-runner/net/`](../../ci-runner/net/), table `inet homelab_ci`, `homelab-ci-net.service` |
+| VM image | [`ci-runner/rootfs/`](../../ci-runner/rootfs/), built by [`build-rootfs.sh`](../../ci-runner/build-rootfs.sh) |
+| Boot one VM | [`ci-runner/run-vm.sh`](../../ci-runner/run-vm.sh) |
+| Supervisor | [`scripts/ci_supervisor.py`](../../scripts/ci_supervisor.py), `homelab-ci-supervisor.service` |
+| Updates | [`ci-runner/update.sh`](../../ci-runner/update.sh), `homelab-ci-update.timer` |
+
+## Checks
+
+| Script in [`ci-runner/tests/`](../../ci-runner/tests/) | Checks |
+|---|---|
+| `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
+| `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
+| `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped and its VMs finished (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
+| `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and Grafana once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
+
+Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the
+[security audit](security-audit.md) checks.
