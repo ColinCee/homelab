@@ -166,27 +166,28 @@ Every other alert, no-data and evaluation errors included, gets only the Control
 post. A failed deploy stops Auto Kaizen. A deploy that changes these files recreates Grafana,
 which reloads them; they are not polled.
 
-Grafana's root URL uses the Tailscale IP rather than the bare `beelink`
-hostname. Discord validates the URL in Grafana's alert embed and rejects
-host-only URLs with HTTP 400.
+Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a
+host-only URL in the alert embed with HTTP 400.
 
 Each rule in [`rules.yaml`](../stacks/observability/provisioning/alerting/rules.yaml) carries its
 own description and the action to take, which reach the alert's post; read the rule, not a list here.
 Rules on the CI VMs (swapping, slow disk, out of memory, stuck waiting) point at the ci-runner
 runbook's "Why a job waits".
 
-Host RAM uses `node_memory_MemAvailable_bytes`; `node_memory_AvailableBytes`
-does not exist in Alloy's Unix exporter. Verify the rule's exact query in
-Prometheus when a dashboard has data but an alert does not.
+Host RAM uses `node_memory_MemAvailable_bytes`, not `node_memory_AvailableBytes`. Check the rule's
+exact query when a dashboard has data and an alert none.
+
+OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
+applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
+(`live`). It keeps metric names in lower case, selects no series by a label it lacks, and repeats a
+per-series alert's firing each minute but never sends its resolve: the Control room reads stopped firings as
+cleared.
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
-`homelab-discord` notification template. Threshold alerts show whatever the rule's `value` annotation holds and the
-threshold duration.
-No-data and evaluation errors remain separate alerts, grouped by affected rule;
-they mean monitoring is unavailable, not that a resource threshold was crossed.
-Resolved messages describe an ended alert, not proof of recovery. Check the
-current evaluation before declaring the resource healthy. Tests are explicitly
-labelled and do not represent resource incidents.
+`homelab-discord` notification template.
+No-data and evaluation errors are separate alerts, grouped by affected rule;
+they mean monitoring is unavailable, not that a threshold was crossed.
+A resolved message describes an ended alert, not proof of recovery.
 
 ## Common debugging path
 
