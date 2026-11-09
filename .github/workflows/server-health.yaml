@@ -16,10 +16,6 @@ on:
         description: "Run a backup before reporting"
         type: boolean
         default: false
-      test_alert:
-        description: "Send a test alert to Auto Kaizen's responder"
-        type: boolean
-        default: false
 
 # Own group: sharing "deploy" would let a queued health run cancel a pending
 # deploy. Pruning only removes images older than a week, so it is safe
@@ -43,27 +39,6 @@ jobs:
         # Same as the runbook: output goes to the container log, where the
         # report below reads it. Success also clears Nightly backup didn't run.
         run: docker exec backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1' || true
-
-      - name: Send test alert to Kaizen
-        if: inputs.test_alert
-        env:
-          KAIZEN_ALERT_SECRET: ${{ secrets.KAIZEN_ALERT_SECRET }}
-          KEY: test-${{ github.run_id }}
-        # The same route and payload as Grafana's kaizen-alert receiver: it opens
-        # an `alert` issue in Auto Kaizen, whose responder answers "test".
-        # The secret reaches curl as a config on stdin, never as an argument.
-        run: |
-          send() {
-            body=$(jq -n --arg s "$1" --arg k "$KEY" \
-              '{status: $s, key: $k, title: "Test alert", text: "Server health test_alert: a delivery check, nothing is wrong."}')
-            printf 'header = "Authorization: Bearer %s"\n' "$KAIZEN_ALERT_SECRET" |
-              curl -sS -K - -o /dev/null -w "Kaizen alert ($1): HTTP %{http_code}\n" -X POST http://100.100.146.119:8090/alert \
-              -H "Content-Type: application/json" --data-binary "$body"
-          }
-          send firing
-          # Long enough for the responder to read the issue before it clears.
-          sleep 180
-          send resolved
 
       - name: Report health
         env:

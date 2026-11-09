@@ -77,21 +77,3 @@ templates:
 
       {{ end -}}
       {{- end }}
-  - orgId: 1
-    name: homelab-kaizen
-    # Kaizen's /alert takes a status, the series' labels (with the rule's name,
-    # its issue's key, so a repeat finds its issue), a title, the Discord
-    # wording as text, and the alert's short fields for its #alerts post
-    # (rules.yaml annotations; `closes` says how its issue closes).
-    template: |
-      {{ define "homelab.kaizen.payload" -}}
-      {{ $title := tmpl.Exec "homelab.discord.title" . -}}
-      {{ $text := tmpl.Exec "homelab.discord.message" . -}}
-      {{ $a := index .Alerts 0 -}}
-      {{ $post := coll.Dict "name" (or $a.Labels.rulename $a.Labels.alertname) "measure" $a.Annotations.measure
-        "trigger" $a.Annotations.trigger "value" $a.Annotations.value "chart" $a.Annotations.chart
-        "chart_line" $a.Annotations.chart_line "grafana" $a.GeneratorURL "needs" $a.Annotations.needs "closes" $a.Annotations.closes -}}
-      {{- /* A query error on a route: colin rule is the responder's to look at, not Colin's. */ -}}
-      {{ $route := or (and (ne $a.Labels.alertname "DatasourceError") $a.Labels.route) "" -}}
-      {{ coll.Dict "status" .Status "key" .GroupKey "labels" $a.Labels "title" $title "text" $text "post" $post "route" $route | data.ToJSON }}
-      {{- end }}

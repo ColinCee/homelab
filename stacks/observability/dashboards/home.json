@@ -703,7 +703,7 @@
     {
       "title": "Alerts",
       "type": "alertlist",
-      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and to Auto Kaizen's responder.",
+      "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord.",
       "options": {
         "alertInstanceLabelFilter": "",
         "alertName": "",
@@ -2046,7 +2046,7 @@
         {
           "title": "Alerts",
           "type": "alertlist",
-          "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord and to Auto Kaizen's responder.",
+          "description": "Every alert rule not currently OK; empty means all is well. All alerts go to Discord.",
           "options": {
             "alertInstanceLabelFilter": "",
             "alertName": "",

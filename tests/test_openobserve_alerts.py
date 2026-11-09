@@ -205,14 +205,7 @@ def test_live_rules_go_to_their_routes_and_shadow_is_removed() -> None:
     changes = applied(live, fake)[1]
     assert "deleted destination homelab-shadow" in changes
     alerts = by_title(fake)
-    assert alerts["Beelink SSD wearing out"]["destinations"] == ["homelab-kaizen"]
-    assert alerts["Kaizen Control room unreachable"]["destinations"] == [
-        "homelab-discord",
-        "homelab-kaizen",
-    ]
-    assert alerts["Kaizen Control room unreachable"]["trigger_condition"]["silence"] == 30
-    assert alerts["Kaizen's agents spending fast"]["destinations"] == ["homelab-kaizen"]
-    assert alerts["Kaizen's agents spending fast"]["trigger_condition"]["silence"] == 0
+    assert alerts["Beelink SSD wearing out"]["destinations"] == ["homelab-discord"]
     assert fake.destinations["homelab-discord"]["url"] == "https://discord.test/hook"
     assert fake.destinations["homelab-discord"]["headers"] == {}
 
@@ -240,12 +233,12 @@ def filled(template: str, alert: dict, labels: dict[str, str]) -> dict:
 
 def test_a_per_series_alert_sends_its_labels_and_kaizens_post_fields() -> None:
     fake, _ = applied(CONFIG)
-    alert = by_title(fake)["A Kaizen job ran out of memory"]
+    alert = by_title(fake)["A CI job ran out of memory"]
     assert alert["query_condition"]["promql_multi_alert"] and not alert["notify_on_recovery"]
     body = filled(fake.templates[alert["template"]]["body"], alert, {"kind": 'li"ght'})
     assert body["labels"] == {"kind": 'li"ght'}
     assert body["post"] | {"chart": ""} == {
-        "name": "A Kaizen job ran out of memory",
+        "name": "A CI job ran out of memory",
         "value": "7",
         "measure": "Kills in the last 15 min",
         "format": "{:.0f}",
@@ -260,11 +253,11 @@ def test_a_per_series_alert_sends_its_labels_and_kaizens_post_fields() -> None:
 
 def test_a_single_series_alert_sends_its_extra_queries_and_its_resolve() -> None:
     fake, _ = applied(CONFIG)
-    alert = by_title(fake)["Kaizen's Watcher stopped running"]
+    alert = by_title(fake)["Nightly backup didn't run"]
     assert alert["notify_on_recovery"] and alert["template"] is None
     body = filled(fake.templates["homelab-kaizen"]["body"], alert, {})
     assert body["labels"] == {}
-    assert set(json.loads(body["extra"])) == {"kaizen", "watcher", "busy", "slots"}
+    assert set(json.loads(body["extra"])) == {"failed_step"}
 
 
 def test_a_no_data_rule_fires_on_a_missing_metric() -> None:

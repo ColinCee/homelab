@@ -17,8 +17,6 @@ What watches what:
 | Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
 | Deploy failed | `deploy.yaml` stops Auto Kaizen's homelab line |
 | Deploy queued over 15 minutes or failed before its first step | Auto Kaizen's Watcher stops the homelab line |
-| Auto Kaizen's Watcher not working | Grafana's Kaizen's Watcher stopped running |
-| Control room down | Grafana's Kaizen Control room unreachable |
 
 ## What's deployed
 
@@ -117,9 +115,7 @@ Prometheus receives metrics from:
   `homelab_pc_backup_*`.
 - **Control room (Auto Kaizen):** direct scrape of `http://beelink.tail4f465e.ts.net:8090/metrics`
   (`job="kaizen"`), every series named `kaizen_*`: tasks by state, machine waits, agent
-  cost, the GitHub App's and the workflows' shared key's hourly calls, and the signs of
-  waste or a stall that the "Kaizen factory" rules read. Those rules carry `route: factory`,
-  which the Control room passes to its factory manager. In `kaizen_tasks{state}`,
+  cost, the GitHub App's and the workflows' shared key's hourly calls. In `kaizen_tasks{state}`,
   `waiting_for_machine` counts waits for GitHub's machines too; `stuck` and
   `kaizen_machine_wait_seconds_max` count homelab machines only. The Control room's code
   is in the private auto-kaizen repo, so list the series with
@@ -144,27 +140,9 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 ## Alerts
 
-Grafana alerting is provisioned from
-`stacks/observability/provisioning/alerting/` and routes to the `Kaizen` contact
-point: every firing and resolved alert, except the few below, goes to the Kaizen Control room's
-`/alert`, which opens an `alert` issue per alert series in the private
-auto-kaizen repo and closes it once fixed (its `docs/alerts.md`). Each new one starts Auto
-Kaizen's responder: it looks at Beelink through the `Remediate` workflow, may
-restart one broken container, and opens a Kaizen task for the lasting fix (or to
-tune a noisy rule). The Control room keeps one post per alert in Discord's
-#alerts forum through the auto-kaizen bot (`KAIZEN_DISCORD_TOKEN` secret): its
-state tags, what the responder found, and a line per event; it mentions Colin
-only when he must act. The repo is public, so `Remediate` logs states and counts
-only; read container logs in Grafana. Grafana and the Control room share the
-`KAIZEN_ALERT_SECRET` secret. Test the whole chain with Server health →
-`test_alert`.
-
-#uptime (the `Discord Private` webhook) holds only what must arrive while the Beelink or the
-Control room may be down: Kaizen Control room unreachable and Healthchecks.io's Beelink up/down.
-A `route: colin` rule (only Colin can act: Unknown container started, Beelink SSD wearing out)
-starts no responder; its #alerts post asks him its `needs` annotation, mentioning him once.
-Every other alert, no-data and evaluation errors included, gets only the Control room's one
-post. A deploy that changes these files recreates Grafana,
+Grafana alerting is provisioned from `stacks/observability/provisioning/alerting/`, and every
+firing and resolved alert goes to Discord's #uptime through the `Discord Private` webhook.
+A deploy that changes these files recreates Grafana,
 which reloads them; they are not polled.
 
 Grafana's root URL uses the Tailscale IP, not the bare `beelink` hostname: Discord rejects a

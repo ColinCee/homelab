@@ -12,35 +12,9 @@ contactPoints:
           use_embed_description: true
           title: '{{ template "homelab.discord.title" . }}'
           message: '{{ template "homelab.discord.message" . }}'
-      # Also to Kaizen, so these alerts get a post in #alerts like the rest.
-      - uid: kaizen-alert
-        type: webhook
-        disableResolveMessage: false
-        settings:
-          url: http://100.100.146.119:8090/alert
-          httpMethod: POST
-          authorization_scheme: Bearer
-          authorization_credentials: ${KAIZEN_ALERT_SECRET}
-          payload:
-            template: '{{ template "homelab.kaizen.payload" . }}'
-  # Every other alert (`route: colin` ones too, which the Control room asks Colin about
-  # with no responder): an `alert` issue in Auto Kaizen through its Control
-  # room, which starts the responder and keeps the alert's post in the Discord
-  # #alerts forum; the resolve marks it cleared, and it closes once fixed.
-  - orgId: 1
-    name: Kaizen
-    receivers:
-      - uid: kaizen-only
-        type: webhook
-        disableResolveMessage: false
-        settings:
-          url: http://100.100.146.119:8090/alert
-          httpMethod: POST
-          authorization_scheme: Bearer
-          authorization_credentials: ${KAIZEN_ALERT_SECRET}
-          payload:
-            template: '{{ template "homelab.kaizen.payload" . }}'
 # Grafana keeps a contact point removed from this file until its uid is listed here.
 deleteContactPoints:
   - orgId: 1
     uid: discord-only
+  - orgId: 1
+    uid: kaizen-only
