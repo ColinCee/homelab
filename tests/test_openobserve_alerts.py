@@ -436,3 +436,50 @@ def test_no_two_panels_on_a_tab_overlap_and_all_fit_its_width() -> None:
             }
             assert not cells & mine, (tab["name"], panel["title"])
             cells |= mine
+
+
+# Home's colours: each means one thing on every tab (.github/skills/dashboards/SKILL.md, "Colour").
+GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
+NOW, WEEK, NEUTRAL = "#d03b3b", "#fab219", "#898781"
+PANELS = [p for tab in IN_GIT["Home"]["tabs"] for p in tab["panels"]]
+
+
+def series_colours(panel: dict) -> dict[str, str]:
+    mappings = panel["config"].get("color", {}).get("colorBySeries", [])
+    return {m["value"]: m["color"] for m in mappings}
+
+
+def containers() -> dict[str, str]:
+    """Each container compose starts, in its group's colour."""
+    names = {}
+    for compose in STACK.parent.glob("*/compose.yaml"):
+        services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
+        for service, spec in services.items():
+            name = spec.get("container_name", f"{compose.parent.name}-{service}-1")
+            names[name] = GROUPS["Monitoring" if compose.parent.name == "observability" else "Apps"]
+    return names
+
+
+def test_groups_containers_and_rules_wear_one_colour_on_every_tab() -> None:
+    by_container = [p for p in PANELS if set(series_colours(p)) & set(containers())]
+    assert len(by_container) == 4
+    for panel in by_container:
+        assert series_colours(panel) == containers(), panel["title"]
+    for panel in PANELS:
+        for group in set(series_colours(panel)) & set(GROUPS):
+            assert series_colours(panel)[group] == GROUPS[group], panel["title"]
+    levels = {uid: NOW if rule["level"] == "now" else WEEK for uid, rule in RULES.items()}
+    rules = next(p for p in PANELS if p["title"] == "Rules firing, by hour")
+    assert series_colours(rules) == levels
+
+
+def test_tiles_are_red_or_amber_and_everything_else_neutral() -> None:
+    for panel in PANELS:
+        config = panel["config"]
+        for mapping in config.get("mappings", []):
+            assert mapping["color"] in ("", NOW, WEEK), panel["title"]
+        assert config.get("sparkline", {}).get("color", NEUTRAL) == NEUTRAL, panel["title"]
+        if "color" in config:
+            # A series no list names, like a removed container, is drawn gray.
+            assert config["color"]["mode"] == "fixed", panel["title"]
+            assert config["color"]["fixedColor"] == [NEUTRAL], panel["title"]

@@ -19,7 +19,7 @@ when opened. The Home tab, from the top:
    Alerts), red when down, showing how long it has been up or down.
 2. Headroom: CPU, memory, swap, disk and backup storage now with a trend over the time range, and
    when the disk and the backup storage fill at their 7-day rate.
-3. Who uses the box: memory and CPU over 24 h, stacked by group: Monitoring, Apps and System.
+3. Who uses the box: memory and CPU over 24 h, stacked by group: Monitoring, System and Apps.
 4. Errors in the logs: error lines per hour by container, and the most repeated in the last hour.
 
 The other tabs: Containers, Network, Backups, Alerts. Put a new panel in its section or
@@ -34,6 +34,26 @@ Every number must read whole at 1200 px wide:
 - No panel has its own time range: OpenObserve draws a time picker on it, which hides a tile's
   value. Write a fixed window into the query instead (`_timestamp >= ...` in SQL, `[7d]` in PromQL).
 
+## Colour and order
+
+Each colour means one thing on every tab. The hexes live in `tests/test_openobserve_alerts.py`
+(`GROUPS`, `NOW`, `WEEK`, `NEUTRAL`), which checks the file against them.
+
+| Colour | Means |
+|---|---|
+| Blue, aqua, orange | Monitoring, System, Apps. A container wears its group's colour (the observability stack is Monitoring) |
+| Red | A tile past the threshold of an alert rule with `level = "now"`, or a "now" rule firing |
+| Amber | The same for a `"week"` rule, or a warning with no rule. No colour means fine |
+| Gray | One measure (sparklines, Stored over time), or a series Git no longer has |
+| Blue, orange, aqua, yellow | Series of any other kind (Network), in that order |
+
+- A tile's colour is a value mapping (`gt` or `lt`; the last match wins) with a colour and no text.
+- A series' colour is `config.color.colorBySeries` by name, with `mode: "fixed"` and a gray
+  `fixedColor` for any series not listed. Without a mode, unlisted series get a value gradient.
+- Bars run largest first. Stacks keep a fixed order with the largest at the bottom, and the legend
+  follows: PromQL series come in query order, SQL series in the order rows first name them.
+- Tables sort by their obvious column: the count, or the newest first.
+
 ## Queries
 
 - Metric names are lower case (`node_memory_memavailable_bytes`).
@@ -41,9 +61,11 @@ Every number must read whole at 1200 px wide:
   `max by (name)` for container metrics, as `docs/observability.md` says.
 - Every PromQL panel runs a range query over the dashboard's time: OpenObserve drops a query's
   `query_type`. A tile shows the last value; a `sparkline` adds the trend.
-- A chart of "now", like a top 10, pins its query with `@ end()`; otherwise each step picks its own
-  top 10 and the chart shows them all.
-- Red on a tile is a value mapping (`lt` or `gt`) with a colour and no text.
+- A top 10 is SQL on the metric's stream (`ORDER BY y_axis_1 DESC LIMIT 10`; an `h-stacked` panel
+  draws the first row at the top). PromQL bars come in label order: `sort_desc` does nothing in a
+  range query, and a PromQL top 10 must pin `@ end()` or each step picks its own ten.
+- OpenObserve drops an `ORDER BY` on an expression it does not select: select it (`sum(y_axis_1)
+  OVER (PARTITION BY breakdown_1) AS total`) and order by its name.
 - Logs are the `containers` stream. Alloy resends a container's old lines when it restarts, so
   count `DISTINCT _timestamp, body`; filter with `match_all` words (the text index) before a
   `regexp_like`, which is slow over a day of logs.
@@ -52,8 +74,8 @@ Every number must read whole at 1200 px wide:
 - Before running `apply.py` by hand, rebase on main: it makes OpenObserve match the files you
   have, so an old checkout reverts newer alerts.
 
-To try a panel, build it in the UI on a dashboard outside the `homelab` folder, copy its panel
-JSON across, then delete that dashboard. Check with `uv run python -m pytest
+To try a change live, PUT the whole file to `/api/default/dashboards/<id>?folder=<id>&hash=<hash>`
+(ids and hash from `GET /api/default/dashboards?folder=<id>`) from a tab signed in to OpenObserve. Check with `uv run python -m pytest
 tests/test_openobserve_alerts.py`.
 
 ## Grafana
