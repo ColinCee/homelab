@@ -280,7 +280,7 @@
         {
           "id": "Panel_ID7",
           "type": "markdown",
-          "title": "Headroom, with when the disk and backups fill at their 7-day rate",
+          "title": "Headroom",
           "description": "",
           "config": {
             "show_legends": true,
@@ -508,23 +508,16 @@
         {
           "id": "Panel_ID12",
           "type": "metric",
-          "title": "Full in",
-          "description": "When the root disk fills at its 7-day rate; red under 30 days.",
+          "title": "Free",
+          "description": "Space free on the root disk; amber under 100 GB, where Beelink disk filling up fires (80% used).",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "unit": "custom",
-            "unit_custom": " days",
+            "decimals": 1,
+            "unit": "bytes",
             "mappings": [
               {
-                "type": "value",
-                "value": "-1",
-                "text": "Not filling",
-                "color": ""
-              },
-              {
                 "type": "lt",
-                "value": "30",
+                "value": "100000000000",
                 "color": "#fab219",
                 "text": ""
               }
@@ -533,7 +526,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "(max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / (-max(deriv(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}[7d])) * 86400)) and on() (max(deriv(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}[7d])) < 0) or vector(-1)",
+              "query": "max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"})",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -617,23 +610,16 @@
         {
           "id": "Panel_ID14",
           "type": "metric",
-          "title": "Full in",
-          "description": "When the backup repository reaches the 8 GB cap at its 7-day rate; red under 30 days.",
+          "title": "Free",
+          "description": "Room left under the 8 GB at which backup uploads stop; amber under 3 GB, where Backup storage nearly full fires (5 GB used).",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "unit": "custom",
-            "unit_custom": " days",
+            "decimals": 1,
+            "unit": "bytes",
             "mappings": [
               {
-                "type": "value",
-                "value": "-1",
-                "text": "Not filling",
-                "color": ""
-              },
-              {
                 "type": "lt",
-                "value": "30",
+                "value": "3000000000",
                 "color": "#fab219",
                 "text": ""
               }
@@ -642,7 +628,7 @@
           "queryType": "promql",
           "queries": [
             {
-              "query": "((8000000000 - max(last_over_time(homelab_backup_repository_bytes[26h]))) / (max(deriv(homelab_backup_repository_bytes[7d])) * 86400)) and on() (max(deriv(homelab_backup_repository_bytes[7d])) > 0) or vector(-1)",
+              "query": "8000000000 - max(last_over_time(homelab_backup_repository_bytes[26h]))",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -1049,12 +1035,12 @@
           "config": {
             "show_legends": false,
             "decimals": 0,
-            "wrap_table_cells": true
+            "wrap_table_cells": false
           },
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT container_name AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 200) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) WHERE _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 3600000000 GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
+              "query": "SELECT regexp_replace(container_name, '^observability-|-1$', '', 'g') AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 100) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) WHERE _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 3600000000 GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
