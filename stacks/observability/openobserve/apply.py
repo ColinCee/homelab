@@ -1,12 +1,13 @@
 """Runs each rule's query once, then makes OpenObserve's alerts, their templates and destination
-match alerts.toml.
+match alerts.toml, and its dashboards match the dashboards/ folder beside it.
 
     apply.py alerts.toml
 
-Alerts live in the `homelab` folder, named by their key in alerts.toml. One there that the file
-no longer has is deleted, and so are `homelab-` templates and destinations nothing uses. Prints
-each change; exits non-zero on the first refused call or a query that fails. Reads
-OPENOBSERVE_URL, OPENOBSERVE_USER and OPENOBSERVE_PASSWORD."""
+Alerts live in the `homelab` alert folder, named by their key in alerts.toml; dashboards in the
+`homelab` dashboard folder, by their title. One there that Git no longer has is deleted, and so are
+`homelab-` templates and destinations nothing uses. Prints each change; exits non-zero on the first
+refused call or a query that fails. Reads OPENOBSERVE_URL, OPENOBSERVE_USER and
+OPENOBSERVE_PASSWORD."""
 
 import base64
 import json
@@ -19,6 +20,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any
 
 ORG = "default"
@@ -180,6 +182,8 @@ def differs(want: object, have: Any) -> bool:
     back an empty or false field as missing."""
     if isinstance(want, dict):
         return not isinstance(have, dict) or any(differs(v, have.get(k)) for k, v in want.items())
+    if isinstance(want, list) and isinstance(have, list) and len(want) == len(have):
+        return any(differs(w, h) for w, h in zip(want, have, strict=True))
     if want in (None, "", False, 0) and have in (None, "", False, 0):
         return False
     return want != have
@@ -268,6 +272,46 @@ def failed_queries(call: Call, config: Mapping[str, Any]) -> list[str]:
     return failed
 
 
+def apply_dashboards(call: Call, dashboards: Mapping[str, dict]) -> list[str]:
+    """Makes the `homelab` dashboard folder hold these dashboards, by title, and no others."""
+    changes: list[str] = []
+    folders = call("GET", f"/api/v2/{ORG}/folders/dashboards", None)["list"]
+    folder = next((f["folderId"] for f in folders if f["name"] == FOLDER), None)
+    if folder is None:
+        folder = call(
+            "POST", f"/api/v2/{ORG}/folders/dashboards", {"name": FOLDER, "description": "From Git"}
+        )["folderId"]
+        changes.append(f"created dashboard folder {FOLDER}")
+    path = f"/api/{ORG}/dashboards"
+    listed = call("GET", f"{path}?folder={folder}", None)["dashboards"]
+    have = {d["title"]: d for d in listed}
+    for title, want in dashboards.items():
+        if title not in have:
+            call("POST", f"{path}?folder={folder}", want)
+            changes.append(f"created dashboard {title}")
+        elif differs(want, have[title]["v8"]):
+            # The hash says which version this replaces; OpenObserve refuses an update without it.
+            found = have[title]
+            where = f"{found['dashboard_id']}?folder={folder}&hash={found['hash']}"
+            call("PUT", f"{path}/{where}", want)
+            changes.append(f"updated dashboard {title}")
+    for title in sorted(set(have) - set(dashboards)):
+        call("DELETE", f"{path}/{have[title]['dashboard_id']}?folder={folder}", None)
+        changes.append(f"deleted dashboard {title}")
+    return changes
+
+
+def read_dashboards(folder: Path) -> dict[str, dict]:
+    # A wrong path would read as no dashboards and delete them all.
+    if not folder.is_dir():
+        raise SystemExit(f"{folder}: no such folder")
+    dashboards = [json.loads(p.read_text(encoding="utf-8")) for p in sorted(folder.glob("*.json"))]
+    titles = [d["title"] for d in dashboards]
+    if len(set(titles)) != len(titles):
+        raise SystemExit(f"{folder}: two dashboards share a title")
+    return {d["title"]: d for d in dashboards}
+
+
 def wait_until_ready(call: Call, timeout: float = 90) -> None:
     """Until OpenObserve answers and holds the `up` stream that alerts fall back to (first deploy).
     Under deploy's 120 s `up --wait`, so this message is the one in the log."""
@@ -297,11 +341,12 @@ def main() -> None:
     # Before applying, so a rule that cannot run never replaces the one before it.
     if failed := failed_queries(call, config):
         raise SystemExit("These rules' queries fail:\n" + "\n".join(failed))
+    dashboards = read_dashboards(Path(sys.argv[1]).parent / "dashboards")
     try:
-        changes = apply(call, config)
+        changes = apply(call, config) + apply_dashboards(call, dashboards)
     except Refused as error:
         raise SystemExit(f"OpenObserve refused {str(error)[:500]}") from None
-    print("\n".join(changes) or "OpenObserve's alerts already match", flush=True)
+    print("\n".join(changes) or "OpenObserve's alerts and dashboards already match", flush=True)
 
 
 if __name__ == "__main__":

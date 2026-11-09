@@ -1,6 +1,6 @@
 """Every alert rule (stacks/observability/openobserve/alerts.toml) meets the alert standard in
 docs/observability.md, Alertmanager carries out its lifecycle, and apply.py makes OpenObserve
-match the rules through its API."""
+match the rules and the Home dashboard through its API."""
 
 import copy
 import json
@@ -315,3 +315,172 @@ def test_for_and_the_hold_are_in_the_query() -> None:
 def test_a_unit_keeps_its_leading_space() -> None:
     fake, _ = applied(CONFIG)
     assert by_title(fake)["Nightly backup didn't run"]["context_attributes"]["unit"] == " h ago"
+
+
+IN_GIT = apply.read_dashboards(STACK / "openobserve/dashboards")
+
+
+class FakeDashboards:
+    """OpenObserve's dashboard and dashboard folder API, in memory."""
+
+    def __init__(self) -> None:
+        self.folders = {"default": "default"}
+        self.dashboards: dict[str, dict] = {}
+        self.calls: list[str] = []
+
+    def __call__(self, method: str, path: str, body: object = None) -> object:
+        self.calls.append(f"{method} {path}")
+        if path == "/api/v2/default/folders/dashboards":
+            if method == "POST":
+                assert isinstance(body, dict)
+                self.folders[str(len(self.folders))] = body["name"]
+                return {"folderId": str(len(self.folders) - 1)}
+            return {"list": [{"folderId": k, "name": v} for k, v in self.folders.items()]}
+        m = re.fullmatch(r"/api/default/dashboards(?:/(\d+))?\?folder=(\w+)(?:&hash=(\w+))?", path)
+        assert m, path
+        dashboard_id, folder, hash_ = m.groups()
+        if method == "GET":
+            return {
+                "dashboards": [
+                    copy.deepcopy(d) for d in self.dashboards.values() if d["folder_id"] == folder
+                ]
+            }
+        if method == "DELETE":
+            assert self.dashboards[dashboard_id]["folder_id"] == folder
+            del self.dashboards[dashboard_id]
+            return {"code": 200}
+        assert isinstance(body, dict)
+        if method == "PUT":
+            # OpenObserve refuses an update that does not name the version it replaces.
+            assert hash_ == self.dashboards[dashboard_id]["hash"]
+        else:
+            dashboard_id = str(1000 + len(self.calls))
+        self.dashboards[dashboard_id] = {
+            "dashboard_id": dashboard_id,
+            "folder_id": folder,
+            "title": body["title"],
+            "hash": str(len(self.calls)),
+            "v8": self.read_back(body) | {"dashboardId": dashboard_id, "owner": "root"},
+        }
+        return {"code": 200}
+
+    @staticmethod
+    def read_back(body: dict) -> dict:
+        """As OpenObserve stores it: unset fields come back as null and numbers as floats."""
+        stored = copy.deepcopy(body)
+        for tab in stored["tabs"]:
+            for panel in tab["panels"]:
+                panel["config"] |= {"legends_position": None, "base_map": None}
+                panel["config"]["decimals"] = float(panel["config"].get("decimals", 2))
+                for query in panel["queries"]:
+                    query["vrlFunctionQuery"] = None
+        return stored
+
+
+def test_the_dashboards_are_made_once_and_then_match() -> None:
+    fake = FakeDashboards()
+    assert apply.apply_dashboards(fake, IN_GIT) == [
+        "created dashboard folder homelab",
+        "created dashboard Home",
+    ]
+    before = len(fake.calls)
+    assert apply.apply_dashboards(fake, IN_GIT) == []
+    assert all(c.startswith("GET") for c in fake.calls[before:])
+
+
+def test_a_changed_dashboard_is_updated_and_a_removed_one_deleted() -> None:
+    fake = FakeDashboards()
+    apply.apply_dashboards(fake, IN_GIT)
+    by_hand = {"dashboard_id": "9", "folder_id": "default", "title": "By hand", "hash": "1"}
+    fake.dashboards["9"] = by_hand
+    changed = copy.deepcopy(IN_GIT)
+    changed["Home"]["tabs"][0]["panels"][1]["title"] = "Flight tracker site"
+    assert apply.apply_dashboards(fake, changed) == ["updated dashboard Home"]
+    assert apply.apply_dashboards(fake, {}) == ["deleted dashboard Home"]
+    assert [d["title"] for d in fake.dashboards.values()] == ["By hand"]
+
+
+def queries(dashboard: dict, kind: str) -> list[str]:
+    return [
+        q["query"]
+        for tab in dashboard["tabs"]
+        for panel in tab["panels"]
+        if panel["queryType"] == kind
+        for q in panel["queries"]
+    ]
+
+
+def test_dashboard_queries_name_metrics_in_lower_case() -> None:
+    # OpenObserve keeps metric names in lower case: node_memory_MemAvailable_bytes finds nothing.
+    for query in queries(IN_GIT["Home"], "promql"):
+        bare = re.sub(r'"[^"]*"', "", query)
+        assert not re.search(r"\b[a-z]+_\w*[A-Z]\w*", bare), query
+
+
+def test_log_patterns_hold_no_control_characters() -> None:
+    # A "\b" written through a non-raw string becomes a backspace and the pattern matches nothing.
+    for query in queries(IN_GIT["Home"], "sql"):
+        assert query.isprintable(), query
+
+
+def test_no_two_panels_on_a_tab_overlap_and_all_fit_its_width() -> None:
+    for tab in IN_GIT["Home"]["tabs"]:
+        cells: set[tuple[int, int]] = set()
+        for panel in tab["panels"]:
+            box = panel["layout"]
+            assert box["x"] + box["w"] <= 192, panel["title"]
+            mine = {
+                (x, y)
+                for x in range(box["x"], box["x"] + box["w"])
+                for y in range(box["y"], box["y"] + box["h"])
+            }
+            assert not cells & mine, (tab["name"], panel["title"])
+            cells |= mine
+
+
+# Home's colours (.github/skills/dashboards/SKILL.md, "Colour and order"). OpenObserve takes one
+# colour for both themes: these dataviz steps pass its checks on the light and the dark surface.
+GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
+NOW, WEEK, NEUTRAL = "#d03b3b", "#fab219", "#898781"
+PANELS = [p for tab in IN_GIT["Home"]["tabs"] for p in tab["panels"]]
+
+
+def series_colours(panel: dict) -> dict[str, str]:
+    mappings = panel["config"].get("color", {}).get("colorBySeries", [])
+    return {m["value"]: m["color"] for m in mappings}
+
+
+def containers() -> dict[str, str]:
+    """Each container compose starts, in its group's colour."""
+    names = {}
+    for compose in STACK.parent.glob("*/compose.yaml"):
+        services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
+        for service, spec in services.items():
+            name = spec.get("container_name", f"{compose.parent.name}-{service}-1")
+            names[name] = GROUPS["Monitoring" if compose.parent.name == "observability" else "Apps"]
+    return names
+
+
+def test_groups_containers_and_rules_wear_one_colour_on_every_tab() -> None:
+    by_container = [p for p in PANELS if set(series_colours(p)) & set(containers())]
+    assert len(by_container) == 4
+    for panel in by_container:
+        assert series_colours(panel) == containers(), panel["title"]
+    for panel in PANELS:
+        for group in set(series_colours(panel)) & set(GROUPS):
+            assert series_colours(panel)[group] == GROUPS[group], panel["title"]
+    levels = {uid: NOW if rule["level"] == "now" else WEEK for uid, rule in RULES.items()}
+    rules = next(p for p in PANELS if p["title"] == "Rules firing, by hour")
+    assert series_colours(rules) == levels
+
+
+def test_tiles_are_red_or_amber_and_unlisted_series_gray() -> None:
+    for panel in PANELS:
+        config = panel["config"]
+        for mapping in config.get("mappings", []):
+            assert mapping["color"] in ("", NOW, WEEK), panel["title"]
+        assert config.get("sparkline", {}).get("color", NEUTRAL) == NEUTRAL, panel["title"]
+        if "color" in config:
+            # A series no list names, like a removed container, is drawn gray.
+            assert config["color"]["mode"] == "fixed", panel["title"]
+            assert config["color"]["fixedColor"] == [NEUTRAL], panel["title"]
