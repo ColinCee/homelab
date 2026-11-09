@@ -7,6 +7,7 @@ The body is built from named numbers only, never by forwarding a response, so
 nothing else about the host can leak. See docs/public-stats.md.
 """
 
+import base64
 import json
 import math
 import os
@@ -48,15 +49,25 @@ class StatsError(Exception):
     pass
 
 
-def get_json(url: str) -> Any:
+def get_json(url: str, login: str | None = None) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    if login:
+        # Never passed on by a redirect, which could lead off the stack's network.
+        auth = "Basic " + base64.b64encode(login.encode()).decode()
+        request.add_unredirected_header("Authorization", auth)
     with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
         return json.load(response)
 
 
+def login() -> str | None:
+    """`user:password` from the file PROMETHEUS_LOGIN_FILE names (OpenObserve wants one)."""
+    path = os.environ.get("PROMETHEUS_LOGIN_FILE")
+    return Path(path).read_text(encoding="utf-8").strip() if path else None
+
+
 def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     url = f"{prometheus}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
-    body = get_json(url)
+    body = get_json(url, login())
     if body.get("status") != "success":
         raise StatsError(f"prometheus: {body.get('error', 'query failed')}")
     return body["data"]["result"]
