@@ -13,6 +13,9 @@ sudo=${SUDO-sudo}
 # The guest's page cache would hide what the host writes on the inbox.
 direct=${HANDOFF_DIRECT-direct}
 console=${HANDOFF_CONSOLE:-/dev/ttyS0}
+# GNU dd where the image has it as gnudd: Ubuntu 26.04's own dd (uutils) reads into an
+# unaligned buffer, so every direct read fails with "Invalid input".
+dd=$(command -v gnudd || echo dd)
 
 # Runs a command on DISK directly if the runner may (MODE r or w), else through sudo.
 as() {
@@ -22,7 +25,7 @@ as() {
 }
 
 head_of() {
-  as "$1" r dd if="$1" bs=512 count=1 ${direct:+iflag=$direct} status=none | head -n 1 | tr -d '\0'
+  as "$1" r "$dd" if="$1" bs=512 count=1 ${direct:+iflag=$direct} status=none | head -n 1 | tr -d '\0'
 }
 
 # The disk (DISKS, default /dev/vd?) whose first line starts with MAGIC.
@@ -57,7 +60,7 @@ put() {
     > "$stage/$name.json"
   tar -C "$stage" -cf "$outer" .
   disk=$(find_disk homelab-ci-outbox || find_disk homelab-ci-handoff) || {
-    echo "::warning::handoff: no outbox disk in this VM, $name not put"
+    echo "::warning::handoff: no outbox disk this job can read, $name not put"
     return 1
   }
   if [[ -b $disk ]]; then room=$(lsblk -bndo SIZE "$disk"); else room=$(stat -c %s "$disk"); fi
@@ -67,10 +70,10 @@ put() {
     return 1
   fi
   # The header goes first and last: a put cut short leaves no header over a half-written tar.
-  echo homelab-ci-outbox | as "$disk" w dd of="$disk" conv=notrunc,fsync status=none
-  as "$disk" w dd if="$outer" of="$disk" bs=1M seek=512 oflag=seek_bytes conv=notrunc,fsync status=none
+  echo homelab-ci-outbox | as "$disk" w "$dd" of="$disk" conv=notrunc,fsync status=none
+  as "$disk" w "$dd" if="$outer" of="$disk" bs=1M seek=512 oflag=seek_bytes conv=notrunc,fsync status=none
   printf 'homelab-ci-handoff v1 run=%s attempt=%s\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" |
-    as "$disk" w dd of="$disk" conv=notrunc,fsync status=none
+    as "$disk" w "$dd" of="$disk" conv=notrunc,fsync status=none
   rm -f "$outer"
   echo "handoff: put $name ($(stat -c %s "$stage/$name.tar") bytes)"
 }
@@ -83,7 +86,7 @@ get() {
   }
   ((wait <= 1800)) || wait=1800
   disk=$(find_disk homelab-ci-inbox) || {
-    echo "::error::handoff: no inbox disk in this VM, so no $name"
+    echo "::error::handoff: no inbox disk this job can read, so no $name"
     return 1
   }
   nonce=$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')
@@ -103,17 +106,25 @@ get() {
   esac
   mkdir -p "$path"
   # Whole 4 KiB blocks, as direct reads need; the tar's own end marks where it stops.
-  as "$disk" r dd if="$disk" bs=1M iflag=skip_bytes,count_bytes${direct:+,$direct} \
+  as "$disk" r "$dd" if="$disk" bs=1M iflag=skip_bytes,count_bytes${direct:+,$direct} \
     skip=512 count=$(((bytes + 4095) / 4096 * 4096)) status=none |
     head -c "$bytes" | tar -x -C "$path"
   echo "handoff: got $name from $job in run $run ($bytes bytes)"
 }
 
 prepare() {
-  local disk magic
-  for magic in homelab-ci-outbox homelab-ci-handoff homelab-ci-inbox; do
-    if disk=$(find_disk "$magic"); then $sudo chown "$(id -un)" "$disk"; fi
-  done
+  local disk
+  # Said here, not only at a later get: once the job drops sudo, a disk not handed over is lost.
+  if disk=$(find_disk homelab-ci-outbox || find_disk homelab-ci-handoff); then
+    $sudo chown "$(id -un)" "$disk"
+  else
+    echo "::warning::handoff: no outbox disk found to hand to the runner user"
+  fi
+  if disk=$(find_disk homelab-ci-inbox); then
+    $sudo chown "$(id -un)" "$disk"
+  else
+    echo "::warning::handoff: no inbox disk found to hand to the runner user"
+  fi
   $sudo chown "$(id -un)" "$console"
 }
 
