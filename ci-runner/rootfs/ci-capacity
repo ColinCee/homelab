@@ -9,9 +9,11 @@ sudo=${SUDO-sudo}
 direct=${CAPACITY_DIRECT-direct}
 console=${CAPACITY_CONSOLE:-/dev/ttyS0}
 wait=${CAPACITY_WAIT:-15}
+# GNU dd, as handoff.sh: Ubuntu 26.04's own dd (uutils) fails every direct read.
+dd=$(command -v gnudd || echo dd)
 
 head_of() {
-  local cmd=(dd if="$1" bs=512 count=1 ${direct:+iflag=$direct} status=none)
+  local cmd=("$dd" if="$1" bs=512 count=1 ${direct:+iflag=$direct} status=none)
   if [[ -r $1 ]]; then "${cmd[@]}"; else $sudo "${cmd[@]}"; fi | head -n 1 | tr -d '\0'
 }
 
@@ -31,6 +33,6 @@ until [[ $(head_of "$disk") =~ ^homelab-ci-inbox\ v1\ $nonce\ ([a-z]+)\ ([0-9]+)
 done
 [[ ${BASH_REMATCH[1]} == ok ]] || { echo "ci-capacity: the CI supervisor has no counts (${BASH_REMATCH[1]})" >&2; exit 1; }
 bytes=${BASH_REMATCH[2]}
-cmd=(dd if="$disk" bs=4096 iflag=skip_bytes${direct:+,$direct} skip=512 count=$(((bytes + 4095) / 4096 + 1)) status=none)
+cmd=("$dd" if="$disk" bs=4096 iflag=skip_bytes${direct:+,$direct} skip=512 count=$(((bytes + 4095) / 4096 + 1)) status=none)
 if [[ -r $disk ]]; then "${cmd[@]}"; else $sudo "${cmd[@]}"; fi | head -c "$bytes"
 echo

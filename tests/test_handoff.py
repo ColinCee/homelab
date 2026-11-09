@@ -305,6 +305,32 @@ def test_get_reads_the_answer_off_the_inbox(tmp_path, folders) -> None:
     assert (tmp_path / "in" / "review.json").read_text() == '{"ok": true}'
 
 
+def test_prepare_reads_disks_with_gnu_dd_where_the_image_has_it(tmp_path) -> None:
+    """Ubuntu 26.04's own dd (uutils) fails every direct read, so prepare found no disk."""
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    calls = tmp_path / "gnudd-calls"
+    (shim / "gnudd").write_text(f'#!/bin/sh\necho "$@" >> {calls}\nexec dd "$@"\n')
+    (shim / "gnudd").chmod(0o755)
+    inbox = tmp_path / "inbox"
+    inbox.write_bytes(sup.INBOX_EMPTY.ljust(4096, b"\0"))
+    console = tmp_path / "ttyS0"
+    console.write_text("")
+
+    result = run_script(
+        "prepare",
+        tmp=tmp_path,
+        DISKS=str(inbox),
+        HANDOFF_CONSOLE=str(console),
+        PATH=f"{shim}{os.pathsep}{os.environ['PATH']}",
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert f"if={inbox}" in calls.read_text()
+    assert "no inbox disk" not in result.stdout
+    assert "no outbox disk found" in result.stdout
+
+
 def test_the_action_never_uploads_to_github() -> None:
     action = yaml.safe_load((ACTION / "action.yml").read_text())
     assert all("uses" not in step for step in action["runs"]["steps"])
