@@ -75,9 +75,7 @@ def test_the_signature_covers_exactly_the_bytes_sent() -> None:
     key.public_key().verify(bytes.fromhex(signature), data)
 
 
-def test_a_login_file_logs_in_to_the_prometheus_api_only(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_a_login_logs_in_to_the_prometheus_api_only(monkeypatch: pytest.MonkeyPatch) -> None:
     sent: list[urllib.request.Request] = []
 
     def urlopen(request: urllib.request.Request, timeout: float) -> io.BytesIO:
@@ -89,8 +87,7 @@ def test_a_login_file_logs_in_to_the_prometheus_api_only(
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
     public_stats.gather("http://prometheus:9090", "https://flights")
     assert all(r.get_header("Authorization") is None for r in sent)
-    (tmp_path / "login").write_text("stats@homelab.internal:pw\n", encoding="utf-8")
-    monkeypatch.setenv("PROMETHEUS_LOGIN_FILE", str(tmp_path / "login"))
+    monkeypatch.setenv("PROMETHEUS_LOGIN", "stats@homelab.internal:pw")
     sent.clear()
     body = public_stats.gather("http://openobserve:5080/api/default/prometheus", "https://flights")
     assert body["allUp"]

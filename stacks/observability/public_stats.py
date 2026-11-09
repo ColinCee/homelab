@@ -59,15 +59,11 @@ def get_json(url: str, login: str | None = None) -> Any:
         return json.load(response)
 
 
-def login() -> str | None:
-    """`user:password` from the file PROMETHEUS_LOGIN_FILE names (OpenObserve wants one)."""
-    path = os.environ.get("PROMETHEUS_LOGIN_FILE")
-    return Path(path).read_text(encoding="utf-8").strip() if path else None
-
-
 def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     url = f"{prometheus}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
-    body = get_json(url, login())
+    # `user:password`, which OpenObserve's Prometheus API needs. An environment variable, not a
+    # file: Compose cannot mount a secret from the environment into a read-only container.
+    body = get_json(url, os.environ.get("PROMETHEUS_LOGIN"))
     if body.get("status") != "success":
         raise StatsError(f"prometheus: {body.get('error', 'query failed')}")
     return body["data"]["result"]
