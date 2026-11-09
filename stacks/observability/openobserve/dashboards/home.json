@@ -983,7 +983,7 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, container_name AS breakdown_1, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, breakdown_1) ORDER BY sum(y_axis_1) OVER (PARTITION BY breakdown_1) DESC, breakdown_1, x_axis_1",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1, sum(y_axis_1) OVER (PARTITION BY breakdown_1) AS total FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, container_name AS breakdown_1, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, breakdown_1) ORDER BY total DESC, breakdown_1, x_axis_1",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
@@ -1354,14 +1354,14 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT name AS x_axis_1, max(grp) AS breakdown_1, max(cores) AS y_axis_1 FROM (SELECT name, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS grp, (max(value) - min(value)) / NULLIF((max(_timestamp) - min(_timestamp)) / 1000000.0, 0) AS cores FROM \"container_cpu_usage_seconds_total\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000 GROUP BY name, __hash__) GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10) ORDER BY y_axis_1",
+              "query": "SELECT name AS x_axis_1, max(grp) AS breakdown_1, max(cores) AS y_axis_1 FROM (SELECT name, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS grp, (max(value) - min(value)) / NULLIF((max(_timestamp) - min(_timestamp)) / 1000000.0, 0) AS cores FROM \"container_cpu_usage_seconds_total\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000 GROUP BY name, __hash__) GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10",
               "customQuery": true,
               "fields": {
                 "stream": "container_cpu_usage_seconds_total",
                 "stream_type": "metrics",
                 "x": [
                   {
-                    "label": "Container",
+                    "label": "",
                     "alias": "x_axis_1",
                     "column": "x_axis_1",
                     "color": null
@@ -1369,7 +1369,7 @@
                 ],
                 "y": [
                   {
-                    "label": "Cores",
+                    "label": "",
                     "alias": "y_axis_1",
                     "column": "y_axis_1",
                     "color": null
@@ -1429,14 +1429,14 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT name AS x_axis_1, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS breakdown_1, max(value) AS y_axis_1 FROM (SELECT name, container_label_com_docker_compose_project, value, row_number() OVER (PARTITION BY __hash__ ORDER BY _timestamp DESC) AS rn FROM \"container_memory_working_set_bytes\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000) WHERE rn = 1 GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10) ORDER BY y_axis_1",
+              "query": "SELECT name AS x_axis_1, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS breakdown_1, max(value) AS y_axis_1 FROM (SELECT name, container_label_com_docker_compose_project, value, row_number() OVER (PARTITION BY __hash__ ORDER BY _timestamp DESC) AS rn FROM \"container_memory_working_set_bytes\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000) WHERE rn = 1 GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10",
               "customQuery": true,
               "fields": {
                 "stream": "container_memory_working_set_bytes",
                 "stream_type": "metrics",
                 "x": [
                   {
-                    "label": "Container",
+                    "label": "",
                     "alias": "x_axis_1",
                     "column": "x_axis_1",
                     "color": null
@@ -1444,7 +1444,7 @@
                 ],
                 "y": [
                   {
-                    "label": "Memory",
+                    "label": "",
                     "alias": "y_axis_1",
                     "column": "y_axis_1",
                     "color": null
@@ -2212,7 +2212,7 @@
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, split_part(key, '/', 1) AS breakdown_1, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1, breakdown_1) ORDER BY sum(y_axis_1) OVER (PARTITION BY breakdown_1) DESC, breakdown_1, x_axis_1",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1, sum(y_axis_1) OVER (PARTITION BY breakdown_1) AS total FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, split_part(key, '/', 1) AS breakdown_1, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1, breakdown_1) ORDER BY total DESC, breakdown_1, x_axis_1",
               "customQuery": true,
               "fields": {
                 "stream": "triggers",
