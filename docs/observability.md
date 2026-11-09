@@ -29,6 +29,7 @@ What watches what:
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
 | **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
+| **OpenObserve gateway** | Readers' only way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
 Grafana provisions dashboards directly from the read-only mounted JSON files in
 `stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
@@ -179,8 +180,7 @@ query when a dashboard has data but no alert.
 
 OpenObserve's copy of each rule, in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml), is
 applied on deploy by `openobserve-apply` and posts only to the Control room's shadow path until the cutover
-(`live`). It keeps metric names in lower case, selects no series by a label it lacks, and repeats a
-per-series alert's firing each minute without a resolve, so stopped firings mean cleared.
+(`live`). It keeps metric names in lower case; a per-series alert's stopped firings mean cleared.
 
 The #uptime webhook and the Control room's `/alert` both use the provisioned
 `homelab-discord` notification template.

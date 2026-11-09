@@ -91,8 +91,43 @@ services:
       - openobserve-data:/data
     networks:
       - default
-      # The Kaizen Control room reads it here, as it reads Prometheus today.
+      # Its alerts post to the Kaizen Control room here.
       - kaizen-prometheus
+
+  # The only holder of OpenObserve's root login: each reader logs in here with its own and reads only its own paths
+  # (gateway/Caddyfile). The Control room on its network, public stats on theirs, server-health and agents on Tailscale.
+  openobserve-gateway:
+    image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/etc/caddy/start.sh"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    mem_limit: 64m
+    ports:
+      - "100.100.146.119:5081:5080"
+    environment:
+      OPENOBSERVE_ROOT_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
+      OPENOBSERVE_KAIZEN_PASSWORD: ${OPENOBSERVE_KAIZEN_PASSWORD:?}
+      OPENOBSERVE_STATS_PASSWORD: ${OPENOBSERVE_STATS_PASSWORD:?}
+      OPENOBSERVE_AGENTS_PASSWORD: ${OPENOBSERVE_AGENTS_PASSWORD:?}
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    tmpfs:
+      - /data:uid=65534,gid=65534
+      - /config:uid=65534,gid=65534
+    volumes:
+      - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./gateway/start.sh:/etc/caddy/start.sh:ro
+    networks:
+      - default
+      - kaizen-prometheus
+      - public-stats
+    depends_on:
+      - openobserve
 
   # Makes OpenObserve's alerts match openobserve/alerts.toml, then idles: `up --wait` fails the deploy on a
   # container that exits, so a refused rule fails it and a finished run must not exit. A restart applies again.

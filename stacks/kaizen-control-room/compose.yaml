@@ -29,16 +29,22 @@ services:
       KAIZEN_ALERTS_FIRING_URL: http://100.100.146.119:3001/api/prometheus/grafana/api/v1/alerts
       # Number alerts' charts, from Prometheus over the network below (auto-kaizen src/kaizen/discord/chart.py).
       KAIZEN_PROMETHEUS: http://prometheus:9090
+      # OpenObserve through its read-only gateway, over the network below: its alert list and a rule's extra numbers
+      # (auto-kaizen src/kaizen/board/alert_source.py; the shadow's until the cutover).
+      KAIZEN_OPENOBSERVE: http://openobserve-gateway:5080
+      KAIZEN_OPENOBSERVE_LOGIN_FILE: /run/secrets/kaizen_openobserve_login
     secrets:
       - kaizen_app_key
       - kaizen_alert_secret
       - kaizen_discord_token
+      - kaizen_openobserve_login
 
     networks:
       - default
       - kaizen-prometheus
 
-# Shared with the observability stack's Prometheus, which joins it. Made here, as this stack deploys first.
+# Shared with the observability stack's Prometheus, OpenObserve and its gateway, which join it. Made here, as this
+# stack deploys first.
 networks:
   kaizen-prometheus:
     name: kaizen-prometheus
@@ -50,6 +56,8 @@ secrets:
     environment: KAIZEN_ALERT_SECRET
   kaizen_discord_token:
     environment: KAIZEN_DISCORD_TOKEN
+  kaizen_openobserve_login:
+    environment: KAIZEN_OPENOBSERVE_LOGIN
 
 volumes:
   data:

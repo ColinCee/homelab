@@ -1,0 +1,54 @@
+# OpenObserve for its readers (compose.yaml, openobserve-gateway). Open source OpenObserve has only admin logins,
+# so each reader logs in here with its own, may read only its own paths, and the request goes on with root's login.
+# Anything else is refused. Logins: start.sh. Tests: tests/test_openobserve_gateway.py.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+(openobserve) {
+	reverse_proxy {$OPENOBSERVE:openobserve:5080} {
+		header_up Authorization "Basic {$ROOT_AUTH}"
+	}
+}
+
+:{$GATEWAY_PORT:5080} {
+	map {header.Authorization} {reader} {
+		"Basic {$KAIZEN_AUTH}" kaizen
+		"Basic {$STATS_AUTH}" stats
+		"Basic {$AGENTS_AUTH}" agents
+		default none
+	}
+
+	# Public stats reads one query, as it did from Prometheus.
+	@query {
+		vars {reader} stats kaizen agents
+		method GET
+		path /api/default/prometheus/api/v1/query
+	}
+	# The Control room's charts, extra numbers and alert list; server-health's and agents' too.
+	@kaizen {
+		vars {reader} kaizen agents
+		method GET
+		path /api/default/prometheus/api/v1/query_range /api/v2/default/alerts /api/v2/default/alerts/*
+	}
+	@agents {
+		vars {reader} agents
+		method GET
+		path /api/default/prometheus/api/v1/series /api/default/prometheus/api/v1/labels /api/default/prometheus/api/v1/label/*/values
+	}
+
+	handle @query {
+		import openobserve
+	}
+	handle @kaizen {
+		import openobserve
+	}
+	handle @agents {
+		import openobserve
+	}
+	handle {
+		respond 403
+	}
+}
