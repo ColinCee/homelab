@@ -70,21 +70,53 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
   fi
 done
 
-# Grafana alerts: anonymous Viewer access is enough to read state and history.
+# Alerts and metrics: Grafana's (anonymous Viewer access reads them) until the cutover to OpenObserve, then
+# OpenObserve's when OPENOBSERVE_URL is set, with OPENOBSERVE_LOGIN (user:password) as a curl config on stdin.
 grafana=http://beelink.tail4f465e.ts.net:3001
-firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
-  jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
-  firing="unknown (Grafana API unreachable)"
+openobserve="${OPENOBSERVE_URL:-}"
+login() {
+  # Quoted patterns: bash 5.2 reads an unquoted `\\\\` replacement as one backslash.
+  local pw=${OPENOBSERVE_LOGIN//"\\"/"\\\\"}
+  pw=${pw//"\""/"\\\""}
+  printf 'user = "%s"\n' "$pw"
+}
+promql() { # QUERY: the Prometheus API's JSON answer
+  if [[ -n "$openobserve" ]]; then
+    login | curl -sf -m 10 -K - -G "$openobserve/api/default/prometheus/api/v1/query" --data-urlencode "query=$1"
+  else
+    curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" --data-urlencode "query=$1"
+  fi
+}
+if [[ -n "$openobserve" ]]; then
+  # As Kaizen reads the list (auto-kaizen src/kaizen/board/alert_source.py, `firing_in`): a rule fires when its
+  # latest run met its condition (both stamps come from the same run); one whose query failed, or not run for
+  # 5 minutes, is named too.
+  firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
+    jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
+      (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
+      if .last_outcome == "error" then "\($rule) (query fails)"
+      elif $run < $stale then "\($rule) (not run for 5 min)"
+      elif $met > 0 and $met >= $run - 5000000 then $rule
+      else empty end] | join(", ")' 2>/dev/null)" ||
+    firing="unknown (OpenObserve API unreachable)"
+else
+  firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
+    jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
+    firing="unknown (Grafana API unreachable)"
+fi
 if [[ -n "$firing" ]]; then
   bad "Firing alerts" "$firing"
 else
   row "Firing alerts" "none"
 fi
-# Log only: alert state changes in the last 7 days (Grafana stores them as annotations).
-echo "Alert state changes, last 7 days:"
-curl -sf -m 10 "$grafana/api/annotations?type=alert&limit=100&from=$(date -d '7 days ago' +%s000)" |
-  jq -r 'sort_by(.time)[] | "\(.time / 1000 | todate) \(.alertName // .text) \(.prevState) -> \(.newState)"' ||
-  echo "(history unavailable)"
+# Log only: alert state changes in the last 7 days. OpenObserve keeps every run, not changes; each episode is a
+# comment on its Kaizen `alert` issue instead.
+if [[ -z "$openobserve" ]]; then
+  echo "Alert state changes, last 7 days:"
+  curl -sf -m 10 "$grafana/api/annotations?type=alert&limit=100&from=$(date -d '7 days ago' +%s000)" |
+    jq -r 'sort_by(.time)[] | "\(.time / 1000 | todate) \(.alertName // .text) \(.prevState) -> \(.newState)"' ||
+    echo "(history unavailable)"
+fi
 
 # Log only: why the flight tracker served stale data (upstream fetch failures).
 echo "Flight tracker upstream failures, last 24h (count, reason):"
@@ -109,8 +141,7 @@ for expr in 'avg_over_time(probe_success{job="integrations/blackbox/flight-track
   'count_over_time(probe_success{job="integrations/blackbox/flight-tracker"}[24h])' \
   'max_over_time(probe_duration_seconds{job="integrations/blackbox/flight-tracker"}[24h])' \
   'avg_over_time(up{job="integrations/blackbox/flight-tracker"}[24h])'; do
-  value="$(curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
-    --data-urlencode "query=$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
+  value="$(promql "$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
   echo "  ${expr%%(*}: $value"
 done
 
@@ -120,16 +151,14 @@ echo "CPU, last 5m (cores):"
 for expr in 'count(node_cpu_seconds_total{mode="idle",job="integrations/unix"})' \
   'sum(rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))' \
   'sum(rate(container_cpu_usage_seconds_total{job="ci-vms",id=~"/firecracker/ci-slot[0-9]+"}[5m]))'; do
-  value="$(curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
-    --data-urlencode "query=$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
+  value="$(promql "$expr" | jq -r '.data.result[0].value[1] // "none"' 2>/dev/null || echo unavailable)"
   echo "  $expr: $value"
 done
 # Log only: where the rest goes, by CPU mode and by container.
 for expr in 'sum by (mode) (rate(node_cpu_seconds_total{mode!="idle",job="integrations/unix"}[5m]))' \
   'topk(6, sum by (name) (rate(container_cpu_usage_seconds_total{job="docker",name!=""}[5m])))'; do
   echo "  $expr:"
-  curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" \
-    --data-urlencode "query=$expr" |
+  promql "$expr" |
     jq -r '.data.result | sort_by(-(.value[1] | tonumber))[] | "    \(.metric.mode // .metric.name): \(.value[1])"' 2>/dev/null ||
     echo "    unavailable"
 done
