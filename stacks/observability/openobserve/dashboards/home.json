@@ -44,7 +44,7 @@
               {
                 "type": "lt",
                 "value": "0",
-                "color": "#c62828",
+                "color": "#d03b3b",
                 "text": ""
               }
             ]
@@ -92,7 +92,7 @@
               {
                 "type": "lt",
                 "value": "0",
-                "color": "#c62828",
+                "color": "#d03b3b",
                 "text": ""
               }
             ]
@@ -140,7 +140,7 @@
               {
                 "type": "lt",
                 "value": "0",
-                "color": "#c62828",
+                "color": "#d03b3b",
                 "text": ""
               }
             ]
@@ -188,7 +188,7 @@
               {
                 "type": "gt",
                 "value": "93600",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ]
@@ -235,7 +235,7 @@
               {
                 "type": "gt",
                 "value": "0",
-                "color": "#c62828",
+                "color": "#d03b3b",
                 "text": ""
               }
             ]
@@ -310,14 +310,15 @@
               {
                 "type": "gt",
                 "value": "80",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ],
             "sparkline": {
               "enabled": true,
               "type": "area",
-              "layout": "bottom"
+              "layout": "bottom",
+              "color": "#898781"
             }
           },
           "queryType": "promql",
@@ -363,14 +364,15 @@
               {
                 "type": "gt",
                 "value": "90",
-                "color": "#c62828",
+                "color": "#d03b3b",
                 "text": ""
               }
             ],
             "sparkline": {
               "enabled": true,
               "type": "area",
-              "layout": "bottom"
+              "layout": "bottom",
+              "color": "#898781"
             }
           },
           "queryType": "promql",
@@ -415,7 +417,8 @@
             "sparkline": {
               "enabled": true,
               "type": "area",
-              "layout": "bottom"
+              "layout": "bottom",
+              "color": "#898781"
             }
           },
           "queryType": "promql",
@@ -461,14 +464,15 @@
               {
                 "type": "gt",
                 "value": "80",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ],
             "sparkline": {
               "enabled": true,
               "type": "area",
-              "layout": "bottom"
+              "layout": "bottom",
+              "color": "#898781"
             }
           },
           "queryType": "promql",
@@ -521,7 +525,7 @@
               {
                 "type": "lt",
                 "value": "30",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ]
@@ -569,14 +573,15 @@
               {
                 "type": "gt",
                 "value": "5000000000.0",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ],
             "sparkline": {
               "enabled": true,
               "type": "area",
-              "layout": "bottom"
+              "layout": "bottom",
+              "color": "#898781"
             }
           },
           "queryType": "promql",
@@ -629,7 +634,7 @@
               {
                 "type": "lt",
                 "value": "30",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ]
@@ -692,7 +697,24 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes"
+            "unit": "bytes",
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "Monitoring",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "System",
+                  "color": "#199e70"
+                },
+                {
+                  "value": "Apps",
+                  "color": "#d95926"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -716,25 +738,6 @@
               }
             },
             {
-              "query": "sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Apps"
-              }
-            },
-            {
               "query": "clamp_min(max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})), 0)",
               "customQuery": true,
               "fields": {
@@ -751,6 +754,25 @@
               },
               "config": {
                 "promql_legend": "System"
+              }
+            },
+            {
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Apps"
               }
             }
           ],
@@ -769,7 +791,24 @@
           "description": "The stack's top is the host's own figure in use. Monitoring is the observability stack; Apps every other container; System the rest.",
           "config": {
             "show_legends": true,
-            "decimals": 2
+            "decimals": 2,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "Monitoring",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "System",
+                  "color": "#199e70"
+                },
+                {
+                  "value": "Apps",
+                  "color": "#d95926"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -793,25 +832,6 @@
               }
             },
             {
-              "query": "sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
-              "customQuery": true,
-              "fields": {
-                "stream": "",
-                "stream_type": "metrics",
-                "x": [],
-                "y": [],
-                "z": [],
-                "filter": {
-                  "filterType": "group",
-                  "logicalOperator": "AND",
-                  "conditions": []
-                }
-              },
-              "config": {
-                "promql_legend": "Apps"
-              }
-            },
-            {
               "query": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))), 0)",
               "customQuery": true,
               "fields": {
@@ -828,6 +848,25 @@
               },
               "config": {
                 "promql_legend": "System"
+              }
+            },
+            {
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Apps"
               }
             }
           ],
@@ -866,12 +905,85 @@
           "description": "Lines that log an error, a fatal or a Python exception.",
           "config": {
             "show_legends": true,
-            "decimals": 0
+            "decimals": 0,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "backup",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-backend-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-cloudflared-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "homeassistant",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-dns-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-proxy-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "observability-grafana-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-prometheus-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-loki-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alertmanager-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-gateway-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-apply-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alloy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-docker-socket-proxy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-probes-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-public-stats-1",
+                  "color": "#2a78d6"
+                }
+              ]
+            }
           },
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT histogram(_timestamp, '1 hour') AS x_axis_1, container_name AS breakdown_1, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, container_name AS breakdown_1, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, breakdown_1) ORDER BY sum(y_axis_1) OVER (PARTITION BY breakdown_1) DESC, breakdown_1, x_axis_1",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
@@ -999,7 +1111,80 @@
           "description": "Each container's CPU use.",
           "config": {
             "show_legends": true,
-            "decimals": 2
+            "decimals": 2,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "backup",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-backend-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-cloudflared-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "homeassistant",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-dns-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-proxy-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "observability-grafana-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-prometheus-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-loki-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alertmanager-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-gateway-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-apply-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alloy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-docker-socket-proxy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-probes-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-public-stats-1",
+                  "color": "#2a78d6"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1039,7 +1224,80 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes"
+            "unit": "bytes",
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "backup",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-backend-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-cloudflared-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "homeassistant",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-dns-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-proxy-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "observability-grafana-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-prometheus-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-loki-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alertmanager-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-gateway-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-apply-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alloy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-docker-socket-proxy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-probes-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-public-stats-1",
+                  "color": "#2a78d6"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1073,33 +1331,67 @@
         },
         {
           "id": "Panel_ID23",
-          "type": "h-bar",
+          "type": "h-stacked",
           "title": "Top 10 by CPU now, cores",
           "description": "The busiest containers over the last 5 minutes.",
           "config": {
-            "show_legends": false,
+            "show_legends": true,
             "decimals": 2,
-            "aggregation": "last"
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "Monitoring",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "Apps",
+                  "color": "#d95926"
+                }
+              ]
+            }
           },
-          "queryType": "promql",
+          "queryType": "sql",
           "queries": [
             {
-              "query": "topk(10, max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m] @ end())))",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT name AS x_axis_1, max(grp) AS breakdown_1, max(cores) AS y_axis_1 FROM (SELECT name, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS grp, (max(value) - min(value)) / NULLIF((max(_timestamp) - min(_timestamp)) / 1000000.0, 0) AS cores FROM \"container_cpu_usage_seconds_total\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000 GROUP BY name, __hash__) GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10) ORDER BY y_axis_1",
               "customQuery": true,
               "fields": {
-                "stream": "",
+                "stream": "container_cpu_usage_seconds_total",
                 "stream_type": "metrics",
-                "x": [],
-                "y": [],
+                "x": [
+                  {
+                    "label": "Container",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Cores",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
                 "z": [],
                 "filter": {
                   "filterType": "group",
                   "logicalOperator": "AND",
                   "conditions": []
-                }
+                },
+                "breakdown": [
+                  {
+                    "label": "Group",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ]
               },
               "config": {
-                "promql_legend": "{name}"
+                "promql_legend": ""
               }
             }
           ],
@@ -1113,34 +1405,68 @@
         },
         {
           "id": "Panel_ID24",
-          "type": "h-bar",
+          "type": "h-stacked",
           "title": "Top 10 by memory now",
           "description": "The containers holding the most memory.",
           "config": {
-            "show_legends": false,
+            "show_legends": true,
             "decimals": 1,
             "unit": "bytes",
-            "aggregation": "last"
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "Monitoring",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "Apps",
+                  "color": "#d95926"
+                }
+              ]
+            }
           },
-          "queryType": "promql",
+          "queryType": "sql",
           "queries": [
             {
-              "query": "topk(10, max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"} @ end()))",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT name AS x_axis_1, CASE WHEN max(container_label_com_docker_compose_project) = 'observability' THEN 'Monitoring' ELSE 'Apps' END AS breakdown_1, max(value) AS y_axis_1 FROM (SELECT name, container_label_com_docker_compose_project, value, row_number() OVER (PARTITION BY __hash__ ORDER BY _timestamp DESC) AS rn FROM \"container_memory_working_set_bytes\" WHERE job = 'docker' AND name != '' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 300000000) WHERE rn = 1 GROUP BY x_axis_1 ORDER BY y_axis_1 DESC LIMIT 10) ORDER BY y_axis_1",
               "customQuery": true,
               "fields": {
-                "stream": "",
+                "stream": "container_memory_working_set_bytes",
                 "stream_type": "metrics",
-                "x": [],
-                "y": [],
+                "x": [
+                  {
+                    "label": "Container",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Memory",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
                 "z": [],
                 "filter": {
                   "filterType": "group",
                   "logicalOperator": "AND",
                   "conditions": []
-                }
+                },
+                "breakdown": [
+                  {
+                    "label": "Group",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ]
               },
               "config": {
-                "promql_legend": "{name}"
+                "promql_legend": ""
               }
             }
           ],
@@ -1166,7 +1492,28 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes"
+            "unit": "bytes",
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "enp1s0 in",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "tailscale0 in",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "enp1s0 out",
+                  "color": "#199e70"
+                },
+                {
+                  "value": "tailscale0 out",
+                  "color": "#c98500"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1225,7 +1572,80 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes"
+            "unit": "bytes",
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "backup",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-backend-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "flight-tracker-cloudflared-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "homeassistant",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-dns-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "internal-names-proxy-1",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "observability-grafana-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-prometheus-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-loki-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alertmanager-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-gateway-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-openobserve-apply-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-alloy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-docker-socket-proxy-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-probes-1",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "observability-public-stats-1",
+                  "color": "#2a78d6"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1264,7 +1684,24 @@
           "description": "Retried connection attempts, resets sent and connections dropped while queued: each climbs when something cannot connect.",
           "config": {
             "show_legends": true,
-            "decimals": 2
+            "decimals": 2,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "SYN retransmits",
+                  "color": "#2a78d6"
+                },
+                {
+                  "value": "TCP resets out",
+                  "color": "#d95926"
+                },
+                {
+                  "value": "Listen drops",
+                  "color": "#199e70"
+                }
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1353,7 +1790,7 @@
               {
                 "type": "gt",
                 "value": "93600",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ]
@@ -1401,7 +1838,7 @@
               {
                 "type": "gt",
                 "value": "691200",
-                "color": "#c62828",
+                "color": "#fab219",
                 "text": ""
               }
             ]
@@ -1532,7 +1969,13 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes"
+            "unit": "bytes",
+            "color": {
+              "mode": "fixed",
+              "fixedColor": [
+                "#898781"
+              ]
+            }
           },
           "queryType": "promql",
           "queries": [
@@ -1707,12 +2150,69 @@
           "description": "Minutes each rule fired in each hour.",
           "config": {
             "show_legends": true,
-            "decimals": 0
+            "decimals": 0,
+            "color": {
+              "mode": "palette-classic-by-series",
+              "colorBySeries": [
+                {
+                  "value": "beelink-metrics-stopped",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "flight-tracker-down",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "home-assistant-down",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "dns-or-names-down",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "high-ram",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "restart-loop",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "new-container",
+                  "color": "#d03b3b"
+                },
+                {
+                  "value": "backup-missed",
+                  "color": "#fab219"
+                },
+                {
+                  "value": "pc-backup-stale",
+                  "color": "#fab219"
+                },
+                {
+                  "value": "high-disk",
+                  "color": "#fab219"
+                },
+                {
+                  "value": "backup-storage-high",
+                  "color": "#fab219"
+                },
+                {
+                  "value": "ssd-worn",
+                  "color": "#fab219"
+                },
+                {
+                  "value": "ssd-wear-stale",
+                  "color": "#fab219"
+                }
+              ]
+            }
           },
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT histogram(_timestamp, '1 hour') AS x_axis_1, split_part(key, '/', 1) AS breakdown_1, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "query": "SELECT x_axis_1, breakdown_1, y_axis_1 FROM (SELECT histogram(_timestamp, '1 hour') AS x_axis_1, split_part(key, '/', 1) AS breakdown_1, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1, breakdown_1) ORDER BY sum(y_axis_1) OVER (PARTITION BY breakdown_1) DESC, breakdown_1, x_axis_1",
               "customQuery": true,
               "fields": {
                 "stream": "triggers",
