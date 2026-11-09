@@ -14,7 +14,7 @@
         {
           "id": "Panel_ID1",
           "type": "markdown",
-          "title": "",
+          "title": "Is anything wrong?",
           "description": "",
           "config": {
             "show_legends": true,
@@ -29,7 +29,7 @@
             "h": 2,
             "i": 1
           },
-          "markdownContent": "### Is anything wrong?"
+          "markdownContent": ""
         },
         {
           "id": "Panel_ID2",
@@ -47,12 +47,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -79,8 +74,8 @@
           "layout": {
             "x": 0,
             "y": 2,
-            "w": 27,
-            "h": 5,
+            "w": 64,
+            "h": 6,
             "i": 2
           }
         },
@@ -100,12 +95,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -130,10 +120,10 @@
             }
           ],
           "layout": {
-            "x": 27,
+            "x": 64,
             "y": 2,
-            "w": 27,
-            "h": 5,
+            "w": 64,
+            "h": 6,
             "i": 3
           }
         },
@@ -153,12 +143,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -183,10 +168,10 @@
             }
           ],
           "layout": {
-            "x": 54,
+            "x": 128,
             "y": 2,
-            "w": 27,
-            "h": 5,
+            "w": 64,
+            "h": 6,
             "i": 4
           }
         },
@@ -206,12 +191,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -236,10 +216,10 @@
             }
           ],
           "layout": {
-            "x": 81,
-            "y": 2,
-            "w": 27,
-            "h": 5,
+            "x": 0,
+            "y": 8,
+            "w": 64,
+            "h": 6,
             "i": 5
           }
         },
@@ -259,12 +239,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -289,10 +264,10 @@
             }
           ],
           "layout": {
-            "x": 108,
-            "y": 2,
-            "w": 27,
-            "h": 5,
+            "x": 64,
+            "y": 8,
+            "w": 64,
+            "h": 6,
             "i": 6
           }
         },
@@ -312,12 +287,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -342,17 +312,17 @@
             }
           ],
           "layout": {
-            "x": 135,
-            "y": 2,
-            "w": 27,
-            "h": 5,
+            "x": 128,
+            "y": 8,
+            "w": 64,
+            "h": 6,
             "i": 7
           }
         },
         {
           "id": "Panel_ID8",
           "type": "metric",
-          "title": "Alerts firing",
+          "title": "Alerts",
           "description": "OpenObserve's alert rules firing now, a rule with several firing series counting once. Until the cutover they post only to the Control room's shadow path, which opens no issues.",
           "config": {
             "show_legends": false,
@@ -364,17 +334,12 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "10m"
-            }
+            ]
           },
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT count(*) AS y_axis_1 FROM (SELECT status, row_number() OVER (PARTITION BY key ORDER BY _timestamp DESC) AS rn FROM triggers WHERE module = 'alert') WHERE rn = 1 AND status IN ('firing', 'notify_failed')",
+              "query": "SELECT count(*) AS y_axis_1 FROM (SELECT status, row_number() OVER (PARTITION BY key ORDER BY _timestamp DESC) AS rn FROM triggers WHERE module = 'alert' AND _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 600000000) WHERE rn = 1 AND status IN ('firing', 'notify_failed')",
               "customQuery": true,
               "fields": {
                 "stream": "triggers",
@@ -401,17 +366,17 @@
             }
           ],
           "layout": {
-            "x": 162,
-            "y": 2,
-            "w": 30,
-            "h": 5,
+            "x": 0,
+            "y": 14,
+            "w": 192,
+            "h": 6,
             "i": 8
           }
         },
         {
           "id": "Panel_ID9",
           "type": "markdown",
-          "title": "",
+          "title": "Headroom, with when the disk and backups fill at their 7-day rate",
           "description": "",
           "config": {
             "show_legends": true,
@@ -421,12 +386,12 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 7,
+            "y": 20,
             "w": 192,
             "h": 2,
             "i": 9
           },
-          "markdownContent": "### Headroom: now, and the last 7 days"
+          "markdownContent": ""
         },
         {
           "id": "Panel_ID10",
@@ -449,11 +414,6 @@
               "enabled": true,
               "type": "area",
               "layout": "bottom"
-            },
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "7d"
             }
           },
           "queryType": "promql",
@@ -480,9 +440,9 @@
           ],
           "layout": {
             "x": 0,
-            "y": 9,
-            "w": 27,
-            "h": 6,
+            "y": 22,
+            "w": 48,
+            "h": 12,
             "i": 10
           }
         },
@@ -507,11 +467,6 @@
               "enabled": true,
               "type": "area",
               "layout": "bottom"
-            },
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "7d"
             }
           },
           "queryType": "promql",
@@ -537,9 +492,9 @@
             }
           ],
           "layout": {
-            "x": 27,
-            "y": 9,
-            "w": 27,
+            "x": 48,
+            "y": 22,
+            "w": 48,
             "h": 6,
             "i": 11
           }
@@ -547,8 +502,8 @@
         {
           "id": "Panel_ID12",
           "type": "metric",
-          "title": "Swap in use",
-          "description": "Swap holding pages; the swapping alert watches pages going out, not this.",
+          "title": "Swap",
+          "description": "Swap in use, holding pages; the swapping alert watches pages going out, not this.",
           "config": {
             "show_legends": false,
             "decimals": 1,
@@ -557,11 +512,6 @@
               "enabled": true,
               "type": "area",
               "layout": "bottom"
-            },
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "7d"
             }
           },
           "queryType": "promql",
@@ -587,9 +537,9 @@
             }
           ],
           "layout": {
-            "x": 54,
-            "y": 9,
-            "w": 27,
+            "x": 48,
+            "y": 28,
+            "w": 48,
             "h": 6,
             "i": 12
           }
@@ -615,11 +565,6 @@
               "enabled": true,
               "type": "area",
               "layout": "bottom"
-            },
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "7d"
             }
           },
           "queryType": "promql",
@@ -645,9 +590,9 @@
             }
           ],
           "layout": {
-            "x": 81,
-            "y": 9,
-            "w": 27,
+            "x": 96,
+            "y": 22,
+            "w": 48,
             "h": 6,
             "i": 13
           }
@@ -655,7 +600,7 @@
         {
           "id": "Panel_ID14",
           "type": "metric",
-          "title": "Disk full in",
+          "title": "Full in",
           "description": "When the root disk fills at its 7-day rate; red under 30 days.",
           "config": {
             "show_legends": false,
@@ -675,12 +620,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -705,9 +645,9 @@
             }
           ],
           "layout": {
-            "x": 108,
-            "y": 9,
-            "w": 27,
+            "x": 96,
+            "y": 28,
+            "w": 48,
             "h": 6,
             "i": 14
           }
@@ -715,7 +655,7 @@
         {
           "id": "Panel_ID15",
           "type": "metric",
-          "title": "Backup storage",
+          "title": "Backup",
           "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
           "config": {
             "show_legends": false,
@@ -733,11 +673,6 @@
               "enabled": true,
               "type": "area",
               "layout": "bottom"
-            },
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "7d"
             }
           },
           "queryType": "promql",
@@ -763,9 +698,9 @@
             }
           ],
           "layout": {
-            "x": 135,
-            "y": 9,
-            "w": 27,
+            "x": 144,
+            "y": 22,
+            "w": 48,
             "h": 6,
             "i": 15
           }
@@ -773,8 +708,8 @@
         {
           "id": "Panel_ID16",
           "type": "metric",
-          "title": "Backup storage full in",
-          "description": "When the repository reaches the 8 GB cap at its 7-day rate; red under 30 days.",
+          "title": "Full in",
+          "description": "When the backup repository reaches the 8 GB cap at its 7-day rate; red under 30 days.",
           "config": {
             "show_legends": false,
             "decimals": 0,
@@ -793,12 +728,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -823,9 +753,9 @@
             }
           ],
           "layout": {
-            "x": 162,
-            "y": 9,
-            "w": 30,
+            "x": 144,
+            "y": 28,
+            "w": 48,
             "h": 6,
             "i": 16
           }
@@ -833,7 +763,7 @@
         {
           "id": "Panel_ID17",
           "type": "markdown",
-          "title": "",
+          "title": "Who uses the box, last 24 hours",
           "description": "",
           "config": {
             "show_legends": true,
@@ -843,12 +773,12 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 15,
+            "y": 34,
             "w": 192,
             "h": 2,
             "i": 17
           },
-          "markdownContent": "### Who uses the box, last 24 hours"
+          "markdownContent": ""
         },
         {
           "id": "Panel_ID18",
@@ -960,7 +890,7 @@
           ],
           "layout": {
             "x": 0,
-            "y": 17,
+            "y": 36,
             "w": 96,
             "h": 12,
             "i": 18
@@ -1075,7 +1005,7 @@
           ],
           "layout": {
             "x": 96,
-            "y": 17,
+            "y": 36,
             "w": 96,
             "h": 12,
             "i": 19
@@ -1084,7 +1014,7 @@
         {
           "id": "Panel_ID20",
           "type": "markdown",
-          "title": "",
+          "title": "Errors in the logs",
           "description": "",
           "config": {
             "show_legends": true,
@@ -1094,12 +1024,12 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 29,
+            "y": 48,
             "w": 192,
             "h": 2,
             "i": 20
           },
-          "markdownContent": "### Errors in the logs"
+          "markdownContent": ""
         },
         {
           "id": "Panel_ID21",
@@ -1156,7 +1086,7 @@
           ],
           "layout": {
             "x": 0,
-            "y": 31,
+            "y": 50,
             "w": 96,
             "h": 12,
             "i": 21
@@ -1170,17 +1100,12 @@
           "config": {
             "show_legends": false,
             "decimals": 0,
-            "wrap_table_cells": true,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "60m"
-            }
+            "wrap_table_cells": true
           },
           "queryType": "sql",
           "queries": [
             {
-              "query": "SELECT container_name AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 200) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
+              "query": "SELECT container_name AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 200) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) WHERE _timestamp >= CAST(to_unixtime(now()) * 1000000 AS BIGINT) - 3600000000 GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
               "customQuery": true,
               "fields": {
                 "stream": "containers",
@@ -1227,7 +1152,7 @@
           ],
           "layout": {
             "x": 96,
-            "y": 31,
+            "y": 50,
             "w": 96,
             "h": 12,
             "i": 22
@@ -1246,26 +1171,21 @@
           "queries": [],
           "layout": {
             "x": 0,
-            "y": 43,
+            "y": 62,
             "w": 192,
-            "h": 2,
+            "h": 4,
             "i": 23
           },
-          "markdownContent": "### Kaizen: [open the Control room](http://beelink.tail4f465e.ts.net:8090)"
+          "markdownContent": "**Kaizen** · [open the Control room](http://beelink.tail4f465e.ts.net:8090)"
         },
         {
           "id": "Panel_ID24",
           "type": "metric",
           "title": "Working",
-          "description": "From the Control room; its page has the detail.",
+          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1291,25 +1211,20 @@
           ],
           "layout": {
             "x": 0,
-            "y": 45,
+            "y": 66,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 24
           }
         },
         {
           "id": "Panel_ID25",
           "type": "metric",
-          "title": "Waiting for a machine",
-          "description": "From the Control room; its page has the detail.",
+          "title": "Waiting",
+          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1335,25 +1250,20 @@
           ],
           "layout": {
             "x": 48,
-            "y": 45,
+            "y": 66,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 25
           }
         },
         {
           "id": "Panel_ID26",
           "type": "metric",
-          "title": "Need Colin",
-          "description": "From the Control room; its page has the detail.",
+          "title": "For you",
+          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1379,26 +1289,21 @@
           ],
           "layout": {
             "x": 96,
-            "y": 45,
+            "y": 66,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 26
           }
         },
         {
           "id": "Panel_ID27",
           "type": "metric",
-          "title": "Spend today",
-          "description": "From the Control room; its page has the detail.",
+          "title": "Spend",
+          "description": "From the Control room; its page has the detail. Waiting is for a machine; For you is what needs Colin; Spend is today's agent cost.",
           "config": {
             "show_legends": false,
             "decimals": 2,
-            "unit": "currency-dollar",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "unit": "currency-dollar"
           },
           "queryType": "promql",
           "queries": [
@@ -1424,9 +1329,9 @@
           ],
           "layout": {
             "x": 144,
-            "y": 45,
+            "y": 66,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 27
           }
         }
@@ -1523,12 +1428,7 @@
           "config": {
             "show_legends": false,
             "decimals": 2,
-            "aggregation": "last",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "1m"
-            }
+            "aggregation": "last"
           },
           "queryType": "promql",
           "queries": [
@@ -1569,12 +1469,7 @@
             "show_legends": false,
             "decimals": 1,
             "unit": "bytes",
-            "aggregation": "last",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "1m"
-            }
+            "aggregation": "last"
           },
           "queryType": "promql",
           "queries": [
@@ -1615,16 +1510,11 @@
         {
           "id": "Panel_ID32",
           "type": "metric",
-          "title": "Job VMs running",
-          "description": "VMs running now, the ready ones waiting for a job included.",
+          "title": "VMs",
+          "description": "Job VMs running now, the ready ones waiting for a job included.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1652,23 +1542,18 @@
             "x": 0,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 32
           }
         },
         {
           "id": "Panel_ID33",
           "type": "metric",
-          "title": "Running a job",
-          "description": "VMs running a job now.",
+          "title": "Busy",
+          "description": "Job VMs running a job now.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1696,7 +1581,7 @@
             "x": 48,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 33
           }
         },
@@ -1704,15 +1589,10 @@
           "id": "Panel_ID34",
           "type": "metric",
           "title": "Slots",
-          "description": "The most VMs the supervisor runs at once.",
+          "description": "The most job VMs the supervisor runs at once.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "decimals": 0
           },
           "queryType": "promql",
           "queries": [
@@ -1740,24 +1620,19 @@
             "x": 96,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 34
           }
         },
         {
           "id": "Panel_ID35",
           "type": "metric",
-          "title": "Memory in VMs",
+          "title": "Memory",
           "description": "Memory the job VMs hold now.",
           "config": {
             "show_legends": false,
             "decimals": 1,
-            "unit": "bytes",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "unit": "bytes"
           },
           "queryType": "promql",
           "queries": [
@@ -1785,7 +1660,7 @@
             "x": 144,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 35
           }
         },
@@ -1841,7 +1716,7 @@
           ],
           "layout": {
             "x": 0,
-            "y": 4,
+            "y": 6,
             "w": 96,
             "h": 12,
             "i": 36
@@ -1881,7 +1756,7 @@
           ],
           "layout": {
             "x": 96,
-            "y": 4,
+            "y": 6,
             "w": 96,
             "h": 12,
             "i": 37
@@ -2078,7 +1953,7 @@
         {
           "id": "Panel_ID41",
           "type": "metric",
-          "title": "Last good backup",
+          "title": "Last ok",
           "description": "Time since the last good nightly backup; red past 26 h.",
           "config": {
             "show_legends": false,
@@ -2091,12 +1966,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -2124,14 +1994,14 @@
             "x": 0,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 41
           }
         },
         {
           "id": "Panel_ID42",
           "type": "metric",
-          "title": "Last deep check",
+          "title": "Verified",
           "description": "Time since restic last read back every byte (weekly); red past 8 days.",
           "config": {
             "show_legends": false,
@@ -2144,12 +2014,7 @@
                 "color": "#c62828",
                 "text": ""
               }
-            ],
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            ]
           },
           "queryType": "promql",
           "queries": [
@@ -2177,30 +2042,32 @@
             "x": 48,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 42
           }
         },
         {
           "id": "Panel_ID43",
           "type": "metric",
-          "title": "Last failure",
+          "title": "Failed",
           "description": "Time since a run last failed.",
           "config": {
             "show_legends": false,
             "decimals": 1,
             "unit": "seconds",
-            "no_value_replacement": "None recorded",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "mappings": [
+              {
+                "type": "value",
+                "value": "-1",
+                "text": "Never",
+                "color": ""
+              }
+            ]
           },
           "queryType": "promql",
           "queries": [
             {
-              "query": "time() - max(homelab_backup_last_failure_timestamp_seconds)",
+              "query": "time() - max(homelab_backup_last_failure_timestamp_seconds) or vector(-1)",
               "customQuery": true,
               "fields": {
                 "stream": "",
@@ -2223,7 +2090,7 @@
             "x": 96,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 43
           }
         },
@@ -2235,12 +2102,7 @@
           "config": {
             "show_legends": false,
             "decimals": 1,
-            "unit": "bytes",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "15m"
-            }
+            "unit": "bytes"
           },
           "queryType": "promql",
           "queries": [
@@ -2268,7 +2130,7 @@
             "x": 144,
             "y": 0,
             "w": 48,
-            "h": 4,
+            "h": 6,
             "i": 44
           }
         },
@@ -2280,12 +2142,7 @@
           "config": {
             "show_legends": true,
             "decimals": 1,
-            "unit": "bytes",
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "30d"
-            }
+            "unit": "bytes"
           },
           "queryType": "promql",
           "queries": [
@@ -2311,7 +2168,7 @@
           ],
           "layout": {
             "x": 0,
-            "y": 4,
+            "y": 6,
             "w": 96,
             "h": 12,
             "i": 45
@@ -2321,15 +2178,10 @@
           "id": "Panel_ID46",
           "type": "table",
           "title": "Runs",
-          "description": "Each day's run: how it ended (empty if it stopped before saying), how long it took and whether it read every byte back.",
+          "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, how long it took and whether it read every byte back.",
           "config": {
             "show_legends": false,
-            "decimals": 0,
-            "panel_time_enabled": true,
-            "panel_time_range": {
-              "type": "relative",
-              "relativeTimePeriod": "30d"
-            }
+            "decimals": 0
           },
           "queryType": "sql",
           "queries": [
@@ -2381,7 +2233,7 @@
           ],
           "layout": {
             "x": 96,
-            "y": 4,
+            "y": 6,
             "w": 96,
             "h": 12,
             "i": 46
