@@ -43,6 +43,7 @@ def test_every_grafana_rule_has_one_with_its_title_route_and_closes() -> None:
         silent = grafana["noDataState"] == "OK" and uid != "backup-storage-high"
         assert ("no_data" not in rule) == silent, uid
         assert ("needs" in rule) == ("needs" in grafana["annotations"]), uid
+        assert rule["format"], uid
         assert rule["for"] in (grafana["for"], "0m" if grafana["for"] == "0s" else None), uid
 
 
@@ -247,6 +248,7 @@ def test_a_per_series_alert_sends_its_labels_and_kaizens_post_fields() -> None:
         "name": "A Kaizen job ran out of memory",
         "value": "7",
         "measure": "Kills in the last 15 min",
+        "format": "{:.0f}",
         "trigger": "any",
         "chart": "",
         "chart_line": "0",
