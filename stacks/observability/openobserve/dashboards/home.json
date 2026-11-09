@@ -1,0 +1,2524 @@
+{
+  "version": 8,
+  "title": "Home",
+  "description": "Is anything wrong, and where; the detail is in the other tabs.",
+  "defaultDatetimeDuration": {
+    "type": "relative",
+    "relativeTimePeriod": "24h"
+  },
+  "tabs": [
+    {
+      "tabId": "home",
+      "name": "Home",
+      "panels": [
+        {
+          "id": "Panel_ID1",
+          "type": "markdown",
+          "title": "",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "decimals": 1
+          },
+          "queryType": "",
+          "queries": [],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 192,
+            "h": 2,
+            "i": 1
+          },
+          "markdownContent": "### Is anything wrong?"
+        },
+        {
+          "id": "Panel_ID2",
+          "type": "metric",
+          "title": "Control room",
+          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days).",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "lt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((time() - max_over_time(timestamp((max(up{job=\"kaizen\"}) or vector(0)) < 1)[7d:1m])) and on() ((max(up{job=\"kaizen\"}) or vector(0)) == 1)) or ((time() - min_over_time(timestamp(max(up{job=\"kaizen\"}))[7d:1m])) and on() ((max(up{job=\"kaizen\"}) or vector(0)) == 1)) or -(time() - max_over_time(timestamp((max(up{job=\"kaizen\"}) or vector(0)) == 1)[7d:1m])) or vector(-604800)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 2
+          }
+        },
+        {
+          "id": "Panel_ID3",
+          "type": "metric",
+          "title": "Flight tracker",
+          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Down means the public site does not answer with live data.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "lt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((time() - max_over_time(timestamp((max(probe_success{job=\"integrations/blackbox/flight-tracker\"}) or vector(0)) < 1)[7d:1m])) and on() ((max(probe_success{job=\"integrations/blackbox/flight-tracker\"}) or vector(0)) == 1)) or ((time() - min_over_time(timestamp(max(probe_success{job=\"integrations/blackbox/flight-tracker\"}))[7d:1m])) and on() ((max(probe_success{job=\"integrations/blackbox/flight-tracker\"}) or vector(0)) == 1)) or -(time() - max_over_time(timestamp((max(probe_success{job=\"integrations/blackbox/flight-tracker\"}) or vector(0)) == 1)[7d:1m])) or vector(-604800)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 27,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 3
+          }
+        },
+        {
+          "id": "Panel_ID4",
+          "type": "metric",
+          "title": "Home Assistant",
+          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Up means its container runs.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "lt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((time() - max(max by (name) (container_start_time_seconds{job=\"docker\",name=~\"homeassistant\"}))) and on() (count(max by (name) (container_start_time_seconds{job=\"docker\",name=~\"homeassistant\"})) == 1)) or -(time() - min(max by (name) (last_over_time(container_last_seen{job=\"docker\",name=~\"homeassistant\"}[7d])))) or vector(-604800)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 54,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 4
+          }
+        },
+        {
+          "id": "Panel_ID5",
+          "type": "metric",
+          "title": "DNS and proxy",
+          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). The .internal names: up means both containers run.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "lt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((time() - max(max by (name) (container_start_time_seconds{job=\"docker\",name=~\"internal-names-(dns|proxy)-1\"}))) and on() (count(max by (name) (container_start_time_seconds{job=\"docker\",name=~\"internal-names-(dns|proxy)-1\"})) == 2)) or -(time() - min(max by (name) (last_over_time(container_last_seen{job=\"docker\",name=~\"internal-names-(dns|proxy)-1\"}[7d])))) or vector(-604800)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 81,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 5
+          }
+        },
+        {
+          "id": "Panel_ID6",
+          "type": "metric",
+          "title": "CI runner",
+          "description": "How long it has been up, or in red, how long it has been down (looking back 7 days). Up means at least one job VM runs (ready ones included).",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "lt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((time() - max_over_time(timestamp((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) < 1)[7d:1m])) and on() ((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)) or ((time() - min_over_time(timestamp(max(up{job=\"integrations/unix\"}))[7d:1m])) and on() ((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)) or -(time() - max_over_time(timestamp((clamp_max(count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}), 1) or vector(0)) == 1)[7d:1m])) or vector(-604800)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 108,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 6
+          }
+        },
+        {
+          "id": "Panel_ID7",
+          "type": "metric",
+          "title": "Backup",
+          "description": "Time since the last good nightly backup; red past 26 h, when the backup alert fires.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "93600",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "time() - max(homelab_backup_last_success_timestamp_seconds)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 2,
+            "w": 27,
+            "h": 5,
+            "i": 7
+          }
+        },
+        {
+          "id": "Panel_ID8",
+          "type": "metric",
+          "title": "Alerts firing",
+          "description": "OpenObserve's alert rules firing now. Until the cutover they post nowhere (their shadow posts are refused), so a firing rule shows here and in the Alerts tab only.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "10m"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT count(*) AS y_axis_1 FROM (SELECT status, row_number() OVER (PARTITION BY key ORDER BY _timestamp DESC) AS rn FROM triggers WHERE module = 'alert') WHERE rn = 1 AND status IN ('firing', 'notify_failed')",
+              "customQuery": true,
+              "fields": {
+                "stream": "triggers",
+                "stream_type": "logs",
+                "x": [],
+                "y": [
+                  {
+                    "label": "Firing",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 162,
+            "y": 2,
+            "w": 30,
+            "h": 5,
+            "i": 8
+          }
+        },
+        {
+          "id": "Panel_ID9",
+          "type": "markdown",
+          "title": "",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "decimals": 1
+          },
+          "queryType": "",
+          "queries": [],
+          "layout": {
+            "x": 0,
+            "y": 7,
+            "w": 192,
+            "h": 2,
+            "i": 9
+          },
+          "markdownContent": "### Headroom: now, and the last 7 days"
+        },
+        {
+          "id": "Panel_ID10",
+          "type": "metric",
+          "title": "CPU",
+          "description": "Share of the CPU in use, CI VMs included; the CPU alert fires past 80% without them.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "percent",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "80",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "sparkline": {
+              "enabled": true,
+              "type": "area",
+              "layout": "bottom"
+            },
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "7d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "100 * max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) / max(count by (instance) (node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 10
+          }
+        },
+        {
+          "id": "Panel_ID11",
+          "type": "metric",
+          "title": "Memory",
+          "description": "Share of memory in use; the memory alert fires past 90%.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "percent",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "90",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "sparkline": {
+              "enabled": true,
+              "type": "area",
+              "layout": "bottom"
+            },
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "7d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "100 * max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) / max(node_memory_memtotal_bytes{job=\"integrations/unix\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 27,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 11
+          }
+        },
+        {
+          "id": "Panel_ID12",
+          "type": "metric",
+          "title": "Swap in use",
+          "description": "Swap holding pages; the swapping alert watches pages going out, not this.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "bytes",
+            "sparkline": {
+              "enabled": true,
+              "type": "area",
+              "layout": "bottom"
+            },
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "7d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(node_memory_swaptotal_bytes{job=\"integrations/unix\"} - node_memory_swapfree_bytes{job=\"integrations/unix\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 54,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 12
+          }
+        },
+        {
+          "id": "Panel_ID13",
+          "type": "metric",
+          "title": "Disk",
+          "description": "Share of the root disk in use; the disk alert fires past 80%.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "percent",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "80",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "sparkline": {
+              "enabled": true,
+              "type": "area",
+              "layout": "bottom"
+            },
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "7d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "100 * (1 - max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / max(node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"}))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 81,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 13
+          }
+        },
+        {
+          "id": "Panel_ID14",
+          "type": "metric",
+          "title": "Disk full in",
+          "description": "When the root disk fills at its 7-day rate; red under 30 days.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "custom",
+            "unit_custom": " days",
+            "mappings": [
+              {
+                "type": "value",
+                "value": "-1",
+                "text": "Not filling",
+                "color": ""
+              },
+              {
+                "type": "lt",
+                "value": "30",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "(max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / (-max(deriv(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}[7d])) * 86400)) and on() (max(deriv(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}[7d])) < 0) or vector(-1)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 108,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 14
+          }
+        },
+        {
+          "id": "Panel_ID15",
+          "type": "metric",
+          "title": "Backup storage",
+          "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "bytes",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "5000000000.0",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "sparkline": {
+              "enabled": true,
+              "type": "area",
+              "layout": "bottom"
+            },
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "7d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(last_over_time(homelab_backup_repository_bytes[26h]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 135,
+            "y": 9,
+            "w": 27,
+            "h": 6,
+            "i": 15
+          }
+        },
+        {
+          "id": "Panel_ID16",
+          "type": "metric",
+          "title": "Backup storage full in",
+          "description": "When the repository reaches the 8 GB cap at its 7-day rate; red under 30 days.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "unit": "custom",
+            "unit_custom": " days",
+            "mappings": [
+              {
+                "type": "value",
+                "value": "-1",
+                "text": "Not filling",
+                "color": ""
+              },
+              {
+                "type": "lt",
+                "value": "30",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "((8000000000 - max(last_over_time(homelab_backup_repository_bytes[26h]))) / (max(deriv(homelab_backup_repository_bytes[7d])) * 86400)) and on() (max(deriv(homelab_backup_repository_bytes[7d])) > 0) or vector(-1)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 162,
+            "y": 9,
+            "w": 30,
+            "h": 6,
+            "i": 16
+          }
+        },
+        {
+          "id": "Panel_ID17",
+          "type": "markdown",
+          "title": "",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "decimals": 1
+          },
+          "queryType": "",
+          "queries": [],
+          "layout": {
+            "x": 0,
+            "y": 15,
+            "w": 192,
+            "h": 2,
+            "i": 17
+          },
+          "markdownContent": "### Who uses the box, last 24 hours"
+        },
+        {
+          "id": "Panel_ID18",
+          "type": "area-stacked",
+          "title": "Memory by group",
+          "description": "Kaizen is its Control room; CI VMs its job machines; Monitoring the observability stack; Apps every other container; System the rest of the host's memory in use, which reads 0 when the groups' own counts add up past it.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes"
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "(sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"})) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Kaizen"
+              }
+            },
+            {
+              "query": "(sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "CI VMs"
+              }
+            },
+            {
+              "query": "(sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Monitoring"
+              }
+            },
+            {
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"})) or vector(0)) - (sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"})) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Apps"
+              }
+            },
+            {
+              "query": "clamp_min(max(node_memory_memtotal_bytes{job=\"integrations/unix\"} - node_memory_memavailable_bytes{job=\"integrations/unix\"}) - sum(max by (name, container_label_com_docker_compose_project) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})) - (sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)), 0)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "System"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 17,
+            "w": 96,
+            "h": 12,
+            "i": 18
+          }
+        },
+        {
+          "id": "Panel_ID19",
+          "type": "area-stacked",
+          "title": "CPU by group, cores",
+          "description": "Kaizen is its Control room; CI VMs its job machines; Monitoring the observability stack; Apps every other container; System the rest of the host's memory in use, which reads 0 when the groups' own counts add up past it.",
+          "config": {
+            "show_legends": true,
+            "decimals": 2
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "(sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"}[5m]))) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Kaizen"
+              }
+            },
+            {
+              "query": "(sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "CI VMs"
+              }
+            },
+            {
+              "query": "(sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Monitoring"
+              }
+            },
+            {
+              "query": "sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"kaizen-control-room\"}[5m]))) or vector(0)) - (sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\",container_label_com_docker_compose_project=\"observability\"}[5m]))) or vector(0))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Apps"
+              }
+            },
+            {
+              "query": "clamp_min(max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) - sum(max by (name, container_label_com_docker_compose_project) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))) - (sum(rate(container_cpu_usage_seconds_total{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}[5m])) or vector(0)), 0)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "System"
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 17,
+            "w": 96,
+            "h": 12,
+            "i": 19
+          }
+        },
+        {
+          "id": "Panel_ID20",
+          "type": "markdown",
+          "title": "",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "decimals": 1
+          },
+          "queryType": "",
+          "queries": [],
+          "layout": {
+            "x": 0,
+            "y": 29,
+            "w": 192,
+            "h": 2,
+            "i": 20
+          },
+          "markdownContent": "### Errors in the logs"
+        },
+        {
+          "id": "Panel_ID21",
+          "type": "stacked",
+          "title": "Error lines per hour, by container",
+          "description": "Lines that log an error, a fatal or a Python exception.",
+          "config": {
+            "show_legends": true,
+            "decimals": 0
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp, '1 hour') AS x_axis_1, container_name AS breakdown_1, count(*) AS y_axis_1 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "customQuery": true,
+              "fields": {
+                "stream": "containers",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Hour",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Error lines",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                },
+                "breakdown": [
+                  {
+                    "label": "Container",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ]
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 31,
+            "w": 96,
+            "h": 12,
+            "i": 21
+          }
+        },
+        {
+          "id": "Panel_ID22",
+          "type": "table",
+          "title": "Most repeated error lines, last hour",
+          "description": "Numbers and ids show as #, so repeats of one error count together.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "wrap_table_cells": true,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "60m"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT container_name AS x_axis_1, substr(regexp_replace(regexp_replace(body, '\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*', '', 'g'), '[0-9a-f]*[0-9][0-9a-f]*', '#', 'g'), 1, 200) AS x_axis_2, count(*) AS y_axis_1, to_char(to_timestamp_micros(max(_timestamp)), '%H:%M') AS y_axis_2 FROM (SELECT DISTINCT _timestamp, container_name, body FROM containers WHERE (match_all('error') OR match_all('fatal') OR match_all('panic') OR match_all('crit') OR match_all('critical') OR match_all('exception') OR match_all('limited')) AND (level IN ('error', 'fatal', 'critical') OR regexp_like(body, '^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): '))) GROUP BY x_axis_1, x_axis_2 ORDER BY y_axis_1 DESC LIMIT 20",
+              "customQuery": true,
+              "fields": {
+                "stream": "containers",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Container",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  },
+                  {
+                    "label": "Line",
+                    "alias": "x_axis_2",
+                    "column": "x_axis_2",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Times",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  },
+                  {
+                    "label": "Last (UTC)",
+                    "alias": "y_axis_2",
+                    "column": "y_axis_2",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 31,
+            "w": 96,
+            "h": 12,
+            "i": 22
+          }
+        },
+        {
+          "id": "Panel_ID23",
+          "type": "markdown",
+          "title": "",
+          "description": "",
+          "config": {
+            "show_legends": true,
+            "decimals": 1
+          },
+          "queryType": "",
+          "queries": [],
+          "layout": {
+            "x": 0,
+            "y": 43,
+            "w": 192,
+            "h": 2,
+            "i": 23
+          },
+          "markdownContent": "### Kaizen: [open the Control room](http://beelink.tail4f465e.ts.net:8090)"
+        },
+        {
+          "id": "Panel_ID24",
+          "type": "metric",
+          "title": "Working",
+          "description": "From the Control room; its page has the detail.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"working\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 45,
+            "w": 48,
+            "h": 4,
+            "i": 24
+          }
+        },
+        {
+          "id": "Panel_ID25",
+          "type": "metric",
+          "title": "Waiting for a machine",
+          "description": "From the Control room; its page has the detail.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"waiting_for_machine\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 48,
+            "y": 45,
+            "w": 48,
+            "h": 4,
+            "i": 25
+          }
+        },
+        {
+          "id": "Panel_ID26",
+          "type": "metric",
+          "title": "Need Colin",
+          "description": "From the Control room; its page has the detail.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(kaizen_tasks{job=\"kaizen\",state=\"needs_colin\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 45,
+            "w": 48,
+            "h": 4,
+            "i": 26
+          }
+        },
+        {
+          "id": "Panel_ID27",
+          "type": "metric",
+          "title": "Spend today",
+          "description": "From the Control room; its page has the detail.",
+          "config": {
+            "show_legends": false,
+            "decimals": 2,
+            "unit": "currency-dollar",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(kaizen_agent_cost_usd_today{job=\"kaizen\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 144,
+            "y": 45,
+            "w": 48,
+            "h": 4,
+            "i": 27
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "containers",
+      "name": "Containers",
+      "panels": [
+        {
+          "id": "Panel_ID28",
+          "type": "line",
+          "title": "CPU by container, cores",
+          "description": "Each container's CPU use.",
+          "config": {
+            "show_legends": true,
+            "decimals": 2
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{name}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 96,
+            "h": 14,
+            "i": 28
+          }
+        },
+        {
+          "id": "Panel_ID29",
+          "type": "line",
+          "title": "Memory by container",
+          "description": "Each container's working set, the memory it cannot give back.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes"
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{name}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 0,
+            "w": 96,
+            "h": 14,
+            "i": 29
+          }
+        },
+        {
+          "id": "Panel_ID30",
+          "type": "h-bar",
+          "title": "Top 10 by CPU now, cores",
+          "description": "The busiest containers over the last 5 minutes.",
+          "config": {
+            "show_legends": false,
+            "decimals": 2,
+            "aggregation": "last",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "topk(10, max by (name) (rate(container_cpu_usage_seconds_total{job=\"docker\",name!=\"\"}[5m])))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{name}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 14,
+            "w": 96,
+            "h": 12,
+            "i": 30
+          }
+        },
+        {
+          "id": "Panel_ID31",
+          "type": "h-bar",
+          "title": "Top 10 by memory now",
+          "description": "The containers holding the most memory.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "bytes",
+            "aggregation": "last",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "topk(10, max by (name) (container_memory_working_set_bytes{job=\"docker\",name!=\"\"}))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{name}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 14,
+            "w": 96,
+            "h": 12,
+            "i": 31
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "ci-vms",
+      "name": "CI VMs",
+      "panels": [
+        {
+          "id": "Panel_ID32",
+          "type": "metric",
+          "title": "Job VMs running",
+          "description": "VMs running now, the ready ones waiting for a job included.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 32
+          }
+        },
+        {
+          "id": "Panel_ID33",
+          "type": "metric",
+          "title": "Running a job",
+          "description": "VMs running a job now.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(homelab_ci_vms_busy{job=\"integrations/unix\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 48,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 33
+          }
+        },
+        {
+          "id": "Panel_ID34",
+          "type": "metric",
+          "title": "Slots",
+          "description": "The most VMs the supervisor runs at once.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(homelab_ci_vm_slots{job=\"integrations/unix\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 34
+          }
+        },
+        {
+          "id": "Panel_ID35",
+          "type": "metric",
+          "title": "Memory in VMs",
+          "description": "Memory the job VMs hold now.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "bytes",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "sum(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 144,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 35
+          }
+        },
+        {
+          "id": "Panel_ID36",
+          "type": "line",
+          "title": "Job VMs running",
+          "description": "VMs running, ready ones included, and those running a job.",
+          "config": {
+            "show_legends": true,
+            "decimals": 0
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "count(container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"}) or vector(0)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Running"
+              }
+            },
+            {
+              "query": "max(homelab_ci_vms_busy{job=\"integrations/unix\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Running a job"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 4,
+            "w": 96,
+            "h": 12,
+            "i": 36
+          }
+        },
+        {
+          "id": "Panel_ID37",
+          "type": "area-stacked",
+          "title": "Memory by VM",
+          "description": "Each job VM's memory, by slot.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes"
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max by (id) (container_memory_working_set_bytes{job=\"ci-vms\",id=~\"/firecracker/ci-slot[0-9]+\"})",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{id}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 4,
+            "w": 96,
+            "h": 12,
+            "i": 37
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "network",
+      "name": "Network",
+      "panels": [
+        {
+          "id": "Panel_ID38",
+          "type": "line",
+          "title": "Traffic, bytes a second",
+          "description": "The host's wired network and Tailscale, in and out.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes"
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max by (interface) (rate(container_network_receive_bytes_total{job=\"docker\",id=\"/\",interface=~\"enp1s0|tailscale0\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{interface} in"
+              }
+            },
+            {
+              "query": "max by (interface) (rate(container_network_transmit_bytes_total{job=\"docker\",id=\"/\",interface=~\"enp1s0|tailscale0\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{interface} out"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 96,
+            "h": 12,
+            "i": 38
+          }
+        },
+        {
+          "id": "Panel_ID39",
+          "type": "line",
+          "title": "Traffic by container, bytes a second",
+          "description": "What each container receives.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes"
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max by (name) (rate(container_network_receive_bytes_total{job=\"docker\",name!=\"\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "{name}"
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 0,
+            "w": 96,
+            "h": 12,
+            "i": 39
+          }
+        },
+        {
+          "id": "Panel_ID40",
+          "type": "line",
+          "title": "Network checks, a second",
+          "description": "Retried connection attempts, resets sent and connections dropped while queued: each climbs when something cannot connect.",
+          "config": {
+            "show_legends": true,
+            "decimals": 2
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "sum(rate(node_netstat_tcpext_tcpsynretrans{job=\"integrations/unix\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "SYN retransmits"
+              }
+            },
+            {
+              "query": "sum(rate(node_netstat_tcp_outrsts{job=\"integrations/unix\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "TCP resets out"
+              }
+            },
+            {
+              "query": "sum(rate(node_netstat_tcpext_listendrops{job=\"integrations/unix\"}[5m]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Listen drops"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 12,
+            "w": 192,
+            "h": 10,
+            "i": 40
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "backups",
+      "name": "Backups",
+      "panels": [
+        {
+          "id": "Panel_ID41",
+          "type": "metric",
+          "title": "Last good backup",
+          "description": "Time since the last good nightly backup; red past 26 h.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "93600",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "time() - max(homelab_backup_last_success_timestamp_seconds)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 41
+          }
+        },
+        {
+          "id": "Panel_ID42",
+          "type": "metric",
+          "title": "Last deep check",
+          "description": "Time since restic last read back every byte (weekly); red past 8 days.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "mappings": [
+              {
+                "type": "gt",
+                "value": "691200",
+                "color": "#c62828",
+                "text": ""
+              }
+            ],
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "time() - max(homelab_backup_last_deep_check_timestamp_seconds)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 48,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 42
+          }
+        },
+        {
+          "id": "Panel_ID43",
+          "type": "metric",
+          "title": "Last failure",
+          "description": "Time since a run last failed; empty when none has since the metric began.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "seconds",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "time() - max(homelab_backup_last_failure_timestamp_seconds)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 43
+          }
+        },
+        {
+          "id": "Panel_ID44",
+          "type": "metric",
+          "title": "Stored",
+          "description": "The repository's size; uploads stop at 8 GB.",
+          "config": {
+            "show_legends": false,
+            "decimals": 1,
+            "unit": "bytes",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "15m"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(last_over_time(homelab_backup_repository_bytes[26h]))",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 144,
+            "y": 0,
+            "w": 48,
+            "h": 4,
+            "i": 44
+          }
+        },
+        {
+          "id": "Panel_ID45",
+          "type": "line",
+          "title": "Stored over time",
+          "description": "The repository's size after each good run.",
+          "config": {
+            "show_legends": true,
+            "decimals": 1,
+            "unit": "bytes",
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "30d"
+            }
+          },
+          "queryType": "promql",
+          "queries": [
+            {
+              "query": "max(homelab_backup_repository_bytes)",
+              "customQuery": true,
+              "fields": {
+                "stream": "",
+                "stream_type": "metrics",
+                "x": [],
+                "y": [],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": "Stored"
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 4,
+            "w": 96,
+            "h": 12,
+            "i": 45
+          }
+        },
+        {
+          "id": "Panel_ID46",
+          "type": "table",
+          "title": "Runs",
+          "description": "Each night's run: how it ended, how long it took and whether it read every byte back.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0,
+            "panel_time_enabled": true,
+            "panel_time_range": {
+              "type": "relative",
+              "relativeTimePeriod": "30d"
+            }
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT to_char(to_timestamp_micros(min(_timestamp)), '%Y-%m-%d %H:%M') AS x_axis_1, max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN body END) AS x_axis_2, (max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN _timestamp END) - min(_timestamp)) / 1000000 AS y_axis_1, max(CASE WHEN body = 'deep check ok' THEN 'yes' ELSE '' END) AS x_axis_3 FROM (SELECT DISTINCT _timestamp, body FROM containers WHERE container_name = 'backup') GROUP BY date_trunc('day', to_timestamp_micros(_timestamp)) HAVING max(CASE WHEN regexp_like(body, '^backup (ok|FAILED|SKIPPED)') THEN 1 ELSE 0 END) = 1 ORDER BY x_axis_1 DESC",
+              "customQuery": true,
+              "fields": {
+                "stream": "containers",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Started (UTC)",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  },
+                  {
+                    "label": "Result",
+                    "alias": "x_axis_2",
+                    "column": "x_axis_2",
+                    "color": null
+                  },
+                  {
+                    "label": "Deep check",
+                    "alias": "x_axis_3",
+                    "column": "x_axis_3",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Seconds",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 96,
+            "y": 4,
+            "w": 96,
+            "h": 12,
+            "i": 46
+          }
+        }
+      ]
+    },
+    {
+      "tabId": "alerts",
+      "name": "Alerts",
+      "panels": [
+        {
+          "id": "Panel_ID47",
+          "type": "table",
+          "title": "Alerts that fired",
+          "description": "Each rule that fired in the time range, and when; still firing if its last time is this minute.",
+          "config": {
+            "show_legends": false,
+            "decimals": 0
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT split_part(key, '/', 1) AS x_axis_1, to_char(to_timestamp_micros(min(_timestamp)), '%m-%d %H:%M') AS x_axis_2, to_char(to_timestamp_micros(max(_timestamp)), '%m-%d %H:%M') AS x_axis_3, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1 ORDER BY x_axis_3 DESC",
+              "customQuery": true,
+              "fields": {
+                "stream": "triggers",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Rule",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  },
+                  {
+                    "label": "First (UTC)",
+                    "alias": "x_axis_2",
+                    "column": "x_axis_2",
+                    "color": null
+                  },
+                  {
+                    "label": "Last (UTC)",
+                    "alias": "x_axis_3",
+                    "column": "x_axis_3",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Minutes firing",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                }
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 0,
+            "y": 0,
+            "w": 120,
+            "h": 14,
+            "i": 47
+          }
+        },
+        {
+          "id": "Panel_ID48",
+          "type": "stacked",
+          "title": "Rules firing, by hour",
+          "description": "Minutes each rule fired in each hour.",
+          "config": {
+            "show_legends": true,
+            "decimals": 0
+          },
+          "queryType": "sql",
+          "queries": [
+            {
+              "query": "SELECT histogram(_timestamp, '1 hour') AS x_axis_1, split_part(key, '/', 1) AS breakdown_1, count(*) AS y_axis_1 FROM triggers WHERE module = 'alert' AND status IN ('firing', 'notify_failed') GROUP BY x_axis_1, breakdown_1 ORDER BY x_axis_1",
+              "customQuery": true,
+              "fields": {
+                "stream": "triggers",
+                "stream_type": "logs",
+                "x": [
+                  {
+                    "label": "Hour",
+                    "alias": "x_axis_1",
+                    "column": "x_axis_1",
+                    "color": null
+                  }
+                ],
+                "y": [
+                  {
+                    "label": "Minutes",
+                    "alias": "y_axis_1",
+                    "column": "y_axis_1",
+                    "color": null
+                  }
+                ],
+                "z": [],
+                "filter": {
+                  "filterType": "group",
+                  "logicalOperator": "AND",
+                  "conditions": []
+                },
+                "breakdown": [
+                  {
+                    "label": "Rule",
+                    "alias": "breakdown_1",
+                    "column": "breakdown_1",
+                    "color": null
+                  }
+                ]
+              },
+              "config": {
+                "promql_legend": ""
+              }
+            }
+          ],
+          "layout": {
+            "x": 120,
+            "y": 0,
+            "w": 72,
+            "h": 14,
+            "i": 48
+          }
+        }
+      ]
+    }
+  ]
+}

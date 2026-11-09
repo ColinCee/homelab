@@ -2,7 +2,7 @@
 
 Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
 provisioning under `stacks/observability/` own exact settings and retention.
-Alloy collects both logs and metrics to avoid separate collectors.
+Alloy collects both logs and metrics.
 OpenObserve is to replace Grafana, Prometheus and Loki
 ([ADR 0001](adr/0001-openobserve.md)).
 
@@ -29,7 +29,7 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 | **Prometheus** | Metrics storage for host, containers, CI VMs and the flight-tracker probe |
 | **Loki** | Log storage queried with LogQL |
 | **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
-| **OpenObserve** | Logs and metrics until cutover; `http://openobserve.internal` |
+| **OpenObserve** | Logs, metrics and the [Home dashboard](../stacks/observability/openobserve/dashboards/home.json) until cutover; `http://openobserve.internal` |
 | **Alertmanager** | Posts OpenObserve's alerts to Discord, repeats, clears and holds them back; port 9093 |
 | **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 

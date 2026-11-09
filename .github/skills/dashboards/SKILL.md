@@ -1,26 +1,53 @@
 ---
 name: dashboards
-description: Edit homelab Grafana dashboards. Use when changing dashboard JSON or PromQL panels.
+description: Edit homelab dashboards, OpenObserve's Home from Git and Grafana's until the cutover. Use when changing dashboard JSON or a panel's query.
 ---
 
-# Grafana dashboards
+# Dashboards
 
-1. Read the dashboard JSON in `stacks/observability/dashboards/` and datasource
-   definitions in `stacks/observability/provisioning/datasources/`.
-2. Keep existing dashboard UIDs and set `id` to `null`. Use datasource UIDs
-   `prometheus` and `loki`, not numeric IDs.
-3. Follow the query labels and deduplication guidance in
-   `docs/observability.md`; inspect `config.alloy` for the actual series.
-4. Validate JSON and inspect changed panels in Grafana after an approved
-   deployment. Grafana polls the mounted JSON files; no API upload is needed.
+OpenObserve's Home is `stacks/observability/openobserve/dashboards/home.json`. On each deploy
+`openobserve-apply` makes OpenObserve's `homelab` dashboard folder hold that folder's files, keyed by
+title (`apply_dashboards` in `apply.py`), and deletes one Git removed. Edit the file, not the UI.
 
-Edit source JSON, not dashboard copies in the Grafana UI.
+## Home
 
-There is one dashboard, `home.json`, at the top level with no folder (Colin,
-3 Nov 2026): put new panels in its sections, and detail in a collapsed row,
-rather than adding a dashboard.
+The top answers "is anything wrong, and where?"; detail sits in the other tabs, which load only
+when opened. The Home tab, from the top:
 
-Layout (Colin, 3 Nov 2026): group numbers that belong together into a titled
-section, one panel each, rather than one strip of unrelated numbers. Size every
-panel to its content: a row of numbers is 3 units tall, and no panel leaves
-empty space above, below or beside its values.
+1. Is anything wrong: a tile per service (Control room, Flight tracker, Home Assistant, DNS and
+   proxy, CI runner, Backup, Alerts firing), red when down, showing how long it has been up or down.
+2. Headroom: CPU, memory, swap, disk and backup storage now with a 7-day trend, and when the disk
+   and the backup storage fill at their 7-day rate.
+3. Who uses the box: memory and CPU over 24 h, stacked by group: Kaizen, CI VMs, Monitoring, Apps
+   and System.
+4. Errors in the logs: error lines per hour by container, and the most repeated in the last hour.
+5. Kaizen: one line of numbers and a link to the Control room, which holds its charts.
+
+The other tabs: Containers, CI VMs, Network, Backups, Alerts. Put a new panel in its section or
+tab, or add a tab, rather than another dashboard. Group numbers that belong together under a
+heading, and size each panel to its content, with no empty space around its values.
+
+## Queries
+
+- Metric names are lower case (`node_memory_memavailable_bytes`); a test checks.
+- A matcher like `=""` cannot select a series that lacks the label; `name!=""` works. Use
+  `max by (name)` for container metrics, as `docs/observability.md` says.
+- Every PromQL panel runs a range query: OpenObserve drops a query's `query_type`. A number tile
+  gets its own short range (`panel_time_range`), and a `sparkline` with 7 days for a trend.
+- Red on a tile is a value mapping (`lt` or `gt`) with a colour and no text.
+- Logs are the `containers` stream. Alloy resends a container's old lines when it restarts, so
+  count `DISTINCT _timestamp, body`; filter with `match_all` words (the text index) before a
+  `regexp_like`, which is slow over a day of logs.
+- Alert states are the `triggers` stream (`module = 'alert'`); until the cutover a firing rule
+  shows as `notify_failed`, since its shadow post is refused.
+- Before running `apply.py` by hand, rebase on main: it makes OpenObserve match the files you
+  have, so an old checkout reverts newer alerts.
+
+To try a panel, build it in the UI on a dashboard outside the `homelab` folder, copy its panel
+JSON across, then delete that dashboard. Check with `uv run python -m pytest
+tests/test_openobserve_alerts.py`.
+
+## Grafana
+
+Until the cutover Grafana's Home is `stacks/observability/dashboards/home.json`, which Grafana
+polls. Keep its UID, set `id` to `null`, and use datasource UIDs `prometheus` and `loki`.
