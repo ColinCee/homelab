@@ -7,7 +7,7 @@ whether its stacks are up and how many aircraft the flight tracker follows. This
 
 ```
 Beelink: public-stats container (observability stack)
-  │  every 5 min: Prometheus on the stack network, the public flight-tracker API
+  │  every 5 min: OpenObserve's gateway on its network, the public flight-tracker API
   │  PUT, signed with the server's private key, outbound HTTPS
   ▼
 colincheung.dev/homelab.json   (the blog's Worker, in the blog repo)
@@ -17,7 +17,7 @@ GET /homelab.json   (the home page fetches it)
 ```
 
 Push, not pull: nothing on the Beelink accepts a new connection. The container
-has no ports and talks only to Prometheus and, outbound, to the flight-tracker
+has no ports and talks only to OpenObserve's gateway and, outbound, to the flight-tracker
 API (already public) and the blog. The script is
 [`public_stats.py`](../stacks/observability/public_stats.py).
 
@@ -38,8 +38,8 @@ stack is not announced. Anyone can poll the endpoint and keep a history, so
 Home Assistant's uptime and whether the last backup ran are left out: over time
 they would show restart and failed-backup windows. What still shows is when
 pushes stop (`at` ages), as during a power or internet outage. No hostnames, addresses, container IDs or versions leave the host:
-the body is built from named numbers, never by forwarding a Prometheus response.
-When Prometheus reports no containers at all, the script skips the push rather
+the body is built from named numbers, never by forwarding a metrics response.
+When OpenObserve reports no containers at all, the script skips the push rather
 than publish "all down"; the last numbers age instead. After a failed push it tries again in
 15 seconds, so a deploy's readiness wait sees the container healthy. The flight numbers are `null` unless the tracker's data
 is live.
@@ -64,8 +64,8 @@ observability-public-stats-1`) and an unhealthy container.
   the pinned Python image plus `cryptography`, since the standard library has
   no Ed25519. Every package is pinned by hash in
   `public-stats-requirements.txt`, which Renovate updates. The container sits
-  on its own network with Prometheus only, so a bad dependency could not reach
-  Grafana, Loki or Alloy.
+  on its own network with OpenObserve's gateway, whose login for it reads one
+  query.
 - Every GET runs the Worker (KV is read with a 60 s cache, and browsers cache
   the response for 60 s), so a flood of requests could use up the free plan's
   100,000 Worker requests a day. Then only `/homelab.json` fails until midnight

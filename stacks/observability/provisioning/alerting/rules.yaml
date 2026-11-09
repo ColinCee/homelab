@@ -1,4 +1,5 @@
 apiVersion: 1
+# Every rule is paused: OpenObserve's rules (../../openobserve/alerts.toml) alert instead, and this file goes with Grafana.
 groups:
   - orgId: 1
     name: Infrastructure
@@ -8,6 +9,7 @@ groups:
     rules:
       - uid: high-cpu
         title: Beelink CPU maxed out
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -65,6 +67,7 @@ groups:
 
       - uid: high-ram
         title: Beelink running out of memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -111,6 +114,7 @@ groups:
 
       - uid: beelink-swapping
         title: Beelink swapping, slowing CI VMs
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -158,6 +162,7 @@ groups:
 
       - uid: ci-vm-out-of-memory
         title: A CI job ran out of memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -204,6 +209,7 @@ groups:
 
       - uid: ci-vms-near-full
         title: CI jobs need nearly all their VM's memory
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -256,6 +262,7 @@ groups:
 
       - uid: ci-supervisor-poll-failing
         title: The CI supervisor's poll keeps failing
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -312,6 +319,7 @@ groups:
 
       - uid: beelink-disk-stalled
         title: Beelink disk too slow for CI VMs
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -362,6 +370,7 @@ groups:
 
       - uid: high-disk
         title: Beelink disk filling up
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -409,6 +418,7 @@ groups:
 
       - uid: backup-missed
         title: Nightly backup didn't run
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -473,6 +483,7 @@ groups:
 
       - uid: backup-storage-high
         title: Backup storage nearly full
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -515,6 +526,7 @@ groups:
 
       - uid: flight-tracker-down
         title: Flight Tracker site down
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -557,6 +569,7 @@ groups:
 
       - uid: new-container
         title: Unknown container started
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -607,6 +620,7 @@ groups:
 
       - uid: ssd-worn
         title: Beelink SSD wearing out
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -653,6 +667,7 @@ groups:
 
       - uid: ssd-wear-stale
         title: SSD wear check stopped
+        isPaused: true
         condition: C
         data:
           - refId: A
@@ -697,6 +712,7 @@ groups:
 
       - uid: pc-backup-stale
         title: PC backup stopped arriving
+        isPaused: true
         condition: C
         data:
           - refId: A

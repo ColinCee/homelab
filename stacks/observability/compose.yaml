@@ -37,9 +37,6 @@ services:
       - --storage.tsdb.retention.size=2GB
     volumes:
       - prometheus-data:/prometheus
-    networks:
-      - default
-      - public-stats
 
   loki:
     image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
@@ -283,6 +280,8 @@ services:
       FLIGHTS_URL: https://api.colincheung.dev/aircraft
       PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
       PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
+      PROMETHEUS_URL: http://openobserve-gateway:5080/api/default/prometheus
+      PROMETHEUS_LOGIN: stats@homelab.internal:${OPENOBSERVE_STATS_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -296,12 +295,12 @@ services:
       - /tmp
     volumes:
       - ./public_stats.py:/public_stats.py:ro
-    # Its own network, shared with Prometheus only: it reaches Prometheus and,
-    # outbound, the internet, but not Grafana, Loki or Alloy.
+    # Its own network, shared with OpenObserve's gateway only, where its login reads one query; outbound, the
+    # internet.
     networks:
       - public-stats
     depends_on:
-      - prometheus
+      - openobserve-gateway
 
 networks:
   docker-api:

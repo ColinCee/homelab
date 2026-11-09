@@ -6,7 +6,7 @@ global:
   resolve_timeout: 5m
 
 route:
-  receiver: shadow
+  receiver: discord
   # Every alert, and every series of a per-series rule, is its own post.
   group_by: ["..."]
   group_wait: 30s
@@ -22,8 +22,6 @@ inhibit_rules:
     target_matchers: ['alertname!="beelink-metrics-stopped"']
 
 receivers:
-  # Takes alerts and posts nothing.
-  - name: shadow
   - name: discord
     discord_configs:
       - webhook_url_file: /run/secrets/discord_webhook
