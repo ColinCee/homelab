@@ -57,6 +57,38 @@ services:
       - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
       - loki-data:/loki
 
+  # Replaces Grafana, Prometheus and Loki (docs/adr/0001-openobserve.md); runs beside them until the cutover.
+  openobserve:
+    image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "100.100.146.119:5080:5080"
+    # A fast 6-day load peaked at 1548 MiB; the real rate holds about 750 MiB.
+    mem_limit: 2g
+    environment:
+      ZO_ROOT_USER_EMAIL: root@homelab.internal
+      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
+      ZO_DATA_DIR: /data
+      ZO_COMPACT_DATA_RETENTION_DAYS: "30"
+      # At its defaults it confirms writes before saving them, and a kill lost the last few seconds (ADR 0001).
+      ZO_WAL_WRITE_QUEUE_ENABLED: "false"
+      ZO_WAL_FSYNC_DISABLED: "false"
+      # As measured in the ADR's trials.
+      ZO_MEMORY_CACHE_MAX_SIZE: "512"
+      ZO_INGEST_FLATTEN_LEVEL: "2"
+      # Alerts may post to the Kaizen Control room on the Docker network only.
+      ZO_SSRF_ALLOWED_CIDRS: 172.16.0.0/12
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - openobserve-data:/data
+    networks:
+      - default
+      # The Kaizen Control room reads it here, as it reads Prometheus today.
+      - kaizen-prometheus
+
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     restart: unless-stopped
@@ -73,6 +105,7 @@ services:
     hostname: beelink
     environment:
       ALLOY_DEPLOY_MODE: docker
+      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
@@ -90,6 +123,7 @@ services:
     depends_on:
       - prometheus
       - loki
+      - openobserve
       - docker-socket-proxy
     networks:
       - default
@@ -174,3 +208,4 @@ volumes:
   prometheus-data:
   loki-data:
   alloy-data:
+  openobserve-data:

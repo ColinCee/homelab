@@ -2,10 +2,10 @@
 
 Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
 provisioning under `stacks/observability/` own exact settings and retention.
-Alloy collects both logs and metrics to avoid separate collectors. Tracing and
-multi-tenant metrics infrastructure are unnecessary for this single host.
-OpenObserve is to replace Grafana, Prometheus and Loki
-([ADR 0001](adr/0001-openobserve.md)).
+OpenObserve is to replace Grafana, Prometheus
+and Loki ([ADR 0001](adr/0001-openobserve.md)); until the cutover Alloy writes
+to both, and its UI is `http://openobserve.internal` (root login in the stack's
+`.env` on Beelink).
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
