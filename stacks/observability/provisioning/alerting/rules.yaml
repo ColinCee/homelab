@@ -43,6 +43,8 @@ groups:
         # Deploys build images for a few minutes at full CPU (twice on 4 Nov),
         # which needs nobody; a runaway process lasts longer.
         for: 20m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink CPU usage"
           measure: "CPU use"
@@ -90,6 +92,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 5m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink RAM usage"
           measure: "Memory use"
@@ -135,6 +139,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 30m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink swap writes"
           measure: "Swapped out"
@@ -334,6 +340,8 @@ groups:
         noDataState: NoData
         execErrState: Error
         for: 30m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Beelink disk waits"
           measure: "Time waiting on disk"
@@ -532,6 +540,8 @@ groups:
         noDataState: Alerting
         execErrState: Error
         for: 10m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Flight tracker live radar"
           measure: "Live radar"
@@ -855,6 +865,8 @@ groups:
         noDataState: OK
         execErrState: Error
         for: 1m
+        # A dip under 10 minutes is not a clear, so one problem stays one alert.
+        keepFiringFor: 10m
         annotations:
           summary: "Longest Kaizen wait for a homelab machine"
           measure: "Longest wait for a VM"
