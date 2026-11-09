@@ -2812,7 +2812,7 @@ def replace_file(path: Path, text: str) -> None:
 
 def served_repos(gh: GitHub) -> dict[str, str]:
     """Colin's private repositories the token can see, the ones that signed up, each
-    with its default branch."""
+    with its default branch. An archived one takes no jobs, so it gets no VM or standby."""
     repos: list[dict] = []
     for n in range(1, 11):
         page = gh.request(
@@ -2824,7 +2824,9 @@ def served_repos(gh: GitHub) -> dict[str, str]:
     return {
         str(r["full_name"]): str(r.get("default_branch", ""))
         for r in sorted(repos, key=lambda r: str(r["full_name"]))
-        if r.get("private") is True and (r.get("owner") or {}).get("login") == OWNER
+        if r.get("private") is True
+        and not r.get("archived")
+        and (r.get("owner") or {}).get("login") == OWNER
     }
 
 
