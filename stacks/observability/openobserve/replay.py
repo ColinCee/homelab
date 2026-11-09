@@ -77,7 +77,7 @@ def history(query_range: Range, promql: str, start: int, end: int) -> dict[str, 
 
 
 def posts(values: dict[int, float], rule: dict, start: int, end: int) -> list[tuple[int, str]]:
-    _, operator, threshold = apply.query(rule)
+    _, operator, threshold = apply.query(rule, held=False)
     pending = apply.seconds(rule["for"])
     out: list[tuple[int, str]] = []
     held = clear = 0
@@ -130,7 +130,9 @@ def main() -> None:
         # From the metric's first sample: a no-data rule would fire before it was made.
         first = min(seen)
         found = []
-        for key, values in history(query_range, apply.query(rule)[0], first, end).items():
+        for key, values in history(
+            query_range, apply.query(rule, held=False)[0], first, end
+        ).items():
             found += [(t, kind, key) for t, kind in posts(values, rule, first, end)]
         total += len(found)
         print(f"{uid} ({rule['level']}): {len(found)} posts in {days} days", flush=True)

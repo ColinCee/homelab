@@ -37,11 +37,12 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(uid: str
     assert rule.get("dashboard", CONFIG["dashboard"]).startswith(DASHBOARDS)
 
 
-def test_a_cleared_alert_waits_out_the_hold_and_levels_repeat_as_the_standard_says() -> None:
-    assert ALERTMANAGER["global"]["resolve_timeout"] == "10m"
+def test_levels_repeat_as_the_standard_says_and_each_post_ends_on_its_own() -> None:
     route = ALERTMANAGER["route"]
     assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
     assert route["routes"] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
+    # Over a missed evaluation or two; the hold itself is in the query.
+    assert apply.seconds(ALERTMANAGER["global"]["resolve_timeout"]) <= apply.seconds(apply.HOLD)
 
 
 def test_beelink_metrics_stopped_holds_back_every_other_alert() -> None:
@@ -286,13 +287,30 @@ def test_a_per_series_alert_reaches_alertmanager_with_its_labels_and_post() -> N
     assert "endsAt" not in body
 
 
-def test_a_no_data_rule_fires_on_a_missing_metric_and_for_is_pending_time() -> None:
+def test_a_no_data_rule_fires_on_a_missing_metric() -> None:
     fake, _ = applied(CONFIG)
-    alert = by_title(fake)["PC backup stopped arriving"]
-    condition = alert["query_condition"]
-    assert condition["promql"] == (
-        "(round((time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600)) > 50 or on() "
-        "(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])) * -1"
+    condition = by_title(fake)["PC backup stopped arriving"]["query_condition"]
+    assert condition["promql"].endswith(
+        ") > 50 or on() (absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])) * -1"
     )
     assert condition["promql_condition"] == {"column": "value", "operator": ">=", "value": -1}
-    assert alert["pending_period_sec"] == 30 * 60
+
+
+def test_for_and_the_hold_are_in_the_query() -> None:
+    fake, _ = applied(CONFIG)
+    alerts = by_title(fake)
+    ram = alerts["Beelink running out of memory"]
+    # Held 5 minutes at some time in the last 10: a dip is no clear, a spike no onset.
+    assert ram["pending_period_sec"] == 0 and ram["keep_firing_for"] == 0
+    assert ram["query_condition"]["promql"].startswith("max_over_time((min_over_time((round(")
+    assert ram["query_condition"]["promql"].endswith("[5m:1m]))[10m:1m])")
+    site = alerts["Flight Tracker site down"]["query_condition"]["promql"]
+    assert site.startswith("min_over_time((max_over_time((max(probe_success")
+    # No `for`: only the hold.
+    worn = alerts["Beelink metrics stopped"]["query_condition"]["promql"]
+    assert worn.startswith("max_over_time((absent_over_time(")
+
+
+def test_a_unit_keeps_its_leading_space() -> None:
+    fake, _ = applied(CONFIG)
+    assert by_title(fake)["Nightly backup didn't run"]["context_attributes"]["unit"] == " h ago"

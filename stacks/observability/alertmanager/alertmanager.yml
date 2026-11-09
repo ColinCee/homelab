@@ -1,9 +1,9 @@
 # Between OpenObserve's rules (../openobserve/alerts.toml) and Discord; the standard it keeps is in
 # docs/observability.md ("Alerts"). OpenObserve posts each firing alert every minute with no end time.
 global:
-  # An alert ends this long after its last post: a return within it is the same alert, with no new post, and its
-  # "Cleared" comes this long after it stopped firing.
-  resolve_timeout: 10m
+  # An alert ends this long after its last post. The 10-minute hold against flapping is in each rule's query
+  # (openobserve/apply.py), so this only rides out a few missed evaluations, such as an OpenObserve restart.
+  resolve_timeout: 5m
 
 route:
   receiver: shadow

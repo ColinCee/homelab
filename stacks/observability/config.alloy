@@ -233,8 +233,7 @@ otelcol.exporter.otlphttp "openobserve" {
 // Alertmanager
 // ================================
 
-// Its notifications_failed_total tells the heartbeat (.github/workflows/heartbeat.yaml) when posts stop reaching
-// Discord.
+// Whether it is up, and its notifications_failed_total: posts that did not reach Discord.
 prometheus.scrape "alertmanager" {
   targets = [{
     __address__ = "alertmanager:9093",

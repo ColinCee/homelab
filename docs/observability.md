@@ -140,8 +140,9 @@ OpenObserve runs the rules in [`alerts.toml`](../stacks/observability/openobserv
 OpenObserve sends nothing for a query that fails. A firing rule posts every minute to
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), whose
 `shadow` receiver holds alerts and posts nothing until the switch from Grafana; Grafana's rules in
-`provisioning/alerting/` still post to Discord's #uptime. See Alertmanager's alerts at
-`http://beelink.tail4f465e.ts.net:9093`.
+`provisioning/alerting/` still post to Discord's #uptime. Alertmanager publishes no port, since its API takes
+silences without a login; list its alerts with
+`docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
 
 ### The standard
 
@@ -157,8 +158,9 @@ An alert exists only if all three hold; anything else is a dashboard number:
 | This week (`week`) | Something is running out or slipping | No mention, again daily |
 
 - An alert fires once its condition has held for the rule's `for`, and clears once it has stayed clear for 10
-  minutes (Alertmanager's `resolve_timeout`); a return within those 10 minutes is the same alert, with no new post.
-  The clear post says "Cleared": the number recovered, not that anything was fixed.
+  minutes; a return within those 10 minutes is the same alert, with no new post. Both are in the rule's query
+  (`apply.py`, `query`), and Alertmanager posts the clear 5 minutes after the last firing (`resolve_timeout`). The
+  clear post says "Cleared": the number recovered, not that anything was fixed.
 - Each post says what broke (title and value), why it matters (`harm`), what to do (`action`), and links a dashboard.
 - "Beelink metrics stopped" holds back every other alert while it fires. Only metrics written outside Alloy (the
   textfiles) carry a `no_data` query.

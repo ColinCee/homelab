@@ -1,5 +1,5 @@
-"""Makes OpenObserve's alerts, their templates and destination match alerts.toml, then runs each
-rule's query once.
+"""Runs each rule's query once, then makes OpenObserve's alerts, their templates and destination
+match alerts.toml.
 
     apply.py alerts.toml
 
@@ -30,6 +30,8 @@ ALERTMANAGER = "http://alertmanager:9093/api/v2/alerts"
 # The value a rule's `no_data` query gives when its metric is gone, shown as "no data".
 NO_DATA = -1
 LEVELS = ("now", "week")
+# How long a rule keeps firing after its condition clears, so a dip shorter than this is no clear.
+HOLD = "10m"
 # A rule's fields that reach its post, as context attributes: the template's `{name}`s.
 POST = ("level", "title", "measure", "unit", "harm", "action", "dashboard")
 
@@ -90,10 +92,18 @@ def stream(promql: str) -> str:
     return next(n for n in names if n not in {"and", "or", "unless", "bool", "offset", "e"})
 
 
-def query(rule: Mapping[str, Any]) -> tuple[str, str, float]:
-    """The PromQL OpenObserve runs, and the condition on its value."""
+def query(rule: Mapping[str, Any], held: bool = True) -> tuple[str, str, float]:
+    """The PromQL OpenObserve runs, and the condition on its value. Held, `for` and the hold are in
+    the query: OpenObserve's own pending time restarts after any dip, and its keep_firing_for never
+    sends the resolve. It fires while the value stayed past the threshold for `for` at any time in
+    the last 10 minutes, so a dip under that is no clear and a spike is no onset."""
     promql = " ".join(rule["promql"].split())
     operator, threshold = rule["operator"], rule["threshold"]
+    if held:
+        low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
+        if seconds(rule["for"]):
+            promql = f"{low}_over_time(({promql})[{rule['for']}:1m])"
+        promql = f"{high}_over_time(({promql})[{HOLD}:1m])"
     if "no_data" in rule:
         no_data = " ".join(rule["no_data"].split())
         promql = f"({promql}) {operator} {threshold} or on() ({no_data}) * {NO_DATA}"
@@ -113,6 +123,8 @@ def desired(config: Mapping[str, Any]) -> tuple[dict, dict, list[dict]]:
         templates[template] = {"body": template_body(series)}
         promql, operator, threshold = query(rule)
         context = {field: " ".join(str(rule.get(field, "")).split()) for field in POST}
+        # A unit's leading space is part of it ("5 h ago", "93%").
+        context["unit"] = rule["unit"]
         context["dashboard"] = rule.get("dashboard", config["dashboard"])
         alerts.append(
             {
@@ -142,7 +154,7 @@ def desired(config: Mapping[str, Any]) -> tuple[dict, dict, list[dict]]:
                     "frequency_type": "minutes",
                     "silence": 0,
                 },
-                "pending_period_sec": seconds(rule["for"]),
+                "pending_period_sec": 0,
                 "keep_firing_for": 0,
                 "notify_on_recovery": False,
                 "destinations": [DESTINATION],
@@ -282,13 +294,14 @@ def main() -> None:
         os.environ["OPENOBSERVE_PASSWORD"],
     )
     wait_until_ready(call)
+    # Before applying, so a rule that cannot run never replaces the one before it.
+    if failed := failed_queries(call, config):
+        raise SystemExit("These rules' queries fail:\n" + "\n".join(failed))
     try:
         changes = apply(call, config)
     except Refused as error:
         raise SystemExit(f"OpenObserve refused {str(error)[:500]}") from None
     print("\n".join(changes) or "OpenObserve's alerts already match", flush=True)
-    if failed := failed_queries(call, config):
-        raise SystemExit("These rules' queries fail:\n" + "\n".join(failed))
 
 
 if __name__ == "__main__":

@@ -95,15 +95,13 @@ services:
       - --storage.path=/alertmanager
       # One instance: no peers to gossip with.
       - --cluster.listen-address=
-      - --web.external-url=http://beelink.tail4f465e.ts.net:9093
-    read_only: true
+    # Not read-only: Compose copies a secret from the environment into the container, which a read-only one refuses.
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
     mem_limit: 128m
-    ports:
-      - "100.100.146.119:9093:9093"
+    # No published port: its API takes silences and alerts without a login. OpenObserve and Alloy reach it here.
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     secrets:
@@ -114,7 +112,7 @@ services:
       - alertmanager-data:/alertmanager
 
   # How OpenObserve's readers reach it without root's login: each logs in here with its own and reads only its own
-  # paths (gateway/Caddyfile). Public stats on their network, server-health, the heartbeat and agents on Tailscale.
+  # paths (gateway/Caddyfile). Public stats on their network, server-health and agents on Tailscale.
   openobserve-gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
