@@ -179,7 +179,7 @@ def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
     assert "%0A::add-mask::y%25" in out
 
 
-def test_kaizen_may_deploy() -> None:
+def test_the_retired_kaizen_app_may_not_deploy() -> None:
     env = {
         "GITHUB_REPOSITORY": "ColinCee/homelab",
         "GITHUB_EVENT_NAME": "push",
@@ -189,23 +189,4 @@ def test_kaizen_may_deploy() -> None:
         "GITHUB_ACTOR_ID": "351551650",
         "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
     }
-    assert guard.decide(env).allowed
-
-
-KAIZEN = {
-    "GITHUB_ACTOR": "auto-kaizen[bot]",
-    "GITHUB_ACTOR_ID": "351551650",
-    "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
-    "GITHUB_EVENT_NAME": "workflow_dispatch",
-}
-
-
-def test_kaizen_may_run_remediate() -> None:
-    remediate = "ColinCee/homelab/.github/workflows/remediate.yaml@refs/heads/main"
-    assert guard.decide(_env(**KAIZEN, GITHUB_WORKFLOW_REF=remediate)).allowed
-
-
-def test_kaizen_may_not_run_server_health() -> None:
-    decision = guard.decide(_env(**KAIZEN, GITHUB_WORKFLOW_REF=HEALTH))
-    assert not decision.allowed
-    assert "may not run" in decision.reason
+    assert not guard.decide(env).allowed

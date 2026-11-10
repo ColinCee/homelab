@@ -19,8 +19,7 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # Host networking: Home Assistant trusts the address its proxy comes from only on
-    # loopback. The Caddyfile admits only other tailnet devices.
+    # Host networking, so the proxy can reach Home Assistant on loopback (see Caddyfile).
     network_mode: host
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}

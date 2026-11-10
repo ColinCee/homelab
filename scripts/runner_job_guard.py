@@ -28,26 +28,16 @@ REF = "refs/heads/main"
 EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
     f"{REPOSITORY}/.github/workflows/{name}@{REF}"
-    for name in ("deploy.yaml", "server-health.yaml", "remediate.yaml", "heartbeat.yaml")
+    for name in ("deploy.yaml", "server-health.yaml", "heartbeat.yaml")
 )
-# Who may start a job here: Colin; Renovate merging its own pull requests; and Auto Kaizen,
-# Colin's agents, merging changes that passed CI, its Reviewer and its red-line checks
-# (changes to scripts/, ci-runner/ and .github/ wait for Colin).
+# Who may start a job here: Colin, and Renovate merging its own pull requests.
 # The actor is checked by ID. The triggering actor (who started a re-run) is only
 # available by name, so renaming any account means updating this list.
 ACTOR_IDS = {
     "11246116": "ColinCee",
     "29139614": "renovate[bot]",
-    "351551650": "auto-kaizen[bot]",
 }
 TRIGGERING_ACTORS = frozenset(ACTOR_IDS.values())
-# Auto Kaizen deploys what it merged and runs Remediate for alerts
-# (auto-kaizen's respond.yml), nothing else here.
-LIMITED = {
-    "351551650": frozenset(
-        f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "remediate.yaml")
-    ),
-}
 # Present only if a workflow's env reached the hook; bash would have sourced them first.
 INJECTION_VARIABLES = ("BASH_ENV", "ENV")
 # Values safe to log; everything else is logged by name only.
@@ -97,8 +87,6 @@ def decide(env: Mapping[str, str]) -> Decision:
     if actor_id not in ACTOR_IDS:
         actor = env.get("GITHUB_ACTOR", "") or "(missing)"
         return Decision(False, f"actor {actor} ({actor_id or 'no id'}) is not allowed")
-    if actor_id in LIMITED and workflow not in LIMITED[actor_id]:
-        return Decision(False, f"{ACTOR_IDS[actor_id]} may not run {workflow}")
     triggering = env.get("GITHUB_TRIGGERING_ACTOR", "")
     if triggering not in TRIGGERING_ACTORS:
         return Decision(False, f"triggering actor {triggering or '(missing)'} is not allowed")
