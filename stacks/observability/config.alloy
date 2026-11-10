@@ -123,7 +123,7 @@ prometheus.relabel "ci_vms" {
 
 // Only the metrics an alert, the Home dashboard or a reader (server-health, public stats, the heartbeat) reads;
 // tests/test_alloy.py checks each is here. OpenObserve keeps every metric as its own stream with its own files
-// and index, so the hundreds nothing read took most of its disk. To chart a new one, add it here.
+// and index, so the hundreds nothing read took most of its disk.
 prometheus.relabel "read" {
   forward_to = [prometheus.remote_write.default.receiver]
 

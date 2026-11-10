@@ -60,7 +60,7 @@ SELECT _timestamp, body FROM containers WHERE container_name = '<current-contain
 ## Metrics
 
 OpenObserve receives metrics, through its Prometheus API, from the sources below, each scraped every 30 s (the
-probe and Alertmanager each minute). Alloy sends only the metrics something reads, listed in its
+flight-tracker probe and Alertmanager each minute). Alloy sends only the metrics something reads, listed in its
 `prometheus.relabel "read"`: add one there before charting it.
 
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
