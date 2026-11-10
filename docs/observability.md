@@ -84,7 +84,8 @@ blindly edit Grafana's database.
 ## Logs: Loki via Alloy
 
 Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
-label, and forwards logs to Loki (`stacks/observability/config.alloy`).
+label, and forwards logs to Loki and OpenObserve (`stacks/observability/config.alloy`). It skips
+the proxy's, Alloy's and Loki's lines, and OpenObserve's below WARN; `docker logs` still has them.
 
 To inspect a service, find its current container name and query it in Grafana
 Explore:

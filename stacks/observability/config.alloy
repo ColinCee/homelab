@@ -44,9 +44,22 @@ discovery.relabel "cadvisor" {
 
 prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
-  forward_to = [prometheus.remote_write.default.receiver]
+  forward_to = [prometheus.relabel.cadvisor.receiver]
 
   scrape_interval = "15s"
+}
+
+// machine_* are hardware facts stamped with when cAdvisor last read them, so
+// every scrape resends the same sample and OpenObserve stores each copy. Nothing
+// reads them.
+prometheus.relabel "cadvisor" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["__name__"]
+    regex         = "machine_.+"
+    action        = "drop"
+  }
 }
 
 // ================================
@@ -121,15 +134,21 @@ discovery.docker "containers" {
   host = "tcp://docker-socket-proxy:2375"
 }
 
-discovery.relabel "docker_logs" {
-  targets = []
+// The socket proxy logs every Alloy API request. It is left out here, before
+// tailing: a drop in relabel_rules only strips the labels and still ships the lines.
+discovery.relabel "docker_log_targets" {
+  targets = discovery.docker.containers.targets
 
-  // The socket proxy logs every Alloy API request; keep it out of Loki.
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/.*docker-socket-proxy.*"
     action        = "drop"
   }
+}
+
+discovery.relabel "docker_logs" {
+  targets = []
+
   rule {
     source_labels = ["__meta_docker_container_name"]
     regex         = "/(.*)"
@@ -151,13 +170,21 @@ discovery.relabel "docker_logs" {
 
 loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
-  targets       = discovery.docker.containers.targets
+  targets       = discovery.relabel.docker_log_targets.output
   relabel_rules = discovery.relabel.docker_logs.rules
   forward_to    = [loki.process.docker.receiver]
 }
 
 loki.process "docker" {
   forward_to = [loki.write.default.receiver, otelcol.receiver.loki.openobserve.receiver]
+
+  // OpenObserve logs a line at INFO for each push and query it serves, Alloy's
+  // own included; keep only its warnings, errors and unprefixed lines.
+  stage.match {
+    selector            = "{container_name=\"observability-openobserve-1\"} |~ \"^[^ ]+ +(INFO|DEBUG|TRACE) \""
+    action              = "drop"
+    drop_counter_reason = "openobserve_routine"
+  }
 
   // Parse JSON log lines (silently passes through non-JSON lines)
   stage.json {
