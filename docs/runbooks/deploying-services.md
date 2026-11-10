@@ -192,12 +192,15 @@ Published admin ports bind to the Tailscale address. Docker must wait for that
 address, not merely for `tailscaled.service` to start. Otherwise containers can
 fail to start or remain running without their network attachments.
 
-Install the drop-in once on Beelink (requires sudo):
+Install the drop-in, and the nightly update settings in `apt/`, once on
+Beelink (requires sudo):
 
 ```bash
 sudo install -D -m 644 systemd/docker.service.d/tailscale.conf \
   /etc/systemd/system/docker.service.d/tailscale.conf
 sudo systemctl daemon-reload
+sudo install -m 644 apt/52unattended-upgrades-local /etc/apt/apt.conf.d/
+sudo install -m 644 apt/docker-major.pref /etc/apt/preferences.d/
 ```
 
 This affects the next Docker start; do not restart Docker just to install it.
