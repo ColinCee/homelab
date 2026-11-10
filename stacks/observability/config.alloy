@@ -6,6 +6,8 @@ prometheus.exporter.unix "host" {
   procfs_path = "/rootproc"
   sysfs_path  = "/sys"
   rootfs_path = "/rootfs"
+  // Only the collectors whose metrics are kept (prometheus.relabel "read").
+  set_collectors = ["cpu", "meminfo", "filesystem", "netstat", "textfile"]
 
   // *.prom files written by other stacks, e.g. the backup success timestamp.
   textfile {
@@ -15,9 +17,9 @@ prometheus.exporter.unix "host" {
 
 prometheus.scrape "host" {
   targets    = prometheus.exporter.unix.host.targets
-  forward_to = [prometheus.remote_write.default.receiver]
+  forward_to = [prometheus.relabel.read.receiver]
 
-  scrape_interval = "15s"
+  scrape_interval = "30s"
 }
 
 // ================================
@@ -27,6 +29,11 @@ prometheus.scrape "host" {
 prometheus.exporter.cadvisor "docker" {
   docker_only = true
   docker_host = "tcp://docker-socket-proxy:2375"
+  // Each Docker label would be a label on every series; the Compose project is the one read.
+  store_container_labels       = false
+  allowlisted_container_labels = ["com.docker.compose.project"]
+  // cAdvisor sends start and last-seen times whatever is enabled.
+  enabled_metrics = ["cpu", "memory", "network"]
 }
 
 discovery.relabel "cadvisor" {
@@ -44,22 +51,12 @@ discovery.relabel "cadvisor" {
 
 prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
-  forward_to = [prometheus.relabel.cadvisor.receiver]
+  forward_to = [prometheus.relabel.read.receiver]
 
-  scrape_interval = "15s"
-}
-
-// machine_* are hardware facts stamped with when cAdvisor last read them, so
-// every scrape resends the same sample and OpenObserve stores each copy. Nothing
-// reads them.
-prometheus.relabel "cadvisor" {
-  forward_to = [prometheus.remote_write.default.receiver]
-
-  rule {
-    source_labels = ["__name__"]
-    regex         = "machine_.+"
-    action        = "drop"
-  }
+  scrape_interval = "30s"
+  // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
+  // time compresses better.
+  honor_timestamps = false
 }
 
 // ================================
@@ -93,17 +90,36 @@ prometheus.scrape "ci_vms" {
   targets    = discovery.relabel.ci_vms.output
   forward_to = [prometheus.relabel.ci_vms.receiver]
 
-  scrape_interval = "15s"
+  scrape_interval = "30s"
+  // As for the containers above.
+  honor_timestamps = false
 }
 
 // Only the VMs' own cgroups; this exporter also reports the whole machine,
 // which the host scrape already covers.
 prometheus.relabel "ci_vms" {
-  forward_to = [prometheus.remote_write.default.receiver]
+  forward_to = [prometheus.relabel.read.receiver]
 
   rule {
     source_labels = ["id"]
     regex         = "/firecracker/.+"
+    action        = "keep"
+  }
+}
+
+// ================================
+// Metrics Kept
+// ================================
+
+// Only the metrics an alert, the Home dashboard or a reader (server-health, public stats, the heartbeat) reads;
+// tests/test_alloy.py checks each is here. OpenObserve keeps every metric as its own stream with its own files
+// and index, so the hundreds nothing read took most of its disk.
+prometheus.relabel "read" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["__name__"]
+    regex         = "(?i)up|homelab_.+|probe_(success|duration_seconds)|alertmanager_notifications_failed_total|node_cpu_seconds_total|node_memory_(memavailable|memtotal|swaptotal|swapfree)_bytes|node_filesystem_(avail|size)_bytes|node_netstat_(tcpext_tcpsynretrans|tcp_outrsts|tcpext_listendrops)|node_textfile_mtime_seconds|container_(start_time_seconds|last_seen|memory_working_set_bytes|cpu_usage_seconds_total|network_(receive|transmit)_bytes_total)"
     action        = "keep"
   }
 }
@@ -254,7 +270,7 @@ prometheus.scrape "alertmanager" {
   targets = [{
     __address__ = "alertmanager:9093",
   }]
-  forward_to      = [prometheus.remote_write.default.receiver]
+  forward_to      = [prometheus.relabel.read.receiver]
   scrape_interval = "60s"
   job_name        = "alertmanager"
 }
@@ -277,7 +293,7 @@ prometheus.exporter.blackbox "flight_tracker" {
 
 prometheus.scrape "flight_tracker" {
   targets         = prometheus.exporter.blackbox.flight_tracker.targets
-  forward_to      = [prometheus.remote_write.default.receiver]
+  forward_to      = [prometheus.relabel.read.receiver]
   scrape_interval = "60s"
 }
 

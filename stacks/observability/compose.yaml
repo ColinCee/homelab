@@ -23,6 +23,11 @@ services:
       # Its memory table (a quarter of the 2 GiB) held 10 minutes of the host's metrics before writing them out, and
       # overflowed: refused writes. Two minutes fit.
       ZO_MAX_FILE_RETENTION_TIME: "120"
+      # Its metric caches default to 128 MB and 100 MB; this small store needs far less.
+      ZO_METRICS_BLOCKS_CACHE_MAX_SIZE: "32"
+      ZO_METRICS_LABEL_CACHE_MAX_SIZE: "64"
+      # Merged files wait this long for queries still reading them before they are deleted; the default is 2 h.
+      ZO_COMPACT_DELETE_FILES_DELAY_MINUTES: "10"
       ZO_TELEMETRY: "false"
       # Alerts may post to Alertmanager by its name, and to the internet; any other private address is refused.
       ZO_SSRF_ALLOWED_HOSTS: alertmanager
@@ -135,6 +140,8 @@ services:
     hostname: beelink
     environment:
       ALLOY_DEPLOY_MODE: docker
+      # Go grows its heap to twice what is live by default; this keeps it a little above what is live.
+      GOMEMLIMIT: 192MiB
       OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
