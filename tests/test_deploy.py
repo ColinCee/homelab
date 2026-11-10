@@ -295,7 +295,7 @@ def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
 
 # What `docker compose config --format json` reports for each stack's networks and volumes.
 _COMPOSE_CONFIG = {
-    "backup": {"volumes": {"grafana": {"name": "observability_grafana", "external": True}}},
+    "backup": {"volumes": {"data": {"name": "observability_data", "external": True}}},
     "kaizen-control-room": {
         "networks": {
             "default": {"name": "kaizen-control-room_default"},
@@ -304,7 +304,7 @@ _COMPOSE_CONFIG = {
     },
     "observability": {
         "networks": {"shared": {"name": "shared", "external": True}},
-        "volumes": {"grafana": {"name": "observability_grafana"}},
+        "volumes": {"data": {"name": "observability_data"}},
     },
     "web": {},
 }

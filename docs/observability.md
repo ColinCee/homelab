@@ -1,10 +1,8 @@
 # Observability
 
-Start here when a service is unhealthy. Compose, `config.alloy`, and Grafana
-provisioning under `stacks/observability/` own exact settings and retention.
-Alloy collects both logs and metrics.
-OpenObserve is to replace Grafana, Prometheus and Loki
-([ADR 0001](adr/0001-openobserve.md)).
+Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
+settings and retention. Alloy collects logs and metrics into OpenObserve ([ADR 0001](adr/0001-openobserve.md)), which
+keeps 30 days.
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
@@ -25,83 +23,43 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 
 | Component | What it does |
 |-----------|---------------|
-| **Grafana** | Dashboards and Explore; its alert rules are paused |
-| **Prometheus** | Metrics storage for host, containers, CI VMs and the flight-tracker probe |
-| **Loki** | Log storage queried with LogQL |
-| **Alloy** | Ships metrics and Docker logs to Prometheus/Loki and OpenObserve |
-| **OpenObserve** | Logs, metrics and the [Home dashboard](../stacks/observability/openobserve/dashboards/home.json) until cutover; `http://openobserve.internal` |
+| **Alloy** | Ships metrics and Docker logs to OpenObserve |
+| **OpenObserve** | Logs, metrics, alert rules and the [Home dashboard](../stacks/observability/openobserve/dashboards/home.json); `http://openobserve.internal` |
 | **Alertmanager** | Posts OpenObserve's alerts to Discord, repeats, clears and holds them back; port 9093 |
 | **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
-Grafana provisions dashboards directly from the read-only mounted JSON files in
-`stacks/observability/dashboards/`. Edit those files and deploy; Grafana polls for
-updates. UI edits are disabled so Git remains the source of truth.
-
-There is one dashboard, [Home](../stacks/observability/dashboards/home.json),
-at the top level, and Grafana opens on it for everyone (`GF_USERS_HOME_PAGE`).
-Add panels to it rather than adding dashboards. From the top:
-
-- **Top strip:** any alert not OK; what needs you (stuck Kaizen tasks, held
-  changes, backup age, flight tracker); the Beelink's CPU, memory, disk, CI VMs
-  and uptime
-- **Beelink:** CPU and memory over time, split into Docker containers,
-  Firecracker CI VMs and the rest
-- **Kaizen:** working, waiting, merged and cost, tasks by state, the
-  longest wait for a machine, the GitHub App's calls used against its hourly limit, and below
-  it the Control room's minutes since start, so a climb in calls after a restart shows
-- **Containers:** a bar per container for CPU and for memory
-- **Backups:** one line of numbers
-- **Collapsed sections**, which load only when opened: alerts, containers,
-  CI VMs, network and backups over time, with their logs
-
-Grafana gives a top-level provisioned dashboard no viewer access, so the
-deploy workflow grants the Viewer role view access to Home after each deploy of
-the observability stack.
-
-Grafana allows anonymous read-only (Viewer) access so dashboards open without
-a login, including for agents checking a change. Editing, Explore and
-administration still require the admin password. This relies on the port
-being bound to the Tailscale address, on the tailnet policy limiting who
-can reach it, and on `stacks/internal-names` refusing Beelink's own address; remove `GF_AUTH_ANONYMOUS_*` if either changes.
+Home and the rules come from Git on each deploy; edit the files, not the UI (the dashboards skill,
+`.github/skills/dashboards/SKILL.md`).
 
 ### Dashboard patterns
 
 Use `max by (name)` for container metrics or `max()` for a single host value
-where deduplication is needed. Data before November 2026 carries a different
-`instance` label for each Alloy container; Alloy now runs with
-`hostname: beelink`, so new series keep one.
+where deduplication is needed.
 
 Host metrics (`node_*`) cover the whole machine, Firecracker CI VMs included.
 Container metrics do not: the VMs are processes, not containers, so their CPU
 and memory come from their slot cgroups (`job="ci-vms"`).
 
-Datasource UIDs are pinned to `prometheus` and `loki` in
-`provisioning/datasources/datasources.yaml`. Grafana does not update
-UIDs on existing datasources via provisioning. If they drift, inspect the
-provisioned and live datasource identities before making changes; do not
-blindly edit Grafana's database.
-
-## Logs: Loki via Alloy
+## Logs
 
 Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
-label, and forwards logs to Loki and OpenObserve (`stacks/observability/config.alloy`). It skips
-the proxy's, Alloy's and Loki's lines, and OpenObserve's below WARN; `docker logs` still has them.
+label, and sends logs to OpenObserve's `containers` stream (`stacks/observability/config.alloy`). It
+skips the proxy's and Alloy's lines, and OpenObserve's below WARN; `docker logs` still has them.
 
-To inspect a service, find its current container name and query it in Grafana
-Explore:
+To inspect a service, find its current container name and query it in OpenObserve's Logs page:
 
 ```bash
 docker ps --format '{{.Names}}'
 ```
 
-```logql
-{container_name="<current-container-name>"}
-{container_name="<current-container-name>"} |= "ERROR"
+```sql
+SELECT _timestamp, body FROM containers WHERE container_name = '<current-container-name>'
+SELECT _timestamp, body FROM containers WHERE container_name = '<current-container-name>' AND match_all('ERROR')
 ```
 
-## Metrics: Prometheus
+## Metrics
 
-Prometheus receives metrics from:
+OpenObserve receives metrics, through its Prometheus API, from:
 
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
@@ -124,7 +82,7 @@ Prometheus receives metrics from:
 Useful checks:
 
 ```bash
-curl -sf http://beelink.tail4f465e.ts.net:3001/api/health
+curl -sf http://beelink.tail4f465e.ts.net:5080/healthz
 ```
 
 Useful PromQL:
@@ -139,8 +97,7 @@ OpenObserve runs the rules in [`alerts.toml`](../stacks/observability/openobserv
 `openobserve-apply` applies them on deploy, then runs each rule's query once and fails the deploy on an error, since
 OpenObserve sends nothing for a query that fails. A firing rule posts every minute to
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), which
-posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Grafana's rules in
-`provisioning/alerting/` are paused and go with Grafana. Alertmanager publishes no port, since its API takes
+posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
 
@@ -166,11 +123,10 @@ An alert exists only if all three hold; anything else is a dashboard number:
   textfiles) carry a `no_data` query.
 - `tests/test_openobserve_alerts.py` checks each rule against this.
 
-Noise budget: at most one post a day across all rules, over 14 days. Replay before adding or loosening a rule
-(Prometheus holds the longer history until OpenObserve has 14 days; without the variable it reads OpenObserve):
+Noise budget: at most one post a day across all rules, over 14 days. Replay before adding or loosening a rule:
 
 ```bash
-docker exec -e REPLAY_PROMETHEUS=http://prometheus:9090 observability-openobserve-apply-1   python -I /apply/replay.py /apply/alerts.toml 14
+docker exec observability-openobserve-apply-1 python -I /apply/replay.py /apply/alerts.toml 14
 ```
 
 On 9 November 2026 the rules made 4 posts in 14 days.
@@ -182,6 +138,6 @@ loopback; its results reach the rules through the textfile collector.
 ## Common debugging path
 
 1. **A service is unavailable:** check its Compose status, then inspect the
-   current container logs in Loki.
-2. **Metrics are stale:** check Alloy first, then Prometheus targets and the
-   container metrics in Grafana.
+   current container logs in OpenObserve.
+2. **Metrics are stale:** check Alloy first (`docker logs observability-alloy-1`), then the
+   container metrics in OpenObserve.

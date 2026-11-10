@@ -109,14 +109,10 @@ prometheus.relabel "ci_vms" {
 }
 
 // ================================
-// Metrics Destination (Prometheus)
+// Metrics Destination (OpenObserve)
 // ================================
 
 prometheus.remote_write "default" {
-  endpoint {
-    url = "http://prometheus:9090/api/v1/write"
-  }
-  // OpenObserve takes over at the cutover (docs/adr/0001-openobserve.md).
   endpoint {
     url = "http://openobserve:5080/api/default/prometheus/api/v1/write"
     basic_auth {
@@ -176,7 +172,7 @@ loki.source.docker "containers" {
 }
 
 loki.process "docker" {
-  forward_to = [loki.write.default.receiver, otelcol.receiver.loki.openobserve.receiver]
+  forward_to = [otelcol.receiver.loki.openobserve.receiver]
 
   // OpenObserve logs a line at INFO for each push and query it serves, Alloy's
   // own included; keep only its warnings, errors and unprefixed lines.
@@ -194,14 +190,13 @@ loki.process "docker" {
     }
   }
 
-  // Low-cardinality fields as Loki labels (fast stream filtering)
+  // The label and the metadata below reach OpenObserve as fields of each line.
   stage.labels {
     values = {
       level = "level",
     }
   }
 
-  // High-cardinality fields as structured metadata (searchable, no stream explosion)
   stage.structured_metadata {
     values = {
       logger = "logger",
@@ -210,24 +205,18 @@ loki.process "docker" {
     }
   }
 
-  // Drop noisy observability stack logs to avoid feedback loops
+  // Alloy's own lines would feed back into what it ships.
   stage.drop {
     source     = "container_name"
-    expression = "(alloy|loki)"
+    expression = "alloy"
   }
 }
 
 // ================================
-// Logs Destination (Loki)
+// Logs Destination (OpenObserve)
 // ================================
 
-loki.write "default" {
-  endpoint {
-    url = "http://loki:3100/loki/api/v1/push"
-  }
-}
-
-// The same logs to OpenObserve, over OTLP.
+// Over OTLP.
 otelcol.receiver.loki "openobserve" {
   output {
     logs = [otelcol.processor.batch.openobserve.input]

@@ -22,7 +22,7 @@
 
 	# Paths compare exactly as they arrive: a `path` matcher compares a cleaned copy, but the request goes on as sent,
 	# so `/proxy/default/https:/x/../../api/...` would pass for the query and reach OpenObserve's URL fetcher.
-	# Public stats reads one query, as it did from Prometheus.
+	# Public stats reads one query.
 	@query {
 		vars {reader} stats agents
 		method GET

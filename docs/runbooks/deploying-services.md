@@ -213,7 +213,7 @@ services with their existing `.env` and named volumes:
 
 ```bash
 docker compose --env-file stacks/observability/.env \
-  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana
+  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps openobserve
 ```
 
 ## Remove a service
@@ -223,6 +223,6 @@ Disable its workflows/timers first, explicitly retire any old user units, then
 stop and remove only confirmed containers. Preserve volumes until their data is
 deliberately retired or backed up; do not use broad Docker pruning.
 
-Remove unused credentials, network grants, and unmanaged Grafana dashboards
+Remove unused credentials, network grants, and dashboards
 after checking for shared use. Remove the stack and any special deployment
 handling from Git last, so the configuration remains available during shutdown.

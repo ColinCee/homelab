@@ -1,57 +1,5 @@
 services:
-  grafana:
-    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    ports:
-      - "100.100.146.119:3001:3000"
-    labels:
-      # Alert rules and contact points are only provisioned at startup.
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?}
-      - GF_SERVER_ROOT_URL=http://beelink.tail4f465e.ts.net:3001
-      - GF_USERS_DEFAULT_THEME=dark
-      - GF_USERS_HOME_PAGE=/d/home/home
-      - GF_UNIFIED_ALERTING_ENABLED=true
-      # Dashboards are readable without logging in; editing and admin still
-      # need the password. Safe only because the port is bound to Tailscale.
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - DISCORD_PRIVATE_WEBHOOK_URL=${DISCORD_PRIVATE_WEBHOOK_URL}
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./provisioning:/etc/grafana/provisioning:ro
-      - ./dashboards:/var/lib/grafana/dashboards:ro
-
-  prometheus:
-    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    command:
-      - --web.enable-remote-write-receiver
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=30d
-      - --storage.tsdb.retention.size=2GB
-    volumes:
-      - prometheus-data:/prometheus
-
-  loki:
-    image: grafana/loki:3.7.9@sha256:0db216b630ae1f348a1584c67f3cead8b4c1fc839169a39501db664744158e28
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    command: -config.file=/etc/loki/local-config.yaml
-    labels:
-      # Recreate when mounted config changes (set by scripts/deploy.py).
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
-    volumes:
-      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
-      - loki-data:/loki
-
-  # Replaces Grafana, Prometheus and Loki (docs/adr/0001-openobserve.md); runs beside them until the cutover.
+  # Metrics, logs and alerts (docs/adr/0001-openobserve.md).
   openobserve:
     image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
     restart: unless-stopped
@@ -203,8 +151,6 @@ services:
     devices:
       - /dev/kmsg
     depends_on:
-      - prometheus
-      - loki
       - openobserve
       - docker-socket-proxy
     networks:
@@ -312,9 +258,6 @@ secrets:
     environment: DISCORD_PRIVATE_WEBHOOK_URL
 
 volumes:
-  grafana-data:
-  prometheus-data:
-  loki-data:
   alloy-data:
   openobserve-data:
   alertmanager-data:

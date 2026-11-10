@@ -931,18 +931,6 @@
                   "color": "#d95926"
                 },
                 {
-                  "value": "observability-grafana-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-prometheus-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-loki-1",
-                  "color": "#2a78d6"
-                },
-                {
                   "value": "observability-openobserve-1",
                   "color": "#2a78d6"
                 },
@@ -1134,18 +1122,6 @@
                   "color": "#d95926"
                 },
                 {
-                  "value": "observability-grafana-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-prometheus-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-loki-1",
-                  "color": "#2a78d6"
-                },
-                {
                   "value": "observability-openobserve-1",
                   "color": "#2a78d6"
                 },
@@ -1248,18 +1224,6 @@
                 {
                   "value": "internal-names-proxy-1",
                   "color": "#d95926"
-                },
-                {
-                  "value": "observability-grafana-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-prometheus-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-loki-1",
-                  "color": "#2a78d6"
                 },
                 {
                   "value": "observability-openobserve-1",
@@ -1608,18 +1572,6 @@
                 {
                   "value": "internal-names-proxy-1",
                   "color": "#d95926"
-                },
-                {
-                  "value": "observability-grafana-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-prometheus-1",
-                  "color": "#2a78d6"
-                },
-                {
-                  "value": "observability-loki-1",
-                  "color": "#2a78d6"
                 },
                 {
                   "value": "observability-openobserve-1",

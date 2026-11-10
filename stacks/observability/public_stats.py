@@ -1,7 +1,7 @@
 """Push a few read-only numbers about this server to the blog's home page.
 
 Runs in this stack's public-stats container. Every five minutes
-it asks Prometheus and the already-public flight-tracker API for a handful of
+it asks OpenObserve's Prometheus API and the already-public flight-tracker API for a handful of
 numbers and PUTs them to the blog, which shows them in its home-lab figure.
 The body is built from named numbers only, never by forwarding a response, so
 nothing else about the host can leak. See docs/public-stats.md.
@@ -86,7 +86,7 @@ def build_body(
     project = "container_label_com_docker_compose_project"
     running = {r["metric"].get(project) for r in results["running"]}
     if not running:
-        # cAdvisor or Prometheus is not reporting; publishing "all down" would be a lie.
+        # cAdvisor or OpenObserve is not reporting; publishing "all down" would be a lie.
         raise StatsError("no running containers reported")
     if not isinstance(kpis, dict) or kpis.get("apiHealth") != "live":
         kpis = {}
@@ -135,7 +135,7 @@ def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
 
 
 def main() -> None:
-    prometheus = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090")
+    prometheus = os.environ["PROMETHEUS_URL"]
     flights = os.environ["FLIGHTS_URL"]
     url = os.environ["PUBLIC_STATS_URL"]
     # The only copy of the private key is the PUBLIC_STATS_KEY GitHub secret.

@@ -10,13 +10,12 @@ disposable.
 | Source | Why |
 |--------|-----|
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
-| Grafana volume | Users and UI changes (`grafana.db`). |
 | OpenObserve `db` folder | Users, alerts, dashboards. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
 Left out on purpose: the Home Assistant recorder database (a live copy would be
-inconsistent), logs, Grafana plugins, and stored metrics and logs. Secrets come
+inconsistent), logs, and stored metrics and logs. Secrets come
 from GitHub.
 
 Retention is 7 daily, 4 weekly and 6 monthly snapshots; each run also prunes
@@ -28,7 +27,7 @@ A passing deep check also writes
 `/var/lib/homelab-metrics/backup-deep-check.prom`, which the weekly server
 health report reads; the container log does not survive a redeploy.
 
-The Grafana **Backups** dashboard shows recent successes, failures, stored
+The **Backups** tab of OpenObserve's Home shows recent successes, failures, stored
 size against the cap, deep checks and the run log.
 
 ## From the PC
@@ -63,7 +62,7 @@ it the snapshots cannot be decrypted, and GitHub will not show it again.
 ## Alerting
 
 Each successful run logs `backup ok` and writes its time to
-`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to Prometheus as
+`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to OpenObserve as
 `homelab_backup_last_success_timestamp_seconds`. **Nightly backup didn't run**
 fires when that is over 26 hours old, which covers failed
 runs, a stopped container and a server that was down overnight. A failed run
@@ -72,7 +71,7 @@ logs `backup FAILED at <step>` and writes its time to
 `homelab_backup_last_failure_timestamp_seconds{step="cap|backup|forget|check"}`;
 the next good run removes it. The alert names that step, or says no failure was
 recorded when the run never happened, and the `Remediate` workflow's diagnose
-prints these files. Do not alert on `backup ok` log lines instead: Loki can
+prints these files. Do not alert on `backup ok` log lines instead: a log store can
 miss a line and fire while backups succeed.
 
 ## Size cap

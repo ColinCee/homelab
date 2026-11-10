@@ -83,7 +83,7 @@ if ! cmp -s "$here/systemd/fstrim-hourly.conf" "$trim"; then
   systemctl daemon-reload
   systemctl restart fstrim.timer
 fi
-# The SSD's lifetime writes and wear, for Grafana (scripts/ssd_wear.py). The PC guest has no NVMe device of its own.
+# The SSD's lifetime writes and wear, for OpenObserve (scripts/ssd_wear.py). The PC guest has no NVMe device of its own.
 if [[ $ROLE == beelink ]]; then
   # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to write into another user's
   # folder (cap_drop ALL); sticky and open to all, as Colin's user timers (PC backups) write here too.

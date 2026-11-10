@@ -36,7 +36,6 @@ jobs:
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           # Readers' logins to OpenObserve's read-only gateway (stacks/observability/gateway).
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
@@ -73,25 +72,3 @@ jobs:
           cd /home/colin/code/homelab
           scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed" \
             --first-changed-since "$BEFORE"
-
-      # Grafana gives a top-level provisioned dashboard no viewer access, and
-      # provisioning cannot grant it, so each deploy of Grafana's stack lets viewers open Home.
-      - name: Let viewers open Grafana's Home
-        if: contains(fromJSON(steps.deploy.outputs.deployed || '[]'), 'observability')
-        env:
-          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-        run: |
-          pw=${GRAFANA_ADMIN_PASSWORD//\\/\\\\}
-          pw=${pw//\"/\\\"}
-          # This replaces all of Home's permissions; admins keep access regardless.
-          # Grafana may still be starting after a recreate.
-          for _ in $(seq 30); do
-            if printf 'user = "admin:%s"\n' "$pw" |
-              curl -sf -m 10 -K - -X POST -H "Content-Type: application/json" \
-                -d '{"items":[{"role":"Viewer","permission":1}]}' \
-                http://beelink.tail4f465e.ts.net:3001/api/dashboards/uid/home/permissions >/dev/null; then
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::warning::Could not grant viewers access to Grafana's Home"

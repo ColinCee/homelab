@@ -10,7 +10,7 @@ access; Cloudflare Tunnel exposes the flight tracker.
 
 - Runs Home Assistant for home automation
 - Hosts the [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend behind Cloudflare Tunnel
-- Collects metrics and logs with Grafana, Prometheus, Loki, and Alloy; alerts go to a private Discord channel
+- Collects metrics and logs with Alloy into OpenObserve; alerts go to a private Discord channel through Alertmanager
 - Backs up nightly with encrypted restic snapshots to Cloudflare R2
 - Accepts no connections from the internet: admin access is over Tailscale
   only, and the public API leaves through Cloudflare Tunnel, so filtering for
@@ -22,7 +22,7 @@ access; Cloudflare Tunnel exposes the flight tracker.
 |------|---------|
 | Host | Beelink mini-PC, Ubuntu, Docker Compose |
 | Access | Tailscale (admin), Cloudflare Tunnel (public) |
-| Observability | Grafana, Prometheus, Loki, Alloy |
+| Observability | OpenObserve, Alloy, Alertmanager |
 | Backups | restic to Cloudflare R2 |
 | Security | Tailscale-only access, UFW, unknown-container alert |
 | Automation | GitHub Actions (self-hosted runner for deploys), Renovate |
@@ -67,7 +67,7 @@ automatically. Non-major versions can still break behavior, especially before
 | Stack | Purpose |
 |-------|---------|
 | `stacks/home-assistant/` | Home automation, with host networking for mDNS; Bluetooth is off |
-| `stacks/observability/` | Grafana, Prometheus, Loki, and Alloy; pushes the [public stats](docs/public-stats.md) |
+| `stacks/observability/` | OpenObserve, Alloy and Alertmanager; pushes the [public stats](docs/public-stats.md) |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 | `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [homelab-network skill](.github/skills/homelab-network/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
