@@ -32,7 +32,7 @@ prometheus.exporter.cadvisor "docker" {
   // Each Docker label would be a label on every series; the Compose project is the one read.
   store_container_labels       = false
   allowlisted_container_labels = ["com.docker.compose.project"]
-  // Start and last-seen times come with every set.
+  // cAdvisor sends start and last-seen times whatever is enabled.
   enabled_metrics = ["cpu", "memory", "network"]
 }
 
@@ -55,7 +55,7 @@ prometheus.scrape "cadvisor" {
 
   scrape_interval = "30s"
   // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
-  // time compresses far better.
+  // time compresses better.
   honor_timestamps = false
 }
 
@@ -91,6 +91,8 @@ prometheus.scrape "ci_vms" {
   forward_to = [prometheus.relabel.ci_vms.receiver]
 
   scrape_interval = "30s"
+  // As for the containers above.
+  honor_timestamps = false
 }
 
 // Only the VMs' own cgroups; this exporter also reports the whole machine,
