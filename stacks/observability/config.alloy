@@ -6,6 +6,8 @@ prometheus.exporter.unix "host" {
   procfs_path = "/rootproc"
   sysfs_path  = "/sys"
   rootfs_path = "/rootfs"
+  // Only the collectors whose metrics are kept (prometheus.relabel "read").
+  set_collectors = ["cpu", "meminfo", "filesystem", "netstat", "textfile"]
 
   // *.prom files written by other stacks, e.g. the backup success timestamp.
   textfile {
@@ -27,6 +29,11 @@ prometheus.scrape "host" {
 prometheus.exporter.cadvisor "docker" {
   docker_only = true
   docker_host = "tcp://docker-socket-proxy:2375"
+  // Each Docker label would be a label on every series; the Compose project is the one read.
+  store_container_labels       = false
+  allowlisted_container_labels = ["com.docker.compose.project"]
+  // Start and last-seen times come with every set.
+  enabled_metrics = ["cpu", "memory", "network"]
 }
 
 discovery.relabel "cadvisor" {
@@ -44,31 +51,12 @@ discovery.relabel "cadvisor" {
 
 prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
-  forward_to = [prometheus.relabel.cadvisor.receiver]
-
-  scrape_interval = "30s"
-}
-
-prometheus.relabel "cadvisor" {
   forward_to = [prometheus.relabel.read.receiver]
 
-  // Each Docker label is a label on every series; the Compose project is the one read.
-  rule {
-    source_labels = ["container_label_com_docker_compose_project"]
-    target_label  = "__project"
-  }
-  rule {
-    regex  = "container_label_.+"
-    action = "labeldrop"
-  }
-  rule {
-    source_labels = ["__project"]
-    target_label  = "container_label_com_docker_compose_project"
-  }
-  rule {
-    regex  = "__project"
-    action = "labeldrop"
-  }
+  scrape_interval = "30s"
+  // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
+  // time compresses far better.
+  honor_timestamps = false
 }
 
 // ================================
