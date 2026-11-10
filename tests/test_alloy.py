@@ -1,4 +1,4 @@
-"""Alloy (stacks/observability/config.alloy) sends every metric something reads."""
+"""Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read."""
 
 import json
 import re
@@ -7,28 +7,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
+CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
 READERS = (
     "scripts/server-health.sh",
     "stacks/observability/public_stats.py",
     ".github/workflows/heartbeat.yaml",
 )
-# A metric name as queries write it: before a selector, a range, a closing bracket or a quote.
-NAME = r"\b(?:up|(?:node|container|probe|alertmanager|homelab)_\w+)\b(?=\s*[{\[)\"]|\s*$)"
-# Labels read beside the metrics, which look like metric names.
-LABELS = {"container_label_com_docker_compose_project", "container_name"}
 
 
-def kept() -> re.Pattern[str]:
-    config = (STACK / "config.alloy").read_text(encoding="utf-8")
-    block = config[config.index('prometheus.relabel "read" {') :]
-    regex = re.search(r'regex\s*=\s*"([^"]+)"', block)[1]
-    # As Prometheus relabelling matches: the whole name. Python takes the flag only at the start.
-    assert regex.startswith("(?i)"), "OpenObserve lower-cases names, so the list does too"
-    return re.compile(f"^(?:{regex.removeprefix('(?i)')})$", re.IGNORECASE)
-
-
-def read() -> set[str]:
-    """Each metric an alert, a dashboard, server-health, public stats or the heartbeat reads."""
+def queries() -> list[str]:
+    """Every alert and Home dashboard query, and the scripts that read metrics."""
     rules = tomllib.loads((STACK / "openobserve/alerts.toml").read_text(encoding="utf-8"))["rules"]
     texts = [q for rule in rules.values() for q in (rule["promql"], rule.get("no_data", ""))]
     for dashboard in (STACK / "openobserve/dashboards").glob("*.json"):
@@ -38,18 +26,18 @@ def read() -> set[str]:
             for panel in tab["panels"]
             for q in panel["queries"]
         ]
-    texts += [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
-    return {name for text in texts for name in re.findall(NAME, text)} - LABELS
+    return texts + [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
 
 
-def test_every_metric_read_is_sent() -> None:
-    names = read()
-    assert {"up", "node_cpu_seconds_total", "container_last_seen", "homelab_probe_success"} <= names
-    pattern = kept()
-    assert not [n for n in sorted(names) if not pattern.match(n)]
+def test_no_metric_is_dropped_by_name() -> None:
+    # The store keeps what a later fix may need, so no rule filters on the metric name.
+    assert not re.search(r'source_labels\s*=\s*\[[^\]]*"__name__"', CONFIG)
 
 
-def test_what_nothing_reads_is_not_sent() -> None:
-    pattern = kept()
-    for name in ("node_disk_io_time_seconds_total", "container_fs_writes_total", "go_goroutines"):
-        assert not pattern.match(name), name
+def test_every_container_label_read_is_sent() -> None:
+    block = CONFIG[CONFIG.index("allowlisted_container_labels") :]
+    allowed = re.findall(r'"([^"]+)"', block[: block.index("]")])
+    sent = {"container_label_" + re.sub(r"[.-]", "_", label) for label in allowed}
+    read = {name for text in queries() for name in re.findall(r"\bcontainer_label_\w+", text)}
+    assert "container_label_com_docker_compose_project" in read
+    assert read <= sent
