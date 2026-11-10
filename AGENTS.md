@@ -20,8 +20,8 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
 - Never source generated `.env` files or expose secrets. Private operational
   records belong in the separate notes repository, not this public repository.
 - Do not add image polling or stack-specific deployment branches. Git owns
-  pinned image revisions (moved by Renovate, and by the auto-kaizen app for the
-  Control room); Compose and stack-owned units own application operations.
+  pinned image revisions (moved by Renovate); Compose and stack-owned units own
+  application operations.
 - Prepare Tailscale policy changes, but leave `scripts/tailscale_policy.py`
   credential entry and live approval to the user's own terminal. Never request
   a Bitwarden vault session or run these prompts through an agent tool.
@@ -29,9 +29,8 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
   runs only in the `homelab-fc` Firecracker VMs (docs/runbooks/ci-runner.md), which
   hold no secrets, deploy access or home network; only trusted `main` deploys run
   on the deploy runner.
-  Unattended agent changes come only through Auto Kaizen's pull requests (its
-  Reviewer and risk check decide the merge); do not add another agent here.
-  Dependency auto-merge belongs in Renovate.
+- No unattended agent changes this repo; dependency auto-merge belongs in
+  Renovate.
 - Change the CI runners (the Beelink and the PC guest together) only by merging to main: both hosts take the same
   commit and job image within a minute or two, and running jobs carry on (docs/runbooks/ci-runner.md, "Changing the Beelink
   while jobs run"; a host's first install is by hand there).

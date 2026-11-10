@@ -84,11 +84,10 @@ Repository write access is therefore privileged, even for private repositories.
 Keep PR CI off the deploy runner: public repositories' CI on GitHub-hosted
 runners, private repositories' CI only in the
 [Firecracker VMs](ci-runner.md), which hold no secrets, deploy access or home
-network. Keep Beelink deployment restricted to trusted `main`. After checks, Renovate auto-merges eligible dependency PRs and the
-`auto-kaizen` app its own (Control room image pins, and agent changes its
-Reviewer passes); other changes are human-directed.
+network. Keep Beelink deployment restricted to trusted `main`. After checks, Renovate auto-merges eligible dependency PRs; other changes are
+human-directed.
 Admins can bypass the ruleset, including via agents using their credentials.
-Neither bot has that bypass. Workflow conditions alone are
+Renovate does not have that bypass. Workflow conditions alone are
 not access controls.
 
 This avoids giving hosted CI tailnet access or maintaining another deployment
@@ -102,9 +101,8 @@ targeting `beelink`; fork runs need approval, and one wrong approval would run
 it as `colin`. The runner's job-started hook,
 [`runner_job_guard.py`](../../scripts/runner_job_guard.py), refuses every job
 except its `WORKFLOWS` from `main` on push, schedule, or
-manual dispatch, started by `ColinCee`, `renovate[bot]` or `auto-kaizen[bot]` (checked by user ID,
-and the re-run's triggering actor by name); `auto-kaizen[bot]` only for
-`deploy.yaml` and `remediate.yaml`. It runs before the job's first step
+manual dispatch, started by `ColinCee` or `renovate[bot]` (checked by user ID, and the re-run's
+triggering actor by name). It runs before the job's first step
 and fails closed when a variable is missing.
 
 A failing hook alone only marks the job failed: the runner still runs later
@@ -181,7 +179,7 @@ units or run arbitrary stack hooks.
 
 For externally built services, CI in the source repo publishes to GHCR and the
 image is pinned by digest, so a new image needs the digest updated in Git (by
-Renovate, or by the auto-kaizen app for the Control room).
+Renovate).
 
 Do not copy the image-polling pattern for new services. User timers require
 `loginctl enable-linger colin` on the host to run without a login session.

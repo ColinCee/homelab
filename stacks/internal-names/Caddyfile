@@ -4,8 +4,8 @@
 	default_bind 100.100.146.119
 }
 
-# Other tailnet devices only, never Beelink itself (see compose.yaml, proxy); the tailnet
-# policy decides which devices reach port 80.
+# Other tailnet devices only, never Beelink itself (stacks/observability/probes.py checks the 403);
+# the tailnet policy decides which devices reach port 80.
 (tailnet_only) {
 	@refused expression !remote_ip('100.64.0.0/10') || remote_ip('100.100.146.119')
 	respond @refused 403

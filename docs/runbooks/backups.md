@@ -70,8 +70,7 @@ logs `backup FAILED at <step>` and writes its time to
 `/var/lib/homelab-metrics/backup-failure.prom` as
 `homelab_backup_last_failure_timestamp_seconds{step="cap|backup|forget|check"}`;
 the next good run removes it. The alert names that step, or says no failure was
-recorded when the run never happened, and the `Remediate` workflow's diagnose
-prints these files. Do not alert on `backup ok` log lines instead: a log store can
+recorded when the run never happened. Do not alert on `backup ok` log lines instead: a log store can
 miss a line and fire while backups succeed.
 
 ## Size cap
