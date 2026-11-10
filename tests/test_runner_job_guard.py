@@ -189,4 +189,6 @@ def test_the_retired_kaizen_app_may_not_deploy() -> None:
         "GITHUB_ACTOR_ID": "351551650",
         "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
     }
-    assert not guard.decide(env).allowed
+    decision = guard.decide(env)
+    assert not decision.allowed
+    assert "351551650" in decision.reason
