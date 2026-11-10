@@ -190,7 +190,7 @@ loki.process "docker" {
     }
   }
 
-  // Both reach OpenObserve as fields of each line.
+  // The label and the metadata below reach OpenObserve as fields of each line.
   stage.labels {
     values = {
       level = "level",
