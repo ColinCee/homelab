@@ -94,18 +94,20 @@ def stream(promql: str) -> str:
     return next(n for n in names if n not in {"and", "or", "unless", "bool", "offset", "e"})
 
 
-def query(rule: Mapping[str, Any], held: bool = True) -> tuple[str, str, float]:
-    """The PromQL OpenObserve runs, and the condition on its value. Held, `for` and the hold are in
-    the query: OpenObserve's own pending time restarts after any dip, and its keep_firing_for never
+def query(rule: Mapping[str, Any]) -> tuple[str, str, float]:
+    """The PromQL OpenObserve runs, and the condition on its value. `for` and the hold are in the
+    query: OpenObserve's own pending time restarts after any dip, and its keep_firing_for never
     sends the resolve. It fires while the value stayed past the threshold for `for` at any time in
-    the last 10 minutes, so a dip under that is no clear and a spike is no onset."""
+    the last 10 minutes, so a dip under that is no clear and a spike is no onset. A series must
+    have a value at every minute of `for`: `*_over_time` skips minutes without one, so a container
+    seen for one minute would pass at once."""
     promql = " ".join(rule["promql"].split())
     operator, threshold = rule["operator"], rule["threshold"]
-    if held:
-        low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
-        if seconds(rule["for"]):
-            promql = f"{low}_over_time(({promql})[{rule['for']}:1m])"
-        promql = f"{high}_over_time(({promql})[{HOLD}:1m])"
+    low, high = ("max", "min") if operator.startswith("<") else ("min", "max")
+    if minutes := seconds(rule["for"]) // 60:
+        window = f"({promql})[{rule['for']}:1m]"
+        promql = f"{low}_over_time({window}) and count_over_time({window}) >= {minutes}"
+    promql = f"{high}_over_time(({promql})[{HOLD}:1m])"
     if "no_data" in rule:
         no_data = " ".join(rule["no_data"].split())
         promql = f"({promql}) {operator} {threshold} or on() ({no_data}) * {NO_DATA}"

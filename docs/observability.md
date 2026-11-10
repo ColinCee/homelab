@@ -129,7 +129,7 @@ Noise budget: at most one post a day across all rules, over 14 days. Replay befo
 docker exec observability-openobserve-apply-1 python -I /apply/replay.py /apply/alerts.toml 14
 ```
 
-On 9 November 2026 the rules made 4 posts in 14 days.
+On 10 November 2026 the rules made 2 posts in the 14 days, which hold metrics from 9 November on.
 
 OpenObserve keeps metric names in lower case. Home Assistant and the `.internal` names are checked by
 [`probes.py`](../stacks/observability/probes.py) on the host's network, since the firewall admits only Tailscale and

@@ -3,10 +3,11 @@ the noise budget in docs/observability.md ("Alerts"), which has the command.
 
     replay.py alerts.toml [days] [rule ...]
 
-Reads OpenObserve. Follows Alertmanager's lifecycle (../alertmanager/alertmanager.yml):
-a post when a rule has held for `for`, a repeat every 4 h (now) or 24 h (week) while it fires, and
-a "Cleared" once it has stayed clear for the 10-minute hold. Inhibits are not replayed, and a rule
-is replayed from its metric's first sample."""
+Reads OpenObserve, and runs each rule's query as OpenObserve does (apply.py, `query`), so `for` and
+the hold are replayed as they run. Follows Alertmanager's lifecycle
+(../alertmanager/alertmanager.yml): a post when the query first fires, a repeat every 4 h (now)
+or 24 h (week) while it fires, and a "Cleared" once it has stopped firing for resolve_timeout.
+Inhibits are not replayed."""
 
 import os
 import re
@@ -22,7 +23,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import apply
 
 STEP = 60
-HOLD = 10 * 60
+# Alertmanager's resolve_timeout.
+RESOLVE = 5 * 60
 REPEAT = {"now": 4 * 3600, "week": 24 * 3600}
 OPERATORS = {">": float.__gt__, "<": float.__lt__, ">=": float.__ge__, "<=": float.__le__}
 
@@ -58,17 +60,14 @@ def history(query_range: Range, promql: str, start: int, end: int) -> dict[str, 
 
 
 def posts(values: dict[int, float], rule: dict, start: int, end: int) -> list[tuple[int, str]]:
-    _, operator, threshold = apply.query(rule, held=False)
-    pending = apply.seconds(rule["for"])
+    _, operator, threshold = apply.query(rule)
     out: list[tuple[int, str]] = []
-    held = clear = 0
+    clear = 0
     firing = False
     last_post = 0
     for t in range(start - start % STEP, end, STEP):
         v = values.get(t)
-        on = v is not None and OPERATORS[operator](v, float(threshold))
-        held = held + STEP if on else 0
-        if on and held > pending:
+        if v is not None and OPERATORS[operator](v, float(threshold)):
             clear = 0
             if not firing:
                 firing, last_post = True, t
@@ -78,7 +77,7 @@ def posts(values: dict[int, float], rule: dict, start: int, end: int) -> list[tu
                 out.append((t, "repeat"))
         elif firing:
             clear += STEP
-            if clear >= HOLD:
+            if clear >= RESOLVE:
                 out.append((t, "cleared"))
                 firing = False
     return out
@@ -107,13 +106,13 @@ def main() -> None:
         if not seen:
             print(f"{uid}: no history of {metric}")
             continue
-        # From the metric's first sample: a no-data rule would fire before it was made.
+        # From once the query's windows hold only time after the metric's first sample: before
+        # that a no-data query, or the hold over one, sees a metric not yet made.
         first = min(seen)
+        full = first + apply.seconds(rule["for"]) + apply.seconds(apply.HOLD)
         found = []
-        for key, values in history(
-            query_range, apply.query(rule, held=False)[0], first, end
-        ).items():
-            found += [(t, kind, key) for t, kind in posts(values, rule, first, end)]
+        for key, values in history(query_range, apply.query(rule)[0], first, end).items():
+            found += [(t, kind, key) for t, kind in posts(values, rule, full, end)]
         total += len(found)
         print(f"{uid} ({rule['level']}): {len(found)} posts in {days} days", flush=True)
         for t, kind, key in sorted(found)[:10]:
