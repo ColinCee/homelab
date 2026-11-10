@@ -2,7 +2,7 @@
 
 Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
 settings and retention. Alloy collects logs and metrics into OpenObserve ([ADR 0001](adr/0001-openobserve.md)), which
-keeps 30 days; its history starts on 9 November 2026.
+keeps 30 days.
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
