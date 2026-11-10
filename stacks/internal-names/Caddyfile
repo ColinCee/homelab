@@ -11,11 +11,6 @@
 	respond @refused 403
 }
 
-http://grafana.internal {
-	import tailnet_only
-	reverse_proxy 100.100.146.119:3001
-}
-
 http://openobserve.internal {
 	import tailnet_only
 	reverse_proxy 100.100.146.119:5080

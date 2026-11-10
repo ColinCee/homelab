@@ -226,7 +226,7 @@ CONSOLE_LINE_MAX = 4096
 # What the job really needed (cache left out), the VM's memory and the kernel's out-of-memory
 # kills, from the VM's ci-memwatch. A job can print it too: it only skews the counts.
 MEM_LINE = re.compile(rb"HOMELAB-MEM 1 ([0-9]{1,7}) ([0-9]{1,7}) ([0-9]{1,9})")
-# Counts by kind of VM for Grafana (Alloy's textfile collector), and the share of its memory a
+# Counts by kind of VM for OpenObserve (Alloy's textfile collector), and the share of its memory a
 # job may need before its kind counts as near full.
 MEMORY_METRICS = Path("/var/lib/homelab-metrics/ci-vm-memory.prom")
 NEAR_FULL = 0.8

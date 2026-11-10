@@ -70,10 +70,8 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
   fi
 done
 
-# Alerts and metrics: Grafana's (anonymous Viewer access reads them) until the cutover to OpenObserve, then
-# OpenObserve's when OPENOBSERVE_URL is set, with OPENOBSERVE_LOGIN (user:password) as a curl config on stdin.
-grafana=http://beelink.tail4f465e.ts.net:3001
-openobserve="${OPENOBSERVE_URL:-}"
+# Alerts and metrics: OpenObserve's at OPENOBSERVE_URL, with OPENOBSERVE_LOGIN (user:password) as a curl config on stdin.
+openobserve="${OPENOBSERVE_URL:?}"
 login() {
   # Quoted patterns: bash 5.2 reads an unquoted `\\\\` replacement as one backslash.
   local pw=${OPENOBSERVE_LOGIN//"\\"/"\\\\"}
@@ -81,41 +79,23 @@ login() {
   printf 'user = "%s"\n' "$pw"
 }
 promql() { # QUERY: the Prometheus API's JSON answer
-  if [[ -n "$openobserve" ]]; then
-    login | curl -sf -m 10 -K - -G "$openobserve/api/default/prometheus/api/v1/query" --data-urlencode "query=$1"
-  else
-    curl -sf -m 10 -G "$grafana/api/datasources/proxy/uid/prometheus/api/v1/query" --data-urlencode "query=$1"
-  fi
+  login | curl -sf -m 10 -K - -G "$openobserve/api/default/prometheus/api/v1/query" --data-urlencode "query=$1"
 }
-if [[ -n "$openobserve" ]]; then
-  # As Kaizen reads the list (auto-kaizen src/kaizen/board/alert_source.py, `firing_in`): a rule fires when its
-  # latest run met its condition (both stamps come from the same run); one whose query failed, or not run for
-  # 5 minutes, is named too.
-  firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
-    jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
-      (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
-      if .last_outcome == "error" then "\($rule) (query fails)"
-      elif $run < $stale then "\($rule) (not run for 5 min)"
-      elif $met > 0 and $met >= $run - 5000000 then $rule
-      else empty end] | join(", ")' 2>/dev/null)" ||
-    firing="unknown (OpenObserve API unreachable)"
-else
-  firing="$(curl -sf -m 10 "$grafana/api/prometheus/grafana/api/v1/alerts" |
-    jq -r '[.data.alerts[] | select(.state == "Alerting" or .state == "firing") | .labels.alertname] | unique | join(", ")' 2>/dev/null)" ||
-    firing="unknown (Grafana API unreachable)"
-fi
+# As Kaizen reads the list (auto-kaizen src/kaizen/board/alert_source.py, `firing_in`): a rule fires when its
+# latest run met its condition (both stamps come from the same run); one whose query failed, or not run for
+# 5 minutes, is named too.
+firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
+  jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
+    (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
+    if .last_outcome == "error" then "\($rule) (query fails)"
+    elif $run < $stale then "\($rule) (not run for 5 min)"
+    elif $met > 0 and $met >= $run - 5000000 then $rule
+    else empty end] | join(", ")' 2>/dev/null)" ||
+  firing="unknown (OpenObserve API unreachable)"
 if [[ -n "$firing" ]]; then
   bad "Firing alerts" "$firing"
 else
   row "Firing alerts" "none"
-fi
-# Log only: alert state changes in the last 7 days. OpenObserve keeps every run, not changes; each episode is a
-# comment on its Kaizen `alert` issue instead.
-if [[ -z "$openobserve" ]]; then
-  echo "Alert state changes, last 7 days:"
-  curl -sf -m 10 "$grafana/api/annotations?type=alert&limit=100&from=$(date -d '7 days ago' +%s000)" |
-    jq -r 'sort_by(.time)[] | "\(.time / 1000 | todate) \(.alertName // .text) \(.prevState) -> \(.newState)"' ||
-    echo "(history unavailable)"
 fi
 
 # Log only: why the flight tracker served stale data (upstream fetch failures).

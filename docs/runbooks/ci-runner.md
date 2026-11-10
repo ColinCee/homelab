@@ -129,7 +129,7 @@ journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -
 
 `install-host.sh` also trims the SSD hourly, since the VMs' throwaway disks churn about 0.5 TB a day and untrimmed
 they slow every write, and on the Beelink installs `homelab-ssd-wear.timer`, which writes the SSD's wear to
-`ssd.prom` for Grafana every 15 minutes (`systemctl status homelab-ssd-wear.service`).
+`ssd.prom` for OpenObserve every 15 minutes (`systemctl status homelab-ssd-wear.service`).
 
 The GitHub token is fine-grained, with Administration read and write (for one-job registrations) and Actions
 read. Store it without it reaching the screen or shell history:
@@ -198,7 +198,7 @@ mostly wait.
 
 ### Status files
 
-The supervisor writes these for the Control room, Grafana and speed reports. What each field counts is in the
+The supervisor writes these for the Control room, OpenObserve and speed reports. What each field counts is in the
 function named.
 
 | File | Holds | Code |

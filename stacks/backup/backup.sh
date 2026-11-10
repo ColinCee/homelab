@@ -18,10 +18,6 @@ backup_data() {
     --exclude "/data/home-assistant/.cache" \
     --exclude "/data/home-assistant/deps" \
     --exclude "/data/home-assistant/tts" \
-    --exclude "/data/grafana/plugins" \
-    --exclude "/data/grafana/png" \
-    --exclude "/data/grafana/csv" \
-    --exclude "/data/grafana/pdf" \
     "$@"
 }
 
@@ -70,7 +66,7 @@ run_backup() {
     record_size
 }
 
-# Grafana's Backup storage nearly full alert reads the log line, OpenObserve's the metric.
+# The Backup storage nearly full alert reads the metric; server-health.sh the log line.
 record_size() {
   bytes=$(repo_bytes) && [ -n "$bytes" ] || return 0
   echo "repository size: $bytes bytes of $MAX_REPO_BYTES allowed"
@@ -80,7 +76,6 @@ record_size() {
 
 report() {
   if run_backup; then
-    # The Grafana missed-backup alert counts this line; keep the text stable.
     echo "backup ok"
     write_metric "$METRICS_FILE" homelab_backup_last_success_timestamp_seconds "$(date -u +%s)" ||
       echo "could not write $METRICS_FILE" >&2
@@ -93,9 +88,9 @@ report() {
   fi
 }
 
-# Alloy reads this file into Prometheus for the Nightly backup didn't run alert. A metric
-# instead of the "backup ok" log line: Loki missed that line once (2026-10-10)
-# and the alert fired with backups succeeding.
+# Alloy reads this file into OpenObserve for the Nightly backup didn't run alert. A metric,
+# not the "backup ok" log line: a log store missed that line once and the alert fired with
+# backups succeeding.
 METRICS_FILE=/metrics/backup.prom
 # The last run's failing step, for the alert to name; removed by the next good run.
 FAILURE_FILE=/metrics/backup-failure.prom

@@ -3,20 +3,17 @@ the noise budget in docs/observability.md ("Alerts"), which has the command.
 
     replay.py alerts.toml [days] [rule ...]
 
-Reads OpenObserve, or with REPLAY_PROMETHEUS=http://prometheus:9090 the older Prometheus, whose
-metric names keep their case. Follows Alertmanager's lifecycle (../alertmanager/alertmanager.yml):
+Reads OpenObserve. Follows Alertmanager's lifecycle (../alertmanager/alertmanager.yml):
 a post when a rule has held for `for`, a repeat every 4 h (now) or 24 h (week) while it fires, and
 a "Cleared" once it has stayed clear for the 10-minute hold. Inhibits are not replayed, and a rule
 is replayed from its metric's first sample."""
 
-import json
 import os
 import re
 import sys
 import time
 import tomllib
 import urllib.parse
-import urllib.request
 from collections import defaultdict
 from collections.abc import Callable
 
@@ -44,22 +41,6 @@ def openobserve() -> Range:
         return call("GET", f"/api/{apply.ORG}/prometheus/api/v1/query_range?{query}", None)["data"][
             "result"
         ]
-
-    return query_range
-
-
-def prometheus(url: str) -> Range:
-    def get(path: str) -> dict:
-        with urllib.request.urlopen(url + path, timeout=300) as response:
-            return json.load(response)
-
-    # OpenObserve's lower-case names back to Prometheus's.
-    names = {n.lower(): n for n in get("/api/v1/label/__name__/values")["data"]}
-
-    def query_range(promql: str, start: int, end: int) -> list[dict]:
-        promql = re.sub(r"[a-z_:][a-z0-9_:]*", lambda m: names.get(m[0], m[0]), promql)
-        query = urllib.parse.urlencode({"query": promql, "start": start, "end": end, "step": STEP})
-        return get(f"/api/v1/query_range?{query}")["data"]["result"]
 
     return query_range
 
@@ -108,8 +89,7 @@ def main() -> None:
         config = tomllib.load(file)
     days = int(sys.argv[2]) if len(sys.argv) > 2 else 7
     only = set(sys.argv[3:])
-    url = os.environ.get("REPLAY_PROMETHEUS")
-    query_range = prometheus(url) if url else openobserve()
+    query_range = openobserve()
     end = int(time.time()) // STEP * STEP
     start = end - days * 86400
     total = 0

@@ -39,9 +39,9 @@ expect ok dns getent hosts github.com
 # Must be blocked: Beelink, the LAN, the tailnet, Docker
 for target in \
   10.200.0.1:22 10.200.0.1:53 @HOST_LAN@:22 @HOST_LAN@:8123 \
-  192.168.1.1:80 192.168.1.1:53 @TAILNET@:22 @TAILNET@:3001 @TAILNET@:5080 \
+  192.168.1.1:80 192.168.1.1:53 @TAILNET@:22 @TAILNET@:5080 \
   @TAILNET@:5081 @TAILNET@:8123 100.100.100.100:53 172.17.0.1:80 172.21.0.1:3000 \
-  172.22.0.1:9090 172.23.0.1:3100; do
+  172.22.0.1:5080; do
   expect blocked "$target" tcp "${target%:*}" "${target#*:}"
 done
 expect blocked "ping LAN router" pings 192.168.1.1

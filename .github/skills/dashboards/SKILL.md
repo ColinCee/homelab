@@ -1,6 +1,6 @@
 ---
 name: dashboards
-description: Edit homelab dashboards, OpenObserve's Home from Git and Grafana's until the cutover. Use when changing dashboard JSON or a panel's query.
+description: Edit homelab dashboards: OpenObserve's Home, from Git. Use when changing dashboard JSON or a panel's query.
 ---
 
 # Dashboards
@@ -82,8 +82,3 @@ To try a change live, from a tab signed in to OpenObserve PUT the whole file to
 `/api/default/dashboards/<id>?folder=<id>&hash=<hash>` (both ids and the hash from
 `GET /api/default/dashboards?folder=<id>`). Check with
 `uv run python -m pytest tests/test_openobserve_alerts.py`.
-
-## Grafana
-
-Until the cutover Grafana's Home is `stacks/observability/dashboards/home.json`, which Grafana
-polls. Keep its UID, set `id` to `null`, and use datasource UIDs `prometheus` and `loki`.

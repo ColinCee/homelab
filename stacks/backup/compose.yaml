@@ -42,8 +42,7 @@ services:
       # Read by Alloy's textfile collector (observability stack).
       - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
-      - grafana-data:/data/grafana:ro
-      # Users, alerts and dashboards only; its logs and metrics are left out, as Prometheus's and Loki's are.
+      # Users, alerts and dashboards only; its logs and metrics are left out.
       - type: volume
         source: openobserve-data
         target: /data/openobserve
@@ -57,9 +56,6 @@ services:
 volumes:
   restic-cache:
   # Owned by other stacks; deploy those first on a fresh host.
-  grafana-data:
-    external: true
-    name: observability_grafana-data
   openobserve-data:
     external: true
     name: observability_openobserve-data
