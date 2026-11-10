@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from stacks.observability.openobserve import apply
+from stacks.observability.openobserve import apply, replay
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
 CONFIG = tomllib.loads((STACK / "openobserve/alerts.toml").read_text(encoding="utf-8"))
@@ -42,7 +42,8 @@ def test_levels_repeat_as_the_standard_says_and_each_post_ends_on_its_own() -> N
     assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
     assert route["routes"] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
     # Over a missed evaluation or two; the hold itself is in the query.
-    assert apply.seconds(ALERTMANAGER["global"]["resolve_timeout"]) <= apply.seconds(apply.HOLD)
+    resolve = apply.seconds(ALERTMANAGER["global"]["resolve_timeout"])
+    assert resolve <= apply.seconds(apply.HOLD) and resolve == replay.RESOLVE
 
 
 def test_beelink_metrics_stopped_holds_back_every_other_alert() -> None:
@@ -304,12 +305,31 @@ def test_for_and_the_hold_are_in_the_query() -> None:
     # Held 5 minutes at some time in the last 10: a dip is no clear, a spike no onset.
     assert ram["pending_period_sec"] == 0 and ram["keep_firing_for"] == 0
     assert ram["query_condition"]["promql"].startswith("max_over_time((min_over_time((round(")
-    assert ram["query_condition"]["promql"].endswith("[5m:1m]))[10m:1m])")
+    # A value at every minute of the 5, and the value posted is still the memory use.
+    assert ram["query_condition"]["promql"].endswith(
+        "[5m:1m]) and count_over_time((round(100 * (1 - node_memory_memavailable_bytes"
+        '{job="integrations/unix"} / node_memory_memtotal_bytes{job="integrations/unix"})))'
+        "[5m:1m]) >= 5)[10m:1m])"
+    )
     site = alerts["Flight Tracker site down"]["query_condition"]["promql"]
     assert site.startswith("min_over_time((max_over_time((max(probe_success")
     # No `for`: only the hold.
     worn = alerts["Beelink metrics stopped"]["query_condition"]["promql"]
     assert worn.startswith("max_over_time((absent_over_time(")
+
+
+def test_replay_posts_as_alertmanager_would_from_the_query_openobserve_runs() -> None:
+    rule = RULES["high-ram"]
+    # The query's value each minute: firing for 5 h, 4 quiet minutes, 5 h more, then 5 quiet.
+    on = [*range(0, 300), *range(304, 604)]
+    values = {60 * m: 95.0 for m in on} | {60 * 300: 50.0}
+    found = replay.posts(values, rule, 0, 60 * 620)
+    assert found == [
+        (0, "firing"),
+        (60 * 240, "repeat"),
+        (60 * 480, "repeat"),
+        (60 * 608, "cleared"),
+    ]
 
 
 def test_a_unit_keeps_its_leading_space() -> None:
