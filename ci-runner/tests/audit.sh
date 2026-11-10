@@ -66,8 +66,13 @@ if mount -o ro,loop "$images/rootfs.ext4" "$scan"; then
   check "no SSH host keys in image" bash -c "! ls '$scan'/etc/ssh/ssh_host_* >/dev/null 2>&1"
   check "no SSH server in image" [ ! -e "$scan/usr/sbin/sshd" ]
   # A real key is a PEM line of its own; npm's docs only quote one inside strings.
+  # /opt/actions-cache holds public repos at pinned commits (rootfs/Dockerfile),
+  # whose token redaction code and tests carry example tokens and keys.
   secrets='github_pat_|ghp_[A-Za-z0-9]{30}|^-----BEGIN ([A-Z]+ )?PRIVATE KEY-----[[:space:]]*$'
-  no_secrets() { ! grep -rlIE "$secrets" "$scan/etc" "$scan/home" "$scan/root" "$scan/opt" 2>/dev/null | grep -q .; }
+  no_secrets() {
+    ! grep -rlIE "$secrets" "$scan/etc" "$scan/home" "$scan/root" "$scan/opt" 2>/dev/null |
+      grep -v "^$scan/opt/actions-cache/" | grep -q .
+  }
   check "no tokens or private keys in image" no_secrets
   # Jobs install the Python versions a repo asks for next to the baked-in one.
   # -quit stops at the first stray file, so no early-exit pipe can hide one.
