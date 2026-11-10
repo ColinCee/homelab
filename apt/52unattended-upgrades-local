@@ -16,8 +16,6 @@ Unattended-Upgrade::Origins-Pattern {
 	"origin=Docker,archive=noble,label=Docker CE";
 	"origin=Tailscale,codename=noble";
 	"origin=mise repository";
-	"origin=. nodistro";
-	"origin=cloud-sdk";
 };
 
 // Reboot at 04:00 only when an installed update requires it.
