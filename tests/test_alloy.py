@@ -20,7 +20,7 @@ LABELS = {"container_label_com_docker_compose_project", "container_name"}
 
 def kept() -> re.Pattern[str]:
     config = (STACK / "config.alloy").read_text(encoding="utf-8")
-    block = config[config.index('prometheus.relabel "read"') :]
+    block = config[config.index('prometheus.relabel "read" {') :]
     regex = re.search(r'regex\s*=\s*"([^"]+)"', block)[1]
     # As Prometheus relabelling matches: the whole name. Python takes the flag only at the start.
     assert regex.startswith("(?i)"), "OpenObserve lower-cases names, so the list does too"
