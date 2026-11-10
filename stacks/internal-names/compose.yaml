@@ -19,9 +19,8 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # Host networking: the Control room trusts tailnet addresses, and from here it sees
-    # Beelink's own. The Caddyfile admits only other tailnet devices, so a container on
-    # Beelink cannot borrow that trust.
+    # Host networking: Home Assistant trusts the address its proxy comes from only on
+    # loopback. The Caddyfile admits only other tailnet devices.
     network_mode: host
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
