@@ -32,6 +32,10 @@ def queries() -> list[str]:
 def test_no_metric_is_dropped_by_name() -> None:
     # The store keeps what a later fix may need, so no rule filters on the metric name.
     assert not re.search(r'source_labels\s*=\s*\[[^\]]*"__name__"', CONFIG)
+    # Nor do the host and container exporters narrow their default sets.
+    assert "set_collectors" not in CONFIG
+    docker = CONFIG[CONFIG.index('prometheus.exporter.cadvisor "docker"') :]
+    assert "enabled_metrics" not in docker[: docker.index("\n}")]
 
 
 def test_every_container_label_read_is_sent() -> None:
