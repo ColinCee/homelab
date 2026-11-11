@@ -3,7 +3,7 @@
 Docs grow one appended line per change until nobody reads them, so growth has to be a choice:
 run `mise run docs:size -- --update` and commit the new baseline, where the pull request shows
 it. A doc that shrinks passes; updating the baseline then lowers its cap. Decision records
-(docs/adr/) are left out, since they never change once decided.
+(docs/adr/) are left out: each keeps to one page (the recording-learnings skill).
 """
 
 from __future__ import annotations
