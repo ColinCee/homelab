@@ -172,10 +172,13 @@ loki.process "docker" {
   forward_to = [otelcol.receiver.loki.logs.receiver]
 
   // Parse JSON log lines (silently passes through non-JSON lines)
+  // A line's trace, under the names OpenTelemetry's loggers use, so Grafana links it to the trace store.
   stage.json {
     expressions = {
-      level  = "level",
-      logger = "logger",
+      level    = "level",
+      logger   = "logger",
+      trace_id = "trace_id || traceId || otelTraceID",
+      span_id  = "span_id || spanId || otelSpanID",
     }
   }
 
@@ -188,9 +191,11 @@ loki.process "docker" {
 
   stage.structured_metadata {
     values = {
-      logger = "logger",
-      event  = "event",
-      stage  = "stage",
+      logger   = "logger",
+      event    = "event",
+      stage    = "stage",
+      trace_id = "trace_id",
+      span_id  = "span_id",
     }
   }
 
@@ -220,17 +225,19 @@ otelcol.processor.batch "logs" {
 }
 
 // ================================
-// Traces (the trace store)
+// OTLP from programs (traces and their logs)
 // ================================
 
-// Programs on this stack's network send their traces here, by OTLP over HTTP; they go on to the picked store's
-// exporter `traces` (traces/<store>/alloy.alloy).
-otelcol.receiver.otlp "traces" {
+// Programs send traces and logs here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to the
+// picked trace store's exporter `traces` (traces/<store>/alloy.alloy), logs to the log store with their trace and
+// span IDs, which Grafana links to the trace.
+otelcol.receiver.otlp "programs" {
   http {
     endpoint = "0.0.0.0:4318"
   }
   output {
     traces = [otelcol.processor.batch.traces.input]
+    logs   = [otelcol.processor.batch.logs.input]
   }
 }
 

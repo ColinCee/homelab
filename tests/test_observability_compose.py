@@ -69,3 +69,14 @@ def test_openobserve_history_starts_only_by_hand_and_on_loopback() -> None:
     assert history["profiles"] == ["history"]
     assert all(port.startswith("127.0.0.1:") for port in history["ports"])
     assert int(history["environment"]["ZO_COMPACT_DATA_RETENTION_DAYS"]) > 365
+
+
+def test_a_log_line_opens_its_trace_in_either_log_store() -> None:
+    for store in ("loki", "victorialogs"):
+        provisioned = yaml.safe_load(
+            (STACK / "logs" / store / "datasource.yaml").read_text(encoding="utf-8")
+        )
+        [field] = provisioned["datasources"][0]["jsonData"]["derivedFields"]
+        assert field["matcherRegex"] == "trace_id" and field["datasourceUid"] == "traces", store
+        # `$$` keeps provisioning from expanding Grafana's own variable.
+        assert field["url"] == "$${__value.raw}", store

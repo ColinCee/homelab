@@ -24,7 +24,7 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 
 | Component | What it does |
 |-----------|---------------|
-| **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces sent to `alloy:4318` to the trace store |
+| **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces and logs sent to `alloy:4318` to the trace and log stores; a log line with a `trace_id` opens its trace in Grafana |
 | **Prometheus** | Metrics and the [alert rules](../stacks/observability/prometheus/rules.yml) |
 | **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`.env.example`](../stacks/observability/.env.example) pick each, one folder per store under `logs/` and `traces/` |
 | **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, logged in as `colin` (admin) or `agents` (Viewer, `OPENOBSERVE_AGENTS_PASSWORD`) |

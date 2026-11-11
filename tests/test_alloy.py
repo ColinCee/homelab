@@ -71,3 +71,16 @@ def test_the_config_loads_with_each_store(logs: str, traces: str) -> None:
     command += [image["alloy"]["image"], "validate", "/etc/alloy"]
     ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
     assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+def test_a_line_keeps_its_trace_so_grafana_can_link_it() -> None:
+    # JSON Docker lines carry it under OpenTelemetry's names; programs' OTLP logs carry their own.
+    docker = CONFIG[CONFIG.index('loki.process "docker"') :]
+    docker = docker[: docker.index("\n}\n")]
+    assert re.search(r'trace_id\s*=\s*"trace_id \|\| traceId', docker)
+    metadata = docker[docker.index("stage.structured_metadata") :]
+    assert re.search(r'trace_id\s*=\s*"trace_id"', metadata)
+    receiver = CONFIG[CONFIG.index('otelcol.receiver.otlp "programs"') :]
+    receiver = receiver[: receiver.index("\n}\n")]
+    assert re.search(r"logs\s*=\s*\[otelcol\.processor\.batch\.logs\.input\]", receiver)
+    assert re.search(r"traces\s*=\s*\[otelcol\.processor\.batch\.traces\.input\]", receiver)
