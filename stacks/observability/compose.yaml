@@ -373,7 +373,7 @@ services:
       - /var/lib/homelab-metrics:/metrics
 
   # OpenObserve on its kept volume, to read the history from before the switch. Started by hand only, on loopback
-  # (how to read it, and when it goes: homelab#1328).
+  # (`--profile history up -d openobserve-history`), and deleted once nothing from before the switch is wanted.
   openobserve-history:
     image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
     profiles: [history]
@@ -492,7 +492,7 @@ volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
-  # OpenObserve's history, until it is deleted by hand (homelab#1328).
+  # OpenObserve's history, until it is deleted by hand.
   openobserve-data:
   # The stores' own, declared here for their folders' compose.yaml; only the picked ones are made.
   loki-data:

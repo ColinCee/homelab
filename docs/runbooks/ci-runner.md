@@ -47,8 +47,9 @@ the job (a cache too big or a missing path is a warning):
     paths: web/node_modules web/package-lock.json # optional workspace paths
 ```
 
-`node_modules` is copied, not linked, so TypeScript's incremental build info stays valid. The disk is built on the
-host without running the repo's code (`unpack_cache` and `build_cache_image` in
+`node_modules` is copied, not linked, so TypeScript's incremental build info stays valid. The supervisor takes a
+new disk only from a passing push job on the default branch newer than the current one, and builds it on the host
+without running the repo's code (`unpack_cache` and `build_cache_image` in
 [`ci_supervisor.py`](../../scripts/ci_supervisor.py)); nothing goes through GitHub artifacts, whose storage quota,
 once full, fails every upload.
 

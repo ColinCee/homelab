@@ -50,6 +50,7 @@ Dashboards and their queries: the building-dashboards skill.
   metrics are not collected; [`probes.py`](../stacks/observability/probes.py) checks them from the host's network.
 - The flight tracker's `probe_success` is 1 only when its public API says `"apiHealth":"live"`, so tunnel, backend
   and upstream failures all show as 0. Prometheus scrapes `blackbox` itself, since Alloy must not reach the internet.
+- Health of Grafana from the tailnet: `curl -sf http://beelink.tail4f465e.ts.net:5080/healthz`.
 - Textfile metrics (`/var/lib/homelab-metrics/*.prom`) come from the CI supervisor, the SSD, the backups, the probes
   and the intrusion facts.
 

@@ -29,6 +29,7 @@ Only these fields; the Worker rejects a body with any other key or type:
 |---|---|---|
 | `at` | when the numbers were gathered (Unix seconds) | the container's clock |
 | `allUp` | every stack has a running container | `container_last_seen` within the last minute |
+| `blocked` | always `null`, until the Worker stops requiring it | none |
 | `tracking` | aircraft in the tracker's London box now | `/aircraft` KPIs |
 | `londonHour` | aircraft headed for London seen in the past hour | the same KPIs |
 
