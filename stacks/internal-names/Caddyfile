@@ -2,6 +2,16 @@
 	admin off
 	auto_https off
 	default_bind 100.100.146.119
+	metrics {
+		per_host
+	}
+}
+
+# Its metrics, on loopback for host-metrics (../observability/compose.yaml); with the admin API off, nothing else serves
+# them.
+http://127.0.0.1:2019 {
+	bind 127.0.0.1
+	metrics
 }
 
 # Other tailnet devices only, never Beelink itself (stacks/observability/probes.py checks the 403);

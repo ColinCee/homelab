@@ -7,6 +7,8 @@ on:
       - "stacks/**"
       - "scripts/**"
       - ".github/workflows/deploy.yaml"
+  # A new secret goes live without a change to deploy: the stacks reading it are deployed (deploy.py).
+  workflow_dispatch:
 
 concurrency:
   group: deploy
@@ -17,7 +19,7 @@ permissions:
 
 jobs:
   deploy:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main'
     runs-on: beelink
     permissions:
       contents: read
@@ -45,6 +47,8 @@ jobs:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
+          # A long-lived token made in Home Assistant; until it exists its scrape fails, and nothing alerts on it.
+          HOMEASSISTANT_METRICS_TOKEN: ${{ secrets.HOMEASSISTANT_METRICS_TOKEN || '' }}
           # Grafana's admin password (root) and secret key (ingest), and the readers' logins.
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           OPENOBSERVE_INGEST_PASSWORD: ${{ secrets.OPENOBSERVE_INGEST_PASSWORD }}

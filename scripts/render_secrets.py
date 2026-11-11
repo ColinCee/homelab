@@ -18,29 +18,38 @@ from pathlib import Path
 import yaml
 
 WORKFLOW = Path(".github/workflows/deploy.yaml")
-FROM_SECRET = re.compile(r"^\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}$")
+FROM_SECRET = re.compile(r"^\$\{\{\s*secrets\.([A-Z0-9_]+)\s*(\|\|\s*''\s*)?\}\}$")
 
 
 class RenderError(ValueError):
     """Raised when a secret cannot be rendered."""
 
 
-def secret_names(repo_root: Path) -> tuple[str, ...]:
-    """The variables the workflow's step running this script takes from GitHub secrets."""
+def _secrets(repo_root: Path) -> dict[str, bool]:
+    """Each variable the workflow's step running this script takes from a GitHub secret, and whether
+    it may be unset (`${{ secrets.NAME || '' }}`): one a person must make first, whose reader works
+    without it, so an empty file stands in until then."""
     workflow = yaml.safe_load((repo_root / WORKFLOW).read_text(encoding="utf-8"))
     for job in workflow["jobs"].values():
         for step in job["steps"]:
             if "render-secrets" in step.get("run", ""):
                 env = step.get("env") or {}
-                return tuple(sorted(n for n, v in env.items() if FROM_SECRET.match(str(v))))
+                found = {n: FROM_SECRET.match(str(v)) for n, v in env.items()}
+                return {n: bool(m.group(2)) for n, m in sorted(found.items()) if m}
     raise RenderError(f"No step in {WORKFLOW} runs render-secrets")
+
+
+def secret_names(repo_root: Path) -> tuple[str, ...]:
+    """The variables the workflow's step running this script takes from GitHub secrets."""
+    return tuple(_secrets(repo_root))
 
 
 def render(repo_root: Path, environment: Mapping[str, str] | None = None) -> tuple[Path, ...]:
     """Check every secret is set, then write each file that changed."""
     environment = os.environ if environment is None else environment
-    names = secret_names(repo_root)
-    missing = [name for name in names if not environment.get(name)]
+    secrets = _secrets(repo_root)
+    names = tuple(secrets)
+    missing = [name for name in names if not environment.get(name) and not secrets[name]]
     if missing:
         raise RenderError("Missing required environment variable(s): " + ", ".join(missing))
     folder = repo_root / "secrets"
@@ -49,7 +58,7 @@ def render(repo_root: Path, environment: Mapping[str, str] | None = None) -> tup
     written = tuple(folder / name.lower() for name in names)
     for path, name in zip(written, names, strict=True):
         # No trailing newline: not every reader trims one.
-        _write(path, environment[name].rstrip("\r\n"))
+        _write(path, environment.get(name, "").rstrip("\r\n"))
     return written
 
 

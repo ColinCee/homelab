@@ -9,6 +9,7 @@ services:
     ports:
       - "100.100.146.119:53:53/udp"
       - "100.100.146.119:53:53/tcp"
+      - "127.0.0.1:9153:9153"
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:

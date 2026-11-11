@@ -20,9 +20,13 @@ def test_only_alloy_reaches_the_stores_write_paths() -> None:
     assert members("ingest") == {"alloy", "prometheus", "logs", "traces"}
     assert members("stores") == {"gateway", "prometheus", "logs", "traces"}
     # The gateway reads; nothing but the stores and it, and Alloy, shares a network with a store.
-    # Prometheus also scrapes the flight tracker's probe.
+    # Prometheus also scrapes the flight tracker's probe, and takes host-metrics' writes from the
+    # host on a network of its own.
     for name in ("prometheus", "logs", "traces"):
-        assert set(SERVICES[name]["networks"]) <= {"ingest", "stores", "alerting", "probe"}, name
+        allowed = {"ingest", "stores", "alerting", "probe", "host-writes"}
+        assert set(SERVICES[name]["networks"]) <= allowed, name
+    assert members("host-writes") == {"prometheus"}
+    assert COMPOSE["networks"]["host-writes"]["internal"] is True
 
 
 def test_only_prometheus_and_the_gateway_reach_alertmanager() -> None:

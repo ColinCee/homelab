@@ -12,6 +12,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.TOKEN }}
           PASSWORD: ${{ secrets.PASSWORD }}
+          LATER: ${{ secrets.LATER || '' }}
           NOT_A_SECRET: ${{ github.sha }}
         run: scripts/render-secrets.sh
 """
@@ -25,13 +26,13 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_the_workflows_render_step_is_the_list_of_secrets(repo: Path) -> None:
-    assert secret_names(repo) == ("PASSWORD", "TOKEN")
+    assert secret_names(repo) == ("LATER", "PASSWORD", "TOKEN")
 
 
 def test_each_secret_is_its_raw_value_open_to_containers_but_not_host_users(repo: Path) -> None:
     written = render(repo, {"TOKEN": 'p$"#\\', "PASSWORD": "pw\n"})
 
-    assert written == (repo / "secrets/password", repo / "secrets/token")
+    assert written == (repo / "secrets/later", repo / "secrets/password", repo / "secrets/token")
     assert (repo / "secrets/token").read_text() == 'p$"#\\'
     assert (repo / "secrets/password").read_text() == "pw"
     assert (repo / "secrets/token").stat().st_mode & 0o777 == 0o444
@@ -54,3 +55,11 @@ def test_a_missing_secret_writes_nothing(repo: Path) -> None:
         render(repo, {"TOKEN": "a"})
 
     assert not (repo / "secrets").exists()
+
+
+def test_a_secret_that_may_be_unset_is_an_empty_file_until_it_is_set(repo: Path) -> None:
+    render(repo, {"TOKEN": "a", "PASSWORD": "b", "LATER": ""})
+    assert (repo / "secrets/later").read_text() == ""
+
+    render(repo, {"TOKEN": "a", "PASSWORD": "b", "LATER": "made"})
+    assert (repo / "secrets/later").read_text() == "made"
