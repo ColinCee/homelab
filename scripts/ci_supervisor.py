@@ -159,9 +159,8 @@ CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 # Each VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json), kept
-# after the VM until judged. Not through GitHub
-# artifacts: they count against the account's storage quota, and once it is full every
-# upload fails.
+# after the VM until judged. Not through GitHub artifacts: they count against the account's
+# storage quota, and once it is full every upload fails.
 OUTBOX_DIR = Path("/var/lib/homelab-ci/outbox")
 # What the fc-cache action writes last, once the tar after it is complete.
 OUTBOX_HEADER = re.compile(rb"homelab-ci-cache v1 run=([0-9]{1,20}) attempt=([0-9]{1,5})\n")
@@ -170,8 +169,8 @@ OUTBOX_HEADER = re.compile(rb"homelab-ci-cache v1 run=([0-9]{1,20}) attempt=([0-
 OUTBOX_RETRY_SECONDS = 60
 OUTBOX_WAIT_SECONDS = 3600
 RUNNER_UID = 1001  # the runner user inside the VM image
-# What the CI runner is doing: rewritten after every poll, readable
-# by anyone on the host. Nothing secret goes in it (see status()).
+# What the CI runner is doing: rewritten after every poll, readable by anyone on the host.
+# Nothing secret goes in it (see status()).
 STATUS_FILE = Path("/var/lib/homelab-ci/status/machines.json")
 CONSOLE_LINE_MAX = 4096
 # What the job really needed (cache left out), the VM's memory and the kernel's out-of-memory
@@ -217,17 +216,17 @@ FIRST_BUILD_WAIT_MAX = 600.0
 TASK_WORKFLOW = "build"
 LIGHT_OTHER_WAIT_MAX = 300.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
-# wait (see wait_kind) and the reason of its longest kind, for speed
-# reports. Lines older than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS.
-# "unseen" is the time from GitHub queueing the job to the supervisor first seeing it (a
-# restart counts again from GitHub's queueing).
+# wait (see wait_kind) and the reason of its longest kind, for speed reports. Lines older
+# than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS. "unseen" is the
+# time from GitHub queueing the job to the supervisor first seeing it (a restart counts
+# again from GitHub's queueing).
 WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
 WAIT_KINDS = ("memory", "disk", "slots", "booting", "ready", "unseen", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
 WAITS_PRUNE_SECONDS = 3600.0
-# The longest-waiting queued job's seconds so far per kind of wait, for the "stuck waiting
-# for a test VM" alert (Alloy's textfile collector), at most every WAIT_METRICS_SECONDS: a
-# write every 2 s poll would only add load to the shared disk.
+# The longest-waiting queued job's seconds so far per kind of wait, for OpenObserve (Alloy's
+# textfile collector), at most every WAIT_METRICS_SECONDS: a write every 2 s poll would only
+# add load to the shared disk.
 WAIT_METRICS = MEMORY_METRICS.with_name("ci-waits.prom")
 WAIT_METRICS_SECONDS = 15.0
 # A VM is told how long each queued job of its repo and label had waited here, and why
@@ -1921,8 +1920,8 @@ def write_wait_metrics(state: State, now: float) -> None:
 
 
 def note_poll(state: State, ok: bool, now: float) -> None:
-    """Counts failed polls in a row for the "CI supervisor's poll keeps failing" alert: no VM
-    starts while every poll fails. The metrics are written at once when polls start or stop
+    """Counts failed polls in a row, for OpenObserve: no VM starts while every poll fails. The
+    metrics are written at once when polls start or stop
     failing, and otherwise at most every WAIT_METRICS_SECONDS."""
     was_failing = state.poll_failures > 0
     if ok:
