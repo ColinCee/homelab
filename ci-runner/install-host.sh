@@ -9,12 +9,11 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
-# Slot counts and role (slots.sh), written to /etc/homelab-ci below so the supervisor, network and slot users match:
+# Slot counts (slots.sh), written to /etc/homelab-ci below so the supervisor, network and slot users match:
 #   sudo SLOTS=4 ci-runner/install-host.sh
 # shellcheck source=ci-runner/slots.sh
 source "$here/slots.sh"
 service=homelab-ci-supervisor.service
-[[ $ROLE == beelink ]] || service=homelab-ci-pc.service
 dest=/usr/local/lib/homelab-ci
 
 # KSM merges identical memory pages across processes, which leaks data between
@@ -83,37 +82,30 @@ if ! cmp -s "$here/systemd/fstrim-hourly.conf" "$trim"; then
   systemctl daemon-reload
   systemctl restart fstrim.timer
 fi
-# The SSD's lifetime writes and wear, for OpenObserve (scripts/ssd_wear.py). The PC guest has no NVMe device of its own.
-if [[ $ROLE == beelink ]]; then
-  # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to write into another user's
-  # folder (cap_drop ALL); sticky and open to all, as Colin's user timers (PC backups) write here too.
-  install -d -o root -g root -m 1777 /var/lib/homelab-metrics
-  install -d -o root -g root -m 0755 "$dest"
-  install -o root -g root -m 0644 "$here/../scripts/ssd_wear.py" "$dest/ssd_wear.py"
-  for unit in homelab-ssd-wear.service homelab-ssd-wear.timer; do
-    install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
-  done
-  systemctl daemon-reload
-  systemctl enable --now homelab-ssd-wear.timer
-fi
+# The SSD's lifetime writes and wear, for OpenObserve (scripts/ssd_wear.py).
+# Alloy's textfile metrics. Root owns it, as the backup container's root has no right to write into another user's
+# folder (cap_drop ALL); sticky and open to all, as Colin's user timers (PC backups) write here too.
+install -d -o root -g root -m 1777 /var/lib/homelab-metrics
+install -d -o root -g root -m 0755 "$dest"
+install -o root -g root -m 0644 "$here/../scripts/ssd_wear.py" "$dest/ssd_wear.py"
+for unit in homelab-ssd-wear.service homelab-ssd-wear.timer; do
+  install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now homelab-ssd-wear.timer
 
 # The supervisor, the network rules and the slot counts take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the
 # rules reload in one transaction, so a restart takes seconds and cuts off nothing.
 changed() { ! cmp -s "$1" "$2"; }
 restart=false
-# The door's user before any restart: the supervisor opens the door at start only if it exists.
-if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub ]] && ! id ci-peer >/dev/null 2>&1; then
-  useradd --system --user-group --home-dir / --shell /bin/sh ci-peer
-  restart=true
-fi
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
   "net/homelab-ci.nft:$dest/net/homelab-ci.nft" "net/setup-net.sh:$dest/net/setup-net.sh" \
   "systemd/homelab-ci-net.service:/etc/systemd/system/homelab-ci-net.service" \
   "systemd/$service:/etc/systemd/system/$service"; do
   if changed "$here/${pair%%:*}" "${pair#*:}"; then restart=true; fi
 done
-for setting in "slots:$SLOTS" "light-slots:$LIGHT_SLOTS" "role:$ROLE" "peer-slots-max:$PEER_SLOTS"; do
+for setting in "slots:$SLOTS" "light-slots:$LIGHT_SLOTS"; do
   [[ "$(cat "/etc/homelab-ci/${setting%%:*}" 2>/dev/null)" == "${setting#*:}" ]] || restart=true
 done
 systemctl is-active --quiet "$service" || restart=true
@@ -138,8 +130,6 @@ else
   install -d -o root -g root -m 0700 /etc/homelab-ci
   echo "$SLOTS" > /etc/homelab-ci/slots
   echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
-  echo "$ROLE" > /etc/homelab-ci/role
-  echo "$PEER_SLOTS" > /etc/homelab-ci/peer-slots-max
 
   install_vm_files
   install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
@@ -151,7 +141,7 @@ else
   systemctl enable --now homelab-ci-net.service
   # Apply rule changes in place; restarting the unit would remove the taps.
   "$dest/net/setup-net.sh" up
-  if $was_running || [[ $ROLE == pc ]]; then
+  if $was_running; then
     systemctl enable --now "$service"
     how="network up, supervisor restarted"
   else
@@ -159,70 +149,13 @@ else
   fi
 fi
 
-# Each host takes main on its own (update.sh --follow, every minute): the Beelink from GitHub, the PC from the Beelink.
+# The Beelink takes main on its own (update.sh --follow, every minute).
 for unit in homelab-ci-update.service homelab-ci-update.timer; do
   install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
 done
 # The Beelink's load test, which update.sh starts when its slot count has no result (ci-runner.md).
-if [[ $ROLE == beelink ]]; then
-  install -o root -g root -m 0644 "$here/systemd/homelab-ci-load-test.service" /etc/systemd/system/
-fi
+install -o root -g root -m 0644 "$here/systemd/homelab-ci-load-test.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now homelab-ci-update.timer
 
-# The PC's door: user ci-peer may only reach the supervisor's socket, with the PC guest's
-# key (/etc/homelab-ci/peer.pub) from the PC's address (/etc/homelab-ci/peer-from).
-door_conf=/etc/ssh/sshd_config.d/60-ci-peer.conf door_keys=/etc/ssh/ci-peer_authorized_keys
-# Its own port on the Tailscale address: Tailscale SSH answers port 22 there and would skip
-# the forced command. sshd is socket-activated here, so the port is the socket's.
-# Named to sort after every other drop-in: each starts with `ListenStream=`, which drops the
-# ports set before it (Ubuntu's generator writes addresses.conf, and the Beelink has listen.conf).
-door_socket=/etc/systemd/system/ssh.socket.d/zz-ci-peer.conf door_port=2222
-if ((PEER_SLOTS > 0)) && [[ -f /etc/homelab-ci/peer.pub && -f /etc/homelab-ci/peer-from ]]; then
-  command -v socat >/dev/null || apt-get install -y -qq socat >/dev/null
-  from=$(tr -d '[:space:]' < /etc/homelab-ci/peer-from)
-  [[ $from =~ ^[0-9.]+$ ]] || { echo "peer-from is not an address" >&2; exit 2; }
-  # -t: after the PC's side closes, its reply (a GitHub call away) still comes back.
-  socat_cmd="/usr/bin/socat -t 60 STDIO UNIX-CONNECT:/run/homelab-ci-peer/peer.sock"
-  echo "from=\"$from\",restrict,command=\"$socat_cmd\" $(head -n 1 /etc/homelab-ci/peer.pub)" > "$door_keys.new"
-  chmod 0644 "$door_keys.new"
-  mv "$door_keys.new" "$door_keys"
-  cat > "$door_conf.new" <<EOF
-Match User ci-peer
-    AuthorizedKeysFile $door_keys
-    AuthenticationMethods publickey
-    ForceCommand $socat_cmd
-    AllowTcpForwarding no
-    AllowAgentForwarding no
-    AllowStreamLocalForwarding no
-    X11Forwarding no
-    PermitTTY no
-    PermitTunnel no
-    MaxSessions 1
-    ClientAliveInterval 30
-    ClientAliveCountMax 3
-EOF
-  mv "$door_conf.new" "$door_conf"
-  # sshd -t needs this; socket activation makes it only when a connection comes.
-  install -d -m 0755 /run/sshd
-  address=$(tailscale ip -4 | head -n 1)
-  [[ $address =~ ^[0-9.]+$ ]] || { echo "no Tailscale address for the door" >&2; exit 1; }
-  printf '[Socket]\nListenStream=%s:%s\n' "$address" "$door_port" > "$door_socket.new"
-  listening() { ss -Hltn "sport = :$door_port" | grep -q .; }
-  # Also when the port is not up yet: a run cut off after writing the file never restarted it.
-  if ! cmp -s "$door_socket.new" "$door_socket" || ! listening; then
-    install -D -m 0644 "$door_socket.new" "$door_socket"
-    sshd -t && systemctl daemon-reload && systemctl restart ssh.socket
-  fi
-  rm -f "$door_socket.new"
-  listening || { echo "the door is not listening on $door_port" >&2; exit 1; }
-  door="door open to $from on $address:$door_port"
-else
-  if [[ -f $door_conf || -f $door_socket ]]; then
-    rm -f "$door_conf" "$door_keys" "$door_socket"
-    systemctl daemon-reload && systemctl restart ssh.socket
-  fi
-  door="door closed"
-fi
-
-echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots ($ROLE), $how; $door."
+echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, $how."
