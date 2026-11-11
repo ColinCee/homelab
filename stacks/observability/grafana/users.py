@@ -8,6 +8,7 @@ import os
 import time
 import urllib.error
 import urllib.request
+from typing import Any
 
 URL = os.environ.get("GRAFANA_URL", "http://grafana:3000")
 # Grafana redirects any other name to its own (compose.yaml, GF_SERVER_ENFORCE_DOMAIN).
@@ -15,7 +16,7 @@ HOST = os.environ.get("GRAFANA_DOMAIN", "beelink.tail4f465e.ts.net")
 LOGIN = "agents"
 
 
-def call(method: str, path: str, body: object = None, auth: str = "") -> object:
+def call(method: str, path: str, body: object = None, auth: str = "") -> Any:
     auth = auth or f"{os.environ['GRAFANA_ADMIN_USER']}:{os.environ['GRAFANA_ADMIN_PASSWORD']}"
     request = urllib.request.Request(
         URL + path,
@@ -60,7 +61,6 @@ def main() -> None:
         call("POST", "/api/admin/users", body)
         user = call("GET", f"/api/users/lookup?loginOrEmail={LOGIN}")
         print("created the agents login", flush=True)
-    assert isinstance(user, dict)
     # A changed secret or a hand-set role is put back. Grafana refuses to set the password it has.
     try:
         call("GET", "/api/user", auth=f"{LOGIN}:{password}")
