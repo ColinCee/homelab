@@ -27,8 +27,7 @@ REPOSITORY = "ColinCee/homelab"
 REF = "refs/heads/main"
 EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
 WORKFLOWS = frozenset(
-    f"{REPOSITORY}/.github/workflows/{name}@{REF}"
-    for name in ("deploy.yaml", "server-health.yaml")
+    f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
 )
 # Who may start a job here: Colin, and Renovate merging its own pull requests.
 # The actor is checked by ID. The triggering actor (who started a re-run) is only
