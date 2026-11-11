@@ -1,6 +1,6 @@
 [Unit]
 Description=Copy Home Assistant's history database consistently, for the nightly backup
-Documentation=https://github.com/ColinCee/homelab/blob/main/docs/runbooks/backups.md
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/architecture.md#backups
 
 [Service]
 Type=oneshot

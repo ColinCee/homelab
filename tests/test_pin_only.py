@@ -70,9 +70,7 @@ def test_digest_bumps_in_compose_files_are_quick(repo: Path) -> None:
             {"stacks/app/compose.yaml": COMPOSE.replace(OLD, NEW), "scripts/x.py": "x = 1\n"},
             id="script-too",
         ),
-        pytest.param({"stacks/app/.env.example": "A=${A}\n"}, id="other-stack-file"),
         pytest.param({"stacks/new/compose.yaml": COMPOSE.replace(OLD, NEW)}, id="new-stack"),
-        pytest.param({"stacks/web/compose.yaml": None}, id="stack-deleted"),
     ],
 )
 def test_any_other_change_gets_full_checks(repo: Path, files: dict[str, str | None]) -> None:

@@ -1,6 +1,6 @@
 [Unit]
 Description=Prune unused Docker images and build cache, and test-restore a file from the latest backup
-Documentation=https://github.com/ColinCee/homelab/blob/main/docs/runbooks/backups.md
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/architecture.md#backups
 
 [Service]
 Type=oneshot

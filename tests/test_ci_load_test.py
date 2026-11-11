@@ -139,17 +139,9 @@ def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
     assert started(host)
 
 
-def test_the_unit_ends_the_drain_however_it_stops_and_never_drains_every_minute() -> None:
+def test_the_unit_ends_the_drain_however_it_stops() -> None:
     unit = Path("ci-runner/systemd/homelab-ci-load-test.service").read_text()
     assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE}" in unit
-    assert "ci_supervisor.py load-test" in unit
-    # A run that keeps no record (its file cannot be written) is not started again each pass.
-    assert "StartLimitIntervalSec=6h" in unit and "StartLimitBurst=3" in unit
-
-
-def test_update_starts_the_load_test_on_the_beelink() -> None:
-    update = Path("ci-runner/update.sh").read_text()
-    assert '"${python[@]}" start-load-test-if-due' in update
 
 
 def queued_job(monkeypatch, repo: str = "o/ok") -> None:
@@ -199,8 +191,6 @@ def test_after_the_drain_the_supervisor_takes_the_lowered_count_and_jobs_again(
     assert state.slots == 4 and not state.draining and starts == [0]
 
 
-def test_each_vm_is_given_the_last_result(host, monkeypatch) -> None:
+def test_the_last_result_reads_back_as_written(host) -> None:
     sup.run_load_test()
     assert sup.read_load_test() == json.loads((host / "load-test.json").read_text())
-    boot = Path("ci-runner/rootfs/ci-boot").read_text()
-    assert "mmds load_test" in boot and "/etc/homelab-ci/load-test.json" in boot

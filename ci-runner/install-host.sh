@@ -132,7 +132,7 @@ else
   fi
 
   # Host-side settings, never in the repo: the slot count, and the GitHub token
-  # (written by hand, see ci-runner.md). Which repos are served is the token's
+  # (written by hand, see docs/architecture.md, "CI runner"). Which repos are served is the token's
   # repository access. Written before the network, which reads the slot count.
   install -d -o root -g root -m 0700 /etc/homelab-ci
   echo "$SLOTS" > /etc/homelab-ci/slots
@@ -159,7 +159,7 @@ fi
 for unit in homelab-ci-update.service homelab-ci-update.timer; do
   install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
 done
-# The Beelink's load test, which update.sh starts when its slot count has no result (ci-runner.md).
+# The Beelink's load test, which update.sh starts when its slot count has no result (docs/architecture.md, "CI runner").
 install -o root -g root -m 0644 "$here/systemd/homelab-ci-load-test.service" /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now homelab-ci-update.timer

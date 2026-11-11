@@ -1,5 +1,5 @@
 // Beelink: /etc/apt/apt.conf.d/52unattended-upgrades-local (install steps in
-// docs/runbooks/deploying-services.md). Check a change with
+// docs/recovery.md, "Rebuilding the Beelink"). Check a change with
 // `sudo unattended-upgrade --dry-run -d`.
 
 Unattended-Upgrade::Allowed-Origins {

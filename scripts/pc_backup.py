@@ -2,7 +2,7 @@
 
 A project opts in with a `backup.toml` in its folder (under the projects root):
 
-    # Data of this project that is not in Git (homelab: docs/runbooks/backups.md).
+    # Data of this project that is not in Git (homelab: docs/architecture.md, "Backups").
     paths = ["~/.servo/servo.db", "~/.servo/bench"]  # files or folders; ~ is home
     exclude = ["shots", "*.tmp"]                      # names left out below a folder
 

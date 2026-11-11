@@ -8,7 +8,7 @@ GitHub for a just-in-time runner registration (good for exactly one job) and boo
 VM with run-vm.sh, which receives that registration through Firecracker's metadata
 service. The GitHub token stays on
 the host; a VM only ever sees its one-job registration. A repository that is not
-private, or not Colin's, is never served. See docs/runbooks/ci-runner.md.
+private, or not Colin's, is never served. See docs/architecture.md, "CI runner".
 
 Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervisor.service.
 """
@@ -108,7 +108,8 @@ STANDBY_TIMEOUT_SECONDS = 2 * 3600
 PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
 # Each repo's read-only cache disk: its package caches and installs, built from what a
-# green push to its default branch leaves on its VM's outbox disk (see ci-runner.md).
+# green push to its default branch leaves on its VM's outbox disk (docs/architecture.md,
+# "CI runner").
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
@@ -184,7 +185,7 @@ WAIT_METRICS_SECONDS = 15.0
 # /etc/homelab-ci/waits.json for the job's own record.
 VM_WAITS_MAX = 50
 # The host's own load test (ci-runner/tests/test-load.sh), run by LOAD_TEST_UNIT once for each
-# slot count and version of the test ("Changing the number of slots" in ci-runner.md). Its
+# slot count and version of the test (docs/architecture.md, "CI runner"). Its
 # result goes in the status file and in each VM at /etc/homelab-ci/load-test.json.
 LOAD_TEST_FILE = Path("/var/lib/homelab-ci/load-test.json")
 LOAD_TEST_SCRIPT = Path("/usr/local/lib/homelab-ci/test-load.sh")
@@ -702,7 +703,7 @@ def remember(path: Path, text: str) -> None:
 
 
 def recalled_last_job() -> Want:
-    """The last build job's repo and cache label ("" for none, as from an older file)."""
+    """The last build job's repo and cache label ("" for none)."""
     try:
         lines = LAST_REPO_FILE.read_text().split()
     except OSError:

@@ -2,8 +2,9 @@
 
 Stores the private key as the PUBLIC_STATS_KEY GitHub secret, its only copy,
 and prints the public key for HOMELAB_PUBLIC_KEY in the blog's wrangler.json.
-Run it yourself: `uv run python scripts/public_stats_key.py`. See
-docs/public-stats.md.
+Run it yourself: `uv run python scripts/public_stats_key.py`, commit the
+public key to the blog, then redeploy both. A stolen private key could only
+post these numbers.
 """
 
 import subprocess

@@ -45,7 +45,7 @@ jobs:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
           HEALTHCHECKS_PING_URL: ${{ secrets.HEALTHCHECKS_PING_URL }}
-          # Grafana's admin password and key (ingest, unused since OpenObserve), and the readers' logins.
+          # Grafana's admin password (root) and secret key (ingest), and the readers' logins.
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           OPENOBSERVE_INGEST_PASSWORD: ${{ secrets.OPENOBSERVE_INGEST_PASSWORD }}
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}

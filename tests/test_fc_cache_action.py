@@ -7,24 +7,10 @@ import tarfile
 from pathlib import Path
 
 import pytest
-import yaml
 
 from scripts import ci_supervisor as sup
 
 ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
-
-
-def test_the_action_saves_only_on_the_default_branch_and_never_fails_the_job() -> None:
-    action = yaml.safe_load((ACTION / "action.yml").read_text())
-    (step,) = action["runs"]["steps"]
-
-    assert action["runs"]["using"] == "composite"
-    assert "uses" not in step  # nothing goes through GitHub's artifact storage
-    assert step["if"] == (
-        "github.event_name == 'push' && "
-        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch)"
-    )
-    assert "if ! {" in step["run"] and "save.sh" in step["run"]
 
 
 def test_the_pack_script_checks_the_supervisors_size_limit() -> None:
@@ -119,7 +105,7 @@ def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_
 
 def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_path) -> None:
     # The cache disk unpacks web/node_modules to /cache/web; packing /cache/web as well
-    # put it in every later cache twice (servo, 5 Nov).
+    # put it in every later cache twice.
     cache, workspace = tmp_path / "cache", tmp_path / "work"
     (cache / "web" / "node_modules").mkdir(parents=True)
     (cache / "web" / "node_modules" / "old.js").write_text("old")

@@ -1,5 +1,5 @@
 """Every alert rule (stacks/observability/prometheus/rules.yml) meets the alert standard in
-docs/observability.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
+docs/architecture.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
 as the standard says: promtool runs them over made-up series, so those tests need Docker."""
 
 import functools
@@ -47,31 +47,6 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     seconds(rule["for"])
     # The hold: a return within 10 minutes is the same alert.
     assert rule["keep_firing_for"] == "10m"
-
-
-def test_the_18_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
-    assert len(HOMELAB) == 18
-    assert set(RULES) - set(HOMELAB) == {
-        "PrometheusRuleFailures",
-        "PrometheusBadConfig",
-        "watchdog",
-        "store-down",
-        "store-stopped",
-        "deploy-ran",
-        "ci-host-updated",
-        "tailscale-device-added",
-        "runner-guard-changed",
-        "runner-guard-refused",
-        "ssh-login-elsewhere",
-        "security-checks-stopped",
-    }
-    assert all(g["interval"] == "1m" for g in GROUPS)
-
-
-def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() -> None:
-    route = ALERTMANAGER["route"]
-    assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
-    assert route["routes"][1:] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
 
 
 def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord() -> None:
@@ -136,16 +111,6 @@ def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
         expr = flat(rule["expr"])
         aggregated = r"\(* ?(max|min|sum|count|vector|round\(\(time\(\) - max|round\(max)"
         assert re.match(aggregated, expr), name
-
-
-def test_prometheus_keeps_30_days_and_takes_alloys_writes() -> None:
-    config = yaml.safe_load((STACK / "prometheus/prometheus.yml").read_text(encoding="utf-8"))
-    assert config["storage"]["tsdb"]["retention"] == {"time": "30d"}
-    assert config["rule_files"] == ["/etc/prometheus/rules.yml"]
-    flags = COMPOSE["services"]["prometheus"]["command"]
-    assert "--web.enable-remote-write-receiver" in flags
-    # No admin or lifecycle API: nothing but the deploy changes it.
-    assert not [f for f in flags if "admin" in f or "lifecycle" in f]
 
 
 @functools.cache

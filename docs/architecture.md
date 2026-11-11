@@ -1,30 +1,133 @@
 # Architecture
 
-How changes reach the Beelink, and who can reach what runs on it.
+How the Beelink's parts connect: the one home for what the code does not say. Code comments point to these
+sections; hand steps after a failure are in [recovery](recovery.md).
 
-```mermaid
-flowchart TB
-  subgraph GitHub
-    pr[Pull request] --> ci[CI, on GitHub's runners]
-    ci --> main[Merge to main]
-  end
-  subgraph Beelink["Beelink (Ubuntu, Docker)"]
-    guard{Runner guard}
-    deploy[Deploy runner]
-    stacks[Compose stacks]
-    cirunner[CI runner: throwaway Firecracker VMs, no LAN]
-  end
-  colin[Colin] -->|merges| main
-  renovate[Renovate] -->|merges version bumps| main
-  main --> guard -->|Colin, Renovate| deploy --> stacks
-  privaterepos[Private repos' CI] --> cirunner
-  you[Colin, via Tailscale] --> stacks
-  public[Public, via Cloudflare Tunnel] --> stacks
-  stacks -->|nightly backups| r2[Cloudflare R2]
-  stacks -->|alerts| discord[Discord]
-```
+![Architecture](architecture.svg)
 
-- **Merging is deploying.** A merge to `main` runs [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy runner, which writes the GitHub secrets it names to files and applies the stacks the change touched (all of them when shared deploy files changed). The [runner guard](../scripts/runner_job_guard.py) kills any job not started by Colin or Renovate.
-- **Two runners on one host.** The deploy runner holds the secrets and drives Docker, so only this repo's deploys run there. The [CI runner](runbooks/ci-runner.md) runs other private repos' CI in throwaway VMs that reach the internet but not the home network.
-- **Alerts go to Colin in Discord**, each saying why it matters and what to do. See [observability](observability.md#alerts).
-- **Access.** Admin pages bind to the Tailscale address; only the flight tracker's API is public, through Cloudflare Tunnel. Containers on Docker networks reach the internet and each other, not the host, LAN or tailnet.
+## Deploys
+
+- **Merging is deploying.** A merge to `main` runs [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy
+  runner: it writes the secrets its render step names to `secrets/` (raw, mode 0444 in a 0700 folder) and runs
+  [`deploy.sh`](../scripts/deploy.sh) for the stacks changed since the last full deploy
+  ([`deploy.py`](../scripts/deploy.py)). A changed GitHub secret reaches a stack only on its next deploy:
+  `scripts/deploy.sh <stack>` on the host.
+- **Who may deploy.** The deploy runner controls the host through Docker, so the
+  [runner guard](../scripts/runner_job_guard.py) refuses every job but its `WORKFLOWS` from `main`, started by
+  `ColinCee` or `renovate[bot]`. It is installed root-owned and deploys never update it, so changing it takes a
+  reinstall ([recovery](recovery.md#runner-guard)). It does not stop a compromised action inside an allowed workflow:
+  actions are pinned by SHA. Admins can bypass the `main` ruleset; Renovate cannot.
+- **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
+  - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
+    the service needs it;
+  - `labels: {homelab.config-hash: ${STACK_CONFIG_HASH:-}}` on a service that reads a mounted file without reloading,
+    and `init: true` when its main process ignores SIGTERM as PID 1;
+  - each secret a Compose `secrets:` file from `../../secrets/`, listed in `deploy.yaml`'s render step, never in
+    `environment:`, which `docker inspect` shows;
+  - `systemd/<stack>-*.service` and `.timer` pairs install as user units (the host has linger on) and write
+    `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
+  - another stack's network is joined as `external: true`.
+- **Removing a stack:** deleting its folder removes nothing from the host. Stop its timers and containers by hand,
+  keep volumes until their data is backed up or retired, then delete the folder.
+
+## Network and access
+
+- Nothing accepts a connection from the internet. Admin pages bind to the Tailscale address, and Docker waits for it
+  at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
+  ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
+  reaching-homelab-devices skill.
+- The flight tracker's API is public through Cloudflare Tunnel, an outbound connection, so filtering it belongs at
+  Cloudflare.
+- Docker's bridge containers and the CI VMs reach the internet, not the host, LAN or tailnet: two nftables tables in
+  [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft), whose header lists what they leave open. A service that needs
+  the host uses host networking, as Home Assistant, the probes and `internal-names` do.
+
+## CI runner
+
+CI for Colin's private repositories, each job in its own Firecracker VM, thrown away after one job. Why Firecracker,
+and how fast: [ADR 0002](adr/0002-ci-runner.md).
+
+| `runs-on` | VM |
+|---|---|
+| `[self-hosted, linux, x64, homelab-fc]` | 4 vCPU and 4 GiB alone, 2 and 2 GiB beside other jobs; the repo's cache disk |
+| add `fc-cache-<owner>--<name>` | Another served repo's cache disk |
+
+- The image carries the usual tools ([`rootfs/`](../ci-runner/rootfs/), versions in
+  [`versions.env`](../ci-runner/versions.env)), so a job needs no setup actions. Each VM gets its repo's cache disk
+  at `/cache`, from the last green push to the default branch; a job saves it with
+  [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
+- Only private repos the token sees, with no other writer, are served
+  ([`ci_supervisor.py`](../scripts/ci_supervisor.py), `served_repos`). Before making one public, move its workflows
+  to GitHub's runners and take it off the token.
+- The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
+  VMs run at CPU weight 20 against the services' 100. Why a job waits: `journalctl -u homelab-ci-supervisor | grep
+  'has waited'`.
+- Changes go in by merging: `homelab-ci-update.timer` installs main within about 2 minutes (5 when the image
+  rebuilds) and running jobs carry on ([`update.sh`](../ci-runner/update.sh)). Slots, standby VMs and
+  the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
+  the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
+  connection.
+- [`ci-runner/tests/audit.sh`](../ci-runner/tests/audit.sh) is the gate: run it after every Firecracker, kernel or
+  runner upgrade.
+
+## Monitoring and alerts
+
+Alloy collects metrics into Prometheus and logs and traces into VictoriaLogs and VictoriaTraces, 30 days each;
+Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
+stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
+agents as the `agents` login. Dashboards come from Git: the building-dashboards skill.
+
+| Problem | Who warns |
+|---|---|
+| The Beelink off, or alerting stopped | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io emails and posts when it stops |
+| A rule failing | "An alert rule is failing" |
+| Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
+| A deploy failed | GitHub's email |
+
+**The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
+says what to do; anything else is a dashboard number. Rules are in
+[`rules.yml`](../stacks/observability/prometheus/rules.yml), posted by
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #uptime. Alertmanager publishes no
+port, since its API takes silences without a login: `docker exec observability-alertmanager-1 amtool alert query
+--alertmanager.url=http://localhost:9093`.
+
+| Level | When | Post |
+|---|---|---|
+| `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h |
+| `week` | Something is running out or slipping | No mention, again daily |
+
+- A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
+  means the number recovered, not that anything was fixed.
+- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
+  arm, and not those of a job that may not have run yet.
+- Noise budget: at most one post a day over 14 days. Before adding or loosening a rule, replay it:
+  `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
+  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink: those post as real.
+
+Traps:
+
+- Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
+  `job="ci-vms"`, present only while a slot runs a VM.
+- Home Assistant, CoreDNS and Caddy run on the host's network, which Alloy cannot reach;
+  [`probes.py`](../stacks/observability/probes.py) checks them instead. The flight tracker's `probe_success` is 1
+  only when its public API says its data is live; the public sites' (`job="integrations/blackbox/sites"`) only on a
+  200.
+- `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;
+  one in another form still reaches the log store.
+
+## Backups
+
+[restic](../stacks/backup/backup.sh) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
+encrypted: Home Assistant's config and a consistent copy of its history, the flight tracker's heatmap volume, and
+`~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
+([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
+6 monthly snapshots, reads back every byte on Sundays, and uploads nothing past 8 GB, since R2 bills past 10 GB.
+`RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Alerts
+cover a missed night, a stale PC backup, a full store and a failed upkeep. Restoring: [recovery](recovery.md).
+
+## Public stats
+
+The `public-stats` container pushes a few numbers every 5 minutes, signed with an Ed25519 key, to the blog's
+Worker at colincheung.dev/homelab.json, which the home page shows. They are coarse on purpose, since anyone can poll
+and keep a history: the fields and why are in [`public_stats.py`](../stacks/observability/public_stats.py), the key
+and its rotation in [`public_stats_key.py`](../scripts/public_stats_key.py).

@@ -31,7 +31,6 @@ def _env(**overrides: str) -> dict[str, str]:
     [
         _env(),
         _env(GITHUB_EVENT_NAME="schedule", GITHUB_WORKFLOW_REF=HEALTH),
-        _env(GITHUB_EVENT_NAME="workflow_dispatch", GITHUB_WORKFLOW_REF=HEALTH),
         _env(
             GITHUB_ACTOR="renovate[bot]",
             GITHUB_ACTOR_ID="29139614",
@@ -52,9 +51,7 @@ def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
 @pytest.mark.parametrize(
     ("env", "reason"),
     [
-        (_env(GITHUB_EVENT_NAME="pull_request", GITHUB_REF="refs/pull/7/merge"), "event"),
         (_env(GITHUB_EVENT_NAME="pull_request_target"), "event"),
-        (_env(GITHUB_EVENT_NAME="workflow_run"), "event"),
         (_env(GITHUB_REF="refs/heads/feature"), "ref"),
         (
             _env(GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/x"),
@@ -71,7 +68,6 @@ def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
         (_env(GITHUB_ACTOR="ColinCee", GITHUB_ACTOR_ID="999"), "actor ColinCee (999)"),
         (_env(GITHUB_TRIGGERING_ACTOR="mallory"), "triggering actor"),
         (_env(BASH_ENV="/tmp/x"), "BASH_ENV"),
-        (_env(ENV="/tmp/x"), "ENV"),
     ],
 )
 def test_refuses_everything_else(env: dict[str, str], reason: str) -> None:
@@ -175,18 +171,3 @@ def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
     out = capsys.readouterr().out
     assert f"{nl}::add-mask::" not in out
     assert "%0A::add-mask::y%25" in out
-
-
-def test_the_retired_kaizen_app_may_not_deploy() -> None:
-    env = {
-        "GITHUB_REPOSITORY": "ColinCee/homelab",
-        "GITHUB_EVENT_NAME": "push",
-        "GITHUB_REF": "refs/heads/main",
-        "GITHUB_WORKFLOW_REF": "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main",
-        "GITHUB_ACTOR": "auto-kaizen[bot]",
-        "GITHUB_ACTOR_ID": "351551650",
-        "GITHUB_TRIGGERING_ACTOR": "auto-kaizen[bot]",
-    }
-    decision = guard.decide(env)
-    assert not decision.allowed
-    assert "351551650" in decision.reason

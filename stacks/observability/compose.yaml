@@ -413,7 +413,7 @@ services:
       - openobserve-history
 
   # Pushes a few numbers to the blog's home page; nothing connects in. See
-  # docs/public-stats.md for what it publishes.
+  # docs/architecture.md, "Public stats" for what it publishes.
   public-stats:
     build:
       context: .
@@ -424,7 +424,7 @@ services:
     pull_policy: build
     restart: unless-stopped
     command: ["python", "-I", "/public_stats.py"]
-    # Passes SIGTERM on (docs/runbooks/deploying-services.md, "Adding a stack").
+    # Passes SIGTERM on (docs/architecture.md, "Deploys").
     init: true
     read_only: true
     security_opt:
