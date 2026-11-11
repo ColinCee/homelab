@@ -26,7 +26,8 @@ run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/ren
 
 [tasks.test]
 description = "Run unit tests"
-run = "uv run python -m pytest tests/ -q"
+# The slowest tests in every run, so a slow one shows where it starts.
+run = "uv run python -m pytest tests/ -q --durations=8"
 
 [tasks."validate:compose"]
 description = "Validate Compose without changing local secrets"
