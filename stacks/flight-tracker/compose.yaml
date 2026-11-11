@@ -18,19 +18,29 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # The token is read from a file, so it stays out of the process list and
-    # docker inspect.
-    command: ["tunnel", "run"]
+    # Its metrics for the observability stack's Alloy, which reaches it on observability-otlp.
+    command: ["tunnel", "--metrics", "0.0.0.0:2000", "run"]
     environment:
       TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
     secrets:
       - tunnel_token
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
     depends_on:
       - backend
+    networks:
+      - default
+      - observability-otlp
 
+# Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:
   tunnel_token:
-    environment: TUNNEL_TOKEN
+    file: ../../secrets/cf_tunnel_token
+
+networks:
+  # Owned by the observability stack; deploy it first on a fresh host.
+  observability-otlp:
+    external: true
 
 volumes:
   heatmap-data:

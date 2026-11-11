@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
@@ -81,12 +83,14 @@ def discover_stack_plans(
             if not compose_file.is_file():
                 raise DeploymentInputError(f"{name}: missing {compose_file}")
 
-            example_file = stack_dir / ".env.example"
-            env_file = stack_dir / ".env" if example_file.is_file() else None
-            if env_file is not None and not env_file.is_file():
-                raise DeploymentInputError(
-                    f"{name}: missing {env_file}; render it with scripts/generate-env.sh"
-                )
+            # The stack's own settings, tracked; secrets are files (secret_files).
+            settings = stack_dir / "settings.env"
+            env_file = settings if settings.is_file() else None
+            for secret in secret_files(stack_dir):
+                if not secret.is_file():
+                    raise DeploymentInputError(
+                        f"{name}: missing {secret}; render it with scripts/render-secrets.sh"
+                    )
 
             plans.append(
                 StackPlan(
@@ -332,12 +336,14 @@ def deploy(
 
 
 def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
-    """Hash a stack's tracked config files.
+    """Hash a stack's tracked config files and when each secret file last changed.
 
     Compose does not notice edits to bind-mounted files, so services that
     should restart on config changes put this in a label. Only git-tracked
-    files count, which keeps runtime data dirs (config/, data/) out. Outside
-    a git checkout the hash is empty, so labels never change.
+    files count, which keeps runtime data dirs (config/, data/) out. A secret
+    counts by its file's time alone, since anything that may inspect
+    containers reads the label. Outside a git checkout the hash is empty, so
+    labels never change.
     """
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--", str(stack_dir.relative_to(repo_root))],
@@ -353,7 +359,21 @@ def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
         if path.name == "compose.yaml" or not path.is_file():
             continue
         digest.update(name + b"\0" + path.read_bytes() + b"\0")
+    for secret in secret_files(stack_dir):
+        if secret.is_file():
+            digest.update(f"{secret.name}\0{secret.stat().st_mtime_ns}\0".encode())
     return digest.hexdigest()[:16]
+
+
+def secret_files(stack_dir: Path) -> tuple[Path, ...]:
+    """The files a stack's compose.yaml mounts as secrets (render_secrets.py writes them)."""
+    compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
+    secrets = compose.get("secrets") or {}
+    return tuple(
+        Path(os.path.normpath(stack_dir / spec["file"]))
+        for spec in secrets.values()
+        if isinstance(spec, dict) and "file" in spec
+    )
 
 
 def compose_command(
@@ -444,9 +464,8 @@ def _compose_environment() -> dict[str, str]:
         "XDG_CONFIG_HOME",
         "XDG_RUNTIME_DIR",
     }
-    environment = {key: value for key, value in os.environ.items() if key in allowed}
-    environment["COMPOSE_PROFILES"] = ""
-    return environment
+    # No COMPOSE_PROFILES: a stack's settings.env turns its profiles on, which this would override.
+    return {key: value for key, value in os.environ.items() if key in allowed}
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:

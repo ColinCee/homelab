@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -18,8 +20,7 @@ def _make_stack(repo_root: Path, name: str, *, with_env: bool = False) -> Path:
     stack_dir.mkdir(parents=True)
     (stack_dir / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
     if with_env:
-        (stack_dir / ".env.example").write_text("TOKEN=${TOKEN}\n", encoding="utf-8")
-        (stack_dir / ".env").write_text("TOKEN='value'\n", encoding="utf-8")
+        (stack_dir / "settings.env").write_text("SETTING=value\n", encoding="utf-8")
     return stack_dir
 
 
@@ -121,7 +122,10 @@ def test_deployment_does_not_forward_shell_secrets_to_compose(
             assert "not-forwarded" not in environment.values()
 
 
-def test_builds_all_profiles_but_does_not_start_profile_jobs(tmp_path: Path) -> None:
+def test_builds_all_profiles_but_starts_only_those_its_env_turns_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COMPOSE_PROFILES", "from-the-shell")
     _make_stack(tmp_path, "sample")
     runner, calls = _recording_runner()
     plans = deploy.discover_stack_plans(tmp_path)
@@ -138,7 +142,30 @@ def test_builds_all_profiles_but_does_not_start_profile_jobs(tmp_path: Path) -> 
     up_call = next(kwargs for command, kwargs in calls if command == up)
     environment = up_call["env"]
     assert isinstance(environment, dict)
-    assert environment["COMPOSE_PROFILES"] == ""
+    assert "COMPOSE_PROFILES" not in environment
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="needs Docker")
+@pytest.mark.parametrize(("profiles", "started"), [("", ["app"]), ("extra", ["app", "extra"])])
+def test_a_profile_in_the_stacks_env_reaches_up(
+    tmp_path: Path, profiles: str, started: list[str]
+) -> None:
+    stack_dir = tmp_path / "stacks" / "sample"
+    stack_dir.mkdir(parents=True)
+    (stack_dir / "compose.yaml").write_text(
+        "services:\n  app: {image: x}\n  extra: {image: x, profiles: [extra]}\n", encoding="utf-8"
+    )
+    (stack_dir / "settings.env").write_text(f"COMPOSE_PROFILES={profiles}\n", encoding="utf-8")
+    [plan] = deploy.discover_stack_plans(tmp_path)
+
+    listed = subprocess.run(
+        deploy.compose_command(plan, "config", "--services"),
+        env=deploy._compose_environment(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert sorted(listed.stdout.split()) == started
 
 
 def test_failed_stack_is_reported_while_other_stacks_continue(tmp_path: Path) -> None:
@@ -199,6 +226,30 @@ def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> N
     up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
     assert isinstance(up_env, dict)
     assert up_env["STACK_CONFIG_HASH"] == after
+
+
+def test_a_changed_secret_changes_the_hash_but_its_value_does_not_reach_it(
+    tmp_path: Path,
+) -> None:
+    stack_dir = _make_stack(tmp_path, "sample")
+    (stack_dir / "compose.yaml").write_text(
+        "services: {}\nsecrets:\n  token:\n    file: ../../secrets/token\n", encoding="utf-8"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
+        deploy.discover_stack_plans(tmp_path)
+
+    secret = tmp_path / "secrets" / "token"
+    secret.parent.mkdir()
+    secret.write_text("a", encoding="utf-8")
+    os.utime(secret, (1, 1))
+    first = deploy.stack_config_hash(tmp_path, stack_dir)
+    secret.write_text("b", encoding="utf-8")
+    os.utime(secret, (1, 1))
+    assert deploy.stack_config_hash(tmp_path, stack_dir) == first
+    os.utime(secret, (2, 2))
+    assert deploy.stack_config_hash(tmp_path, stack_dir) != first
 
 
 def _git(repo_root: Path, *arguments: str) -> str:

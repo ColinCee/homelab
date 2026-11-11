@@ -1054,7 +1054,7 @@ def test_a_job_taken_by_a_vm_booted_for_another_is_recorded_with_its_seconds_and
     assert (record["job"], record["slots"], record["why"]) == (1, 60, "all 1 build slots in use")
 
 
-def test_the_longest_waits_seconds_per_kind_go_to_openobserve(host, wait_metrics, monkeypatch):
+def test_the_longest_waits_seconds_per_kind_go_to_prometheus(host, wait_metrics, monkeypatch):
     queue, _, _ = host
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     monkeypatch.setattr(sup, "on_its_way", lambda *a: True)
@@ -1090,7 +1090,7 @@ def test_the_longest_waits_seconds_per_kind_go_to_openobserve(host, wait_metrics
     assert not [line for line in lines if "queued_seconds" in line]
 
 
-def test_failed_polls_in_a_row_go_to_openobserve_and_a_good_poll_clears_them(wait_metrics) -> None:
+def test_failed_polls_in_a_row_go_to_prometheus_and_a_good_poll_clears_them(wait_metrics) -> None:
     state = sup.State()
 
     def metric(name: str) -> str:

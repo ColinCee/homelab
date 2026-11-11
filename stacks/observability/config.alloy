@@ -3,13 +3,19 @@
 // ================================
 
 prometheus.exporter.unix "host" {
-  procfs_path = "/rootproc"
+  procfs_path = "/rootfs/proc"
   sysfs_path  = "/sys"
-  rootfs_path = "/rootfs"
+  // No host folder for the disk's free space: Alloy's own root is on the host's root disk with Docker's data, so it
+  // reports the same. Every other mount would need its folder mounted, so only the root disk is read.
+  rootfs_path = "/"
+
+  filesystem {
+    mount_points_exclude = "^/.+"
+  }
 
   // *.prom files written by other stacks, e.g. the backup success timestamp.
   textfile {
-    directory = "/rootfs/var/lib/homelab-metrics"
+    directory = "/var/lib/homelab-metrics"
   }
 }
 
@@ -17,7 +23,7 @@ prometheus.scrape "host" {
   targets    = prometheus.exporter.unix.host.targets
   forward_to = [prometheus.remote_write.default.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
 }
 
 // ================================
@@ -55,7 +61,7 @@ prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
   forward_to = [prometheus.remote_write.default.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
   // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
   // time compresses better.
   honor_timestamps = false
@@ -92,7 +98,7 @@ prometheus.scrape "ci_vms" {
   targets    = discovery.relabel.ci_vms.output
   forward_to = [prometheus.relabel.ci_vms.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
   // As for the containers above.
   honor_timestamps = false
 }
@@ -110,16 +116,12 @@ prometheus.relabel "ci_vms" {
 }
 
 // ================================
-// Metrics Destination (OpenObserve)
+// Metrics Destination (Prometheus)
 // ================================
 
 prometheus.remote_write "default" {
   endpoint {
-    url = "http://openobserve:5080/api/default/prometheus/api/v1/write"
-    basic_auth {
-      username = "root@homelab.internal"
-      password = sys.env("OPENOBSERVE_PASSWORD")
-    }
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 
@@ -129,18 +131,6 @@ prometheus.remote_write "default" {
 
 discovery.docker "containers" {
   host = "tcp://docker-socket-proxy:2375"
-}
-
-// The socket proxy logs every Alloy API request. It is left out here, before
-// tailing: a drop in relabel_rules only strips the labels and still ships the lines.
-discovery.relabel "docker_log_targets" {
-  targets = discovery.docker.containers.targets
-
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/.*docker-socket-proxy.*"
-    action        = "drop"
-  }
 }
 
 discovery.relabel "docker_logs" {
@@ -167,31 +157,32 @@ discovery.relabel "docker_logs" {
 
 loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
-  targets       = discovery.relabel.docker_log_targets.output
+  targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.docker_logs.rules
-  forward_to    = [loki.process.docker.receiver]
+  forward_to    = [loki.secretfilter.docker.receiver]
+}
+
+// As loki.secretfilter "logs" below, but before the fields of each line are copied out (next block).
+loki.secretfilter "docker" {
+  redact_percent = 100
+  forward_to     = [loki.process.docker.receiver]
 }
 
 loki.process "docker" {
-  forward_to = [otelcol.receiver.loki.openobserve.receiver]
-
-  // OpenObserve logs a line at INFO for each push and query it serves, Alloy's
-  // own included; keep only its warnings, errors and unprefixed lines.
-  stage.match {
-    selector            = "{container_name=\"observability-openobserve-1\"} |~ \"^[^ ]+ +(INFO|DEBUG|TRACE) \""
-    action              = "drop"
-    drop_counter_reason = "openobserve_routine"
-  }
+  forward_to = [otelcol.receiver.loki.logs.receiver]
 
   // Parse JSON log lines (silently passes through non-JSON lines)
+  // A line's trace, under the names OpenTelemetry's loggers use, so Grafana links it to the trace store.
   stage.json {
     expressions = {
-      level  = "level",
-      logger = "logger",
+      level    = "level",
+      logger   = "logger",
+      trace_id = "trace_id || traceId || otelTraceID",
+      span_id  = "span_id || spanId || otelSpanID",
     }
   }
 
-  // The label and the metadata below reach OpenObserve as fields of each line.
+  // The label and the metadata below reach the log store as fields of each line.
   stage.labels {
     values = {
       level = "level",
@@ -200,85 +191,139 @@ loki.process "docker" {
 
   stage.structured_metadata {
     values = {
-      logger = "logger",
-      event  = "event",
-      stage  = "stage",
+      logger   = "logger",
+      event    = "event",
+      stage    = "stage",
+      trace_id = "trace_id",
+      span_id  = "span_id",
     }
-  }
-
-  // Alloy's own lines would feed back into what it ships.
-  stage.drop {
-    source     = "container_name"
-    expression = "alloy"
   }
 }
 
 // ================================
-// Logs Destination (OpenObserve)
+// Host Logs (systemd journal)
 // ================================
 
-// Over OTLP.
-otelcol.receiver.loki "openobserve" {
+// The host's own services (Docker, Tailscale, the CI supervisor, the timers), as the container `journal` with each
+// line's unit, so the log store files them like a container's.
+loki.relabel "journal" {
+  forward_to = []
+
+  // sudo logs each command it runs, and tailscaled each Tailscale SSH session's command, over as many lines as it has:
+  // secrets in their arguments included. Nothing reads them from the store; journalctl on the Beelink still has them.
+  rule {
+    source_labels = ["__journal__comm"]
+    regex         = "sudo|tailscaled"
+    action        = "drop"
+  }
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "host" {
+  path          = "/var/log/journal"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {
+    container_name = "journal",
+    instance       = constants.hostname,
+  }
+  forward_to = [loki.secretfilter.logs.receiver]
+}
+
+// ================================
+// Logs Destination (the log store)
+// ================================
+
+// The journal's and programs' lines pass here, the containers' through loki.secretfilter "docker": secrets in them, by
+// gitleaks' default rules, become REDACTED, since the agents' login reads the store.
+loki.secretfilter "logs" {
+  // All of it: by default it keeps a fifth of each secret.
+  redact_percent = 100
+  forward_to     = [otelcol.receiver.loki.logs.receiver]
+}
+
+// Over OTLP, to the picked store's exporter `logs` (logs/<store>/alloy.alloy).
+otelcol.receiver.loki "logs" {
   output {
-    logs = [otelcol.processor.batch.openobserve.input]
+    logs = [otelcol.processor.batch.logs.input]
   }
 }
 
 // One request per line filled the exporter's queue.
-otelcol.processor.batch "openobserve" {
+otelcol.processor.batch "logs" {
   output {
-    logs = [otelcol.exporter.otlphttp.openobserve.input]
+    logs = [otelcol.exporter.otlphttp.logs.input]
   }
 }
 
-otelcol.auth.basic "openobserve" {
-  username = "root@homelab.internal"
-  password = sys.env("OPENOBSERVE_PASSWORD")
+// ================================
+// OTLP from programs (traces and their logs)
+// ================================
+
+// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to the
+// picked trace store's exporter `traces` (traces/<store>/alloy.alloy), logs to the log store with their trace and
+// span IDs, which Grafana links to the trace.
+otelcol.receiver.otlp "programs" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces  = [otelcol.processor.batch.traces.input]
+    logs    = [otelcol.exporter.loki.programs.input]
+    metrics = [otelcol.exporter.prometheus.programs.input]
+  }
 }
 
-otelcol.exporter.otlphttp "openobserve" {
-  client {
-    endpoint = "http://openobserve:5080/api/default"
-    auth     = otelcol.auth.basic.openobserve.handler
-    headers  = {
-      "stream-name" = "containers",
+// Programs' logs pass the secret filter too, which takes Loki's form: each line becomes JSON with its body, attributes and
+// IDs, and its trace and span IDs come back out as fields, for Grafana's link to the trace.
+otelcol.exporter.loki "programs" {
+  forward_to = [loki.process.programs.receiver]
+}
+
+loki.process "programs" {
+  forward_to = [loki.secretfilter.logs.receiver]
+
+  stage.json {
+    expressions = {
+      trace_id = "traceid",
+      span_id  = "spanid",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id = "trace_id",
+      span_id  = "span_id",
     }
   }
 }
 
-// ================================
-// Alertmanager
-// ================================
-
-// Whether it is up, and its notifications_failed_total: posts that did not reach Discord.
-prometheus.scrape "alertmanager" {
-  targets = [{
-    __address__ = "alertmanager:9093",
-  }]
-  forward_to      = [prometheus.remote_write.default.receiver]
-  scrape_interval = "60s"
-  job_name        = "alertmanager"
+// Programs' metrics, OBI's request rate, errors and duration among them, go to Prometheus with the rest.
+otelcol.exporter.prometheus "programs" {
+  forward_to = [prometheus.remote_write.default.receiver]
 }
 
-// ================================
-// Flight Tracker (end-to-end probe)
-// ================================
-
-// Probes the public API through Cloudflare and the tunnel. Succeeds only when
-// the backend is serving live upstream aircraft data, not stale cache.
-prometheus.exporter.blackbox "flight_tracker" {
-  config = "{ modules: { aircraft_live: { prober: http, timeout: 15s, http: { preferred_ip_protocol: ip4, ip_protocol_fallback: false, valid_status_codes: [200], fail_if_body_not_matches_regexp: ['\"apiHealth\":\\s*\"live\"'] } } } }"
-
-  target {
-    name    = "flight-tracker"
-    address = "https://api.colincheung.dev/aircraft"
-    module  = "aircraft_live"
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlphttp.traces.input]
   }
 }
 
-prometheus.scrape "flight_tracker" {
-  targets         = prometheus.exporter.blackbox.flight_tracker.targets
+// ================================
+// Flight Tracker's tunnel (cloudflared)
+// ================================
+
+// Its own metrics: requests through the tunnel and its connections to Cloudflare.
+prometheus.scrape "cloudflared" {
+  targets         = [{ __address__ = "flight-tracker-cloudflared-1:2000" }]
+  job_name        = "cloudflared"
+  scrape_interval = "15s"
   forward_to      = [prometheus.remote_write.default.receiver]
-  scrape_interval = "60s"
 }
 

@@ -1,9 +1,5 @@
-# Between OpenObserve's rules (../openobserve/alerts.toml) and Discord; the standard it keeps is in
-# docs/observability.md ("Alerts"). OpenObserve posts each firing alert every minute with no end time.
-global:
-  # An alert ends this long after its last post. The 10-minute hold against flapping is in each rule's query
-  # (openobserve/apply.py), so this only rides out a few missed evaluations, such as an OpenObserve restart.
-  resolve_timeout: 5m
+# Between Prometheus's rules (../prometheus/rules.yml) and Discord; the standard it keeps is in
+# docs/observability.md ("Alerts"). Prometheus sends each firing alert with an end time, and its end when it clears.
 
 route:
   receiver: discord
@@ -15,11 +11,15 @@ route:
   routes:
     - matchers: ['level="now"']
       repeat_interval: 4h
+    # A deploy or an install is an event, not a state: one post, and no "Cleared".
+    - matchers: ['level="notice"']
+      receiver: discord-notice
 
-# Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts.
+# Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
+# rules on Prometheus's own health and the flight tracker's probe read its own scrape, so they still post.
 inhibit_rules:
   - source_matchers: ['alertname="beelink-metrics-stopped"']
-    target_matchers: ['alertname!="beelink-metrics-stopped"']
+    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down"']
 
 receivers:
   - name: discord
@@ -29,6 +29,12 @@ receivers:
         title: '{{ template "homelab.title" . }}'
         message: '{{ template "homelab.message" . }}'
         content: '{{ template "homelab.mention" . }}'
+  - name: discord-notice
+    discord_configs:
+      - webhook_url_file: /run/secrets/discord_webhook
+        send_resolved: false
+        title: '{{ template "homelab.title" . }}'
+        message: '{{ template "homelab.message" . }}'
 
 templates:
   - /etc/alertmanager/discord.tmpl

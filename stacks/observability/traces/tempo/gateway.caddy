@@ -1,0 +1,11 @@
+# Tempo's query API, under its /tempo prefix (tempo.yaml); ../../gateway/Caddyfile imports the chosen store's file.
+# Its other routes take writes and lifecycle calls.
+@traces {
+	vars {reader} agents
+	method GET
+	expression `{http.request.uri.path}.matches("^/traces/tempo/api/(echo|status/buildinfo|search|search/tags|v2/search/tags|search/tag/[a-zA-Z0-9_.:-]+/values|v2/search/tag/[a-zA-Z0-9_.:-]+/values|traces/[0-9a-fA-F]+|v2/traces/[0-9a-fA-F]+|metrics/query|metrics/query_range)$") && !{http.request.uri.path}.contains("..")`
+}
+handle @traces {
+	uri strip_prefix /traces
+	reverse_proxy {$TRACES:traces:3200}
+}

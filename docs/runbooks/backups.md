@@ -10,7 +10,6 @@ disposable.
 | Source | Why |
 |--------|-----|
 | `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. Sensor history as `history-snapshot.db`, a consistent copy `home-assistant-history.timer` makes at 02:10 UTC. |
-| OpenObserve `db` folder | Users, alerts, dashboards. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
@@ -27,7 +26,7 @@ A passing deep check also writes
 `/var/lib/homelab-metrics/backup-deep-check.prom`, which the weekly server
 health report reads; the container log does not survive a redeploy.
 
-The **Backups** tab of OpenObserve's Home shows recent successes, failures, stored
+The **Backups** row of Grafana's Home shows recent successes, failures, stored
 size against the cap, deep checks and the run log.
 
 ## From the PC
@@ -54,7 +53,7 @@ files. On the PC, `python scripts\pc_backup.py --dry-run` packs without sending;
 
 ## Credentials
 
-Four GitHub Actions secrets feed the stack's `.env`: `R2_ACCOUNT_ID`,
+Four GitHub Actions secrets feed the stack's secret files: `R2_ACCOUNT_ID`,
 `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (an R2 token scoped to the bucket)
 and `RESTIC_PASSWORD`. The restic password is also kept in Bitwarden: without
 it the snapshots cannot be decrypted, and GitHub will not show it again.
@@ -62,7 +61,7 @@ it the snapshots cannot be decrypted, and GitHub will not show it again.
 ## Alerting
 
 Each successful run logs `backup ok` and writes its time to
-`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to OpenObserve as
+`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to Prometheus as
 `homelab_backup_last_success_timestamp_seconds`. **Nightly backup didn't run**
 fires when that is over 26 hours old, which covers failed
 runs, a stopped container and a server that was down overnight. A failed run

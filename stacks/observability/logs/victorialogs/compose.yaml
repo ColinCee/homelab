@@ -1,0 +1,22 @@
+# The log store when LOG_STORE=victorialogs (../../settings.env); ../../compose.yaml runs it as `logs`. Flags:
+# https://docs.victoriametrics.com/victorialogs/#list-of-command-line-flags
+services:
+  logs:
+    image: victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d
+    command:
+      - -storageDataPath=/vlogs
+      - -retentionPeriod=30d
+      # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
+      - -inmemoryDataFlushInterval=1s
+      # One heavy query must not take its memory: two at a time, a minute each, at most a month back. A 30-day count
+      # took 8 s.
+      - -search.maxConcurrentRequests=2
+      - -search.maxQueryDuration=60s
+      - -search.maxQueryTimeRange=31d
+    # It held a median 363 and at most 650 MiB through a 30-day backfill and heavy queries.
+    mem_limit: 1g
+    volumes:
+      - victorialogs-data:/vlogs
+
+volumes:
+  victorialogs-data:

@@ -1,5 +1,5 @@
 """Checks Home Assistant and the .internal names each minute and writes the results where Alloy's
-textfile collector reads them (/var/lib/homelab-metrics), for the alerts in openobserve/alerts.toml.
+textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prometheus/rules.yml.
 
 It runs on the host's network: the Beelink's firewall admits only Tailscale and loopback, so a
 container on a Docker network cannot reach the services on the host's network."""

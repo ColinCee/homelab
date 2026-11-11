@@ -67,6 +67,8 @@ if [[ $want != "$have" ]]; then
       grep -o '(#[0-9]*)' | tr -d '()' | paste -sd ' ' - | cut -d ' ' -f 1-5 || true)}}
     reason=${reason//[^[:alnum:] #:._,()\/-]/}
     REASON="$reason" "$src/ci-runner/install-host.sh" || { failed_once "$change"; exit 1; }
+    # For the intrusion alerts (scripts/security_facts.py): code installed as root.
+    logger -t homelab-ci-update "installed commit=$want author=$(git -C "$src" log -1 --format=%an "$want")"
   fi
 fi
 

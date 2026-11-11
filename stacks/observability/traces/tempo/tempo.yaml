@@ -1,0 +1,51 @@
+# From the maker's single-binary example (example/docker-compose/single-binary/tempo.yaml at v3.1.1), keeping 30
+# days: https://grafana.com/docs/tempo/latest/configuration/
+stream_over_http_enabled: true
+# The query API only, under /tempo: Grafana's proxy cannot leave a data source's path, and Tempo's other routes,
+# config and lifecycle calls included, answer anyone.
+http_api_prefix: /tempo
+server:
+  http_listen_port: 3200
+  log_level: warn
+# Its Go memory limit from the container's (compose.yaml): big searches grow it, and it gives memory back late.
+memory:
+  automemlimit_enabled: true
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        http:
+          endpoint: 0.0.0.0:4318
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+backend_worker:
+  compaction:
+    block_retention: 720h
+backend_scheduler:
+  provider:
+    compaction:
+      compaction:
+        block_retention: 720h
+# One big search must stay under its 512 MiB cap: few jobs at a time, small jobs, at most 20,000 traces and a week, a
+# minute each. It reached 361 MiB on 20,000-trace searches, and 734 MiB on one over every trace with no cap.
+query_frontend:
+  max_outstanding_per_tenant: 100
+  search:
+    concurrent_jobs: 16
+    target_bytes_per_job: 52428800
+    max_result_limit: 20000
+    max_duration: 168h
+  metrics:
+    concurrent_jobs: 16
+    max_duration: 24h
+querier:
+  max_concurrent_queries: 4
+  search:
+    query_timeout: 1m
+usage_report:
+  reporting_enabled: false

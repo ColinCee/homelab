@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  - name: homelab
+    # In a folder, which Viewers may open; Grafana gives a top-level provisioned dashboard no Viewer access.
+    folder: Homelab
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

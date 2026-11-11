@@ -70,27 +70,29 @@ for url in https://colincheung.dev https://flight-tracker-at-home.pages.dev \
   fi
 done
 
-# Alerts and metrics: OpenObserve's at OPENOBSERVE_URL, with OPENOBSERVE_LOGIN (user:password) as a curl config on stdin.
-openobserve="${OPENOBSERVE_URL:?}"
+# Alerts and metrics: Prometheus through the read-only gateway at GATEWAY_URL, with GATEWAY_LOGIN (user:password) as a
+# curl config on stdin.
+gateway="${GATEWAY_URL:?}"
 login() {
   # Quoted patterns: bash 5.2 reads an unquoted `\\\\` replacement as one backslash.
-  local pw=${OPENOBSERVE_LOGIN//"\\"/"\\\\"}
+  local pw=${GATEWAY_LOGIN//"\\"/"\\\\"}
   pw=${pw//"\""/"\\\""}
   printf 'user = "%s"\n' "$pw"
 }
 promql() { # QUERY: the Prometheus API's JSON answer
-  login | curl -sf -m 10 -K - -G "$openobserve/api/default/prometheus/api/v1/query" --data-urlencode "query=$1"
+  login | curl -sf -m 10 -K - -G "$gateway/prometheus/api/v1/query" --data-urlencode "query=$1"
 }
-# A rule fires when its latest run met its condition (both stamps come from the same run); one whose query failed,
-# or not run for 5 minutes, is named too.
-firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
-  jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
-    (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
-    if .last_outcome == "error" then "\($rule) (query fails)"
-    elif $run < $stale then "\($rule) (not run for 5 min)"
-    elif $met > 0 and $met >= $run - 5000000 then $rule
-    else empty end] | join(", ")' 2>/dev/null)" ||
-  firing="unknown (OpenObserve API unreachable)"
+# Firing rules by title; one whose query failed, or not run for 5 minutes, is named too.
+if ! rules="$(login | curl -sf -m 10 -K - "$gateway/prometheus/api/v1/rules")"; then
+  firing="unknown (gateway unreachable)"
+elif ! firing="$(jq -r --argjson stale "$(( $(date +%s) - 300 ))" '[.data.groups[].rules[] |
+    (.annotations.title // .name) as $rule |
+    if .health != "ok" then "\($rule) (query fails)"
+    elif (.lastEvaluation | sub("\\.[0-9]+"; "") | fromdateiso8601) < $stale then "\($rule) (not run for 5 min)"
+    elif .state == "firing" then $rule
+    else empty end] | join(", ")' <<<"$rules" 2>/dev/null)"; then
+  firing="unknown (Prometheus's rule list did not parse)"
+fi
 if [[ -n "$firing" ]]; then
   bad "Firing alerts" "$firing"
 else

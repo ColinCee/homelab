@@ -20,11 +20,16 @@ services:
     environment:
       TZ: Etc/UTC
       BACKUP_TIME: "02:30"
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?}
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?}
-      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?}
-      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?}
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      # Written by backup.sh at start from the R2 secrets, so a `docker exec backup restic ...` finds them too.
+      RESTIC_REPOSITORY_FILE: /tmp/restic_repository
+      AWS_SHARED_CREDENTIALS_FILE: /tmp/r2_credentials
       RESTIC_CACHE_DIR: /cache
+    secrets:
+      - restic_password
+      - r2_account_id
+      - r2_access_key_id
+      - r2_secret_access_key
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -42,23 +47,25 @@ services:
       # Read by Alloy's textfile collector (observability stack).
       - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
-      # Users, alerts and dashboards only; its logs and metrics are left out.
-      - type: volume
-        source: openobserve-data
-        target: /data/openobserve
-        read_only: true
-        volume:
-          subpath: db
       - heatmap-data:/data/flight-tracker:ro
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
       - /home/colin/pc-backups:/data/pc-backups:ro
 
+# Written from GitHub secrets by scripts/render-secrets.sh.
+secrets:
+  restic_password:
+    file: ../../secrets/restic_password
+  r2_account_id:
+    file: ../../secrets/r2_account_id
+  # An R2 token scoped to the bucket.
+  r2_access_key_id:
+    file: ../../secrets/r2_access_key_id
+  r2_secret_access_key:
+    file: ../../secrets/r2_secret_access_key
+
 volumes:
   restic-cache:
   # Owned by other stacks; deploy those first on a fresh host.
-  openobserve-data:
-    external: true
-    name: observability_openobserve-data
   heatmap-data:
     external: true
     name: flight-tracker_heatmap-data

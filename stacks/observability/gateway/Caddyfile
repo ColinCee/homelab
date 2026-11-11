@@ -1,16 +1,12 @@
-# OpenObserve for its readers (compose.yaml, openobserve-gateway). Open source OpenObserve has only admin logins,
-# so each reader logs in here with its own, may read only its own paths, and the request goes on with root's login.
-# Anything else is refused. Logins: start.sh. Tests: tests/test_openobserve_gateway.py.
+# The one way to read the stores (compose.yaml, gateway): Grafana's data sources, agents, the heartbeat and
+# server-health log in as `agents`, public stats as `stats`. None of the stores has logins or read-only users, and
+# each serves writes and admin calls beside its reads, so each reader may reach only the read paths listed here and
+# the log and trace stores' own files (../logs/*/gateway.caddy, ../traces/*/gateway.caddy). Anything else is
+# refused. Logins: start.sh. Tests: tests/test_gateway.py.
 {
 	admin off
 	auto_https off
 	persist_config off
-}
-
-(openobserve) {
-	reverse_proxy {$OPENOBSERVE:openobserve:5080} {
-		header_up Authorization "Basic {$ROOT_AUTH}"
-	}
 }
 
 :{$GATEWAY_PORT:5080} {
@@ -20,35 +16,40 @@
 		default none
 	}
 
-	# Paths compare exactly as they arrive: a `path` matcher compares a cleaned copy, but the request goes on as sent,
-	# so `/proxy/default/https:/x/../../api/...` would pass for the query and reach OpenObserve's URL fetcher.
-	# Public stats reads one query.
-	@query {
-		vars {reader} stats agents
+	# Paths compare exactly as they arrive, not cleaned, and never hold `..`: a `path` matcher compares a cleaned
+	# copy, but the request goes on as sent.
+	@stats {
+		vars {reader} stats
 		method GET
-		expression `{http.request.uri.path} == "/api/default/prometheus/api/v1/query"`
+		expression `{http.request.uri.path} == "/prometheus/api/v1/query"`
 	}
-	# Charts and the alert list, for server-health, the heartbeat and agents.
-	@alerts {
+	# Grafana's Prometheus data source sends its queries by POST; none of these paths writes.
+	@prometheus {
+		vars {reader} agents
+		method GET POST
+		expression `{http.request.uri.path}.matches("^/prometheus/api/v1/(query|query_range|query_exemplars|series|labels|label/[a-zA-Z_][a-zA-Z0-9_]*/values|metadata|rules|alerts|status/buildinfo)$")`
+	}
+	# Its API takes silences without a login.
+	@alertmanager {
 		vars {reader} agents
 		method GET
-		expression `{http.request.uri.path} in ["/api/default/prometheus/api/v1/query_range", "/api/v2/default/alerts"]`
-	}
-	@agents {
-		vars {reader} agents
-		method GET
-		expression `{http.request.uri.path}.matches("^/api/default/prometheus/api/v1/(series|labels|label/[a-zA-Z_][a-zA-Z0-9_]*/values)$")`
+		expression `{http.request.uri.path}.matches("^/alertmanager/api/v2/(alerts|alerts/groups|silences|status|receivers)$")`
 	}
 
-	handle @query {
-		import openobserve
+	handle @stats {
+		uri strip_prefix /prometheus
+		reverse_proxy {$PROMETHEUS:prometheus:9090}
 	}
-	handle @alerts {
-		import openobserve
+	handle @prometheus {
+		uri strip_prefix /prometheus
+		reverse_proxy {$PROMETHEUS:prometheus:9090}
 	}
-	handle @agents {
-		import openobserve
+	handle @alertmanager {
+		uri strip_prefix /alertmanager
+		reverse_proxy {$ALERTMANAGER:alertmanager:9093}
 	}
+	import /etc/caddy/logs.caddy
+	import /etc/caddy/traces.caddy
 	handle {
 		respond 403
 	}

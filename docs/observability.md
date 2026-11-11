@@ -1,8 +1,8 @@
 # Observability
 
 Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
-settings and retention. Alloy collects logs and metrics into OpenObserve ([ADR 0001](adr/0001-openobserve.md)), which
-keeps 30 days.
+settings and retention. Alloy collects metrics into Prometheus and logs and traces into the log and trace stores, each
+keeping 30 days, and Grafana shows them ([ADR 0001](adr/0001-observability-stack.md)).
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
@@ -15,6 +15,7 @@ What watches what:
 | Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
 | Alerting stopped: a rule not run or failing, Alertmanager down, posts not reaching Discord, or the Beelink off | [`heartbeat.yaml`](../.github/workflows/heartbeat.yaml) checks every 15 minutes on the Beelink; [`heartbeat-watch.yaml`](../.github/workflows/heartbeat-watch.yaml), on GitHub's machines, posts to #uptime with a mention when it has not passed for 2 hours |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
+| Someone else on the Beelink: each deploy and CI-host install, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 
 GitHub turns off a public repository's scheduled workflows after 60 days with no commits, which would stop both
 heartbeat workflows without a post; Renovate's merges keep the repository active.
@@ -23,13 +24,18 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 
 | Component | What it does |
 |-----------|---------------|
-| **Alloy** | Ships metrics and Docker logs to OpenObserve |
-| **OpenObserve** | Logs, metrics, alert rules and the [Home dashboard](../stacks/observability/openobserve/dashboards/home.json); `http://openobserve.internal` |
-| **Alertmanager** | Posts OpenObserve's alerts to Discord, repeats, clears and holds them back; port 9093 |
-| **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
+| **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces and logs sent to `alloy:4318` to the trace and log stores; a log line with a `trace_id` opens its trace in Grafana |
+| **Prometheus** | Metrics and the [alert rules](../stacks/observability/prometheus/rules.yml) |
+| **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`settings.env`](../stacks/observability/settings.env) pick each, one folder per store under `logs/` and `traces/`; a swap starts the other store empty |
+| **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, logged in as `colin` (admin) or `agents` (Viewer, `OPENOBSERVE_AGENTS_PASSWORD`) |
+| **Alertmanager** | Posts Prometheus's alerts to Discord, repeats, clears and holds them back |
+| **Gateway** | The only way to read the stores, for Grafana, agents and scripts: each login reads only read paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
-Home and the rules come from Git on each deploy; edit the files, not the UI (the building-dashboards skill,
-`.github/skills/building-dashboards/SKILL.md`).
+Home, the data sources and the rules come from Git on each deploy; Grafana refuses saves from its UI (the
+building-dashboards skill, `.github/skills/building-dashboards/SKILL.md`).
+
+Agents read through Grafana's API (or `mcp-grafana`) as `agents`; on the Beelink, also through the gateway:
+`curl -u agents@homelab.internal:... http://100.100.146.119:5081/prometheus/api/v1/query?query=up`.
 
 ### Dashboard patterns
 
@@ -40,30 +46,43 @@ Host metrics (`node_*`) cover the whole machine, Firecracker CI VMs included.
 Container metrics do not: the VMs are processes, not containers, so their CPU
 and memory come from their slot cgroups (`job="ci-vms"`).
 
+## OpenObserve's kept history
+
+OpenObserve's volume holds the metrics and logs from before the switch to this stack. On the Beelink, from the
+server checkout, `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml
+--profile history up -d openobserve-history`, then `ssh -L 5082:127.0.0.1:5082 beelink` and open
+`http://localhost:5082` as `root@homelab.internal` (the `OPENOBSERVE_ROOT_PASSWORD` secret); stop it with `stop
+openobserve-history`. It expires nothing while it runs. Once nothing from before the switch is wanted, 30 days
+after it at the earliest, `docker volume rm observability_openobserve-data observability_alloy-data`, then remove
+`openobserve-history` and its volume from `compose.yaml`.
+
 ## Logs
 
 Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
-label, and sends logs to OpenObserve's `containers` stream (`stacks/observability/config.alloy`). It
-skips the proxy's and Alloy's lines, and OpenObserve's below WARN; `docker logs` still has them.
+label, and sends logs over OTLP to the log store (`stacks/observability/config.alloy`), with `container_name` as the
+stream, and the host's systemd journal as the container `journal` with each line's `unit`, without sudo's and
+tailscaled's lines, which carry command lines.
+Every line first passes `loki.secretfilter`, which replaces each secret it recognises with `REDACTED`; a secret in a
+form its rules miss still reaches the store.
 
-To inspect a service, find its current container name and query it in OpenObserve's Logs page:
+To inspect a service, find its current container name (`docker ps --format '{{.Names}}'`) and query it in Grafana's
+Explore, on the Logs data source:
 
-```bash
-docker ps --format '{{.Names}}'
-```
-
-```sql
-SELECT _timestamp, body FROM containers WHERE container_name = '<current-container-name>'
-SELECT _timestamp, body FROM containers WHERE container_name = '<current-container-name>' AND match_all('ERROR')
+```text
+{container_name="<name>"} |= "ERROR"                 Loki (LogQL)
+container_name:"<name>" ERROR                        VictoriaLogs (LogsQL)
 ```
 
 ## Metrics
 
-OpenObserve receives metrics, through its Prometheus API, from the sources below, each scraped every 30 s (the
-flight-tracker probe and Alertmanager each minute). Alloy sends every metric they expose, so what a later fix needs is
+Prometheus receives metrics by remote write from the sources below, each scraped every 15 s (the flight-tracker probe
+each minute). Alloy sends every metric they expose, so what a later fix needs is
 already kept; it drops none by name.
 
-- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
+- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`), of the
+  root disk only: Alloy runs as its own user with no capabilities and mounts no host folder but what it reads, so it
+  can read no host file closed to other users. cAdvisor cannot read containers' own layers, so each container's
+  disk space (`container_fs_usage_bytes` and the other per-layer `container_fs_*` rows) is missing.
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
@@ -73,10 +92,19 @@ already kept; it drops none by name.
 - **Textfiles:** Alloy's textfile collector reads `/var/lib/homelab-metrics/*.prom`: the CI
   supervisor's `homelab_ci_*` (the ci-runner runbook's "Status files"), the SSD's
   `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, the backups' `homelab_backup_*` and
-  `homelab_pc_backup_*`, and `homelab_probe_*` from `probes.py`.
+  `homelab_pc_backup_*`, `homelab_probe_*` from `probes.py`, and the intrusion rules' facts from `security.prom`.
 - **Alertmanager:** its own metrics (`job="alertmanager"`), such as posts that failed to reach Discord.
-- **Flight tracker:** Alloy's blackbox exporter probes the public
-  `https://api.colincheung.dev/aircraft` every minute
+- **The stores and cloudflared:** their own metrics (`job="logs"`, `"traces"`, `"cloudflared"`), for "A store is
+  down" and "A store stopped taking data". Home Assistant, CoreDNS and Caddy run on the host's network, which the
+  firewall keeps Alloy from reaching, so their metrics are not collected.
+- **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on (off until its `containers_only`
+  works: in the trial it also traced host programs and the CI VMs), OBI's request rate, errors and
+  duration for every program in a container, named after its executable. `COMPOSE_PROFILES=obi` in
+  `settings.env` turns it on at the next deploy; clearing it leaves OBI running until
+  `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml rm -sf obi`.
+- **Flight tracker:** the `blackbox` container probes the public
+  `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any
+  address its caller names and Alloy must not reach the internet
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
   when the response says `"apiHealth":"live"`, so tunnel, backend and
   upstream data source failures all show as 0.
@@ -95,10 +123,9 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 ## Alerts
 
-OpenObserve runs the rules in [`alerts.toml`](../stacks/observability/openobserve/alerts.toml) each minute.
-`openobserve-apply` applies them on deploy, then runs each rule's query once and fails the deploy on an error, since
-OpenObserve sends nothing for a query that fails. A firing rule posts every minute to
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), which
+Prometheus runs the rules in [`rules.yml`](../stacks/observability/prometheus/rules.yml) each minute. Rules it cannot
+load stop it, which fails the deploy; a rule whose query fails at run time fires "An alert rule is failing". A firing
+rule goes to [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0001](adr/0001-observability-stack.md)), which
 posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
@@ -115,31 +142,29 @@ An alert exists only if all three hold; anything else is a dashboard number:
 |---|---|---|
 | Act now (`now`) | A user-facing service is down, data is being lost, or something is full within 24 h | Mentions Colin, and again every 4 h while it fires |
 | This week (`week`) | Something is running out or slipping | No mention, again daily |
+| Notice (`notice`) | A deploy or CI-host install, so Colin sees each change he did not make | No mention, once, no "Cleared" |
 
 - An alert fires once its condition has held for the rule's `for`, and clears once it has stayed clear for 10
-  minutes; a return within those 10 minutes is the same alert, with no new post. Both are in the rule's query
-  (`apply.py`, `query`), and Alertmanager posts the clear 5 minutes after the last firing (`resolve_timeout`). The
-  clear post says "Cleared": the number recovered, not that anything was fixed.
+  minutes; a return within those 10 minutes is the same alert, with no new post: the rule's `for` and
+  `keep_firing_for`. The clear post says "Cleared": the number recovered, not that anything was fixed.
 - Each post says what broke (title and value), why it matters (`harm`), what to do (`action`), and links a dashboard.
-- "Beelink metrics stopped" holds back every other alert while it fires. Only metrics written outside Alloy (the
-  textfiles) carry a `no_data` query.
-- `tests/test_openobserve_alerts.py` checks each rule against this.
+- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics while it fires. Only metrics written outside Alloy (the
+  textfiles) carry a no-data arm.
+- `tests/test_alert_rules.py` checks each rule against this, and runs them with `promtool` over made-up series.
 
-Noise budget: at most one post a day across all rules, over 14 days. Replay before adding or loosening a rule:
+Noise budget: at most one post a day across all rules but notices, over 14 days. Replay before adding or loosening a rule:
 
 ```bash
-docker exec observability-openobserve-apply-1 python -I /apply/replay.py /apply/alerts.toml 14
+GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14
 ```
 
-On 10 November 2026 the rules made 2 posts in the 14 days, which hold metrics from 9 November on.
-
-OpenObserve keeps metric names in lower case. Home Assistant and the `.internal` names are checked by
+Home Assistant and the `.internal` names are checked by
 [`probes.py`](../stacks/observability/probes.py) on the host's network, since the firewall admits only Tailscale and
 loopback; its results reach the rules through the textfile collector.
 
 ## Common debugging path
 
 1. **A service is unavailable:** check its Compose status, then inspect the
-   current container logs in OpenObserve.
+   current container logs in Grafana.
 2. **Metrics are stale:** check Alloy first (`docker logs observability-alloy-1`), then the
-   container metrics in OpenObserve.
+   container metrics in Grafana.

@@ -1,0 +1,8 @@
+# What OBI (../compose.yaml, obi) should instrument: every program in a container, none of the host's own.
+# containers_only compares network namespaces, so with OBI on its own network it also traced host programs and the
+# CI VMs: off until fixed.
+# https://opentelemetry.io/docs/zero-code/obi/configure/service-discovery/
+discovery:
+  instrument:
+    - containers_only: true
+      exe_path: "*"

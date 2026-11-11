@@ -1,0 +1,525 @@
+# The alert rules, held to the alert standard in docs/observability.md ("Alerts"). Prometheus runs them each
+# minute and sends the firing ones to Alertmanager (../alertmanager), which posts to Discord, repeats and holds back.
+#
+# Each post shows `measure: value unit`, so a query gives display units, rounded. A rule that is not per series
+# takes `max` or `min` of its query, so its post carries no labels: the title prints every label but `alertname`
+# and `level`. A per-series rule keeps only the labels that tell its series apart (`max by (name)`): one post per
+# series. Only metrics written outside Alloy carry a no-data arm, `or on() max(absent_over_time(...)) * -1`, shown as
+# "no data"; "Beelink metrics stopped" covers Alloy's own. `keep_firing_for` is the 10-minute hold: a return inside
+# it is the same alert. A no-data arm fires once its window has passed and then the rule's `for`.
+# Tests: tests/test_alert_rules.py, which runs them with promtool.
+
+groups:
+  - name: homelab
+    interval: 1m
+    rules:
+      - alert: beelink-metrics-stopped
+        expr: |
+          (
+            max(
+              absent_over_time(up{job="integrations/unix"}[5m]) or absent_over_time(up{job="docker"}[5m])
+            )
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink metrics stopped'
+          measure: 'Missing for'
+          unit: ' 5 min or more'
+          harm: >-
+            No alert can see the Beelink while its numbers are missing, so the alerts that read them are held
+            back. A real outage could be going on unseen.
+          action: >-
+            On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50
+            observability-alloy-1`, then `docker compose up -d` in
+            /home/colin/code/homelab/stacks/observability.
+          dashboard: &home http://beelink.tail4f465e.ts.net:5080/d/home
+          value: '{{ $value }}'
+      - alert: flight-tracker-down
+        expr: |
+          (
+            max(probe_success{job="integrations/blackbox/flight-tracker"})
+          ) < 1
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Flight Tracker site down'
+          measure: 'Live aircraft check passing (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            https://api.colincheung.dev/aircraft is not serving live aircraft, so the public radar is blank or
+            stale.
+          action: >-
+            Check `docker logs --tail 50 flight-tracker-backend-1` (upstream 403 or 429?) and `docker logs
+            --tail 50 flight-tracker-cloudflared-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: home-assistant-down
+        expr: |
+          (
+            max(homelab_probe_success{target="home-assistant"})
+            * (time() - max(homelab_probe_timestamp_seconds) < bool 300)
+          ) < 1
+          or on() max(absent_over_time(homelab_probe_success{target="home-assistant"}[15m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Home Assistant down'
+          measure: 'Answering (1 yes, 0 no)'
+          unit: ''
+          harm: 'The house''s automations and its app stop working.'
+          action: >-
+            Check `docker ps -a --filter name=homeassistant` and `docker logs --tail 50 homeassistant`; restart
+            it with `docker restart homeassistant`. If it is up, the check itself stopped: `docker logs
+            observability-probes-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: dns-or-names-down
+        expr: |
+          (
+            min(homelab_probe_success{target=~"names-(dns|proxy)"})
+            * (time() - max(homelab_probe_timestamp_seconds) < bool 300)
+          ) < 1
+          or on() max(absent_over_time(homelab_probe_success{target="names-dns"}[15m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'DNS or .internal names down'
+          measure: 'Both checks passing (1 yes, 0 no)'
+          unit: ''
+          harm: 'home.internal, grafana.internal and the other .internal names stop opening on every device.'
+          action: >-
+            Check `docker ps -a --filter name=internal-names` and `docker logs --tail 50 internal-names-dns-1`
+            and `internal-names-proxy-1`. If both are up, the check itself stopped: `docker logs
+            observability-probes-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: high-ram
+        expr: |
+          (
+            max(
+              round(100 * (1 - node_memory_MemAvailable_bytes{job="integrations/unix"}
+              / node_memory_MemTotal_bytes{job="integrations/unix"}))
+            )
+          ) > 90
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink running out of memory'
+          measure: 'Memory use'
+          unit: '%'
+          harm: 'Past this the kernel kills processes, and any container may be the one stopped.'
+          action: >-
+            Find the container that grew with `docker stats --no-stream`, then restart it or give it a
+            `mem_limit` in its compose.yaml.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: restart-loop
+        expr: |
+          (
+            max by (name) (changes(container_start_time_seconds{job="docker",name!=""}[30m]))
+          ) > 2
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A container keeps restarting'
+          measure: 'Starts in the last 30 min'
+          unit: ''
+          harm: 'The service in this container is down most of the time.'
+          action: 'Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: new-container
+        expr: |
+          (
+            count by (name) (container_last_seen{job="docker",name!=""})
+            unless count by (name) (container_last_seen{job="docker",name!="",container_label_com_docker_compose_project!=""})
+            unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))
+          ) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Unknown container started'
+          measure: 'Containers of this name'
+          unit: ''
+          harm: >-
+            Something started a container outside the reviewed deploy path; if it was not you, someone else can
+            run code here.
+          action: >-
+            Expected if you ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and `docker
+            inspect` its image and command, then stop it.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: backup-missed
+        expr: |
+          (
+            round((time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600)
+          ) > 26
+          or on() max(absent_over_time(homelab_backup_last_success_timestamp_seconds[15m])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Nightly backup didn''t run'
+          measure: 'Last good backup'
+          unit: ' h ago'
+          harm: 'Without a nightly copy in R2, a lost disk loses everything since the last good backup.'
+          action: 'Check `docker logs --tail 100 backup`; see docs/runbooks/backups.md.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: pc-backup-stale
+        expr: |
+          (
+            round((time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600)
+          ) > 50
+          or on() max(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'PC backup stopped arriving'
+          measure: 'Newest PC backup'
+          unit: ' h old'
+          harm: 'The Windows PC''s files are no longer copied off it, so a dead PC disk loses them.'
+          action: >-
+            Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl --user status
+            backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: high-disk
+        expr: |
+          (
+            max(
+              round(100 * (1 - node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+              / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"}))
+            )
+          ) > 80
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Beelink disk filling up'
+          measure: 'Disk use'
+          unit: '%'
+          harm: >-
+            A full disk stops every stack writing: Prometheus, the logs, the backups and Home Assistant's
+            history.
+          action: >-
+            Find what grew with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`; prune
+            images or old data, never Docker volumes.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: backup-storage-high
+        expr: |
+          (
+            round(max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9, 0.1)
+          ) > 5
+          or on() max(absent_over_time(homelab_backup_repository_bytes[26h])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Backup storage nearly full'
+          measure: 'Backup storage'
+          unit: ' GB'
+          harm: 'Uploads stop at 8 GB, so backups stop; R2 bills past 10 GB.'
+          action: 'Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssd-worn
+        expr: |
+          (
+            max(homelab_ssd_percentage_used)
+          ) > 80
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Beelink SSD wearing out'
+          measure: 'Endurance used'
+          unit: '%'
+          harm: 'Past 100% of its rated writes the SSD may start failing, and everything on the Beelink is on it.'
+          action: >-
+            Order a replacement SSD and plan the move. To see how fast it wears, chart
+            `homelab_ssd_written_bytes_total`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssd-wear-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60)
+          ) > 60
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'SSD wear check stopped'
+          measure: 'Last check'
+          unit: ' min ago'
+          harm: 'A wearing SSD would go unnoticed.'
+          action: >-
+            Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
+            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'
+
+  # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), with
+  # their `for`, taken over all series so a post carries no labels, on Prometheus's own metrics (prometheus.yml, job
+  # "prometheus").
+  - name: prometheus
+    interval: 1m
+    rules:
+      - alert: PrometheusRuleFailures
+        expr: sum(increase(prometheus_rule_evaluation_failures_total{job="prometheus"}[5m])) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'An alert rule is failing'
+          measure: 'Failed evaluations in 5 min'
+          unit: ''
+          harm: 'An alert whose query fails can never fire, so the problem it watches goes unseen.'
+          action: >-
+            Read `lastError` for the failing rule in `/prometheus/api/v1/rules` on the gateway (port 5081), fix
+            its query in stacks/observability/prometheus/rules.yml and deploy.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: PrometheusBadConfig
+        expr: min(max_over_time(prometheus_config_last_reload_successful{job="prometheus"}[5m])) == 0
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Prometheus refused its config'
+          measure: 'Last reload worked (1 yes, 0 no)'
+          unit: ''
+          harm: 'The changed rules or scrapes are not running; the ones before them still are.'
+          action: >-
+            Read `docker logs --tail 50 observability-prometheus-1` and run `promtool check config` on the
+            files.
+          dashboard: *home
+          value: '{{ $value }}'
+
+  # The stores themselves: a store down, or up and no longer taking what Alloy sends, loses data. The log and trace
+  # stores' own metrics come from Alloy's scrape of them (logs/*/alloy.alloy, traces/*/alloy.alloy); Alloy stopping is
+  # "Beelink metrics stopped".
+  - name: stores
+    interval: 1m
+    rules:
+      - alert: store-down
+        expr: min by (job) (up{job=~"logs|traces"}) == 0
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A store is down'
+          measure: 'Answering (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            Alloy holds what it cannot send for an hour, then drops it, so logs or traces from the outage are lost.
+          action: >-
+            Check `docker ps -a --filter name=observability-` and `docker logs --tail 50 observability-<job>-1`, then
+            `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
+          dashboard: *home
+          value: '{{ $value }}'
+      # Only a store that took data in the last day: nothing sends spans while OBI is off.
+      - alert: store-stopped
+        expr: |
+          sum by (job) (
+            rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[15m])
+            or rate(loki_distributor_lines_received_total{job="logs"}[15m])
+            or rate(vl_rows_ingested_total{job="logs"}[15m])
+            or rate(tempo_distributor_spans_received_total{job="traces"}[15m])
+            or rate(vt_rows_ingested_total{job="traces"}[15m])
+          ) == 0
+          and on (job) sum by (job) (
+            increase(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[1d])
+            or increase(loki_distributor_lines_received_total{job="logs"}[1d])
+            or increase(vl_rows_ingested_total{job="logs"}[1d])
+            or increase(tempo_distributor_spans_received_total{job="traces"}[1d])
+            or increase(vt_rows_ingested_total{job="traces"}[1d])
+          ) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A store stopped taking data'
+          measure: 'Taken in the last 15 min, a second'
+          unit: ''
+          harm: >-
+            The store answers but stores nothing new, so what is happening now is missing from the dashboards and the
+            alerts that read it.
+          action: >-
+            Read `docker logs --tail 100 observability-alloy-1` for refused sends, then `docker logs --tail 100` the
+            store's own container (`observability-<job>-1`).
+          dashboard: *home
+          value: '{{ $value }}'
+
+  # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
+  # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
+  # minutes. Deploys and CI-host installs are notices, posted once with no mention; the rest act now.
+  - name: intrusion
+    interval: 1m
+    rules:
+      - alert: deploy-ran
+        expr: max by (actor, commit) (round((time() - homelab_deploy_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: notice
+        annotations:
+          title: 'Deploy started'
+          measure: 'Started'
+          unit: ' min ago'
+          harm: >-
+            A deploy runs main's code on the Beelink as colin, so one you did not start means someone else can change
+            what runs there.
+          action: >-
+            Expected after a merge to main. Otherwise open the run in
+            https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml and remove that actor's access.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ci-host-updated
+        expr: max by (author, commit) (round((time() - homelab_ci_host_install_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: notice
+        annotations:
+          title: 'CI host installed a commit'
+          measure: 'Installed'
+          unit: ' min ago'
+          harm: >-
+            update.sh installs ci-runner/ and scripts/ from main as root, so a commit you did not merge runs with full
+            control of the Beelink.
+          action: >-
+            Expected after a merge that changed ci-runner/ or scripts/. Otherwise read `journalctl -u
+            homelab-ci-update` and that commit on main, and stop the timer with `sudo systemctl stop
+            homelab-ci-update.timer`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: tailscale-device-added
+        expr: |
+          max by (name) (round((time() - homelab_tailscale_device_created_timestamp_seconds) / 3600))
+          and on (name) (
+            max by (name) (homelab_tailscale_device_created_timestamp_seconds{known!="true"})
+            or max by (name) (time() - homelab_tailscale_device_created_timestamp_seconds) < 3600
+          )
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'New or unknown Tailscale device'
+          measure: 'Added'
+          unit: ' h ago'
+          harm: >-
+            A device on the tailnet reaches the Beelink's ports, Grafana and SSH as the tailnet's rules allow; one you
+            did not add means someone else holds a login or a key.
+          action: >-
+            If you added or re-added it, run `sudo rm -r /var/lib/homelab-security-facts` on the Beelink, so the next
+            minute's check learns the tailnet as it is (scripts/security_facts.py). Otherwise remove it at
+            https://login.tailscale.com/admin/machines and rotate your Tailscale login.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: runner-guard-changed
+        expr: min(homelab_runner_guard_matches_main) < 1
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Runner guard differs from main'
+          measure: 'Installed guard is main''s (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            The guard is what stops a fork's workflow running on the deploy runner, and only root can change it, so a
+            copy that is not main's is either not yet installed or someone with root changed it.
+          action: >-
+            Run `diff /usr/local/lib/homelab/runner_job_guard.py scripts/runner_job_guard.py` in a main checkout on
+            the Beelink. If main changed it, install it with `sudo scripts/install-runner-guard.sh enforce`;
+            otherwise treat the Beelink as taken over.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: runner-guard-refused
+        expr: max by (repository, actor) (round((time() - homelab_runner_guard_refusal_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Runner guard refused a job'
+          measure: 'Refused'
+          unit: ' min ago'
+          harm: >-
+            Something asked the deploy runner to run a workflow that is not allowed there, such as a fork's pull
+            request aiming at it.
+          action: >-
+            Read why with `journalctl -t homelab-runner-guard -n 5` on the Beelink, then the run on GitHub; block
+            the actor if it was not you.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssh-login-elsewhere
+        expr: |
+          max by (user, from, device) (
+            round((time() - homelab_ssh_login_timestamp_seconds{known!="true"}) / 60)
+          ) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'SSH login not from a known device'
+          measure: 'Logged in'
+          unit: ' min ago'
+          harm: 'A shell on the Beelink from another device can read every secret on it.'
+          action: >-
+            Read `journalctl -t sshd -t tailscaled -g "Accepted|ssh-session" --since -1h` on the Beelink. If it was
+            not you, remove the device on the tailnet and the key from ~/.ssh/authorized_keys.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: security-checks-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m]))) / 60)
+          ) > 10
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Security checks stopped'
+          measure: 'Last check'
+          unit: ' min ago'
+          harm: 'Deploys, new Tailscale devices, guard changes and SSH logins go unseen while it is stopped.'
+          action: >-
+            Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
+            ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'

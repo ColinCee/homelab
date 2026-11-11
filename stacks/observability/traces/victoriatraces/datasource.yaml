@@ -1,0 +1,14 @@
+# Grafana reads VictoriaTraces through the gateway, never directly, with its Jaeger data source as the maker
+# recommends: https://docs.victoriametrics.com/victoriatraces/querying/grafana/
+apiVersion: 1
+datasources:
+  - name: Traces
+    uid: traces
+    type: jaeger
+    access: proxy
+    url: http://gateway:5080/traces/select/jaeger
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $__file{/run/secrets/agents_password}
+    editable: false

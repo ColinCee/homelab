@@ -23,6 +23,13 @@ jobs:
       contents: read
       packages: read # Pull private GHCR images
     steps:
+      # For the intrusion alerts (scripts/security_facts.py): every deploy posts who and what.
+      - name: Record the deploy
+        env:
+          ACTOR: ${{ github.actor }}
+          COMMIT: ${{ github.sha }}
+        run: logger -t homelab-deploy "commit=$COMMIT actor=$ACTOR"
+
       # Every step runs from the server checkout, so the job makes no checkout of its own.
       - name: Select exact revision
         env:
@@ -32,12 +39,14 @@ jobs:
           git fetch --no-tags origin main
           git reset --hard "$DEPLOY_REF"
 
-      - name: Render stack environments
+      # The one list of secret names: render-secrets writes each to secrets/<name in lower case>.
+      - name: Render secrets
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          # Grafana's admin password and key (ingest, unused since OpenObserve), and the readers' logins.
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
-          # Readers' logins to OpenObserve's read-only gateway (stacks/observability/gateway).
+          OPENOBSERVE_INGEST_PASSWORD: ${{ secrets.OPENOBSERVE_INGEST_PASSWORD }}
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
           OPENOBSERVE_STATS_PASSWORD: ${{ secrets.OPENOBSERVE_STATS_PASSWORD }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}
@@ -47,7 +56,7 @@ jobs:
           RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          scripts/generate-env.sh
+          scripts/render-secrets.sh
 
       # The login lives in the job's temp directory, which the runner deletes
       # after the job, so no registry credential stays on the host.

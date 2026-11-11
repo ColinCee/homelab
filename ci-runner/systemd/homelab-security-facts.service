@@ -1,0 +1,23 @@
+[Unit]
+Description=Write the intrusion alerts' facts to the metrics folder (security.prom)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/security_facts.py
+User=homelab-facts
+# Reads the journal, `tailscale status` over its socket, and two copies of the runner guard; writes one file and
+# keeps one.
+SupplementaryGroups=systemd-journal
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/homelab-metrics
+# The devices it learned at its first run (security_facts.py, STATE).
+StateDirectory=homelab-security-facts
+StateDirectoryMode=0700
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+Nice=10

@@ -1,0 +1,14 @@
+# The trace store when TRACE_STORE=tempo (../../settings.env); ../../compose.yaml runs it as `traces`. One process on
+# local disk, Tempo's monolithic mode, which needs no Kafka.
+services:
+  traces:
+    image: grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044
+    command: -config.file=/etc/tempo/tempo.yaml
+    # It held at most 361 MiB at the real rate under this cap; its Go limit follows the cap (tempo.yaml, memory).
+    mem_limit: 512m
+    volumes:
+      - ./tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+volumes:
+  tempo-data:

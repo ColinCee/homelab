@@ -80,7 +80,7 @@ def test_a_new_slot_count_or_a_changed_test_starts_it_again(host, change) -> Non
 
 
 def test_a_fail_lowers_the_count_by_one_and_the_lower_count_is_tested_next(host) -> None:
-    write_test_script(host, 'echo "FAIL $SLOTS slots: loaded OpenObserve: 1.4s over 1s"; exit 1')
+    write_test_script(host, 'echo "FAIL $SLOTS slots: loaded Grafana: 1.4s over 1s"; exit 1')
     assert sup.run_load_test() == 1
     assert (host / "slots").read_text() == "4\n"
     assert json.loads((host / "load-test.json").read_text())["passed"] is False

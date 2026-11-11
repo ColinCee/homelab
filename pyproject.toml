@@ -28,7 +28,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 [tool.ruff.per-file-target-version]
 "scripts/tailscale_policy.py" = "py312"
 "scripts/deploy.py" = "py312"
-"scripts/generate_env.py" = "py312"
+"scripts/render_secrets.py" = "py312"
 "scripts/runner_job_guard.py" = "py312"
 "scripts/ci_supervisor.py" = "py312"
 "scripts/pin_only.py" = "py312"

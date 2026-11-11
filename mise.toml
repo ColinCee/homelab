@@ -19,7 +19,7 @@ run = "uv run ruff format scripts/ stacks/ tests/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/generate_env.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/public_stats_key.py scripts/pin_only.py scripts/versions_hash.py scripts/ssd_wear.py scripts/docs_size.py stacks/observability/public_stats.py stacks/observability/openobserve/apply.py"
+run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/render_secrets.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/public_stats_key.py scripts/pin_only.py scripts/versions_hash.py scripts/ssd_wear.py scripts/security_facts.py scripts/docs_size.py stacks/observability/public_stats.py stacks/observability/prometheus/replay.py stacks/observability/grafana/users.py"
 
 [tasks.test]
 description = "Run unit tests"
