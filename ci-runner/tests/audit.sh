@@ -58,7 +58,14 @@ for user in fc-slot0 fc-slot1; do
   done
   check "$user has no login shell" [ "$(getent passwd "$user" | cut -d: -f7)" = /usr/sbin/nologin ]
   check "$user not in docker, sudo or kvm groups" bash -c "! id -nG $user | grep -qwE 'docker|sudo|kvm|adm|lxd'"
+  # systemd-resolved's loopback listener; root reaching it shows the probe can succeed.
+  check "$user cannot open a connection (root can)" bash -c \
+    "timeout 3 bash -c '</dev/tcp/127.0.0.53/53' && ! sudo -u $user timeout 3 bash -c '</dev/tcp/127.0.0.53/53' 2>/dev/null"
 done
+slot_uids=$(nft list set inet homelab_ci slot_uids 2>/dev/null)
+while IFS=: read -r name uid; do
+  check "$name is in the network wall" grep -qw "$uid" <<<"$slot_uids"
+done < <(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $1":"$3}')
 
 # Nothing secret in the image
 scan=$(mktemp -d)

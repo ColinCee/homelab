@@ -60,12 +60,21 @@ esac
 # The rules and the public address in one transaction, so running VMs never see the blocked
 # address set empty. Without the address, rules already in place are kept; on a first start
 # they load without it, and run-vm.sh refuses VMs until it is set.
+# Every fc-slot user that exists, not the slot counts, so a user left from a larger
+# count stays walled off too.
+uids=$(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $3}' | paste -sd, -)
+slot_uids=${uids:+"add element inet homelab_ci slot_uids { $uids }"}
 if wan=$(public_address); then
-  { cat "$dir/homelab-ci.nft"; echo "add element inet homelab_ci wan4 { $wan }"; } | nft -f -
+  { cat "$dir/homelab-ci.nft"; echo "add element inet homelab_ci wan4 { $wan }"; echo "$slot_uids"; } | nft -f -
 elif nft list table inet homelab_ci >/dev/null 2>&1; then
   echo "public address not found: the current rules stay; run-vm.sh refreshes it before each VM" >&2
+  # The kept table may be from before the slot-user wall.
+  nft list set inet homelab_ci slot_uids >/dev/null 2>&1 || nft add set inet homelab_ci slot_uids '{ type uid; }'
+  nft list chain inet homelab_ci output | grep -q 'skuid @slot_uids' ||
+    nft insert rule inet homelab_ci output meta skuid @slot_uids counter drop
+  echo "$slot_uids" | nft -f -
 else
-  nft -f "$dir/homelab-ci.nft"
+  { cat "$dir/homelab-ci.nft"; echo "$slot_uids"; } | nft -f -
 fi
 
 for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
