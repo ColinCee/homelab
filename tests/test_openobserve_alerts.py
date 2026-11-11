@@ -458,8 +458,9 @@ def test_no_two_panels_on_a_tab_overlap_and_all_fit_its_width() -> None:
             cells |= mine
 
 
-# Home's colours (.github/skills/dashboards/SKILL.md, "Colour and order"). OpenObserve takes one
-# colour for both themes: these dataviz steps pass its checks on the light and the dark surface.
+# Home's colours (.github/skills/building-dashboards/SKILL.md, "Colour and order"). OpenObserve
+# takes one colour for both themes: these dataviz steps pass its checks on the light and the dark
+# surface.
 GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
 NOW, WEEK, NEUTRAL = "#d03b3b", "#fab219", "#898781"
 PANELS = [p for tab in IN_GIT["Home"]["tabs"] for p in tab["panels"]]

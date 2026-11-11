@@ -1,5 +1,5 @@
 ---
-name: homelab-network
+name: reaching-homelab-devices
 description: "Use when reaching a homelab device or service over Tailscale (Beelink, OpenObserve, Home Assistant, the desktop's pages), saving its address in code or docs, adding an .internal name, or changing who may reach what."
 ---
 

@@ -70,7 +70,7 @@ automatically. Non-major versions can still break behavior, especially before
 | `stacks/observability/` | OpenObserve, Alloy and Alertmanager; pushes the [public stats](docs/public-stats.md) |
 | `stacks/flight-tracker/` | Flight tracker image and Cloudflare Tunnel |
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
-| `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [homelab-network skill](.github/skills/homelab-network/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
+| `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [reaching-homelab-devices skill](.github/skills/reaching-homelab-devices/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
 
 The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
 pending updates) to its job summary. On the first Monday of each month it also

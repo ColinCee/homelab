@@ -28,8 +28,8 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 | **Alertmanager** | Posts OpenObserve's alerts to Discord, repeats, clears and holds them back; port 9093 |
 | **OpenObserve gateway** | Readers' way in, each with own login and paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
-Home and the rules come from Git on each deploy; edit the files, not the UI (the dashboards skill,
-`.github/skills/dashboards/SKILL.md`).
+Home and the rules come from Git on each deploy; edit the files, not the UI (the building-dashboards skill,
+`.github/skills/building-dashboards/SKILL.md`).
 
 ### Dashboard patterns
 
