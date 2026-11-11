@@ -1,3 +1,4 @@
+import functools
 import json
 import os
 import shutil
@@ -8,6 +9,13 @@ from pathlib import Path
 import pytest
 
 from scripts import deploy
+
+
+@functools.cache
+def docker() -> bool:
+    if not shutil.which("docker"):
+        return False
+    return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
 
 
 @pytest.fixture(autouse=True)
@@ -145,7 +153,7 @@ def test_builds_all_profiles_but_starts_only_those_its_env_turns_on(
     assert "COMPOSE_PROFILES" not in environment
 
 
-@pytest.mark.skipif(shutil.which("docker") is None, reason="needs Docker")
+@pytest.mark.skipif("not docker()", reason="needs Docker")
 @pytest.mark.parametrize(("profiles", "started"), [("", ["app"]), ("extra", ["app", "extra"])])
 def test_a_profile_in_the_stacks_env_reaches_up(
     tmp_path: Path, profiles: str, started: list[str]

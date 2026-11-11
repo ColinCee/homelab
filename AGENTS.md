@@ -1,16 +1,10 @@
 # Agents
 
-Single Beelink host running Docker Compose stacks. See `README.md` for services
-and how to run them locally, `docs/` for architecture and runbooks, and
-`docs/runbooks/deploying-services.md` for deployment.
+Single Beelink host running Docker Compose stacks. Services: `README.md`; how parts connect:
+`docs/architecture.md`; deploys: `docs/runbooks/deploying-services.md`.
 
-Checks: `mise run check`
+Checks: `mise run check` (what CI's check job runs; Compose validation needs Docker). Run it before pushing.
 
-That runs what CI's check job runs: lint, typecheck, test, docs:size and validate:compose
-(Compose validation needs Docker). Run it before pushing.
-
-- Keep the simplest working solution. Do not add generic frameworks, wrappers,
-  or instructions for things the code already makes clear.
 - Keep each service, operational command, and scheduled unit under
   `stacks/<name>/`; shared deployment logic must stay stack-name agnostic.
 - Bind admin ports to Tailscale, not all interfaces. Use host networking only
@@ -31,18 +25,8 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
   on the deploy runner.
 - No unattended agent changes this repo; dependency auto-merge belongs in
   Renovate.
-- Change the Beelink's CI runner only by merging to main: it takes the commit and job image within a minute or
-  two, and running jobs carry on (docs/runbooks/ci-runner.md, "Changing the Beelink
-  while jobs run"; a new host's first install is by hand there).
-  Run any wait on the Beelink as a named systemd unit, never as a loop tied to your own
-  connection.
-- Use the existing `mise` tasks for relevant checks. Keep tests for meaningful
-  behavior, not implementation details.
-- Update the relevant operational doc when behavior changes. Keep necessary
-  rationale beside its instructions or code; a decision between designs gets a
-  record in `docs/adr/` (the recording-learnings skill).
-  Delete obsolete guidance and rewrite a decision record in place; archive only
-  for a concrete retention need.
-  Track future work in issues rather than another roadmap.
+- Change the Beelink's CI runner only by merging to main (docs/runbooks/ci-runner.md, "Changing the Beelink
+  while jobs run").
+- Update the operational doc a behavior change touches; a decision between designs gets a record in `docs/adr/`.
 - Docs may not grow past `docs-size.json` (`mise run docs:size`): cut first; if growth
   is needed, `mise run docs:size -- --update` and say why in the pull request.

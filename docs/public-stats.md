@@ -29,7 +29,7 @@ Only these fields; the Worker rejects a body with any other key or type:
 |---|---|---|
 | `at` | when the numbers were gathered (Unix seconds) | the container's clock |
 | `allUp` | every stack has a running container | `container_last_seen` within the last minute |
-| `blocked` | always `null`: CrowdSec is gone, and the Worker still requires the key | none |
+| `blocked` | always `null`, until the Worker stops requiring it | none |
 | `tracking` | aircraft in the tracker's London box now | `/aircraft` KPIs |
 | `londonHour` | aircraft headed for London seen in the past hour | the same KPIs |
 
@@ -39,13 +39,8 @@ Home Assistant's uptime and whether the last backup ran are left out: over time
 they would show restart and failed-backup windows. What still shows is when
 pushes stop (`at` ages), as during a power or internet outage. No hostnames, addresses, container IDs or versions leave the host:
 the body is built from named numbers, never by forwarding a metrics response.
-When Prometheus reports no containers at all, the script skips the push rather
-than publish "all down"; the last numbers age instead. After a failed push it tries again in
-15 seconds, so a deploy's readiness wait sees the container healthy. The flight numbers are `null` unless the tracker's data
-is live.
-
-The Worker accepts `at` up to 10 minutes old and a minute ahead, so a
-drifting clock shows as refused pushes in the container's log (`docker logs
+The flight numbers are `null` unless the tracker's data is live. The Worker accepts `at` up to 10 minutes old and
+a minute ahead, so a drifting clock shows as refused pushes in the container's log (`docker logs
 observability-public-stats-1`) and an unhealthy container.
 
 ## Limits

@@ -4,14 +4,7 @@ The tests behind [the observability stack record](../0001-observability-stack.md
 
 ## The first bake-off
 
-Seven setups ran on one real day of homelab and Auto Kaizen data, replayed with fresh timestamps, each in its own 2.5 GiB container on a desktop. OpenObserve and GreptimeDB + Grafana tied on memory at the real rate (724-751 and 723-755 MiB over 3 rounds), so simplicity picked OpenObserve. Its flaws, each fixed in the tests below:
-
-| Flaw | Fix |
-|---|---|
-| The Grafana stack ran untuned and with Tempo, which used 617-783 MiB alone; without Tempo it was estimated at 684 MiB (one round, the box's peak minus Tempo's), lighter than both finalists | Every store runs with settings checked against its maker's small single-node advice; each layer is picked on its own |
-| OpenObserve's collector had the wrong login in every scored round, so it never carried the homelab load | Every source's arrival is counted before a run starts |
-| Disk only had to fit 30 days in 100 GB: OpenObserve's 24 GB passed against GreptimeDB's 10 GB, and a later run found 12.4 B per metric reading against Prometheus's 2.4 B | Bytes per reading are compared as numbers |
-| The question was Auto Kaizen's traces and transcripts, not the homelab | The live feed and the homelab's own questions |
+Seven setups on one replayed day of homelab and Auto Kaizen data picked OpenObserve on a memory tie. It was wrong in the ways the [record](../0001-observability-stack.md) lists, so every test below runs each store with its maker's small single-node settings, counts each source's arrival before a run, compares bytes per reading as numbers, and uses the live feed and the homelab's own questions.
 
 ## Side-by-side test of six stacks
 
@@ -106,10 +99,6 @@ Run on 11 November 2026, 11:15-13:45 UTC, then stopped early: the four stores si
 | Memory peak in the burst, of its cap (MiB) | 282 of 1,024 | 582 of 1,024, 1,868 cap hits | 476 of 512, 1,741 cap hits | 378 of 512 |
 | Disk per item in the burst, before compaction | 7 B a line | 105 B a line, unflushed | 630 B a span | 72 B a span |
 
-Tempo also hit its cap every 5 minutes on the normal feed, grew its disk about 11 GB a day against about 1.7 GB for VictoriaTraces (a feed the trial's own stores inflated), and refuses a search over more than 7 days. The VictoriaLogs gaps at each kill were 4.9 to 6.8 s of lines, about their 5 s default for saving what they hold in memory; both now save each second, not yet re-measured. No whole stack (stores, Grafana, rule runner, gateway and Alertmanager, page cache left out) stayed under 1 GiB in the burst; the lowest, with VictoriaLogs and VictoriaTraces, held 1,102 MiB.
+Tempo also hit its cap every 5 minutes on the normal feed, grew its disk about 11 GB a day against about 1.7 GB for VictoriaTraces (a feed the trial's own stores inflated), and refuses a search over more than 7 days. The VictoriaLogs gaps at each kill were 4.9 to 6.8 s of lines, about their 5 s default for saving what they hold in memory; both now save each second. No whole stack (stores, Grafana, rule runner, gateway and Alertmanager, page cache left out) stayed under 1 GiB in the burst; the lowest, with VictoriaLogs and VictoriaTraces, held 1,102 MiB.
 
 OBI's `containers_only` failed with OBI on its own network: it compares network namespaces, so it traced host programs, the Docker daemon and the CI VMs until they were excluded by path.
-
-## Not yet tested
-
-Memory over 7 days, expiry, the 1 s save interval after a kill, a browser click from a log line to its trace (it works through Grafana's API), the alert timers on a real alert beside the live Alertmanager, and a real Discord post seen in the channel (Discord accepted the trial's two).

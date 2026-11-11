@@ -16,52 +16,6 @@ access; Cloudflare Tunnel exposes the flight tracker.
   only, and the public API leaves through Cloudflare Tunnel, so filtering for
   it belongs at Cloudflare. A new tailnet device waits for approval in Tailscale, and an alert fires when an unknown container keeps running
 
-## Stack
-
-| Area | Tooling |
-|------|---------|
-| Host | Beelink mini-PC, Ubuntu, Docker Compose |
-| Access | Tailscale (admin), Cloudflare Tunnel (public) |
-| Observability | Prometheus, Grafana, Alertmanager, Alloy, a log and a trace store |
-| Backups | restic to Cloudflare R2 |
-| Security | Tailscale-only access, UFW, unknown-container alert |
-| Automation | GitHub Actions (self-hosted runner for deploys), Renovate |
-| Tooling | mise, uv, Python, ruff, ty, shellcheck, yamllint, actionlint |
-
-## Run locally
-
-```bash
-mise install
-mise run lint
-mise run typecheck
-mise run test
-mise run check              # Also requires Docker for Compose validation
-```
-
-[`mise.toml`](mise.toml) owns check commands and tool versions; uv owns the
-repository's Python dependencies. Add checks there rather than
-creating another runner or Git hook.
-
-## How it works
-
-[Architecture](docs/architecture.md) shows how changes reach the host and who can reach what runs on it.
-
-Each `stacks/<name>/` directory is a self-contained Compose stack. Pushes to
-`main` that touch stacks, scripts, or the deploy workflow run the deploy
-workflow on the host, which writes the allowed secrets to files and
-applies the stacks with one shared command. See
-[Deploy and manage services](docs/runbooks/deploying-services.md).
-
-Public repositories' CI runs on GitHub-hosted runners; private repositories' CI
-runs only in throwaway Firecracker VMs with no secrets, deploy access or home
-network ([CI runner](docs/runbooks/ci-runner.md)). Renovate auto-merges non-major dependency
-updates after checks and the release-age gate pass; major updates remain manual.
-Renovate performs the merge itself so pending checks, including the age gate,
-are not bypassed by GitHub's native auto-merge. Merged service updates deploy
-automatically. Non-major versions can still break behavior, especially before
-1.0. Release delays and grouping live in
-[Renovate configuration](.github/renovate.json).
-
 ## Services
 
 | Stack | Purpose |
@@ -72,24 +26,29 @@ automatically. Non-major versions can still break behavior, especially before
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 | `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [reaching-homelab-devices skill](.github/skills/reaching-homelab-devices/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
 
-The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime,
-pending updates) to its job summary. On the first Monday of each month it also
-prunes unused Docker images and test-restores a file from backup. See
-[observability](docs/observability.md) for what watches what.
+The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime, pending updates) to its
+job summary; on the first Monday of each month it also prunes unused Docker images and test-restores a file from
+backup.
 
-## Maintain and extend
+## Run locally
 
-- [Deploy and manage services](docs/runbooks/deploying-services.md): stack ownership and deployment contract, secrets, adding/removing stacks, startup recovery.
-- [Backups](docs/runbooks/backups.md): what is backed up off-site, alerting, and how to restore.
-- [CI runner](docs/runbooks/ci-runner.md): private-repo CI in Firecracker microVMs on Beelink.
-- [Security audit](docs/runbooks/security-audit.md): checking Beelink for compromise.
-- [Observe and troubleshoot](docs/observability.md): metrics, logs, dashboards, alerts.
-- [Public stats](docs/public-stats.md): the few numbers pushed to colincheung.dev's home page, and what they expose.
-- [GitHub issues](https://github.com/ColinCee/homelab/issues) track outstanding work, and [docs/adr](docs/adr/) records decisions between designs; no parallel roadmap.
-- Private operational records live in the workspace's `notes/04-dev/homelab/`.
+```bash
+mise run check   # lint, typecheck, test, docs size; Compose validation needs Docker
+```
 
-Keep current instructions and necessary rationale together. Configuration owns
-exact settings; Git history retains obsolete explanations.
+[`mise.toml`](mise.toml) owns the check commands and tool versions. Dependency updates come from Renovate
+([`renovate.json`](.github/renovate.json)).
 
-Host firewall rules, Tailscale ACLs, and running services must be checked on the
-host; repository configuration alone does not prove the live security posture.
+## Docs
+
+- [Architecture](docs/architecture.md): how changes reach the host and who can reach what.
+- [Deploy and manage services](docs/runbooks/deploying-services.md): deploys, secrets, adding and removing stacks, startup recovery.
+- [Backups](docs/runbooks/backups.md): what is backed up off-site, and how to restore.
+- [CI runner](docs/runbooks/ci-runner.md): private-repo CI in Firecracker microVMs on the Beelink.
+- [Security audit](docs/runbooks/security-audit.md): checking the Beelink for compromise.
+- [Observe and troubleshoot](docs/observability.md): what watches what, alerts, traps.
+- [Public stats](docs/public-stats.md): the numbers pushed to colincheung.dev's home page, and what they expose.
+- [Decisions](docs/adr/) between designs; outstanding work is in [issues](https://github.com/ColinCee/homelab/issues).
+
+Firewall rules, Tailscale ACLs and running services must be checked on the host; the repository alone does not prove
+the live security posture.
