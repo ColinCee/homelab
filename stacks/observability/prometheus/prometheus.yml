@@ -1,6 +1,6 @@
 # Alloy scrapes every source and writes here (../config.alloy). Prometheus scrapes only what Alloy may not reach:
 # itself, for the rules on its own health (rules.yml, group "prometheus"); Alertmanager, whose API only it and
-# the gateway may reach (../compose.yaml, alerting); and the flight tracker's probe, which probes any address its
+# the gateway may reach (../compose.yaml, alerting); and the public probes, as blackbox probes any address its
 # caller names and reaches the internet.
 global:
   scrape_interval: 15s
@@ -40,3 +40,20 @@ scrape_configs:
       - targets: ["blackbox:9115"]
         labels:
           instance: beelink
+  # The public sites, each a 200 through Cloudflare. The API's own probe is the flight tracker's above.
+  - job_name: integrations/blackbox/sites
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [http_200]
+    static_configs:
+      - targets: ["https://colincheung.dev", "https://flight-tracker-at-home.pages.dev"]
+        labels:
+          instance: beelink
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__address__]
+        target_label: site
+      - target_label: __address__
+        replacement: blackbox:9115

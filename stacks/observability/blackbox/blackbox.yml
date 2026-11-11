@@ -1,5 +1,5 @@
-# Passes only when the backend serves live upstream aircraft, not stale cache (../config.alloy, flight_tracker).
 modules:
+  # Passes only when the backend serves live upstream aircraft, not stale cache (../config.alloy, flight_tracker).
   aircraft_live:
     prober: http
     timeout: 15s
@@ -8,3 +8,11 @@ modules:
       ip_protocol_fallback: false
       valid_status_codes: [200]
       fail_if_body_not_matches_regexp: ['"apiHealth":\s*"live"']
+  # A public site answering (../prometheus/prometheus.yml, integrations/blackbox/sites).
+  http_200:
+    prober: http
+    timeout: 15s
+    http:
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      valid_status_codes: [200]
