@@ -69,8 +69,8 @@ already kept; it drops none by name.
 
 - **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`), of the
   root disk only: Alloy runs as its own user with no capabilities and mounts no host folder but what it reads, so it
-  can read no host file closed to other users. cAdvisor cannot read containers' own layers, so `container_fs_*` is
-  missing.
+  can read no host file closed to other users. cAdvisor cannot read containers' own layers, so each container's
+  disk space (`container_fs_usage_bytes` and the other per-layer `container_fs_*` rows) is missing.
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
@@ -133,7 +133,7 @@ An alert exists only if all three hold; anything else is a dashboard number:
   minutes; a return within those 10 minutes is the same alert, with no new post: the rule's `for` and
   `keep_firing_for`. The clear post says "Cleared": the number recovered, not that anything was fixed.
 - Each post says what broke (title and value), why it matters (`harm`), what to do (`action`), and links a dashboard.
-- "Beelink metrics stopped" holds back every other alert while it fires. Only metrics written outside Alloy (the
+- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics while it fires. Only metrics written outside Alloy (the
   textfiles) carry a no-data arm.
 - `tests/test_alert_rules.py` checks each rule against this, and runs them with `promtool` over made-up series.
 

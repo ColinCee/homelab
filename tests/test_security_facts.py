@@ -11,7 +11,7 @@ STATUS = {
         "a": {
             "DNSName": "biggus-chongus.tail4f465e.ts.net.",
             "Created": "2026-01-31T18:28:48.59761034Z",
-            "TailscaleIPs": ["100.124.190.63", "fd7a:115c:a1e0::5c01:be92"],
+            "TailscaleIPs": ["100.64.0.10", "fd7a:115c:a1e0::10"],
         },
         # Its host name is "localhost", so a device is named by its DNS name.
         "b": {
@@ -38,7 +38,7 @@ def test_devices_are_named_by_dns_name_with_when_they_were_added() -> None:
         "biggus-chongus": 1769884128.59761,
         "iphone182": 1770156942.0,
     }
-    assert names["100.124.190.63"] == "biggus-chongus"
+    assert names["100.64.0.10"] == "biggus-chongus"
 
 
 def test_each_event_keeps_its_newest_time_and_who() -> None:
@@ -62,7 +62,7 @@ def test_each_event_keeps_its_newest_time_and_who() -> None:
         ),
         entry(
             "sshd",
-            "Accepted publickey for ci-peer from 100.124.190.63 port 58736 ssh2: ED25519 SHA256:x",
+            "Accepted publickey for ci-peer from 100.64.0.10 port 58736 ssh2: ED25519 SHA256:x",
             170,
         ),
         entry("sshd", "Connection closed by 100.100.146.119 port 54316", 175),
@@ -85,7 +85,7 @@ def test_each_event_keeps_its_newest_time_and_who() -> None:
         "ci_host_install": {("Colin Cheung", "0123456789ab"): 120},
         "runner_guard_refusal": {("someone/fork", "someone"): 150},
         "ssh_login": {
-            ("ci-peer", "100.124.190.63", "biggus-chongus"): 170,
+            ("ci-peer", "100.64.0.10", "biggus-chongus"): 170,
             ("colin", "203.0.113.9", ""): 180,
         },
     }

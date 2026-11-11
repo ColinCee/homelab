@@ -88,7 +88,8 @@ def test_a_notice_posts_once_with_no_mention_and_no_cleared() -> None:
 
 
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
-    # The rules on Prometheus itself read its own scrape, not Alloy's; the store rules read Alloy's.
+    # The rules on Prometheus itself and the flight tracker's probe read its own scrape, not
+    # Alloy's; the store rules read Alloy's.
     assert {n for n in RULES if n.startswith("Prometheus")} == {
         "PrometheusRuleFailures",
         "PrometheusBadConfig",
@@ -96,7 +97,9 @@ def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metric
     assert ALERTMANAGER["inhibit_rules"] == [
         {
             "source_matchers": ['alertname="beelink-metrics-stopped"'],
-            "target_matchers": ['alertname!~"beelink-metrics-stopped|Prometheus.+"'],
+            "target_matchers": [
+                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down"'
+            ],
         }
     ]
 
@@ -307,7 +310,7 @@ CASES = {
                 "_x5 300x30",
             ),
             (
-                'homelab_ssh_login_timestamp_seconds{user="colin",from="100.124.190.63",device="biggus-chongus"}',
+                'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="biggus-chongus"}',
                 "_x5 300x30",
             ),
             ('homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9"}', "_x5 300x30"),

@@ -34,7 +34,7 @@ How the observability stack moves from OpenObserve to Prometheus, Grafana and th
      number in every tile and lines in the error panels.
    - `gh workflow run heartbeat.yaml --repo ColinCee/homelab`, then `gh run watch`: it passes and counts 24 rules.
    - `gh workflow run server-health.yaml --repo ColinCee/homelab`: "Firing alerts" is none but the switch's own
-     "Deploy started" and "CI host installed a commit".
+     "Deploy started" (the old `update.sh` installs it, silently).
    - Alloy starts on a new volume, so it resends up to 7 hours of the journal and Docker's kept lines.
    - Each intrusion rule posts once to #uptime; after each trigger run `sudo systemctl start homelab-security-facts`:
      `logger -t sshd "Accepted publickey for test from 203.0.113.9 port 1 ssh2"`; `logger -t homelab-runner-guard
