@@ -108,7 +108,8 @@ STANDBY_TIMEOUT_SECONDS = 2 * 3600
 PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
 # Each repo's read-only cache disk: its package caches and installs, built from what a
-# green push to its default branch leaves on its VM's outbox disk (see docs/architecture.md, "CI runner").
+# green push to its default branch leaves on its VM's outbox disk (docs/architecture.md,
+# "CI runner").
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run-vm.sh sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
