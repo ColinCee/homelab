@@ -12,7 +12,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   the stacks changed since the last full deploy ([`deploy.py`](../scripts/deploy.py)), and those reading a changed
   secret: a new secret goes live at the next merge or a Deploy run by hand.
 - **Who may deploy.** The deploy runner controls the host through Docker, so the
-  [runner guard](../scripts/runner_job_guard.py) refuses every job but its `WORKFLOWS` from `main`, started by
+  [runner guard](../scripts/runner_job_guard.py) refuses every job but `deploy.yaml` from `main`, started by
   `ColinCee` or `renovate[bot]`. It is installed root-owned and deploys never update it, so changing it takes a
   reinstall ([recovery](recovery.md#runner-guard)). It does not stop a compromised action inside an allowed workflow:
   actions are pinned by SHA. Admins can bypass the `main` ruleset; Renovate cannot.

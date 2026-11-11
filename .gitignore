@@ -25,6 +25,3 @@ stacks/*/log/
 # OS
 .DS_Store
 
-# Copilot CLI artifacts
-.copilot-session.md
-.copilot/
