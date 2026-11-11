@@ -2,8 +2,6 @@ import email.message
 import http.client
 import io
 import json
-import os
-import subprocess
 import tarfile
 import threading
 import urllib.error
@@ -718,11 +716,6 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
         "slots": 5,
         "in_use": 2,
         "standby": 1,
-        "light_slots": 0,
-        "light_in_use": 0,
-        "light_standby": 0,
-        "deploy_standby": 0,
-        "small_standby": 0,
         "cache_disks": ["octo/agent", "octo/widgets"],
         "github_ok": True,
         "mem_available_mib": 9000,
@@ -1097,7 +1090,7 @@ def test_the_longest_waits_seconds_per_kind_go_to_openobserve(host, wait_metrics
     queue(jobs=1, free_mib=1 << 20, queued_at=40.0)
     sup.tick(None, state, ["o/ok"], 130.0)  # type: ignore[arg-type]  # its VM boots
     sup.tick(None, state, ["o/ok"], 150.0)  # type: ignore[arg-type]
-    slots = state.slots + state.light_slots
+    slots = state.slots
     assert wait_metrics.read_text().splitlines() == [
         'homelab_ci_wait_seconds{kind="memory"} 30',
         'homelab_ci_wait_seconds{kind="disk"} 0',
@@ -1168,10 +1161,8 @@ def test_each_reason_has_a_kind_of_wait() -> None:
     assert sup.wait_kind("memory (0 MiB free above the 3072 MiB reserve, a VM needs 2048)") == (
         "memory"
     )
-    assert sup.wait_kind("an older light job waiting for memory") == "memory"
     assert sup.wait_kind("the disk (tasks waited on it 90% of the last minute)") == "disk"
-    assert sup.wait_kind("all 5 light slots in use") == "slots"
-    assert sup.wait_kind("all 5 light slots in use, one more kept for deploys") == "slots"
+    assert sup.wait_kind("all 5 build slots in use") == "slots"
     assert sup.wait_kind(sup.BOOTING) == "booting"
     assert sup.wait_kind(sup.READY) == "ready"
     assert sup.wait_kind("no VM has its labels (homelab-fc, gpu)") == "other"
@@ -1361,41 +1352,14 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
     assert state.used == {"o/spare", "o/job"}
 
 
-LIGHT = sup.light_runner_labels(sup.LIGHT_LABEL)
-SMALL = sup.light_runner_labels(sup.SMALL_LABEL)
-
-
-@pytest.mark.parametrize(
-    ("labels", "ours"),
-    [
-        (LIGHT, True),
-        (("self-hosted", "linux", "x64", "HOMELAB-FC-LIGHT"), True),
-        ((*LIGHT, "homelab-fc"), False),  # a build VM never has the light label
-        ((*LIGHT, "fc-cache-colincee--servo"), False),  # a light VM has no cache disk
-        (SMALL, True),
-        ((*SMALL, sup.LIGHT_LABEL), False),  # no VM has both sizes
-    ],
-)
-def test_a_light_job_asks_for_the_light_label_alone(labels, ours) -> None:
-    assert sup.wants_us(labels) is ours
-
-
-def test_a_light_jobs_want_is_its_light_label() -> None:
-    assert sup.Job("o/ok", 1, "j", LIGHT).want == ("o/ok", sup.LIGHT_LABEL)
-    assert sup.Job("o/ok", 1, "j", SMALL).want == ("o/ok", sup.SMALL_LABEL)
-
-
 @pytest.fixture
 def pools(caches, monkeypatch):
-    """Build and light jobs queued in one repo; launch records (slot, label)."""
+    """Build jobs queued in one repo; launch records (slot, label)."""
     monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    # No deploy or small standby, so no light slot kept for them, unless a test sets one.
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 0)
-    monkeypatch.setattr(sup, "small_standby_count", lambda: 0)
     started: list[tuple[int, str]] = []
 
     def launch(gh, state, repo, slot, now, *, cache, label="", standby=False, jobs=()) -> None:
@@ -1406,81 +1370,11 @@ def pools(caches, monkeypatch):
 
     monkeypatch.setattr(sup, "launch", launch)
 
-    def queue(build: int, light: int) -> None:
+    def queue(build: int) -> None:
         jobs = [sup.Job("o/ok", n, "b", tuple(sup.RUNNER_LABELS)) for n in range(build)]
-        jobs += [sup.Job("o/ok", 100 + n, "l", LIGHT) for n in range(light)]
         monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
 
     return queue, started
-
-
-def test_light_jobs_start_only_in_light_slots_and_build_jobs_only_in_build_slots(pools) -> None:
-    queue, started = pools
-    queue(build=7, light=4)
-    sup.tick(None, sup.State(slots=5, light_slots=3), ["o/ok"], 0.0)  # type: ignore[arg-type]
-    light = [(slot, sup.LIGHT_LABEL) for slot in (5, 6, 7)]
-    assert sorted(started) == [(0, ""), (1, ""), (2, ""), (3, ""), (4, ""), *light]
-
-
-def test_light_jobs_still_start_while_every_build_slot_is_busy(pools) -> None:
-    queue, started = pools
-    queue(build=0, light=2)
-    state = sup.State(slots=2, light_slots=2)
-    for slot in (0, 1):
-        state.launches[slot] = _launch(slot, False)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [(2, sup.LIGHT_LABEL), (3, sup.LIGHT_LABEL)]
-
-
-def test_no_light_slots_means_light_jobs_wait(pools) -> None:
-    queue, started = pools
-    queue(build=1, light=2)
-    sup.tick(None, sup.State(slots=5, light_slots=0), ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [(0, "")]
-
-
-def test_light_vms_do_not_shrink_a_build_vm() -> None:
-    state = sup.State(slots=5, light_slots=2)
-    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    assert sup.next_size(state, False) == (4, 4096)
-
-
-def test_the_status_file_counts_light_vms_apart() -> None:
-    state = sup.State(slots=5, light_slots=5, launches={0: _launch(0, False)})
-    state.launches[5] = sup.Launch(5, "o/ok", 5, "fc-5", 0.0, None, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    status = sup.status(state, 0.0, github_ok=True, mem_available=9000)
-    assert (status["in_use"], status["light_slots"], status["light_in_use"]) == (1, 5, 1)
-
-
-@pytest.mark.parametrize(("text", "slots"), [(None, 0), (" 0 ", 0), ("3", 3), ("lots", 0)])
-def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
-    path = tmp_path / "light-slots"
-    if text is not None:
-        path.write_text(text)
-    monkeypatch.setattr(sup, "LIGHT_SLOTS_FILE", path)
-    assert sup.light_slot_count() == slots
-
-
-def _install_light_slots(etc: Path, **files: str) -> str:
-    """The light slots install-host.sh would write for a host folder with these files."""
-    for name, text in files.items():
-        (etc / name.replace("_", "-")).write_text(text)
-    script = Path(__file__).parent.parent / "ci-runner" / "slots.sh"
-    env = {"PATH": os.environ["PATH"], "etc": str(etc)}
-    return subprocess.run(
-        ["bash", "-c", f'set -euo pipefail; source "{script}"; echo "$LIGHT_SLOTS"'],
-        env=env,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-
-
-@pytest.mark.parametrize(("have", "want"), [("7", "10"), ("12", "12"), ("lots", "10")])
-def test_install_raises_the_beelinks_light_slots_to_the_repos_minimum_and_keeps_more(
-    tmp_path, have, want
-) -> None:
-    assert _install_light_slots(tmp_path, light_slots=have) == want
 
 
 def test_an_old_last_repo_file_with_the_repo_alone_still_loads(monkeypatch, tmp_path) -> None:
@@ -1722,13 +1616,13 @@ def test_a_build_standby_gives_way_to_another_labels_job_with_no_free_slot(
     assert started == []  # the job takes the slot once the standby has gone
 
 
-@pytest.mark.parametrize(("label", "slot"), [("", 0), (sup.LIGHT_LABEL, 2)])
 @pytest.mark.parametrize("busy", [True, False])
 def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
-    pools, monkeypatch, label, slot, busy
+    pools, monkeypatch, busy
 ) -> None:
     queue, started = pools
-    queue(build=0 if label else 1, light=1 if label else 0)
+    queue(build=1)
+    label, slot = "", 0
     asked: list[str] = []
 
     def has_job(gh, run) -> bool:
@@ -1736,7 +1630,7 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
         return busy
 
     monkeypatch.setattr(sup, "has_job", has_job)
-    state = sup.State(slots=2, light_slots=2)
+    state = sup.State(slots=2)
     # Started a minute ago for the same repo and label.
     state.launches[slot] = sup.Launch(
         slot,
@@ -1755,372 +1649,10 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
     assert asked == [f"fc-{slot}"]
 
 
-def test_a_free_light_slot_gets_a_ready_light_vm_for_the_last_light_jobs_repo(
-    pools, monkeypatch
-) -> None:
-    queue, started = pools
-    queue(build=0, light=1)
-    state = sup.State(slots=2, light_slots=2)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    state.last_light_repo = "o/ok"  # as launch remembers it
-    assert started == [(2, sup.LIGHT_LABEL)]  # the job; one slot left free
-
-    queue(build=0, light=0)
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert started[-1] == (3, sup.LIGHT_LABEL) and state.launches[3].standby
-    status = sup.status(state, 2.0, github_ok=True, mem_available=9000)
-    assert (status["in_use"], status["standby"]) == (0, 0)
-    assert (status["light_in_use"], status["light_standby"]) == (1, 1)
-
-    sup.tick(None, state, ["o/ok"], 4.0)  # type: ignore[arg-type]
-    assert len(started) == 2  # one is enough
-
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    del state.launches[3]
-    sup.tick(None, state, ["o/ok"], 6.0)  # type: ignore[arg-type]
-    assert len(started) == 2
-
-
-def test_a_light_job_of_its_repo_takes_the_light_standby(pools) -> None:
-    queue, started = pools
-    queue(build=0, light=1)
-    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
-    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    assert started == []  # left to the ready VM
-
-
-def test_the_light_standby_gives_way_to_another_repos_light_job(pools, monkeypatch) -> None:
-    queue, started = pools
-    queue(build=0, light=1)
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(f"{run.repo} {why}")
-    )
-    state = sup.State(slots=1, light_slots=1, last_light_repo="o/other")
-    state.launches[1] = sup.Launch(1, "o/other", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok", "o/other"], 60.0)  # type: ignore[arg-type]
-    assert stopped == ["o/other is in the way of a queued job"]
-    assert started == []  # the job takes the slot once the standby has gone
-
-
-def test_the_light_standby_stays_out_of_a_build_jobs_way_for_a_slot(pools, monkeypatch) -> None:
-    queue, _ = pools
-    queue(build=1, light=0)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
-    state.launches[0] = _launch(0, False)  # the build slot is busy
-    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    assert stopped == []  # a build cannot use a light slot
-
-
-def test_the_light_standby_gives_its_memory_to_a_build_and_never_boots_while_one_waits(
-    host, monkeypatch
-) -> None:
-    queue, started, _ = host
-    monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    state = sup.State(slots=2, light_slots=2, last_light_repo="o/ok")
-    state.launches[2] = sup.Launch(2, "o/ok", 2, "fc-2", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    queue(jobs=1, free_mib=3072 + 1024)  # a free build slot, but not the memory
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert stopped == ["is in the way of a job waiting for memory"]
-    assert started == []  # nor another light standby in the free light slot
-
-
-def test_three_idle_light_standbys_give_their_memory_to_a_build_waiting_for_it(
-    host, monkeypatch
-) -> None:
-    queue, started, _ = host
-    monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    stopped: list[int] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(run.slot))
-    state = sup.State(slots=2, light_slots=3, last_light_repo="o/ok")
-    for slot in (2, 3, 4):
-        state.launches[slot] = sup.Launch(
-            slot, "o/ok", slot, f"fc-{slot}", 0.0, None, True, label=sup.LIGHT_LABEL
-        )  # type: ignore[arg-type]
-    queue(jobs=1, free_mib=1024)  # a free build slot, but the build needs the standbys' memory
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert stopped == [2, 3, 4], stopped
-    assert started == []  # no standby boots in their place while the build waits
-
-
-def test_the_last_light_jobs_repo_is_kept_and_polled_every_time(monkeypatch, tmp_path) -> None:
-    monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
-    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
-    assert sup.recalled_repo(sup.LAST_LIGHT_REPO_FILE, "") == ""
-    sup.remember(sup.LAST_LIGHT_REPO_FILE, "a/k\n")
-    assert sup.recalled_repo(sup.LAST_LIGHT_REPO_FILE, "") == "a/k"
-    sup.remember(sup.LAST_LIGHT_REPO_FILE, f"a/k\n{sup.SMALL_LABEL}\n")  # as an older one kept it
-    assert sup.recalled_repo(sup.LAST_LIGHT_REPO_FILE, "") == "a/k"
-    state = sup.State(last_light_repo="a/k", polled={"a/k": 0.0, "a/q": 0.0})
-    assert sup.due(["a/k", "a/q"], state, 30.0) == ["a/k"]
-
-
-DEPLOY = sup.light_runner_labels(sup.DEPLOY_LABEL)
-
-
-def _deploy_standby(slot: int, repo: str = "o/ok") -> sup.Launch:
-    return sup.Launch(slot, repo, slot, f"fc-{slot}", 0.0, None, True, label=sup.DEPLOY_LABEL)  # type: ignore[arg-type]
-
-
-def test_a_deploy_standby_registers_only_the_deploy_label(monkeypatch, tmp_path) -> None:
-    labels: list[object] = []
-
-    class Registers:
-        def request(self, method: str, path: str, body: dict) -> dict:
-            labels.append(body["labels"])
-            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
-
-    for name in ("STATE_DIR", "OUTBOX_DIR"):
-        monkeypatch.setattr(sup, name, tmp_path)
-    monkeypatch.setattr(sup, "LAST_DEPLOY_REPO_FILE", tmp_path / "last-deploy-repo")
-    monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
-    sizes: list[str] = []
-    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: sizes.append(env["MEM_MIB"]))
-    state = sup.State(slots=1, light_slots=2, last_light_repo="o/light")
-    sup.launch(Registers(), state, "o/ok", 1, 0.0, label=sup.DEPLOY_LABEL, cache=None, standby=True)  # type: ignore[arg-type]
-    assert labels == [list(DEPLOY)] and sizes == ["1024"]
-    assert state.last_deploy_repo == sup.DEFAULT_DEPLOY_REPO  # a standby draws nothing to it
-
-    # A deploy job keeps its repo for the deploy standby, never for the light one.
-    sup.launch(Registers(), state, "o/ok", 2, 0.0, label=sup.DEPLOY_LABEL, cache=None)  # type: ignore[arg-type]
-    assert (state.last_deploy_repo, state.last_light_repo) == ("o/ok", "o/light")
-    assert sup.recalled_repo(sup.LAST_DEPLOY_REPO_FILE, sup.DEFAULT_DEPLOY_REPO) == "o/ok"
-    assert sup.recalled_repo(sup.LAST_LIGHT_REPO_FILE, "") == ""
-    assert sup.Job("o/ok", 1, "d", DEPLOY).want == ("o/ok", sup.DEPLOY_LABEL)
-    assert sup.wants_us(DEPLOY) and not sup.wants_us((*DEPLOY, sup.SMALL_LABEL))
-
-
-@pytest.mark.parametrize("labels", [LIGHT, SMALL])
-def test_a_queued_light_or_small_job_is_not_given_to_the_deploy_standby(
-    pools, monkeypatch, labels
-) -> None:
-    _, started = pools
-    jobs = [sup.Job("o/ok", 100, "l", labels)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    state = sup.State(slots=1, light_slots=2, last_deploy_repo="o/ok")
-    state.launches[1] = _deploy_standby(1)
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    assert [label for _, label in started] == [labels[-1]]  # a VM of its own
-
-
-def test_a_deploy_job_takes_the_deploy_standby_and_a_new_one_boots(pools, monkeypatch) -> None:
-    _, started = pools
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    jobs = [sup.Job("o/ok", 100, "d", DEPLOY)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    state = sup.State(slots=1, light_slots=2, last_deploy_repo="o/ok")
-    state.launches[1] = _deploy_standby(1)
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    assert started == []  # left to the ready VM
-
-    state.launches[1].standby = False  # as check_standby marks it once it has the job
-    jobs.clear()
-    sup.tick(None, state, ["o/ok"], 62.0)  # type: ignore[arg-type]
-    assert started == [(2, sup.DEPLOY_LABEL)] and state.launches[2].standby
-    status = sup.status(state, 62.0, github_ok=True, mem_available=9000)
-    assert (status["light_in_use"], status["light_standby"], status["deploy_standby"]) == (1, 0, 1)
-    sup.tick(None, state, ["o/ok"], 64.0)  # type: ignore[arg-type]
-    assert len(started) == 1  # one is enough
-
-
-def test_the_deploy_standby_waits_beside_the_light_one_unless_set_to_none(
-    pools, monkeypatch
-) -> None:
-    queue, started = pools
-    queue(build=0, light=0)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 1)
-    state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok")
-    state.last_deploy_repo = "o/ok"
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [(1, sup.LIGHT_LABEL), (2, sup.DEPLOY_LABEL)]
-
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 0)
-    del state.launches[2]
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert len(started) == 2
-
-
-def test_a_full_light_load_leaves_the_deploy_slot_free(pools, monkeypatch) -> None:
-    queue, started = pools
-    queue(build=0, light=5)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    lines: list[str] = []
-    monkeypatch.setattr(sup, "log", lines.append)
-    state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok", last_deploy_repo="o/ok")
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    # Two light jobs start; the third slot gets the deploy standby, not a light job.
-    assert started == [(1, sup.LIGHT_LABEL), (2, sup.LIGHT_LABEL), (3, sup.DEPLOY_LABEL)]
-    assert any("all 2 light slots in use, one more kept for deploys" in line for line in lines)
-
-    # A deploy job may still use any free light slot.
-    del state.launches[1], state.launches[3]
-    state.launches[2].busy = True  # running its job
-    jobs = [sup.Job("o/ok", 200, "d", DEPLOY), sup.Job("o/ok", 300, "l", LIGHT)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    # A running deploy keeps no slot: the next deploy standby boots in the other free one,
-    # so the light job waits rather than leave the next deploy without a ready VM.
-    assert started[3:] == [(1, sup.DEPLOY_LABEL), (3, sup.DEPLOY_LABEL)]
-    assert state.launches[3].standby and not state.launches[1].standby
-
-    # Once the deploy ends, the light job takes its slot.
-    del state.launches[1]
-    jobs[:] = [sup.Job("o/ok", 300, "l", LIGHT)]
-    sup.tick(None, state, ["o/ok"], 4.0)  # type: ignore[arg-type]
-    assert started[5:] == [(1, sup.LIGHT_LABEL)]
-
-
-def test_a_single_light_slot_is_not_kept_for_deploys(pools, monkeypatch) -> None:
-    queue, started = pools
-    queue(build=0, light=1)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    state = sup.State(slots=1, light_slots=1, last_deploy_repo="o/ok")
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [(1, sup.LIGHT_LABEL)]  # else no light job could ever start
-
-
-@pytest.mark.parametrize("labels", [LIGHT, DEPLOY])
-def test_the_deploy_standby_is_not_stopped_for_a_queued_light_job(
-    pools, monkeypatch, labels
-) -> None:
-    jobs = [sup.Job("o/other", 100, "l", labels)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "o/other" else [])
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    state = sup.State(slots=1, light_slots=2, last_deploy_repo="o/ok")
-    state.launches[1] = _deploy_standby(1)
-    state.launches[2] = sup.Launch(2, "o/ok", 2, "fc-2", 0.0, None, False, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok", "o/other"], 60.0)  # type: ignore[arg-type]
-    # Only another repo's deploy, which it cannot take, has it give way.
-    assert stopped == ([] if labels == LIGHT else ["is in the way of a queued job"])
-
-
-def test_the_deploy_standby_boots_while_a_build_waits_for_memory(host, monkeypatch) -> None:
-    queue, started, _ = host
-    monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 1)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok", last_deploy_repo="o/ok")
-    state.launches[1] = _deploy_standby(1)
-    queue(jobs=1, free_mib=3072 + 1024)  # room for a 1 GiB VM, not the build's
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert stopped == [] and started == []  # the idle deploy standby stays; no light one boots
-
-    del state.launches[1]  # it took a deploy and ended
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert [standby for _, _, standby in started] == [True]  # the deploy standby again
-    assert state.held  # while the build still waits
-
-
-def _small_standby(slot: int, repo: str = "o/ok") -> sup.Launch:
-    return sup.Launch(slot, repo, slot, f"fc-{slot}", 0.0, None, True, label=sup.SMALL_LABEL)  # type: ignore[arg-type]
-
-
 def _busy(slot: int, label: str = "") -> sup.Launch:
     run = sup.Launch(slot, "o/ok", slot, f"fc-{slot}", 0.0, None, False, label=label)  # type: ignore[arg-type]
     run.busy = True
     return run
-
-
-def test_a_small_job_takes_the_ready_small_vm_while_builds_fill_every_slot(
-    pools, monkeypatch
-) -> None:
-    _, started = pools
-    monkeypatch.setattr(sup, "small_standby_count", lambda: 1)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    lines: list[str] = []
-    monkeypatch.setattr(sup, "log", lines.append)
-    # Every build slot busy with a third build queued, the other light slots running 2 GiB
-    # jobs, and only 1.5 GiB left above the reserve.
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 1500)
-    jobs = [sup.Job("o/ok", 1, "b", tuple(sup.RUNNER_LABELS)), sup.Job("o/ok", 2, "s", SMALL)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    state = sup.State(slots=2, light_slots=3, last_small_repo="o/ok")
-    for slot, label in ((0, ""), (1, ""), (2, sup.LIGHT_LABEL), (3, sup.LIGHT_LABEL)):
-        state.launches[slot] = _busy(slot, label)
-    state.launches[4] = _small_standby(4)
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    # The small job is left to the ready VM; only the build is logged as waiting.
-    assert started == [] and stopped == []
-    assert any("job 1 " in line and "all 2 build slots in use" in line for line in lines)
-    assert not any("job 2 " in line for line in lines)
-
-    # Once it has the job, the next small standby boots in the first light slot to free up,
-    # before a queued 2 GiB light job, in the 1 GiB still free.
-    state.launches[4].standby = False
-    del state.launches[2]
-    jobs[1:] = [sup.Job("o/ok", 3, "l", LIGHT)]
-    sup.tick(None, state, ["o/ok"], 62.0)  # type: ignore[arg-type]
-    assert started == [(2, sup.SMALL_LABEL)] and state.launches[2].standby
-    assert any("job 3 " in line and "one more kept for small jobs" in line for line in lines)
-
-
-def test_light_jobs_leave_the_small_slot_free(pools, monkeypatch) -> None:
-    queue, started = pools
-    queue(build=0, light=5)
-    monkeypatch.setattr(sup, "small_standby_count", lambda: 1)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 1)
-    lines: list[str] = []
-    monkeypatch.setattr(sup, "log", lines.append)
-    state = sup.State(slots=1, light_slots=4, last_deploy_repo="o/ok", last_small_repo="o/ok")
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [
-        (1, sup.LIGHT_LABEL),
-        (2, sup.LIGHT_LABEL),
-        (3, sup.DEPLOY_LABEL),
-        (4, sup.SMALL_LABEL),
-    ]
-    assert any(
-        "all 2 light slots in use, one more kept for deploys, one more kept for small jobs" in line
-        for line in lines
-    )
-
-    # Once both standbys are up, a waiting light job's reason names no kept slot: none is held.
-    state.launches[1].busy = state.launches[2].busy = True  # running their jobs
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert state.waits[102].why == "all 4 light slots in use"
-
-    # With two light slots, only the deploy one is kept: one is left for light jobs.
-    state = sup.State(slots=1, light_slots=2, last_deploy_repo="o/ok", last_small_repo="o/ok")
-    assert sup.kept_slots(state) == [sup.DEPLOY_LABEL]
-
-
-@pytest.mark.parametrize(
-    ("labels", "why"), [(LIGHT, []), (SMALL, ["is in the way of a queued job"])]
-)
-def test_the_small_standby_gives_way_only_to_another_repos_small_job(
-    pools, monkeypatch, labels, why
-) -> None:
-    monkeypatch.setattr(sup, "small_standby_count", lambda: 1)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    jobs = [sup.Job("o/other", 100, "l", labels)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "o/other" else [])
-    state = sup.State(slots=1, light_slots=3, last_small_repo="o/ok")
-    state.launches[1] = _small_standby(1)
-    state.launches[2] = _busy(2, sup.LIGHT_LABEL)
-    state.launches[3] = _busy(3, sup.LIGHT_LABEL)
-    sup.tick(None, state, ["o/ok", "o/other"], 60.0)  # type: ignore[arg-type]
-    assert stopped == why
-
-
-def test_the_last_deploy_jobs_repo_is_polled_every_time() -> None:
-    state = sup.State(polled={"a/k": 0.0, "a/q": 0.0}, last_deploy_repo="a/k")
-    assert sup.due(["a/k", "a/q"], state, 30.0) == ["a/k"]
 
 
 # The real one, before the fixture below replaces it in every test.
@@ -2214,14 +1746,6 @@ def test_an_ended_vms_failed_bookkeeping_frees_its_slot_and_the_queued_job_still
     assert "slot 0: fc-0-1 bookkeeping failed: KeyError: 'deploy'" in lines
 
 
-def test_an_ended_vm_of_a_kind_with_no_count_yet_is_counted(vms, memory, monkeypatch) -> None:
-    monkeypatch.setattr(sup, "MEMORY_COUNTS", {})
-    run = _ended(vms, sup.DEPLOY_LABEL, peak=300, kills=0)
-    sup.forget(run)
-    assert sup.MEMORY_COUNTS == {"deploy": [1, 0, 0]}
-    assert 'homelab_ci_vms_ended_total{kind="deploy"} 1' in sup.MEMORY_METRICS.read_text()
-
-
 def test_reaping_waits_while_systemd_cannot_be_asked(monkeypatch) -> None:
     monkeypatch.setattr(sup, "running_vms", lambda: None)
     run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"))
@@ -2247,172 +1771,14 @@ def test_stale_runners_skip_the_vms_still_running() -> None:
     assert Runners.deleted == ["1"]
 
 
-@pytest.mark.parametrize("label", ["", sup.LIGHT_LABEL])
-def test_a_standby_that_took_a_job_is_recorded_as_a_job_vm(vms, monkeypatch, label) -> None:
-    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"), True, label=label)
+def test_a_standby_that_took_a_job_is_recorded_as_a_job_vm(vms, monkeypatch) -> None:
+    run = sup.Launch(0, "o/ok", 7, "fc-0-1", 0.0, Path("m"), True)
     sup.write_status(run.record, sup.record(run))
     monkeypatch.setattr(sup, "is_idle", lambda gh, r: False)
     state = sup.State(launches={0: run})
     sup.reap(None, state, 60.0, {}, ["o/ok"])  # type: ignore[arg-type]
     assert json.loads(run.record.read_text())["standby"] is False
-    assert ("o/ok" in state.used) is (label == "")  # only a build job keeps its repo polled
-
-
-def test_no_light_standby_boots_while_the_disk_is_busy(pools, monkeypatch) -> None:
-    queue, started = pools
-    queue(build=0, light=0)
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 90.0)
-    state = sup.State(slots=1, light_slots=1, last_light_repo="o/ok")
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == []
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert started == [(1, sup.LIGHT_LABEL)]
-
-
-@pytest.mark.parametrize(("light_id", "small_starts"), [(2, True), (1, False)])
-def test_a_small_vm_starts_where_a_light_one_does_not_fit_unless_one_waits_before_it(
-    pools, monkeypatch, light_id, small_starts
-) -> None:
-    _, started = pools
-    jobs = [sup.Job("o/ok", light_id, "l", LIGHT), sup.Job("o/ok", 3 - light_id, "s", SMALL)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 1500)
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    state = sup.State(slots=1, light_slots=2)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == ([(1, sup.SMALL_LABEL)] if small_starts else [])
-    assert set(state.held) == ({light_id} if small_starts else {1, 2})
-
-
-def test_a_small_vm_registers_its_label_with_half_the_memory(monkeypatch, tmp_path) -> None:
-    labels: list[object] = []
-
-    class Registers:
-        def request(self, method: str, path: str, body: dict) -> dict:
-            labels.append(body["labels"])
-            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
-
-    for name in ("STATE_DIR", "OUTBOX_DIR"):
-        monkeypatch.setattr(sup, name, tmp_path)
-    monkeypatch.setattr(sup, "LAST_LIGHT_REPO_FILE", tmp_path / "last-light-repo")
-    monkeypatch.setattr(sup, "LAST_SMALL_REPO_FILE", tmp_path / "last-small-repo")
-    sizes: list[str] = []
-    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: sizes.append(env["MEM_MIB"]))
-    state = sup.State(slots=1, light_slots=1)
-    sup.launch(Registers(), state, "o/ok", 1, 0.0, label=sup.SMALL_LABEL, cache=None)  # type: ignore[arg-type]
-    assert labels == [list(SMALL)] and sizes == ["1024"] and state.launches[1].light
-    # A small job draws the small standby to its repo, not the 2 GiB light one.
-    assert (state.last_small_repo, state.last_light_repo) == ("o/ok", "")
-    assert sup.recalled_repo(sup.LAST_SMALL_REPO_FILE, "") == "o/ok"
-
-    # The light standby also takes small jobs, at the light size; a small standby stays small.
-    sup.launch(Registers(), state, "o/ok", 2, 0.0, label=sup.LIGHT_LABEL, cache=None, standby=True)  # type: ignore[arg-type]
-    sup.launch(Registers(), state, "o/ok", 3, 0.0, label=sup.SMALL_LABEL, cache=None, standby=True)  # type: ignore[arg-type]
-    assert labels[1:] == [[*LIGHT, sup.SMALL_LABEL], list(SMALL)]
-    assert sizes[1:] == ["2048", "1024"]
-
-
-@pytest.mark.parametrize(
-    ("queued", "starts"),
-    [
-        ([SMALL], []),  # the standby takes it
-        ([LIGHT, SMALL], [sup.SMALL_LABEL]),  # it takes one; the other gets a VM
-        ([SMALL, SMALL], [sup.SMALL_LABEL]),
-    ],
-)
-def test_the_light_standby_covers_a_queued_small_job_of_its_repo(
-    pools, monkeypatch, queued, starts
-) -> None:
-    _, started = pools
-    jobs = [sup.Job("o/ok", 100 + n, "l", labels) for n, labels in enumerate(queued)]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 1)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    state = sup.State(slots=1, light_slots=2, last_light_repo="o/ok")
-    state.launches[1] = sup.Launch(1, "o/ok", 1, "fc-1", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
-    assert [label for _, label in started] == starts and stopped == []
-
-
-def _queue_build_and_light(monkeypatch, build_id: int, light_id: int, free_mib: int) -> list[str]:
-    jobs = [
-        sup.Job("o/ok", build_id, "b", tuple(sup.RUNNER_LABELS)),
-        sup.Job("o/ok", light_id, "l", LIGHT),
-    ]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: free_mib)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    lines: list[str] = []
-    monkeypatch.setattr(sup, "log", lines.append)
-    return lines
-
-
-def test_an_older_light_job_starts_while_a_newer_build_waits_for_memory(pools, monkeypatch) -> None:
-    _, started = pools
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    lines = _queue_build_and_light(monkeypatch, build_id=2, light_id=1, free_mib=3072 + 3000)
-    state = sup.State(slots=1, light_slots=1)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [(1, sup.LIGHT_LABEL)]  # room for the small VM, not the build's
-    assert state.held == {2: "o/ok"}
-    assert lines == [
-        "job 2 in o/ok has waited 0m00s here:"
-        " memory (952 MiB free above the 3072 MiB reserve, a VM needs 4096)"
-    ]
-
-
-def test_a_small_job_starts_on_the_next_poll_while_an_older_build_waits_for_memory(
-    pools, monkeypatch
-) -> None:
-    _, started = pools
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 3000)
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    lines: list[str] = []
-    monkeypatch.setattr(sup, "log", lines.append)
-    jobs = [sup.Job("o/ok", 1, "b", tuple(sup.RUNNER_LABELS))]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    state = sup.State(slots=1, light_slots=1)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == [] and state.held == {1: "o/ok"}
-    # A task's first step is queued after the build: its 1 GiB fits, so it does not wait.
-    jobs.append(sup.Job("o/ok", 2, "line", SMALL))
-    sup.tick(None, state, ["o/ok"], 2.0)  # type: ignore[arg-type]
-    assert started == [(1, sup.SMALL_LABEL)]
-    assert state.held == {1: "o/ok"}
-    assert lines == [  # the build is logged once; the small job never waits
-        "job 1 in o/ok has waited 0m00s here:"
-        " memory (3000 MiB free above the 3072 MiB reserve, a VM needs 4096)",
-    ]
-
-
-def test_neither_kind_starts_while_the_disk_is_busy(pools, monkeypatch) -> None:
-    _, started = pools
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 90.0)
-    lines = _queue_build_and_light(monkeypatch, build_id=2, light_id=1, free_mib=1 << 20)
-    state = sup.State(slots=1, light_slots=1)
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert started == []
-    disk = "the disk (tasks waited on it 90% of the last minute)"
-    assert lines == [f"job {n} in o/ok has waited 0m00s here: {disk}" for n in (1, 2)]
-
-
-def test_the_light_standby_keeps_its_memory_for_its_older_light_job(host, monkeypatch) -> None:
-    _, started, _ = host
-    monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    jobs = [sup.Job("o/ok", 1, "l", LIGHT), sup.Job("o/ok", 2, "b", tuple(sup.RUNNER_LABELS))]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: 3072 + 1024)
-    state = sup.State(slots=2, light_slots=2, last_light_repo="o/ok")
-    state.launches[2] = sup.Launch(2, "o/ok", 2, "fc-2", 0.0, None, True, label=sup.LIGHT_LABEL)  # type: ignore[arg-type]
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    assert stopped == []  # its light job came first; the build waits
-    assert started == [] and state.held == {2: "o/ok"}
+    assert "o/ok" in state.used  # a job keeps its repo polled
 
 
 def test_the_console_reader_keeps_only_exact_memory_lines() -> None:
@@ -2449,33 +1815,30 @@ def _ended(vms: Path, label: str, peak: int, kills: int, standby: bool = False) 
 
 def test_an_ended_vm_is_counted_by_kind_and_its_memory_file_removed(vms, memory) -> None:
     sup.write_memory_metrics()
-    assert 'homelab_ci_vm_oom_kills_total{kind="small"} 0' in sup.MEMORY_METRICS.read_text()
-    run = _ended(vms, sup.SMALL_LABEL, peak=850, kills=1)
+    assert 'homelab_ci_vm_oom_kills_total{kind="build"} 0' in sup.MEMORY_METRICS.read_text()
+    run = _ended(vms, "", peak=850, kills=1)
     sup.forget(run)
     text = sup.MEMORY_METRICS.read_text()
-    assert 'homelab_ci_vms_ended_total{kind="small"} 1' in text
-    assert 'homelab_ci_vms_near_full_total{kind="small"} 1' in text  # 850 of 1000 is over 80%
-    assert 'homelab_ci_vm_oom_kills_total{kind="small"} 1' in text
+    assert 'homelab_ci_vms_ended_total{kind="build"} 1' in text
+    assert 'homelab_ci_vms_near_full_total{kind="build"} 1' in text  # 850 of 1000 is over 80%
+    assert 'homelab_ci_vm_oom_kills_total{kind="build"} 1' in text
     assert memory == [
-        "slot 6: fc-6-1 (small) needed at least 850 MiB of 1000, 1 out-of-memory kills"
+        "slot 6: fc-6-1 (build) needed at least 850 MiB of 1000, 1 out-of-memory kills"
     ]
     assert not run.memory_file.exists()
 
 
-@pytest.mark.parametrize(
-    "label", [sup.SMALL_LABEL, sup.LIGHT_LABEL, sup.DEPLOY_LABEL, *sup.RUNNER_LABELS]
-)
-def test_an_ended_vm_of_every_kind_is_counted(vms, memory, label) -> None:
-    # A deploy VM's end crashed every poll, so no job started, while its kind had no count.
+@pytest.mark.parametrize("label", ["", "fc-cache-o--build"])
+def test_an_ended_vm_of_any_label_is_counted(vms, memory, label) -> None:
     run = _ended(vms, label, peak=300, kills=0)
     sup.forget(run)
-    assert sup.MEMORY_COUNTS[run.kind][0] == 1
+    assert sup.MEMORY_COUNTS["build"][0] == 1
 
 
 def test_a_standby_that_never_took_a_job_or_a_silent_vm_is_not_counted(vms, memory) -> None:
-    sup.forget(_ended(vms, sup.LIGHT_LABEL, peak=300, kills=0, standby=True))
+    sup.forget(_ended(vms, "", peak=300, kills=0, standby=True))
     sup.forget(sup.Launch(5, "o/ok", 7, "fc-5-1", 0.0, vms / "m"))  # no memory line came
-    assert memory == [] and sup.MEMORY_COUNTS["light"] == [0, 0, 0]
+    assert memory == [] and sup.MEMORY_COUNTS["build"] == [0, 0, 0]
 
 
 def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(monkeypatch, tmp_path) -> None:
@@ -2502,18 +1865,18 @@ def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(monkeypatch, tmp_p
 
 
 def test_a_queued_job_knows_its_run_already_finished_a_build() -> None:
-    small = ["self-hosted", "linux", "x64", sup.SMALL_LABEL]
+    hosted = ["ubuntu-latest"]
     build = ["self-hosted", "linux", "x64", "homelab-fc"]
     jobs = {
         # A task's run: its build is done, its review waits.
         1: [
-            {"id": 11, "status": "completed", "labels": small},
+            {"id": 11, "status": "completed", "labels": hosted},
             {"id": 12, "status": "completed", "labels": build},
             {"id": 13, "name": "review", "status": "queued", "labels": build},
         ],
-        # A new task's run: only its first step, on a small VM, is done.
+        # A new task's run: only its first step, on GitHub's runner, is done.
         2: [
-            {"id": 21, "status": "completed", "labels": small},
+            {"id": 21, "status": "completed", "labels": hosted},
             {"id": 22, "name": "build", "status": "queued", "labels": build},
         ],
     }
@@ -2545,66 +1908,3 @@ def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
     sup.tick(None, sup.State(slots=1), ["o/ok"], now)  # type: ignore[arg-type]
 
     assert started == [(0, first)]
-
-
-@pytest.mark.parametrize(
-    ("owner_waited", "first"),
-    [
-        (60.0, "o/ok"),  # the task's review goes first
-        (sup.LIGHT_OTHER_WAIT_MAX + 60, "o/other"),  # the goal owner waited too long
-    ],
-)
-def test_a_task_runs_light_job_starts_before_an_older_light_job_of_another_workflow(
-    pools, monkeypatch, owner_waited: float, first: str
-) -> None:
-    _, started = pools
-    now = 10_000.0
-    jobs = {
-        "o/other": [
-            sup.Job("o/other", 1, "owner", LIGHT, queued_at=now - owner_waited, workflow="goal")
-        ],
-        "o/ok": [
-            sup.Job(
-                "o/ok", 2, "review", LIGHT, queued_at=now - 30, workflow="build", run_underway=True
-            )
-        ],
-    }
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs[repo])
-    monkeypatch.setattr(sup, "light_standby_count", lambda: 0)
-    state = sup.State(slots=1, light_slots=1)
-
-    sup.tick(None, state, ["o/other", "o/ok"], now)  # type: ignore[arg-type]
-
-    assert started == [(1, sup.LIGHT_LABEL)] and state.launches[1].repo == first
-
-
-def test_a_queued_job_knows_its_run_is_past_its_first_step() -> None:
-    small = ["self-hosted", "linux", "x64", sup.SMALL_LABEL]
-    jobs = {
-        1: [
-            {"id": 11, "status": "completed", "labels": small},
-            {"id": 12, "name": "review", "status": "queued", "labels": list(LIGHT)},
-        ],
-        2: [{"id": 21, "name": "line", "status": "queued", "labels": small}],
-    }
-
-    found = sup.queued_jobs("o/ok", [{"id": 1}, {"id": 2}], jobs.__getitem__)
-
-    assert [(job.id, job.run_underway) for job in found] == [(12, True), (21, False)]
-
-
-@pytest.mark.parametrize(
-    ("free_mib", "standbys"), [(1 << 20, 3), (sup.DEFAULT_MEMORY_RESERVE_MIB + 2500, 1)]
-)
-def test_three_light_standbys_wait_by_default_when_memory_allows(
-    pools, monkeypatch, free_mib: int, standbys: int
-) -> None:
-    queue, started = pools
-    queue(build=0, light=0)
-    state = sup.State(slots=1, light_slots=3, last_light_repo="o/ok")
-    for now in (0.0, 2.0, 4.0):
-        sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
-        mem = free_mib - 2048 * len(state.launches)  # booted standbys hold their memory
-        monkeypatch.setattr(sup, "mem_available_mib", lambda mem=mem: mem)
-
-    assert started == [(1 + n, sup.LIGHT_LABEL) for n in range(standbys)]
