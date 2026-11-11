@@ -10,7 +10,7 @@ getent passwd | awk -F: '$7 !~ /(nologin|false|sync)$/'
 section "SSH keys not on GitHub (should be empty)"
 comm -23 <(awk '{print $1, $2}' ~/.ssh/authorized_keys | sort) <(curl -s https://github.com/ColinCee.keys | sort)
 section "sudoers"
-sudo cat /etc/sudoers.d/*
+sudo sh -c 'cat /etc/sudoers.d/*'
 section "Logins"
 last -Fai | head -50
 sudo lastb -Fai | head -20
@@ -45,9 +45,11 @@ sudo dpkg --verify | grep -v ' c /'
 section "Containers (each should be a stacks/*/compose.yaml service)"
 docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}'
 
-section "Runner"
+section "Runner guard refusals, each explained?"
 journalctl -t homelab-runner-guard --since -30d | grep verdict=refuse
+section "Runners, Firecracker (only while a job runs), KSM (should be 0)"
 ls -d ~/actions-runner*
+pgrep -a firecracker
 cat /sys/kernel/mm/ksm/run
 sudo nft list table inet homelab_ci | head -3
 sudo nft list table inet homelab_wall | head -3

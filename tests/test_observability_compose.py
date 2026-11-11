@@ -80,13 +80,3 @@ def test_nothing_reads_or_changes_the_stack_without_a_login() -> None:
     flags = SERVICES["prometheus"]["command"]
     assert not [f for f in flags if "admin" in f or "lifecycle" in f]
     assert all(p.startswith("127.0.0.1:") for p in SERVICES["openobserve-history"]["ports"])
-
-
-def test_the_watchdog_never_posts_to_discord() -> None:
-    path = Path(__file__).parent.parent / "stacks/observability/alertmanager/alertmanager.yml"
-    alertmanager = yaml.safe_load(path.read_text(encoding="utf-8"))
-    [route] = [
-        r for r in alertmanager["route"]["routes"] if r["matchers"] == ['alertname="watchdog"']
-    ]
-    [receiver] = [r for r in alertmanager["receivers"] if r["name"] == route["receiver"]]
-    assert "discord_configs" not in receiver

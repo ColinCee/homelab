@@ -17,6 +17,12 @@ restic ends with "There were N errors" because the container cannot set file own
 ownership when copying. `/tmp` in the container is memory: for a large restore, run restic from another machine with
 the same repository URL, R2 keys and password. Named volumes restore the same way, into the volume's mount point.
 
+## Backup store full
+
+Uploads stop at 8 GB, so every night fails until it shrinks: find what grew (`docker exec backup restic stats`, then
+`restic diff` between snapshots), exclude it in [`backup.sh`](../stacks/backup/backup.sh), and drop the oversized
+snapshots with `restic forget --prune <id>`.
+
 ## Rebuilding the Beelink
 
 1. Ubuntu, Tailscale (`sudo tailscale set --operator=colin`, so Taildrop backups arrive), Docker, and
@@ -32,7 +38,7 @@ the same repository URL, R2 keys and password. Named volumes restore the same wa
 
 3. Register the deploy runner, install the [runner guard](#runner-guard), then re-run the latest deploy: every stack
    comes up empty. Deploy `backup` last and restore as above.
-4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/tests/audit.sh`
+4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/tests/test-tools.sh`, `sudo ci-runner/tests/audit.sh`
    (must pass), store the GitHub token as the supervisor's `TOKEN_FILE` says, then
    `sudo systemctl enable --now homelab-ci-supervisor.service`.
 

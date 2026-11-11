@@ -6,13 +6,13 @@ Accepted.
 
 ## Context
 
-The Beelink collects metrics, logs and traces and alerts to Discord, on a host whose memory goes mostly to CI VMs. How it runs: [observability](../observability.md).
+The Beelink collects metrics, logs and traces and alerts to Discord, on a host whose memory goes mostly to CI VMs. How it runs: [architecture](../architecture.md#monitoring-and-alerts).
 
 OpenObserve, one program holding all three signals with its own UI and alerts, came first in a bake-off of seven setups on a replayed day of data. That test was wrong in three ways: the Grafana stack it replaced ran untuned and with Tempo, which sank it (without Tempo it was estimated at 684 MiB from one round, against OpenObserve's 724-751 MiB); OpenObserve's collector had the wrong login in every scored round; and disk only had to fit 30 days in 100 GB, so a disk gap could not count against it.
 
 Running it showed the cost:
 
-- The alert standard ([observability](../observability.md), "Alerts") and read-only logins needed code and services of its own: Alertmanager in front of Discord, a script loading rules and dashboards from Git and catching failed queries, a hold written into every query, and a gateway for read-only logins.
+- The alert standard ([architecture](../architecture.md#monitoring-and-alerts)) and read-only logins needed code and services of its own: Alertmanager in front of Discord, a script loading rules and dashboards from Git and catching failed queries, a hold written into every query, and a gateway for read-only logins.
 - The agents' login could not read its logs.
 - It stored a metric reading in 12.4 B, five times Prometheus's 2.4 B.
 
