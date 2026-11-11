@@ -148,8 +148,8 @@ def at(minutes: int, name: str, *firing: dict) -> dict:
     return {"eval_time": f"{minutes}m", "alertname": name, "exp_alerts": list(firing)}
 
 
-# Series one sample a minute, or a step the case ends with, in promtool's notation ("5x20": 21
-# samples of 5).
+# Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5); a case may add a
+# third element, its step.
 CASES = {
     "fires after `for`, holds through a short dip, clears after 10 clear minutes": (
         [
@@ -445,7 +445,8 @@ CASES = {
             ),
         ],
     ),
-    # Windows of days, sampled and evaluated hourly or slower; times stay in minutes, on a step.
+    # Windows of days, sampled and evaluated hourly or slower, so `for` and each edge hold only to
+    # a step; times stay in minutes, on a step.
     # promtool starts at 1 January 1970, 00:00 UTC, so the first due time is 05:00 that day.
     "upkeep enabled before a due time and never run fires 3 days after it, and `for`": (
         [('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x80")],
@@ -461,7 +462,8 @@ CASES = {
         [
             # Due 3 days on at 821 h; the first 6-hourly check after it is 822 h, then `for`.
             at(816 * 60, "upkeep-missed"),
-            at(828 * 60, "upkeep-missed", posts("upkeep-missed", "21")),
+            at(822 * 60, "upkeep-missed"),
+            at(834 * 60, "upkeep-missed", posts("upkeep-missed", "21")),
         ],
         "6h",
     ),
@@ -532,8 +534,8 @@ CASES = {
 @needs_docker
 @pytest.mark.parametrize("case", CASES)
 def test_rules_fire_hold_and_clear_as_the_standard_says(tmp_path: Path, case: str) -> None:
-    series, checks, *coarse = CASES[case]
-    step = coarse[0] if coarse else "1m"
+    series, checks, *rest = CASES[case]
+    step = rest[0] if rest else "1m"
     tests = {
         "rule_files": ["/etc/prometheus/rules.yml"],
         "evaluation_interval": step,
