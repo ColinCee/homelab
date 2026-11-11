@@ -19,6 +19,12 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # On the host network, Docker's default NET_RAW would let it capture the host's traffic;
+    # binding port 80 is all it needs.
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     # Host networking, so the proxy can reach Home Assistant on loopback (see Caddyfile).
     network_mode: host
     labels:
