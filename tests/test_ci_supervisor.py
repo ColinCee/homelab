@@ -71,7 +71,7 @@ def test_serves_only_colins_private_repos_the_token_can_see() -> None:
         {"full_name": "ColinCee/blog", "private": False, "owner": {"login": "ColinCee"}},
         {"full_name": "someone/theirs", "private": True, "owner": {"login": "someone"}},
         {
-            "full_name": "ColinCee/auto-kaizen",
+            "full_name": "ColinCee/old-project",
             "private": True,
             "archived": True,
             "owner": {"login": "ColinCee"},
