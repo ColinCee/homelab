@@ -23,7 +23,6 @@ So six whole stacks were tested side by side on the Beelink's live feed, then ea
 - Prometheus stores metrics and runs the alert rules from a file in Git; Alertmanager posts to Discord, repeats and clears alerts, and holds back those that depend on another that is firing; Grafana shows every store from files in Git; Alloy collects.
 - VictoriaLogs stores logs and VictoriaTraces stores traces. Loki and Tempo stay one setting away: `LOG_STORE` and `TRACE_STORE` in `stacks/observability/settings.env`, each store's differences in its own folder under `logs/` or `traces/`.
 - A read-only gateway (Caddy) is the only way any reader reaches a store: Grafana's data sources, agents, server-health and public stats each log in there and reach only read paths. Every store tested serves writes or admin calls beside its reads, and none has read-only users. Networks keep the rest apart: Alloy is the only writer, and Grafana and public stats reach only the gateway.
-- An always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute, tells when alerting stopped: Healthchecks.io posts once the pings stop. A GitHub cron did this before, but GitHub ran its 15-minute schedule only every 3.5 to 8.6 hours, so it posted while everything worked.
 - OBI, which traces every program in a container from the kernel (eBPF) without changing it, stays off until its `containers_only` setting works: on its own network it traced the host's programs and the CI VMs too.
 
 Why each store (numbers in [results.md](0001-observability-stack/results.md)):
@@ -35,7 +34,7 @@ Why each store (numbers in [results.md](0001-observability-stack/results.md)):
 
 ## Consequences
 
-- No code of our own runs the alerts: the hold, per-series clears, no-data and the hold-back come from Prometheus and Alertmanager, and the rules are tested with `promtool`. The watchdog's one check cannot say which part stopped, and its settings live in Healthchecks.io, not Git.
+- No code of our own runs the alerts: the hold, per-series clears, no-data and the hold-back come from Prometheus and Alertmanager, and the rules are tested with `promtool`.
 - Agents read metrics, logs and traces, read-only: in 933 probes through the gateway and Grafana, no write or admin call got through.
 - Six programs to keep upgraded instead of four. Grafana is a small image of our own with the VictoriaLogs plugin added by checksum, moved by hand.
 - Three `kill -9`s lost 4.9 to 6.8 s of logs each and 19 spans in all, about the stores' 5 s default for saving what they hold in memory; both now save each second.

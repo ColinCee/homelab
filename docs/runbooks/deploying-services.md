@@ -88,7 +88,7 @@ user reads it, no other host user).
 
 Within a stack, use Docker service names. Across stacks, join a network the other stack owns as `external: true`
 (as flight-tracker joins `observability-otlp`); a bridge container cannot reach the host's Tailscale-bound ports,
-since the container wall drops them ([ADR 0005](../adr/0005-container-network-wall.md)). A service that needs the
+since the container wall drops them. A service that needs the
 host itself uses host networking.
 
 ## Timers and dashboards

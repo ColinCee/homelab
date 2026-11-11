@@ -8,7 +8,7 @@ Monitoring on the Beelink cannot see its own outage, so what watches what:
 
 | Problem | Who warns |
 |---|---|
-| The Beelink off, or alerting stopped: Prometheus or Alertmanager down, or Discord refusing a post in the last hour | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io posts to #uptime when it stops ([ADR 0001](adr/0001-observability-stack.md)) |
+| The Beelink off, or alerting stopped: Prometheus or Alertmanager down, or Discord refusing a post in the last hour | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io posts to #uptime when it stops |
 | A rule failing | "An alert rule is failing" |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
 | Someone else on the Beelink: a deploy or CI-host install not by Colin or Renovate, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |

@@ -7,9 +7,12 @@
 # Traffic still needs an accept in iptables' FORWARD chain, whose policy is DROP
 # (Docker and UFW); setup-net.sh adds a narrow one in DOCKER-USER.
 #
-# The second table, homelab_wall, walls off Docker's bridge containers the same way
-# (docs/adr/0005-container-network-wall.md). It lives here because this file is what
-# the host reloads on every merge; it is not CI's.
+# The second table, homelab_wall, walls off Docker's bridge containers the same way.
+# It lives here because this file is what the host reloads on every merge; it is not
+# CI's. Its own table, not DOCKER-USER, because it hooks before Docker's DNAT, so a
+# drop is final and Docker's restarts never touch it. Gaps: containers run unwalled
+# for the seconds between Docker and homelab-ci-net.service at boot; the router's DNS
+# stays reachable; a changed public address stays reachable until the next reload.
 
 define private4 = {
   0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16,
@@ -57,7 +60,9 @@ table inet homelab_ci {
 
   # The slot users Firecracker runs as (setup-net.sh fills it). Firecracker needs no
   # sockets of its own (its tap carries the VM's traffic), so one that escaped its VM
-  # may not open any connection from Beelink: loopback, LAN, tailnet or internet.
+  # may not open any connection from Beelink: loopback, LAN, tailnet or internet. It
+  # can still bind ports, read interfaces through netlink and reach abstract sockets;
+  # a network namespace per VM would close those.
   set slot_uids {
     type uid
   }
