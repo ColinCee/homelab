@@ -6,7 +6,8 @@
 # and `level`. A per-series rule keeps only the labels that tell its series apart (`max by (name)`): one post per
 # series. Only metrics written outside Alloy carry a no-data arm, `or on() max(absent_over_time(...)) * -1`, shown as
 # "no data"; "Beelink metrics stopped" covers Alloy's own. `keep_firing_for` is the 10-minute hold: a return inside
-# it is the same alert. Tests: tests/test_alert_rules.py, with promtool on rules.test.yml.
+# it is the same alert. A no-data arm fires once its window has passed and then the rule's `for`.
+# Tests: tests/test_alert_rules.py, which runs them with promtool.
 
 groups:
   - name: homelab
@@ -283,13 +284,14 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
 
-  # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), expr and
-  # `for` unchanged, on Prometheus's own metrics (prometheus.yml, job "prometheus").
+  # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), with
+  # their `for`, taken over all series so a post carries no labels, on Prometheus's own metrics (prometheus.yml, job
+  # "prometheus").
   - name: prometheus
     interval: 1m
     rules:
       - alert: PrometheusRuleFailures
-        expr: increase(prometheus_rule_evaluation_failures_total{job="prometheus"}[5m]) > 0
+        expr: sum(increase(prometheus_rule_evaluation_failures_total{job="prometheus"}[5m])) > 0
         for: 15m
         keep_firing_for: 10m
         labels:
@@ -305,7 +307,7 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
       - alert: PrometheusBadConfig
-        expr: max_over_time(prometheus_config_last_reload_successful{job="prometheus"}[5m]) == 0
+        expr: min(max_over_time(prometheus_config_last_reload_successful{job="prometheus"}[5m])) == 0
         for: 10m
         keep_firing_for: 10m
         labels:

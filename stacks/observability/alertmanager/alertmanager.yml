@@ -12,10 +12,11 @@ route:
     - matchers: ['level="now"']
       repeat_interval: 4h
 
-# Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts.
+# Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
+# rules on Prometheus's own health read its own scrape, so they still post.
 inhibit_rules:
   - source_matchers: ['alertname="beelink-metrics-stopped"']
-    target_matchers: ['alertname!="beelink-metrics-stopped"']
+    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+"']
 
 receivers:
   - name: discord

@@ -61,12 +61,13 @@ def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() ->
     assert route["routes"] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
 
 
-def test_beelink_metrics_stopped_holds_back_every_other_alert() -> None:
-    assert "beelink-metrics-stopped" in RULES
+def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
+    # The rules on Prometheus itself read its own scrape, not Alloy's.
+    assert set(RULES) - set(HOMELAB) == {n for n in RULES if n.startswith("Prometheus")}
     assert ALERTMANAGER["inhibit_rules"] == [
         {
             "source_matchers": ['alertname="beelink-metrics-stopped"'],
-            "target_matchers": ['alertname!="beelink-metrics-stopped"'],
+            "target_matchers": ['alertname!~"beelink-metrics-stopped|Prometheus.+"'],
         }
     ]
 
@@ -95,9 +96,9 @@ def test_no_data_is_kept_for_metrics_alloy_does_not_make() -> None:
 
 def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
     # The post's title prints every label but alertname and level, so a rule aggregates.
-    for name, rule in HOMELAB.items():
+    for name, rule in RULES.items():
         expr = flat(rule["expr"])
-        assert re.match(r"\(+ ?(max|min|count|round\(\(time\(\) - max|round\(max)", expr), name
+        assert re.match(r"\(* ?(max|min|sum|count|round\(\(time\(\) - max|round\(max)", expr), name
 
 
 def test_prometheus_keeps_30_days_and_takes_alloys_writes() -> None:

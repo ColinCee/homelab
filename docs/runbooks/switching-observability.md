@@ -18,8 +18,9 @@ How the observability stack moves from OpenObserve to Prometheus, Grafana and th
    `openobserve-apply` and starts the new services; port 5080 becomes Grafana and 5081 the new gateway. The
    `observability_openobserve-data` volume stays.
 2. Expect one "Beelink metrics stopped" post and its "Cleared" about 10 minutes later: Prometheus starts empty and
-   its first evaluation can run before Alloy's first write. Alerts still firing keep their labels, so Alertmanager
-   carries them on with no new post.
+   its first evaluation can run before Alloy's first write. An alert firing before the switch posts "Cleared" 5
+   minutes after OpenObserve stops, then fires again once Prometheus has waited out its `for`. "Unknown container
+   started" has no week of names yet, so a container started by hand in the first week alerts even if it ran before.
 3. Check, in this order:
    - `http://grafana.internal` opens Home without a login, every tile shows a number, and the error panels show
      lines.

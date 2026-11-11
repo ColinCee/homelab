@@ -88,6 +88,9 @@ services:
       - ./traces/${TRACE_STORE:?}/datasource.yaml:/etc/grafana/provisioning/datasources/traces.yaml:ro
       - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
       - ./logs/${LOG_STORE:?}/home.json:/var/lib/grafana/dashboards/home.json:ro
+    # Shared with the gateway only, so no data source can reach a store directly; outbound, its plugin download.
+    networks:
+      - grafana
     depends_on:
       - gateway
 
@@ -118,8 +121,8 @@ services:
       - alertmanager-data:/alertmanager
 
   # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
-  # only read paths (gateway/Caddyfile). Grafana and public stats on their networks, server-health and agents on
-  # Tailscale.
+  # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, server-health and agents
+  # on Tailscale.
   gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
@@ -148,6 +151,7 @@ services:
       - ./traces/${TRACE_STORE:?}/gateway.caddy:/etc/caddy/traces.caddy:ro
     networks:
       - default
+      - grafana
       - public-stats
 
   alloy:
@@ -288,6 +292,7 @@ services:
 networks:
   docker-api:
     internal: true
+  grafana:
   public-stats:
 
 secrets:
