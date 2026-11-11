@@ -148,7 +148,8 @@ def at(minutes: int, name: str, *firing: dict) -> dict:
     return {"eval_time": f"{minutes}m", "alertname": name, "exp_alerts": list(firing)}
 
 
-# Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5).
+# Series one sample a minute, or a step the case ends with, in promtool's notation ("5x20": 21
+# samples of 5).
 CASES = {
     "fires after `for`, holds through a short dip, clears after 10 clear minutes": (
         [
@@ -444,60 +445,79 @@ CASES = {
             ),
         ],
     ),
+    # Windows of days, sampled and evaluated hourly or slower; times stay in minutes, on a step.
     # promtool starts at 1 January 1970, 00:00 UTC, so the first due time is 05:00 that day.
     "upkeep enabled before a due time and never run fires 3 days after it, and `for`": (
-        [('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700")],
+        [('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x80")],
         [
-            at(4675, "upkeep-missed"),
-            at(4685, "upkeep-missed", posts("upkeep-missed", "3")),
+            at(77 * 60, "upkeep-missed"),
+            at(78 * 60, "upkeep-missed", posts("upkeep-missed", "3")),
         ],
+        "1h",
+    ),
+    "a later month's due time counts from the 1st of that month": (
+        # Enabled on 15 January, so 1 February 05:00 is the first due time it misses.
+        [('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "1209600x140")],
+        [
+            # Due 3 days on at 821 h; the first 6-hourly check after it is 822 h, then `for`.
+            at(816 * 60, "upkeep-missed"),
+            at(828 * 60, "upkeep-missed", posts("upkeep-missed", "21")),
+        ],
+        "6h",
     ),
     "upkeep enabled after the due time, or run since it, stays quiet": (
         [
-            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "21600x4700"),
-            ('homelab_timer_last_trigger_timestamp_seconds{timer="other"}', "0x4700"),
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "21600x80"),
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="other"}', "0x80"),
         ],
-        [at(4690, "upkeep-missed")],
+        [at(79 * 60, "upkeep-missed")],
+        "1h",
     ),
     "a good run since the due time stays quiet": (
         [
-            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700"),
-            ("homelab_upkeep_last_success_timestamp_seconds", "_x300 18060x4400"),
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x80"),
+            ("homelab_upkeep_last_success_timestamp_seconds", "_x5 18060x75"),
         ],
-        [at(4690, "upkeep-missed")],
+        [at(79 * 60, "upkeep-missed")],
+        "1h",
     ),
     "a failed run counts as a run, so only upkeep-failed posts": (
         [
-            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700"),
-            ("homelab_upkeep_last_failure_timestamp_seconds", "_x300 18060x4400"),
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x80"),
+            ("homelab_upkeep_last_failure_timestamp_seconds", "_x5 18060x75"),
         ],
         [
-            at(4690, "upkeep-missed"),
-            at(4690, "upkeep-failed", posts("upkeep-failed", "-1")),
+            at(79 * 60, "upkeep-missed"),
+            at(79 * 60, "upkeep-failed", posts("upkeep-failed", "-1")),
         ],
+        "1h",
     ),
     "security updates waiting at every check for 3 days fire, a series younger than that never": (
-        [("homelab_security_updates_pending", "2x4400")],
+        [("homelab_security_updates_pending", "2x80")],
         [
-            # The window reaches back to the first sample at 4320 min, then 1 h of `for`.
-            at(4370, "security-updates-waiting"),
-            at(4381, "security-updates-waiting", posts("security-updates-waiting", "2")),
+            # The offset reaches the first sample at 72 h, then 1 h of `for`.
+            at(72 * 60, "security-updates-waiting"),
+            at(73 * 60, "security-updates-waiting", posts("security-updates-waiting", "2")),
         ],
+        "1h",
     ),
     "security updates installed once in 3 days stay quiet": (
-        [("homelab_security_updates_pending", "2x2000 0 2x2400")],
-        [at(4390, "security-updates-waiting")],
+        [("homelab_security_updates_pending", "2x30 0 2x50")],
+        [at(75 * 60, "security-updates-waiting")],
+        "1h",
     ),
     "a reboot waiting 2 days fires, one done in time never": (
-        [("homelab_reboot_required", "1x2950")],
+        [("homelab_reboot_required", "1x60")],
         [
-            at(2930, "reboot-waiting"),
-            at(2941, "reboot-waiting", posts("reboot-waiting", "1")),
+            at(48 * 60, "reboot-waiting"),
+            at(49 * 60, "reboot-waiting", posts("reboot-waiting", "1")),
         ],
+        "1h",
     ),
     "a reboot done within 2 days stays quiet": (
-        [("homelab_reboot_required", "1x1300 0 1x1640")],
-        [at(2941, "reboot-waiting")],
+        [("homelab_reboot_required", "1x20 0 1x40")],
+        [at(49 * 60, "reboot-waiting")],
+        "1h",
     ),
     "metrics stopping is one alert with no labels": (
         [('up{job="integrations/unix"}', "1x5"), ('up{job="docker"}', "1x5")],
@@ -512,13 +532,14 @@ CASES = {
 @needs_docker
 @pytest.mark.parametrize("case", CASES)
 def test_rules_fire_hold_and_clear_as_the_standard_says(tmp_path: Path, case: str) -> None:
-    series, checks = CASES[case]
+    series, checks, *coarse = CASES[case]
+    step = coarse[0] if coarse else "1m"
     tests = {
         "rule_files": ["/etc/prometheus/rules.yml"],
-        "evaluation_interval": "1m",
+        "evaluation_interval": step,
         "tests": [
             {
-                "interval": "1m",
+                "interval": step,
                 "input_series": [{"series": s, "values": v} for s, v in series],
                 "alert_rule_test": checks,
             }
