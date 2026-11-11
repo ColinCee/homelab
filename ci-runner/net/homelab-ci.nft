@@ -97,11 +97,17 @@ table inet homelab_wall {
     type ipv4_addr
   }
 
+  # Beelink's DNS servers (setup-net.sh fills it from systemd-resolved). Builds and
+  # containers on Docker's default bridge ask them directly, not through Beelink.
+  set resolvers {
+    type ipv4_addr
+  }
+
   # Before Docker's DNAT (priority dstnat), so this sees the address the container
   # asked for, not the container a published port leads to.
   chain prerouting {
     type filter hook prerouting priority mangle; policy accept;
-    iifname { "docker*", "br-*" } ct state new jump from_container
+    iifname { "docker*", "br-*" } ct state != { established, related } jump from_container
   }
 
   chain from_container {
@@ -110,6 +116,7 @@ table inet homelab_wall {
     fib daddr oifname { "docker*", "br-*" } return
     # The CI VMs, which homelab_ci drops and test-network.sh counts there.
     fib daddr oifname "fc-tap*" return
+    ip daddr @resolvers meta l4proto { tcp, udp } th dport 53 return
     ip daddr @private4 counter drop
     ip daddr @wan4 counter drop
   }
@@ -119,6 +126,6 @@ table inet homelab_wall {
   # Tailscale address would otherwise reach those ports through Docker's DNAT.
   chain forward {
     type filter hook forward priority filter; policy accept;
-    ct state new iifname != { "docker*", "br-*", "fc-tap*", "tailscale0" } counter drop
+    ct state != { established, related } iifname != { "docker*", "br-*", "fc-tap*", "tailscale0" } counter drop
   }
 }

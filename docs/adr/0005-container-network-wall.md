@@ -17,13 +17,14 @@ Two places for the rules:
 
 ## Decision
 
-The table, `inet homelab_wall` in `ci-runner/net/homelab-ci.nft`, loaded with the CI table by `setup-net.sh`, so a merge that changes it reaches the host within minutes (`update.sh`). A new connection from a Docker bridge is dropped when it goes to one of Beelink's own addresses, to a private or tailnet range that is not a Docker network, or to the public address. In the forward hook, a new connection is dropped unless it arrives from a Docker bridge, a CI tap or `tailscale0`.
+The table, `inet homelab_wall` in `ci-runner/net/homelab-ci.nft`, loaded with the CI table by `setup-net.sh`, so a merge that changes it reaches the host within minutes (`update.sh`). A new connection from a Docker bridge is dropped when it goes to one of Beelink's own addresses, to a private or tailnet range that is not a Docker network, or to the public address. The one exception is DNS to Beelink's own DNS servers (the router today): image builds and containers on Docker's default bridge ask them directly. In the forward hook, a new connection is dropped unless it arrives from a Docker bridge, a CI tap or `tailscale0`.
 
-Before it went live, the same matches logged for an hour with today's stacks and the trial Prometheus stack running: no container used any of these routes.
+Before it went live, the same matches logged for an hour with today's stacks and the trial Prometheus stack running: no container used any of these routes. A review then found the DNS route, which only builds and default-bridge containers use.
 
 ## Consequences
 
 - A bridge container reaches the internet and other containers, nothing else of the home. One that needs the host must use host networking, as the probes and the `.internal` proxy do.
 - A port published on the LAN address would not be reachable from the LAN either; admin ports bind to the Tailscale address anyway.
 - The wall loads with `homelab-ci-net.service`, after Docker, so at boot containers run unwalled for the seconds in between.
+- The router's DNS server stays reachable from containers.
 - The public address is the one found when the rules last loaded or a CI VM last started; after it changes, containers can reach it until then.

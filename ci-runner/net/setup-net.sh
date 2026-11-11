@@ -62,21 +62,22 @@ case ${1:-up} in
 esac
 
 [[ -n "$uplink" ]] || { echo "no default route" >&2; exit 1; }
-# The rules and the public address in one transaction, so running VMs never see the blocked
-# address set empty. Without the address, the one already loaded is kept; on a first start
-# the rules load without it, and run-vm.sh refuses VMs until it is set.
+# The rules load first, with the public address already loaded, so running VMs never see
+# the blocked address set empty and the container wall is up before the slow address lookup.
+# On a first start run-vm.sh refuses VMs until the address is set.
 # Every fc-slot user that exists, not the slot count, so a user left from a larger
 # count stays walled off too.
 uids=$(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $3}' | paste -sd, -)
-if ! wan=$(public_address); then
-  wan=$(nft list set inet homelab_ci wan4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)
-  echo "public address not found: ${wan:-none} kept; run-vm.sh refreshes it before each VM" >&2
-fi
+resolvers=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ {print $2}' /run/systemd/resolve/resolv.conf 2>/dev/null |
+  paste -sd, - || true)
+wan=$(nft list set inet homelab_ci wan4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)
 {
   cat "$dir/homelab-ci.nft"
   [[ -z $wan ]] || wan_elements "$wan"
   [[ -z $uids ]] || echo "add element inet homelab_ci slot_uids { $uids }"
+  [[ -z $resolvers ]] || echo "add element inet homelab_wall resolvers { $resolvers }"
 } | nft -f -
+refresh_wan || echo "public address not found: ${wan:-none} kept; run-vm.sh refreshes it before each VM" >&2
 
 for ((n = 0; n < SLOTS; n++)); do
   tap=fc-tap$n
