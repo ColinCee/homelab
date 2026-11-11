@@ -31,9 +31,9 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
   on the deploy runner.
 - No unattended agent changes this repo; dependency auto-merge belongs in
   Renovate.
-- Change the CI runners (the Beelink and the PC guest together) only by merging to main: both hosts take the same
-  commit and job image within a minute or two, and running jobs carry on (docs/runbooks/ci-runner.md, "Changing the Beelink
-  while jobs run"; a host's first install is by hand there).
+- Change the Beelink's CI runner only by merging to main: it takes the commit and job image within a minute or
+  two, and running jobs carry on (docs/runbooks/ci-runner.md, "Changing the Beelink
+  while jobs run"; a new host's first install is by hand there).
   Run any wait on the Beelink as a named systemd unit, never as a loop tied to your own
   connection.
 - Use the existing `mise` tasks for relevant checks. Keep tests for meaningful
