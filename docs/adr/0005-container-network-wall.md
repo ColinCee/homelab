@@ -26,5 +26,5 @@ Before it went live, the same matches logged for an hour with today's stacks and
 - A bridge container reaches the internet and other containers, nothing else of the home. One that needs the host must use host networking, as the probes and the `.internal` proxy do.
 - A port published on the LAN address would not be reachable from the LAN either; admin ports bind to the Tailscale address anyway.
 - The wall loads with `homelab-ci-net.service`, after Docker, so at boot containers run unwalled for the seconds in between.
-- The router's DNS server stays reachable from containers.
+- The router's DNS server stays reachable from containers, so one can still look up home names and attack the DNS server itself.
 - The public address is the one found when the rules last loaded or a CI VM last started; after it changes, containers can reach it until then.

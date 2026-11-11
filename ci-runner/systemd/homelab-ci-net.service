@@ -3,7 +3,7 @@ Description=Network for the CI microVMs
 # Docker must have created DOCKER-USER. Wants, not Requires: Docker keeps
 # DOCKER-USER across its restarts, and restarting this unit would pull the taps
 # out from under running VMs.
-After=docker.service ufw.service network-online.target
+After=docker.service ufw.service network-online.target systemd-resolved.service
 Wants=docker.service network-online.target
 
 [Service]

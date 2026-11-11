@@ -81,7 +81,8 @@ table inet homelab_ci {
 # and each other, nothing else of the home: not Beelink's own addresses (the ports
 # published on the Tailscale address included), the LAN, the tailnet or the public
 # address. And nothing arriving from the LAN may open a connection through Beelink.
-# Host-network containers are Beelink itself and are not covered.
+# Host-network containers are Beelink itself and are not covered. IPv4 only: no Docker
+# network has IPv6, and one that did would need a v6 set here.
 table inet homelab_wall
 delete table inet homelab_wall
 

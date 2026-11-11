@@ -30,19 +30,19 @@ public_address() {
   echo "$wan"
 }
 
-# The public address goes in both tables' wan4 (homelab-ci.nft).
+# The public address goes in each table's wan4 (homelab-ci.nft).
 wan_elements() {
-  for table in homelab_ci homelab_wall; do
-    [[ -z ${2:-} ]] || echo "flush set inet $table wan4"
-    echo "add element inet $table wan4 { $1 }"
-  done
+  [[ -z ${3:-} ]] || echo "flush set inet $1 wan4"
+  echo "add element inet $1 wan4 { $2 }"
 }
 
 refresh_wan() {
   local wan
   wan=$(public_address) || return 1
-  # One transaction, so the sets are never empty in between.
-  nft -f - <<<"$(wan_elements "$wan" flush)"
+  # One transaction per table, so a set is never empty in between, and a missing wall
+  # never stops VMs from starting.
+  nft -f - <<<"$(wan_elements homelab_wall "$wan" flush)" || echo "the container wall is not loaded" >&2
+  nft -f - <<<"$(wan_elements homelab_ci "$wan" flush)"
   nft list set inet homelab_ci wan4 | grep -qF "$wan"
 }
 
@@ -61,8 +61,7 @@ case ${1:-up} in
   *) echo "usage: setup-net.sh [up|down|wan]" >&2; exit 2 ;;
 esac
 
-[[ -n "$uplink" ]] || { echo "no default route" >&2; exit 1; }
-# The rules load first, with the public address already loaded, so running VMs never see
+# The rules load first, with any public address already loaded, so running VMs never see
 # the blocked address set empty and the container wall is up before the slow address lookup.
 # On a first start run-vm.sh refuses VMs until the address is set.
 # Every fc-slot user that exists, not the slot count, so a user left from a larger
@@ -70,14 +69,17 @@ esac
 uids=$(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $3}' | paste -sd, -)
 resolvers=$(awk '$1 == "nameserver" && $2 ~ /^[0-9.]+$/ {print $2}' /run/systemd/resolve/resolv.conf 2>/dev/null |
   paste -sd, - || true)
-wan=$(nft list set inet homelab_ci wan4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)
+[[ -n $resolvers ]] || echo "no DNS servers in systemd-resolved: builds and default-bridge containers cannot resolve" >&2
+wan=$( (nft list set inet homelab_ci wan4; nft list set inet homelab_wall wan4) 2>/dev/null |
+  grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | head -n 1 || true)
 {
   cat "$dir/homelab-ci.nft"
-  [[ -z $wan ]] || wan_elements "$wan"
+  [[ -z $wan ]] || { wan_elements homelab_ci "$wan"; wan_elements homelab_wall "$wan"; }
   [[ -z $uids ]] || echo "add element inet homelab_ci slot_uids { $uids }"
   [[ -z $resolvers ]] || echo "add element inet homelab_wall resolvers { $resolvers }"
 } | nft -f -
-refresh_wan || echo "public address not found: ${wan:-none} kept; run-vm.sh refreshes it before each VM" >&2
+refresh_wan || echo "public address not refreshed: ${wan:-none} kept; run-vm.sh refreshes it before each VM" >&2
+[[ -n "$uplink" ]] || { echo "no default route" >&2; exit 1; }
 
 for ((n = 0; n < SLOTS; n++)); do
   tap=fc-tap$n

@@ -47,11 +47,14 @@ from_lan() { ip netns exec "$ns" timeout 3 bash -c "exec 3<>/dev/tcp/${1%:*}/${1
 
 nft list table inet homelab_wall >/dev/null 2>&1 || { echo "FAIL the homelab_wall table is not loaded"; exit 1; }
 [[ -n $published ]] || { echo "FAIL nothing is published on $tailnet to test against"; exit 1; }
+[[ -n $wan ]] || { echo "FAIL the wall holds no public address"; exit 1; }
 docker pull -q "$image" >/dev/null
 docker network create "$net" >/dev/null
 docker run -d --name homelab-wall-peer --network "$net" "$image" nc -lk -p 8080 -e cat >/dev/null
 
-for target in $published "$router:80" 100.100.100.100:53 ${wan:+"$wan:443"}; do
+for _ in $(seq 1 10); do from_container homelab-wall-peer:8080 && break; sleep 1; done
+
+for target in $published "$router:80" 100.100.100.100:53 "$wan:443"; do
   stopped "container to $target" from_container from_container "$target"
 done
 reaches "container to the internet" from_container 1.1.1.1:443
