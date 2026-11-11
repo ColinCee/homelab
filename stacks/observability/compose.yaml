@@ -30,10 +30,13 @@ services:
       - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
     networks:
-      - ingest
-      - stores
-      - alerting
-      - probe
+      ingest: {}
+      stores: {}
+      alerting: {}
+      probe: {}
+      # A fixed address, as host-metrics, on the host's network, has no Docker DNS.
+      host-writes:
+        ipv4_address: 10.201.0.2
 
   # Logs, VictoriaLogs (ADR 0001). Flags: https://docs.victoriametrics.com/victorialogs/#list-of-command-line-flags
   logs:
@@ -398,6 +401,37 @@ services:
       # Read by Alloy's textfile collector.
       - /var/lib/homelab-metrics:/metrics
 
+  # Scrapes what runs on the host's network or publishes only to loopback, Caddy, CoreDNS and Home Assistant
+  # (host-metrics/prometheus.yml), and writes to Prometheus. On the host's network for the probes' reason; the host may
+  # reach a container, so it writes to Prometheus's fixed address on host-writes.
+  host-metrics:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    restart: unless-stopped
+    command:
+      - --agent
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.agent.path=/agent
+      # Its default, 9090, would be on the host's every address.
+      - --web.listen-address=127.0.0.1:9095
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    mem_limit: 64m
+    network_mode: host
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    secrets:
+      - homeassistant_metrics_token
+    tmpfs:
+      - /agent:uid=65534,gid=65534
+    volumes:
+      - ./host-metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - prometheus
+
   # OpenObserve on its kept volume, to read the history from before the switch. Started by hand only, on loopback
   # (`--profile history up -d openobserve-history`), and deleted once nothing from before the switch is wanted.
   openobserve-history:
@@ -494,6 +528,12 @@ networks:
     name: observability-otlp
     internal: true
   openobserve-history:
+  # Prometheus, for host-metrics alone.
+  host-writes:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.201.0.0/29
 
 # Written from GitHub secrets by scripts/render-secrets.sh; the logins' secrets kept their OpenObserve names.
 secrets:
@@ -512,6 +552,9 @@ secrets:
     file: ../../secrets/openobserve_stats_password
   public_stats_key:
     file: ../../secrets/public_stats_key
+  # Empty until it is made in Home Assistant: its scrape fails until then.
+  homeassistant_metrics_token:
+    file: ../../secrets/homeassistant_metrics_token
 
 volumes:
   # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot

@@ -1,0 +1,31 @@
+# What host-metrics (../compose.yaml) scrapes on the host's loopback, and where it writes: Prometheus's address on
+# host-writes.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # The .internal proxy's requests per site (../../internal-names/Caddyfile).
+  - job_name: caddy
+    static_configs:
+      - targets: ["127.0.0.1:2019"]
+        labels:
+          instance: beelink
+  # The .internal names' DNS, published to loopback only (../../internal-names/compose.yaml).
+  - job_name: coredns
+    static_configs:
+      - targets: ["127.0.0.1:9153"]
+        labels:
+          instance: beelink
+  # Its prometheus integration, behind a long-lived token (HOMEASSISTANT_METRICS_TOKEN). With the token's file empty
+  # the scrape is refused, and only `up` says so.
+  - job_name: homeassistant
+    metrics_path: /api/prometheus
+    authorization:
+      credentials_file: /run/secrets/homeassistant_metrics_token
+    static_configs:
+      - targets: ["127.0.0.1:8123"]
+        labels:
+          instance: beelink
+
+remote_write:
+  - url: http://10.201.0.2:9090/api/v1/write

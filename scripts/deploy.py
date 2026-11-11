@@ -424,6 +424,22 @@ def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
     return digest.hexdigest()[:16]
 
 
+def stacks_with_secrets_since(repo_root: Path, since_ns: int) -> tuple[str, ...]:
+    """The stacks reading a secret rendered after ``since_ns``, as a new secret changes no tracked
+    file."""
+
+    def renewed(secret: Path) -> bool:
+        return secret.is_file() and secret.stat().st_mtime_ns > since_ns
+
+    return tuple(
+        sorted(
+            stack_dir.name
+            for stack_dir in (repo_root / "stacks").iterdir()
+            if (stack_dir / "compose.yaml").is_file() and any(map(renewed, secret_files(stack_dir)))
+        )
+    )
+
+
 def secret_files(stack_dir: Path) -> tuple[Path, ...]:
     """The files a stack's compose.yaml mounts as secrets (render_secrets.py writes them)."""
     compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
@@ -612,6 +628,9 @@ def run(
         head = head_commit(repo_root)
         since = last_deployed.read_text().strip() if last_deployed.is_file() else None
         selected = changed_stacks(repo_root, since)
+        if selected is not None and last_deployed.is_file():
+            renewed = stacks_with_secrets_since(repo_root, last_deployed.stat().st_mtime_ns)
+            selected = tuple(sorted({*selected, *renewed}))
         print(
             "Deploying " + ("all stacks" if selected is None else ", ".join(selected) or "nothing")
         )

@@ -390,6 +390,26 @@ def test_deploys_changed_stacks_and_records_the_commit(
     assert datetime.fromisoformat(ready_at["gateway"]).tzinfo is not None
 
 
+def test_a_secret_rendered_since_the_last_deploy_deploys_its_stack(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    stack = repo / "stacks" / "observability"
+    (stack / "compose.yaml").write_text(
+        "services: {}\nsecrets: {token: {file: ../../secrets/token}}\n", encoding="utf-8"
+    )
+    state = tmp_path_factory.mktemp("state") / "last-deployed"
+    state.write_text(_commit_all(repo) + "\n", encoding="utf-8")
+    (repo / "secrets").mkdir()
+    (repo / "secrets" / "token").write_text("new", encoding="utf-8")
+    os.utime(state, ns=(0, 0))
+    runner, calls = _recording_runner()
+
+    assert deploy.run(repo, (), last_deployed=state, runner=runner) == 0
+
+    composed = {command[command.index("-f") + 1] for command, _ in calls if "-f" in command}
+    assert composed == {str(stack / "compose.yaml")}
+
+
 def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
     repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

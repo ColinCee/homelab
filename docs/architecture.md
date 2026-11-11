@@ -8,10 +8,9 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 ## Deploys
 
 - **Merging is deploying.** A merge to `main` runs [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy
-  runner: it writes the secrets its render step names to `secrets/` (raw, mode 0444 in a 0700 folder) and runs
-  [`deploy.sh`](../scripts/deploy.sh) for the stacks changed since the last full deploy
-  ([`deploy.py`](../scripts/deploy.py)). A changed GitHub secret reaches a stack only on its next deploy:
-  `scripts/deploy.sh <stack>` on the host.
+  runner: it writes the secrets its render step names to `secrets/` and runs [`deploy.sh`](../scripts/deploy.sh) for
+  the stacks changed since the last full deploy ([`deploy.py`](../scripts/deploy.py)), and those reading a changed
+  secret: a new secret goes live at the next merge or a Deploy run by hand.
 - **Who may deploy.** The deploy runner controls the host through Docker, so the
   [runner guard](../scripts/runner_job_guard.py) refuses every job but its `WORKFLOWS` from `main`, started by
   `ColinCee` or `renovate[bot]`. It is installed root-owned and deploys never update it, so changing it takes a
@@ -110,8 +109,9 @@ Traps:
 
 - Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
   `job="ci-vms"`, present only while a slot runs a VM.
-- Home Assistant, CoreDNS and Caddy run on the host's network, which Alloy cannot reach;
-  [`probes.py`](../stacks/observability/probes.py) checks them instead. The flight tracker's `probe_success` is 1
+- Caddy, CoreDNS and Home Assistant answer only on loopback: `host-metrics` scrapes them from the host's network,
+  Home Assistant once it has `prometheus:` and the `HOMEASSISTANT_METRICS_TOKEN` secret;
+  [`probes.py`](../stacks/observability/probes.py) checks them for the alerts. The flight tracker's `probe_success` is 1
   only when its public API says its data is live; the public sites' (`job="integrations/blackbox/sites"`) only on a
   200.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;

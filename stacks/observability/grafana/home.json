@@ -1291,6 +1291,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "observability-host-metrics-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "observability-obi-1"
             },
             "properties": [
@@ -1774,6 +1789,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "observability-host-metrics-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "observability-obi-1"
                 },
                 "properties": [
@@ -2121,6 +2151,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "observability-host-metrics-1"
                 },
                 "properties": [
                   {
@@ -2488,6 +2533,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "observability-host-metrics-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "observability-obi-1"
                 },
                 "properties": [
@@ -2830,6 +2890,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "observability-host-metrics-1"
                 },
                 "properties": [
                   {
@@ -3352,6 +3427,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "observability-host-metrics-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "observability-obi-1"
                 },
                 "properties": [
@@ -3654,6 +3744,145 @@
           "gridPos": {
             "x": 0,
             "y": 54,
+            "w": 24,
+            "h": 7
+          }
+        },
+        {
+          "id": 40,
+          "type": "timeseries",
+          "title": ".internal names, a second",
+          "description": "Requests through the .internal proxy by name, and those it failed, with the names' DNS answers that failed: whether the names work for the devices using them.",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "refId": "A",
+              "expr": "sum by (host) (rate(caddy_http_requests_total{job=\"caddy\",host=~\".+\\.internal\"}[5m]))",
+              "legendFormat": "{{host}}"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "refId": "B",
+              "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"caddy\",code=~\"5..\"}[5m]))",
+              "legendFormat": "Proxy errors (5xx)"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "prometheus"
+              },
+              "refId": "C",
+              "expr": "sum(rate(coredns_dns_responses_total{job=\"coredns\",rcode!~\"NOERROR|NXDOMAIN\"}[5m]))",
+              "legendFormat": "DNS failures"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "decimals": 2,
+              "min": 0,
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "#898781"
+              },
+              "custom": {
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "lineWidth": 1,
+                "showPoints": "never",
+                "stacking": {
+                  "mode": "none",
+                  "group": "A"
+                }
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "grafana.internal"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "home.internal"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d95926"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "Proxy errors (5xx)"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#199e70"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "DNS failures"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "gridPos": {
+            "x": 0,
+            "y": 61,
             "w": 24,
             "h": 7
           }
