@@ -58,52 +58,6 @@ branch newer than the disk's, and builds `/var/lib/homelab-ci/caches/<owner>__<r
 the repo's code (`unpack_cache` and `build_cache_image` in [`ci_supervisor.py`](../../scripts/ci_supervisor.py)). Nothing goes through GitHub
 artifacts, whose storage quota, once full, fails every upload.
 
-### Handoffs
-
-Files a job hands to later jobs, in place of GitHub artifacts:
-
-```yaml
-- uses: ColinCee/homelab/.github/actions/handoff@main
-  with:
-    put: builder          # a-z, 0-9, -
-    path: out/            # a file or folder
-    readers: review land  # jobs of this run that may get it
-    later: line           # jobs of any run that may get it
-    days: 90              # at most 90
-- uses: ColinCee/homelab/.github/actions/handoff@main
-  with:
-    get: builder
-    from: build           # the job that put it
-    run: ${{ needs.line.outputs.held_run }}  # default this run
-    path: ${{ runner.temp }}/in
-```
-
-- `put` never fails the job; `get` fails if the item is not there, or not for this job. `get` waits up to `wait`
-  seconds (at most 1800) and answers `none` once the putting job has finished and its outbox is filed.
-- Items are filed under `/var/lib/homelab-ci/handoff/<owner>__<repo>/<run>/<job>/` with the job name GitHub shows
-  for that VM's runner, so no job can put under another's name. Root only (`0700`).
-- `later` readers count only for a default-branch run that is not a pull request's. Past 20 GiB a repo's new items
-  are dropped.
-- A job puts handoffs or a cache, not both, and only a build VM's cache is taken.
-- Job names need no spaces: a matrix or called workflow's job (`build (3.12)`, `call / build`) cannot put or be
-  named in `from`.
-- A VM gets at most 50 answers (handoffs and `ci-capacity` together) and still cannot open any connection to the
-  Beelink: asks go out on its console, answers come back on a read-only inbox disk.
-
-### Free build machines
-
-`ci-capacity` in any job VM prints the build machines' counts as JSON, no repo names, so Auto Kaizen's task start
-can see how many are free:
-
-```json
-{"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1, "queued": 0, "held_for_memory": 0,
- "in_use_other_repos": 1}
-```
-
-Fields are as in [`machines.json`](#status-files); `in_use_other_repos` counts build VMs running other repos' jobs.
-It fails within 15 seconds (`CAPACITY_WAIT`) when nothing answers. Auto Kaizen runs no more tasks at once than the
-build slots (5, set in its `build.yml` and `watch.yml`): change them together.
-
 ### What runs where
 
 Only Colin's private repositories that the token can see and that nobody else can write to are served
@@ -145,7 +99,7 @@ Fine-grained tokens): within a minute its `homelab-fc` jobs get VMs. Nothing cha
 A change goes in by merging it. Within a minute or two the Beelink takes it (`homelab-ci-update.timer` runs
 `update.sh --follow`, which reads main's commit). A code change is live in about 2 minutes; one that rebuilds the
 image, in about 5. `ci-runner/update-beelink.sh`, from Colin's PC, runs that pass now and shows what it did. `update.sh` refuses a commit not on main or older than the installed one, names the pull requests
-each install ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file says how
+each install ships, and writes `/etc/homelab-ci/commit` last, so that file says how
 current the Beelink is.
 
 - **Running jobs carry on.** Each VM is its own systemd unit (`homelab-ci-vm-<runner name>`), and a restarted
@@ -194,15 +148,13 @@ mostly wait.
 
 ### Status files
 
-The supervisor writes these for the Control room, OpenObserve and speed reports. What each field counts is in the
+The supervisor writes these for OpenObserve, `server-health.sh` and speed reports. What each field counts is in the
 function named.
 
 | File | Holds | Code |
 |---|---|---|
 | `/var/lib/homelab-ci/status/machines.json` (0644, replaced after every poll) | Slots, VMs busy and waiting ready, cache disks, free memory, jobs queued and held, the last load test. Counts and repo names only | `status` |
 | `status/waits.jsonl` (0644, 30 days) | One line per job that waited, when it stops: seconds per kind of wait and the reason for the longest | `wait_kind` |
-| `status/live.json` | Each running auto-kaizen Builder's and Reviewer's latest console line (auto-kaizen's `docs/live-view.md`) | `LIVE_LINE` |
-| `status/sessions/<runner name>.jsonl` (root only, 30 MB cap, 30 days) | Auto-kaizen agents' whole sessions for the Control room's chat page (auto-kaizen's `docs/live-session.md`) | `SESSION_LINE` |
 | `/var/lib/homelab-metrics/ci-waits.prom` | The longest-waiting job's seconds per kind, each workflow's longest queued job, busy VMs, failed polls | `homelab_ci_*` |
 | `/var/lib/homelab-metrics/ci-vm-memory.prom` | VMs ended, near full (over 80%) and out-of-memory kills by kind of job | `MEMORY_METRICS` |
 | `/etc/homelab-ci/waits.json` in each VM | How long its repo and label's queued jobs had waited and why | `vm_waits` |
@@ -217,9 +169,7 @@ queued job not started yet, and `github_ok` is false when the last poll failed o
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
-The console reader keeps only lines in the exact live and session formats, from VMs booted for
-`ColinCee/auto-kaizen`, and files a session by the VM it came from, never by the line, so one VM cannot write into
-another's. Everything else on the console is dropped unlogged.
+The console reader keeps only lines in the exact memory format; everything else on the console is dropped unlogged.
 
 When a VM ends, the journal says how much host memory it touched, what it wrote to the SSD, and what its job needed
 with its out-of-memory kills: `slot N: VM ended (exit 0), its memory peaked at X MiB of Y, it wrote Z MiB` and
@@ -247,15 +197,6 @@ journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped wa
 `(GitHub had queued it Xm before)` marks a job the supervisor first saw 90 s or more after GitHub queued it: it sat
 waiting or pending on GitHub, the supervisor polled the repo late (`slow poll:` lines) or restarted. A logged job
 gets `stopped waiting after Xm, Ym since GitHub queued it` once it starts or is cancelled.
-
-The "stuck waiting for a test VM" alert gives the longest-waiting job's minutes per kind of wait, and for a missing
-label its repo and labels. Its own number is the Control room's, counted from when GitHub created the task's next
-job; minutes beyond the kinds added up mean the job is still waiting or pending on GitHub (a concurrency group),
-which no runner can take, so look at the task's run on GitHub. Raise its 20 minutes only when the waits are
-expected, such as a burst of tasks on full slots. The "Kaizen's Watcher stopped running" alert says how long the
-Watcher's job and Auto Kaizen's longest job have waited for a VM: a waiting job means a capacity problem, none means
-GitHub is not starting jobs. No VM starts while every poll fails, so "CI supervisor's poll keeps failing" fires
-after 10 failures in a row for 2 minutes.
 
 ## Design
 
@@ -305,7 +246,6 @@ after 10 failures in a row for 2 minutes.
 | `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
 | `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
 | `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished, since they outlive it (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
-| `test-handoff-image.sh` | Handoffs and `ci-capacity` work in the image on directly read loop devices, as in a VM; CI runs it when a pull request changes the image or handoffs |
 | `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and OpenObserve once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the

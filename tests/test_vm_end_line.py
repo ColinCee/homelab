@@ -35,7 +35,7 @@ source {CI_RUNNER / "vm-disks.sh"}
 detach_disks() {{ :; }}
 {cleanup.group(0)}
 slot=3 status="exit 0" MEM_MIB=2048 peak_file={peak} cgroup=/nonexistent base={tmp_path}
-id=x CACHE_OUT={outbox} INBOX={tmp_path / "missing"}
+id=x CACHE_OUT={outbox}
 sleep 60 & sampler=$!
 cleanup
 """

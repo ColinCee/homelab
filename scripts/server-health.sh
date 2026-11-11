@@ -81,9 +81,8 @@ login() {
 promql() { # QUERY: the Prometheus API's JSON answer
   login | curl -sf -m 10 -K - -G "$openobserve/api/default/prometheus/api/v1/query" --data-urlencode "query=$1"
 }
-# As Kaizen reads the list (auto-kaizen src/kaizen/board/alert_source.py, `firing_in`): a rule fires when its
-# latest run met its condition (both stamps come from the same run); one whose query failed, or not run for
-# 5 minutes, is named too.
+# A rule fires when its latest run met its condition (both stamps come from the same run); one whose query failed,
+# or not run for 5 minutes, is named too.
 firing="$(login | curl -sf -m 10 -K - "$openobserve/api/v2/default/alerts" |
   jq -r --argjson stale "$(( ($(date +%s) - 300) * 1000000 ))" '[.list[] | select(.enabled != false) |
     (.last_triggered_at // 0) as $run | (.last_satisfied_at // 0) as $met | (.description // .name) as $rule |
@@ -143,7 +142,7 @@ for expr in 'sum by (mode) (rate(node_cpu_seconds_total{mode!="idle",job="integr
     echo "    unavailable"
 done
 
-# CI machines (Kaizen tasks stuck waiting for a test VM). This log is public, so repository
+# CI machines. This log is public, so repository
 # names are masked and only counts from the status file are printed.
 supervisor="$(systemctl is-active homelab-ci-supervisor 2>/dev/null || true)"
 if [[ "$supervisor" == active ]]; then
