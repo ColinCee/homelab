@@ -9,13 +9,13 @@ disposable.
 
 | Source | Why |
 |--------|-----|
-| `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. |
+| `stacks/home-assistant/config` | Automations, integrations, device pairings, users. Not in Git. Sensor history as `history-snapshot.db`, a consistent copy `home-assistant-history.timer` makes at 02:10 UTC. |
 | OpenObserve `db` folder | Users, alerts, dashboards. |
 | Flight-tracker heatmap volume | Accumulated history that cannot be regenerated. |
 | `~/pc-backups` | Each project's data that is not in Git, sent nightly from the Windows PC (below). |
 
-Left out on purpose: the Home Assistant recorder database (a live copy would be
-inconsistent), logs, and stored metrics and logs. Secrets come
+Left out on purpose: the live Home Assistant recorder database (a live copy would be
+inconsistent; the snapshot above stands in for it), logs, and stored metrics and logs. Secrets come
 from GitHub.
 
 Retention is 7 daily, 4 weekly and 6 monthly snapshots; each run also prunes

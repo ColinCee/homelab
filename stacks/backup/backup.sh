@@ -9,8 +9,9 @@ set -eu
 MAX_REPO_BYTES="${MAX_REPO_BYTES:-8000000000}"
 
 backup_data() {
-  # The recorder database, logs, and re-downloadable plugins are left out: a
-  # live copy of the database would be inconsistent and it dominates churn.
+  # The live recorder database, logs, and re-downloadable plugins are left out:
+  # a live copy of the database would be inconsistent, so history-snapshot.db
+  # (stacks/home-assistant/systemd) is backed up instead.
   restic backup /data \
     --host beelink \
     --exclude "/data/home-assistant/home-assistant_v2.db*" \
