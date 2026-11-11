@@ -1,4 +1,4 @@
-# The alert rules, held to the alert standard in docs/observability.md ("Alerts"). Prometheus runs them each
+# The alert rules, held to the alert standard in docs/architecture.md ("Monitoring and alerts"). Prometheus runs them each
 # minute and sends the firing ones to Alertmanager (../alertmanager), which posts to Discord, repeats and holds back.
 #
 # Each post shows `measure: value unit`, so a query gives display units, rounded. A rule that is not per series
@@ -243,7 +243,7 @@ groups:
           measure: 'Last good backup'
           unit: ' h ago'
           harm: 'Without a nightly copy in R2, a lost disk loses everything since the last good backup.'
-          action: 'Check `docker logs --tail 100 backup`; see docs/runbooks/backups.md.'
+          action: 'Check `docker logs --tail 100 backup`; see docs/architecture.md, "Backups".'
           dashboard: *home
           value: '{{ $value }}'
       # Sundays' backup reads every pack back (backup.sh, DEEP_CHECK_DAY), so over 8.5 days is a missed week. Its
@@ -285,7 +285,7 @@ groups:
           harm: 'The Windows PC''s files are no longer copied off it, so a dead PC disk loses them.'
           action: >-
             Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl --user status
-            backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
+            backup-pc-receive` on the Beelink; see docs/architecture.md, "Backups".
           dashboard: *home
           value: '{{ $value }}'
       # A failed run, or a good run 35 days old. A failure with no good run before it shows as no data.
@@ -316,7 +316,7 @@ groups:
             Docker images are filling the disk.
           action: >-
             Read `journalctl --user -u backup-upkeep` on the Beelink, fix the failing step, then `systemctl --user
-            start backup-upkeep`; see docs/runbooks/backups.md.
+            start backup-upkeep`; see docs/architecture.md, "Backups".
           dashboard: *home
           value: '{{ $value }}'
       - alert: high-disk
@@ -358,7 +358,7 @@ groups:
           measure: 'Backup storage'
           unit: ' GB'
           harm: 'Uploads stop at 8 GB, so backups stop; R2 bills past 10 GB.'
-          action: 'Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md.'
+          action: 'Find what grew with `docker exec backup restic stats`; see docs/architecture.md, "Backups".'
           dashboard: *home
           value: '{{ $value }}'
       - alert: ssd-worn

@@ -1,5 +1,5 @@
 """Every alert rule (stacks/observability/prometheus/rules.yml) meets the alert standard in
-docs/observability.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
+docs/architecture.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
 as the standard says: promtool runs them over made-up series, so those tests need Docker."""
 
 import functools

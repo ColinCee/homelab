@@ -5,7 +5,12 @@ it asks Prometheus, through the stack's read-only gateway, and the already-publi
 flight-tracker API for a handful of numbers and PUTs them to the blog, which shows
 them in its home-lab figure.
 The body is built from named numbers only, never by forwarding a response, so
-nothing else about the host can leak. See docs/public-stats.md.
+nothing else about the host can leak. Anyone can poll the page and keep a
+history, so the numbers are coarse: one flag for all stacks, and no backup or
+per-service uptime, which over time would show outage windows. The blog's
+Worker refuses any other field, an `at` over 10 minutes old, and numbers not
+newer than the ones it has, so a drifting clock shows as refused pushes here.
+See docs/architecture.md, "Public stats".
 """
 
 import base64

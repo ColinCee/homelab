@@ -8,7 +8,7 @@ GitHub for a just-in-time runner registration (good for exactly one job) and boo
 VM with run-vm.sh, which receives that registration through Firecracker's metadata
 service. The GitHub token stays on
 the host; a VM only ever sees its one-job registration. A repository that is not
-private, or not Colin's, is never served. See docs/runbooks/ci-runner.md.
+private, or not Colin's, is never served. See docs/architecture.md, "CI runner".
 
 Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervisor.service.
 """

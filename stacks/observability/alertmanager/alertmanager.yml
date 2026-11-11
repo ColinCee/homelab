@@ -1,5 +1,5 @@
 # Between Prometheus's rules (../prometheus/rules.yml) and Discord; the standard it keeps is in
-# docs/observability.md ("Alerts"). Prometheus sends each firing alert with an end time, and its end when it clears.
+# docs/architecture.md ("Monitoring and alerts"). Prometheus sends each firing alert with an end time, and its end when it clears.
 
 route:
   receiver: discord

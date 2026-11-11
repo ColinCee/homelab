@@ -1,5 +1,5 @@
 """Replays rules.yml's rules over history and counts the Discord posts each would have made, for the
-noise budget in docs/observability.md ("Alerts"), which has the command.
+noise budget in docs/architecture.md ("Monitoring and alerts"), which has the command.
 
     replay.py [days] [rule ...]
 

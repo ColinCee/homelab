@@ -3,7 +3,7 @@ description: >-
   On a push to the default branch, tars what the job left under /cache (and any
   workspace paths given) onto the VM's outbox disk, which the CI supervisor turns
   into the repo's next cache disk. Does nothing on any other event, and never
-  fails the job. Use it as a homelab-fc job's last step. See docs/runbooks/ci-runner.md.
+  fails the job. Use it as a homelab-fc job's last step. See docs/architecture.md, "CI runner".
 inputs:
   paths:
     description: Workspace paths to add, separated by spaces or new lines (such as web/node_modules web/package-lock.json).

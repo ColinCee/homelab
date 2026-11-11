@@ -1,13 +1,13 @@
 services:
   # Nightly encrypted restic backup of state that is not in Git. See
-  # docs/runbooks/backups.md for what is covered and how to restore.
+  # docs/architecture.md, "Backups", for what is covered; docs/recovery.md to restore.
   backup:
     container_name: backup
     hostname: beelink
     image: restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/backup.sh"]
-    # Passes SIGTERM on (docs/runbooks/deploying-services.md, "Adding a stack").
+    # Passes SIGTERM on (docs/architecture.md, "Deploys").
     init: true
     command: ["loop"]
     read_only: true
@@ -48,7 +48,7 @@ services:
       - /var/lib/homelab-metrics:/metrics
       - ../home-assistant/config:/data/home-assistant:ro
       - heatmap-data:/data/flight-tracker:ro
-      # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
+      # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/architecture.md, "Backups").
       - /home/colin/pc-backups:/data/pc-backups:ro
 
 # Written from GitHub secrets by scripts/render-secrets.sh.

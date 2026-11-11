@@ -1,0 +1,71 @@
+# Recovery
+
+Hand steps for when the automation cannot fix it. How the parts fit: [architecture](architecture.md).
+
+## Restoring from backup
+
+Restore into a scratch folder, then copy into place with the owning stack stopped:
+
+```bash
+docker exec backup restic restore latest --target /tmp/restore --include /data/home-assistant
+docker compose -f stacks/home-assistant/compose.yaml down
+docker cp backup:/tmp/restore/data/home-assistant/. stacks/home-assistant/config/
+docker compose -f stacks/home-assistant/compose.yaml up -d
+```
+
+restic ends with "There were N errors" because the container cannot set file owners; the files are intact, so set
+ownership when copying. `/tmp` in the container is memory: for a large restore, run restic from another machine with
+the same repository URL, R2 keys and password. Named volumes restore the same way, into the volume's mount point.
+
+## Rebuilding the Beelink
+
+1. Ubuntu, Tailscale (`sudo tailscale set --operator=colin`, so Taildrop backups arrive), Docker, and
+   `loginctl enable-linger colin`.
+2. From a clone of `main` at `/home/colin/code/homelab`, once:
+
+   ```bash
+   sudo install -D -m 644 systemd/docker.service.d/tailscale.conf /etc/systemd/system/docker.service.d/tailscale.conf
+   sudo install -m 644 apt/52unattended-upgrades-local /etc/apt/apt.conf.d/
+   sudo install -m 644 apt/docker-major.pref /etc/apt/preferences.d/
+   sudo systemctl daemon-reload
+   ```
+
+3. Register the deploy runner, install the [runner guard](#runner-guard), then re-run the latest deploy: every stack
+   comes up empty. Deploy `backup` last and restore as above.
+4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/tests/audit.sh`
+   (must pass), store the GitHub token as the supervisor's `TOKEN_FILE` says, then
+   `sudo systemctl enable --now homelab-ci-supervisor.service`.
+
+If the Tailscale address changes, update the Docker drop-in, the Compose port bindings, `stacks/internal-names` and
+the `.internal` nameserver in Tailscale's DNS settings.
+
+## Runner guard
+
+After a change to [`runner_job_guard.py`](../scripts/runner_job_guard.py) merges, from a checkout of `main` on the
+host, with no deploy running:
+
+```bash
+sudo scripts/install-runner-guard.sh enforce
+sudo systemctl restart actions.runner.ColinCee-homelab.beelink.service
+```
+
+"Runner guard differs from main" fires until then.
+
+## CI runner rollback
+
+`sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>` pins the host to that commit until
+`sudo rm /etc/homelab-ci/pinned`. After a kernel upgrade, rebuild the image: `sudo ci-runner/build-rootfs.sh`.
+
+## Containers without networking
+
+When Docker started before the Tailscale address, recreate only the stranded services:
+
+```bash
+docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml \
+  up -d --force-recreate --no-deps grafana gateway
+```
+
+## Suspected compromise
+
+Run `scripts/security-audit.sh` on the host, read-only so it keeps the evidence, and compare with the expected results
+in the private notes.

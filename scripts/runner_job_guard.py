@@ -11,7 +11,7 @@ click stands in the way. This guard closes that path on the host, where workflow
 cannot change it.
 
 The installed copy is root-owned and is not updated by deploys, so a push to main
-cannot rewrite the policy. See docs/runbooks/deploying-services.md.
+cannot rewrite the policy. See docs/architecture.md, "Deploys".
 """
 
 from __future__ import annotations
