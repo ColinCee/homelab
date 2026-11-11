@@ -2,6 +2,8 @@
 """Write what the intrusion alerts read (prometheus/rules.yml, group intrusion) to security.prom:
 the last hour's deploys, CI-host installs, runner guard refusals and SSH logins from the journal,
 every tailnet device and when it was added, and whether the installed runner guard is main's.
+A device, or an SSH login's device, is known="true" only if it was on the tailnet at the first run
+(STATE), so the repository names none.
 
 A host job, not a container, so no container needs a path to the host or its Tailscale. (Alloy
 reads the journal too, for the log store, without sudo's or tailscaled's lines.) Installed by
@@ -25,6 +27,8 @@ OUT = Path("/var/lib/homelab-metrics/security.prom")
 # update.sh moves within a minute of each merge.
 GUARD = Path("/usr/local/lib/homelab/runner_job_guard.py")
 MAIN_GUARD = Path("/var/lib/homelab-ci/src/scripts/runner_job_guard.py")
+# The unit's StateDirectory. Delete it to learn the tailnet as it is now.
+STATE = Path("/var/lib/homelab-security-facts/known-devices.json")
 # deploy.yaml's first step, update.sh after an install, the runner guard, sshd, and Tailscale SSH.
 IDENTIFIERS = (
     "homelab-deploy",
@@ -112,6 +116,13 @@ def tailnet(status: dict) -> tuple[dict[str, float], dict[str, str]]:
     return added, names
 
 
+def known_devices(current: Iterable[str], state: Path = STATE) -> set[str]:
+    """The devices on the tailnet when the state was first written; a later one stays unknown."""
+    if not state.exists():
+        _replace(state, json.dumps(sorted(current)) + chr(10), 0o600)
+    return set(json.loads(state.read_text(encoding="utf-8")))
+
+
 def tailscale_status() -> dict:
     run = subprocess.run(
         ["tailscale", "status", "--json"], capture_output=True, text=True, check=True, timeout=30
@@ -131,18 +142,23 @@ def label(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
-def render(found: Events, added: dict[str, float], guard_matches: bool) -> str:
+def render(
+    found: Events, added: dict[str, float], guard_matches: bool, known: set[str] = frozenset()
+) -> str:
     lines = []
     for kind, names in LABELS.items():
         metric = f"homelab_{kind}_timestamp_seconds"
         lines += [f"# HELP {metric} {HELP[kind]}", f"# TYPE {metric} gauge"]
         for values, when in sorted(found[kind].items()):
             pairs = ",".join(f'{n}="{label(v)}"' for n, v in zip(names, values, strict=True))
+            if kind == "ssh_login":
+                pairs += f',known="{str(values[2] in known).lower()}"'
             lines.append(f"{metric}{{{pairs}}} {when:.0f}")
     metric = "homelab_tailscale_device_created_timestamp_seconds"
     lines += [f"# HELP {metric} When each tailnet device was added.", f"# TYPE {metric} gauge"]
     lines += [
-        f'{metric}{{name="{label(name)}"}} {when:.0f}' for name, when in sorted(added.items())
+        f'{metric}{{name="{label(name)}",known="{str(name in known).lower()}"}} {when:.0f}'
+        for name, when in sorted(added.items())
     ]
     lines += [
         "# HELP homelab_runner_guard_matches_main Whether the guard is main's (1 yes, 0 no).",
@@ -153,15 +169,20 @@ def render(found: Events, added: dict[str, float], guard_matches: bool) -> str:
 
 
 def write(text: str, out: Path = OUT) -> None:
-    tmp = out.with_name(out.name + ".tmp")
+    _replace(out, text, 0o644)
+
+
+def _replace(path: Path, text: str, mode: int) -> None:
+    tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
-    tmp.chmod(0o644)
-    tmp.rename(out)
+    tmp.chmod(mode)
+    tmp.rename(path)
 
 
 def main() -> None:
     added, names = tailnet(tailscale_status())
-    write(render(events(journal(), names), added, same_file(GUARD, MAIN_GUARD)))
+    known = known_devices(added)
+    write(render(events(journal(), names), added, same_file(GUARD, MAIN_GUARD), known))
 
 
 if __name__ == "__main__":

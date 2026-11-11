@@ -21,38 +21,9 @@ prometheus.exporter.unix "host" {
 
 prometheus.scrape "host" {
   targets    = prometheus.exporter.unix.host.targets
-  forward_to = [prometheus.relabel.known_devices.receiver]
-
-  scrape_interval = "15s"
-}
-
-// The tailnet devices Colin expects, and those SSH may come from, as `|`-separated names in secret files
-// (secrets/*.example), so the public repo names none. The intrusion rules alert on a series without known="true".
-local.file "known_devices" {
-  filename = "/run/secrets/known_devices"
-}
-
-local.file "ssh_devices" {
-  filename = "/run/secrets/ssh_devices"
-}
-
-prometheus.relabel "known_devices" {
   forward_to = [prometheus.remote_write.default.receiver]
 
-  // homelab_tailscale_device_created_timestamp_seconds, from security.prom.
-  rule {
-    source_labels = ["name"]
-    regex         = local.file.known_devices.content
-    target_label  = "known"
-    replacement   = "true"
-  }
-  // homelab_ssh_login_timestamp_seconds, from security.prom.
-  rule {
-    source_labels = ["device"]
-    regex         = local.file.ssh_devices.content
-    target_label  = "known"
-    replacement   = "true"
-  }
+  scrape_interval = "15s"
 }
 
 // ================================

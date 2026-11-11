@@ -319,9 +319,8 @@ CASES = {
                 'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="desktop",known="true"}',
                 "_x5 300x30",
             ),
-            # From outside the tailnet: no device, which a stray `|` in the SSH list marks known.
             (
-                'homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9",known="true"}',
+                'homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9",known="false"}',
                 "_x5 300x30",
             ),
         ],

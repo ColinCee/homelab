@@ -11,11 +11,8 @@ OpenObserve-named ones.
 1. The trial ([`trial.yaml`](../../stacks/observability/trial.yaml), Compose project `obs-trial`) ran beside the live
    stack ([results](../adr/0001-observability-stack/results.md), "Beside the live stack"). Run it only before the
    switch, since it names the live stack's volumes, with its secret files rendered and its `obs-trial.slice` cap set.
-2. Colin's step: the GitHub secrets `TAILNET_KNOWN_DEVICES` (each tailnet device's name, `|`-separated) and
-   `TAILNET_SSH_DEVICES` (the devices SSH may come from), with `gh secret set <name> -R ColinCee/homelab`. The
-   intrusion rules alert on any other device; without them every deploy fails.
-3. Wait for CI to pass, and for no CI job to run on the Beelink (`gh run list --status in_progress`).
-4. On the Beelink, with `am="docker exec observability-alertmanager-1 amtool --alertmanager.url=http://localhost:9093"`:
+2. Wait for CI to pass, and for no CI job to run on the Beelink (`gh run list --status in_progress`).
+3. On the Beelink, with `am="docker exec observability-alertmanager-1 amtool --alertmanager.url=http://localhost:9093"`:
    - `$am alert query` lists nothing. Alertmanager keeps alerts in memory and is recreated, so an alert firing at the
      switch never gets its "Cleared"; wait until it clears.
    - `$am silence add alertname=beelink-metrics-stopped --duration=30m --author=colin --comment="switch"`: Prometheus

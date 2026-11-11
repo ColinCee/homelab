@@ -434,8 +434,9 @@ groups:
             A device on the tailnet reaches the Beelink's ports, Grafana and SSH as the tailnet's rules allow; one you
             did not add means someone else holds a login or a key.
           action: >-
-            If you added or re-added it, add its name to the TAILNET_KNOWN_DEVICES GitHub secret, which applies at the
-            observability stack's next deploy. Otherwise remove it at https://login.tailscale.com/admin/machines and rotate your Tailscale login.
+            If you added or re-added it, run `sudo rm -r /var/lib/homelab-security-facts` on the Beelink, so the next
+            minute's check learns the tailnet as it is (scripts/security_facts.py). Otherwise remove it at
+            https://login.tailscale.com/admin/machines and rotate your Tailscale login.
           dashboard: *home
           value: '{{ $value }}'
       - alert: runner-guard-changed
@@ -479,14 +480,13 @@ groups:
         expr: |
           max by (user, from, device) (
             round((time() - homelab_ssh_login_timestamp_seconds{known!="true"}) / 60)
-            or round((time() - homelab_ssh_login_timestamp_seconds{device=""}) / 60)
           ) < 10
         for: 0m
         keep_firing_for: 10m
         labels:
           level: now
         annotations:
-          title: 'SSH login not from the PC or MacBook'
+          title: 'SSH login not from a known device'
           measure: 'Logged in'
           unit: ' min ago'
           harm: 'A shell on the Beelink from another device can read every secret on it.'

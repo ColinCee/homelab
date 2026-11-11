@@ -248,9 +248,6 @@ services:
       ALLOY_DEPLOY_MODE: docker
       # Go grows its heap to twice what is live by default; this keeps it a little above what is live.
       GOMEMLIMIT: 192MiB
-    secrets:
-      - known_devices
-      - ssh_devices
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     tmpfs:
@@ -487,11 +484,6 @@ secrets:
     file: ./secrets/stats_password
   public_stats_key:
     file: ./secrets/public_stats_key
-  # The tailnet devices the intrusion rules expect, for Alloy (config.alloy, known_devices).
-  known_devices:
-    file: ./secrets/known_devices
-  ssh_devices:
-    file: ./secrets/ssh_devices
 
 volumes:
   # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot

@@ -96,13 +96,23 @@ def test_the_file_holds_each_fact_with_its_labels(tmp_path: Path) -> None:
     found["ci_host_install"] = {('Colin "C"', "0123456789ab"): 120.0}
     out = tmp_path / "security.prom"
 
-    security_facts.write(security_facts.render(found, {"laptop": 1794080335.1}, False), out)
+    found["ssh_login"] = {
+        ("colin", "100.64.0.10", "desktop"): 130.0,
+        ("root", "203.0.113.9", ""): 140.0,
+    }
+    rendered = security_facts.render(found, {"laptop": 1794080335.1}, False, {"desktop"})
+    security_facts.write(rendered, out)
 
     samples = [line for line in out.read_text().splitlines() if not line.startswith("#")]
     assert samples == [
         "homelab_ci_host_install_timestamp_seconds"
         '{author="Colin \\"C\\"",commit="0123456789ab"} 120',
-        'homelab_tailscale_device_created_timestamp_seconds{name="laptop"} 1794080335',
+        'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="desktop",'
+        'known="true"} 130',
+        'homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9",device="",'
+        'known="false"} 140',
+        'homelab_tailscale_device_created_timestamp_seconds{name="laptop",known="false"} '
+        "1794080335",
         "homelab_runner_guard_matches_main 0",
     ]
     assert [p.name for p in tmp_path.iterdir()] == ["security.prom"]
@@ -116,3 +126,14 @@ def test_the_guard_matches_main_only_byte_for_byte(tmp_path: Path) -> None:
     main.write_text("ALLOW = 2\n")
     assert not security_facts.same_file(installed, main)
     assert not security_facts.same_file(tmp_path / "gone.py", main)
+
+
+def test_the_first_run_learns_the_tailnet_and_a_later_device_stays_unknown(tmp_path: Path) -> None:
+    state = tmp_path / "known-devices.json"
+
+    assert security_facts.known_devices(["desktop", "phone"], state) == {"desktop", "phone"}
+    assert security_facts.known_devices(["desktop", "phone", "stranger"], state) == {
+        "desktop",
+        "phone",
+    }
+    assert state.stat().st_mode & 0o777 == 0o600

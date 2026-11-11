@@ -16,7 +16,7 @@ What watches what:
 | Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
 | Alerting stopped: a rule not run or failing, Alertmanager down, posts not reaching Discord, or the Beelink off | [`heartbeat.yaml`](../.github/workflows/heartbeat.yaml) checks every 15 minutes on the Beelink; [`heartbeat-watch.yaml`](../.github/workflows/heartbeat-watch.yaml), on GitHub's machines, posts to #uptime with a mention when it has not passed for 2 hours |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
-| Someone else on the Beelink: each deploy and CI-host install, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from the PC or MacBook | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
+| Someone else on the Beelink: each deploy and CI-host install, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 
 GitHub turns off a public repository's scheduled workflows after 60 days with no commits, which would stop both
 heartbeat workflows without a post; Renovate's merges keep the repository active.
