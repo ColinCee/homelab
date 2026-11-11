@@ -53,7 +53,7 @@ ls -d ~/actions-runner*
 cat /sys/kernel/mm/ksm/run                      # 0
 pgrep -a firecracker                            # only while a job runs
 sudo nft list table inet homelab_ci | head -3   # present
-sudo bash ci-runner/tests/test-wall.sh          # passes
+sudo bash ci-runner/tests/test-wall.sh
 sudo ci-runner/tests/audit.sh                   # passes
 ```
 
