@@ -34,6 +34,9 @@ flock -n 9 || { echo "slot $slot is busy" >&2; exit 75; }
 
 # Block the home's current public address; refuse to start without it.
 "$(dirname "$0")/net/setup-net.sh" wan || { echo "public address not blocked" >&2; exit 1; }
+# And refuse a slot user the network wall does not cover (homelab-ci.nft, slot_uids).
+nft get element inet homelab_ci slot_uids "{ $uid }" >/dev/null 2>&1 ||
+  { echo "$user is not in the network wall; run setup-net.sh up" >&2; exit 1; }
 
 # Kill anything left in the slot's cgroup (say, after this script was killed)
 # before deleting its files, so nothing of the slot user's survives.
