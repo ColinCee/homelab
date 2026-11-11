@@ -4,11 +4,7 @@ Start here when a service is unhealthy. Compose and `config.alloy` under `stacks
 settings and retention. Alloy collects metrics into Prometheus and logs and traces into the log and trace stores, each
 keeping 30 days, and Grafana shows them ([ADR 0001](adr/0001-observability-stack.md)).
 
-Monitoring on Beelink cannot detect its own complete outage from outside.
-Retain an independent external heartbeat when host-outage detection is needed;
-do not treat an on-host dashboard as proof of availability.
-
-What watches what:
+Monitoring on the Beelink cannot see its own outage, so what watches what:
 
 | Problem | Who warns |
 |---|---|
@@ -37,89 +33,25 @@ building-dashboards skill, `.github/skills/building-dashboards/SKILL.md`).
 Agents read through Grafana's API (or `mcp-grafana`) as `agents`; on the Beelink, also through the gateway:
 `curl -u agents@homelab.internal:... http://100.100.146.119:5081/prometheus/api/v1/query?query=up`.
 
-### Dashboard patterns
+Dashboards and their queries: the building-dashboards skill.
 
-Use `max by (name)` for container metrics or `max()` for a single host value
-where deduplication is needed.
+## Traps
 
-Host metrics (`node_*`) cover the whole machine, Firecracker CI VMs included.
-Container metrics do not: the VMs are processes, not containers, so their CPU
-and memory come from their slot cgroups (`job="ci-vms"`).
-
-## OpenObserve's kept history
-
-OpenObserve's volume holds the metrics and logs from before the switch to this stack. On the Beelink, from the
-server checkout, `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml
---profile history up -d openobserve-history`, then `ssh -L 5082:127.0.0.1:5082 beelink` and open
-`http://localhost:5082` as `root@homelab.internal` (the `OPENOBSERVE_ROOT_PASSWORD` secret); stop it with `stop
-openobserve-history`. It expires nothing while it runs. Once nothing from before the switch is wanted, 30 days
-after it at the earliest, `docker volume rm observability_openobserve-data observability_alloy-data`, then remove
-`openobserve-history` and its volume from `compose.yaml`.
-
-## Logs
-
-Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
-label, and sends logs over OTLP to the log store (`stacks/observability/config.alloy`), with `container_name` as the
-stream, and the host's systemd journal as the container `journal` with each line's `unit`, without sudo's and
-tailscaled's lines, which carry command lines.
-Every line first passes `loki.secretfilter`, which replaces each secret it recognises with `REDACTED`; a secret in a
-form its rules miss still reaches the store.
-
-To inspect a service, find its current container name (`docker ps --format '{{.Names}}'`) and query it in Grafana's
-Explore, on the Logs data source:
-
-```text
-{container_name="<name>"} |= "ERROR"                 Loki (LogQL)
-container_name:"<name>" ERROR                        VictoriaLogs (LogsQL)
-```
-
-## Metrics
-
-Prometheus receives metrics by remote write from the sources below, each scraped every 15 s (the flight-tracker probe
-each minute). Alloy sends every metric they expose, so what a later fix needs is
-already kept; it drops none by name.
-
-- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`), of the
-  root disk only: Alloy runs as its own user with no capabilities and mounts no host folder but what it reads, so it
-  can read no host file closed to other users. cAdvisor cannot read containers' own layers, so each container's
-  disk space (`container_fs_usage_bytes` and the other per-layer `container_fs_*` rows) is missing.
-- **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
-- **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
-  cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
-  only while it runs a VM, so counting them counts running VMs, the ones
-  waiting ready included. Its relabel keeps only those series, so there is no
-  `up{job="ci-vms"}`.
-- **Textfiles:** Alloy's textfile collector reads `/var/lib/homelab-metrics/*.prom`: the CI
-  supervisor's `homelab_ci_*` (the ci-runner runbook's "Status files"), the SSD's
-  `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, the backups' `homelab_backup_*` and
-  `homelab_pc_backup_*`, `homelab_probe_*` from `probes.py`, and the intrusion rules' facts from `security.prom`.
-- **Alertmanager:** its own metrics (`job="alertmanager"`), such as posts that failed to reach Discord.
-- **The stores and cloudflared:** their own metrics (`job="logs"`, `"traces"`, `"cloudflared"`), for "A store is
-  down" and "A store stopped taking data". Home Assistant, CoreDNS and Caddy run on the host's network, which the
-  firewall keeps Alloy from reaching, so their metrics are not collected.
-- **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on (off until its `containers_only`
-  works: in the trial it also traced host programs and the CI VMs), OBI's request rate, errors and
-  duration for every program in a container, named after its executable. `COMPOSE_PROFILES=obi` in
-  `settings.env` turns it on at the next deploy; clearing it leaves OBI running until
-  `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml rm -sf obi`.
-- **Flight tracker:** the `blackbox` container probes the public
-  `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any
-  address its caller names and Alloy must not reach the internet
-  (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
-  when the response says `"apiHealth":"live"`, so tunnel, backend and
-  upstream data source failures all show as 0.
-
-Useful checks:
-
-```bash
-curl -sf http://beelink.tail4f465e.ts.net:5080/healthz
-```
-
-Useful PromQL:
-
-```promql
-max by (name) (container_last_seen{job="docker", name!=""})
-```
+- Logs: Alloy sends every container's lines and the host's journal (as the container `journal`, with each line's
+  `unit`, without sudo's and tailscaled's) to the log store, stream `container_name`
+  ([`config.alloy`](../stacks/observability/config.alloy)). `loki.secretfilter` replaces each secret it recognises
+  with `REDACTED`; a secret in a form its rules miss still reaches the store.
+- Host metrics carry `job="integrations/unix"`: Alloy overrides the configured `job_name`. They cover the root disk
+  only, and per-container disk space (`container_fs_*`) is missing, since cAdvisor cannot read containers' layers.
+- Host metrics (`node_*`) include the CI VMs; container metrics do not. The VMs' CPU and memory come from their slot
+  cgroups (`job="ci-vms"`); a slot's cgroup exists only while it runs a VM, so counting them counts running VMs, and
+  there is no `up{job="ci-vms"}`.
+- Home Assistant, CoreDNS and Caddy run on the host's network, which the firewall keeps Alloy from reaching, so their
+  metrics are not collected; [`probes.py`](../stacks/observability/probes.py) checks them from the host's network.
+- The flight tracker's `probe_success` is 1 only when its public API says `"apiHealth":"live"`, so tunnel, backend
+  and upstream failures all show as 0. Prometheus scrapes `blackbox` itself, since Alloy must not reach the internet.
+- Textfile metrics (`/var/lib/homelab-metrics/*.prom`) come from the CI supervisor, the SSD, the backups, the probes
+  and the intrusion facts.
 
 ## Alerts
 
@@ -157,10 +89,6 @@ Noise budget: at most one post a day across all rules but notices, over 14 days.
 ```bash
 GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14
 ```
-
-Home Assistant and the `.internal` names are checked by
-[`probes.py`](../stacks/observability/probes.py) on the host's network, since the firewall admits only Tailscale and
-loopback; its results reach the rules through the textfile collector.
 
 ## Common debugging path
 

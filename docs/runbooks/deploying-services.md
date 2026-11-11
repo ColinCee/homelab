@@ -1,98 +1,17 @@
 # Deploying services
 
-The [deploy workflow](../../.github/workflows/deploy.yaml) runs on Beelink for
-stack, script, or workflow changes pushed to protected `main`. Actions resets
-the server checkout to the triggering commit, writes each secret in its render step's
-allowlist to `secrets/<name in lower case>` (`scripts/render-secrets.sh`), and invokes the shared deployment command for the
-stacks whose files changed since the last full deploy. A change to `scripts/`
-or the deploy workflow, or an unknown last deploy, deploys every stack. The
-last fully deployed commit is kept in `~/.local/state/homelab/last-deployed` and
-moves only when every selected stack deploys, so a failed deploy is retried next
-time. Stacks deploy in name order, except that the push's own changed stacks go
-first, each after any stack that creates a network or volume it uses as
-external (read from `docker compose config`), so a fresh host still works. A changed GitHub secret reaches a stack only when that stack next deploys:
-run `scripts/deploy.sh <stack>` by hand, or delete the marker so the next push
-deploys everything. Compose leaves unchanged containers running. CI and deployment are separate workflows;
-require CI on pull requests before merging. A pull request that only moves
-`image:` pins to new `name:tag@sha256:` digests in existing `compose.yaml` files
-gets only Compose validation of the stacks it touches in the `check` job
-([`pin_only.py`](../../scripts/pin_only.py)); every other change runs `mise run check`.
-
-## Ownership and deployment contract
-
-This is a Git-defined homelab with self-contained stacks and one shared
-deployment command, not a custom deployment platform. Deployment is
-push-triggered: there is no continuous drift reconciliation or automatic
-removal of deleted stacks. "GitOps-driven" describes the source-of-truth model,
-not a continuously running GitOps controller.
-
-| Owner | Responsibility | Boundary |
-|-------|----------------|----------|
-| GitHub Actions | Select the exact revision, serialize deploys, supply explicitly allowed secrets, invoke the deployment command. | No stack discovery loops or application-specific operations in workflow YAML. |
-| Shared deployment command | Discover stacks, validate inputs, build Compose profiles, apply normal services, install convention-based user units, and report readiness or failure. | No branches on stack names, application logic, Git resets, or host provisioning. |
-| `stacks/<name>/` | Own Compose, configuration, secret requirements, operational commands, and scheduled units. | A normal stack needs no custom deployment code. |
-| Compose | Build/start services, manage stack-local networks and volumes, and enforce declared dependency health conditions. | Do not reproduce its service model in Python. |
-| systemd | Schedule stack-owned operations and manage their process lifecycle. | Deployment installs units; it does not implement a scheduler. |
-| Host bootstrap | Prepare Docker, Tailscale, runner access, paths, permissions, and user lingering. | An explicit prerequisite, not something every stack repeats. |
-
-### Stack interface
-
-- `stacks/<name>/compose.yaml` is the required entry point. Discover it without
-  a stack registry; support deploying all stacks or explicitly selected names.
-- Keep optional `settings.env`, configuration, application code, and operational
-  commands beside Compose. An external workflow may trigger stack-owned
-  commands without owning their logic.
-- Reserve `stacks/<name>/systemd/` for optional user `.service`/`.timer` pairs,
-  with stack-prefixed unit names. Discover and install them generically; do not
-  introduce arbitrary pre/post-deploy hooks.
-- Define build and health requirements in Compose. The shared command must
-  handle buildable services consistently, including images used by on-demand
-  profiles, without starting ingestion or other one-off jobs during deployment.
-- Validate selected stacks and required inputs before applying changes. Use
-  bounded readiness waits; a successful start command alone is not application
-  readiness. Report partial deployment explicitly rather than implying atomic
-  rollback across stacks.
-
-The implementation builds with all Compose profiles enabled, then starts only
-the normal services with `up`. This leaves images for any on-demand profile
-jobs ready without running one-off operations during deployment. Compose
-`--wait` supplies bounded readiness: healthchecks are used where declared and
-services without one are considered ready when running. Readiness is not a
-full application or endpoint health audit.
-
-Adding an ordinary stack should require only its folder. Adding scheduled work
-should require only stack-owned commands and units. A new secret still requires
-explicit provisioning and an allowlisted workflow binding: plug-and-play does
-not mean exposing all repository secrets to every stack. New host privileges or
-network access also remain deliberate changes.
-
-Keep Git as the authority for deployed image digests. External application CI
-publishes an image; a digest update in this repository goes through CI and merge
-before deployment. Do not add an independent image updater that bypasses this
-path. Keep destructive removal explicit so deleting a folder cannot silently
-delete persistent data.
-
-Use typed Python for substantial validation or operational logic, using the
-existing uv, ty, Ruff, and pytest tooling. Small command-only shell wrappers are
-acceptable. Choose language by responsibility, not a requirement to rewrite
-every script.
+A merge to `main` deploys: the [deploy workflow](../../.github/workflows/deploy.yaml) runs on the Beelink, writes
+the secrets its render step names to `secrets/`, and runs [`scripts/deploy.sh`](../../scripts/deploy.sh) for the
+stacks changed since the last full deploy (the order and the marker are in [`deploy.py`](../../scripts/deploy.py)).
+A changed GitHub secret reaches a stack only when that stack next deploys: run `scripts/deploy.sh <stack>` by hand,
+or delete `~/.local/state/homelab/last-deployed` so the next push deploys everything. Deleting a stack's folder
+removes nothing from the host ([Remove a service](#remove-a-service)).
 
 ## Trust boundary
 
-The runner can execute host-level commands through Docker and workflows.
-Repository write access is therefore privileged, even for private repositories.
-Keep PR CI off the deploy runner: public repositories' CI on GitHub-hosted
-runners, private repositories' CI only in the
-[Firecracker VMs](ci-runner.md), which hold no secrets, deploy access or home
-network. Keep Beelink deployment restricted to trusted `main`. After checks, Renovate auto-merges eligible dependency PRs (not our own `ghcr.io/colincee` images, which outside collaborators can publish to); other changes are
-human-directed.
-Admins can bypass the ruleset, including via agents using their credentials.
-Renovate does not have that bypass. Workflow conditions alone are
-not access controls.
-
-This avoids giving hosted CI tailnet access or maintaining another deployment
-platform. Admin ports stay bound to Tailscale. Secrets are explicitly passed
-to Compose, never sourced as shell code.
+The deploy runner can run anything on the host through Docker, so write access to this repository is privileged.
+Only trusted `main` deploys run there (CI's split is in `AGENTS.md`). Admins can bypass the ruleset, agents using
+their credentials included; Renovate cannot. Workflow conditions alone are not access controls.
 
 ### Runner job guard
 
@@ -167,8 +86,10 @@ user reads it, no other host user).
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
    deployment registry needs updating.
 
-Within a stack, use Docker service names. Across stacks, use a host-mapped
-Tailscale port rather than assuming shared Docker DNS.
+Within a stack, use Docker service names. Across stacks, join a network the other stack owns as `external: true`
+(as flight-tracker joins `observability-otlp`); a bridge container cannot reach the host's Tailscale-bound ports,
+since the container wall drops them ([ADR 0005](../adr/0005-container-network-wall.md)). A service that needs the
+host itself uses host networking.
 
 ## Timers and dashboards
 
@@ -177,11 +98,7 @@ Deployment discovers user-unit pairs under
 reloads the user manager, and enables each timer. It does not remove unmanaged
 units or run arbitrary stack hooks.
 
-For externally built services, CI in the source repo publishes to GHCR and the
-image is pinned by digest, so a new image needs the digest updated in Git (by
-Renovate).
-
-Do not copy the image-polling pattern for new services. User timers require
+User timers require
 `loginctl enable-linger colin` on the host to run without a login session.
 They write the `*.prom` files Alloy reads into `/var/lib/homelab-metrics`,
 which `ci-runner/install-host.sh` makes writable to all.

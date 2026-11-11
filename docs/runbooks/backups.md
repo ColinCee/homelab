@@ -31,17 +31,9 @@ size against the cap, deep checks and the run log.
 
 ## From the PC
 
-Any project folder on the Windows PC (`D:\Claude Projects\*`) can opt in with a `backup.toml`
-listing its data that is not in Git:
-
-```toml
-paths = ["~/.servo/servo.db", "~/.servo/bench"]  # files or folders
-exclude = ["shots"]                               # names left out below a folder
-```
-
-[`scripts/pc_backup.py`](../../scripts/pc_backup.py) runs nightly on the PC (Task Scheduler,
-"Homelab PC backup"): one uncompressed tar per project, SQLite databases copied whole with SQLite's
-own backup, sent with Taildrop. No SSH key or extra sign-in. On Beelink the
+Any project folder on the Windows PC can opt in with a `backup.toml` listing its data that is not in
+Git; the format and what is sent are in [`scripts/pc_backup.py`](../../scripts/pc_backup.py), which runs
+nightly on the PC (Task Scheduler, "Homelab PC backup"). On Beelink the
 `backup-pc-receive` timer collects them every 15 minutes into `~/pc-backups`, which the nightly
 restic run backs up with everything else, and writes the newest file's time to
 `homelab_pc_backup_newest_timestamp_seconds`; **PC backup stopped arriving** fires
@@ -58,32 +50,16 @@ Four GitHub Actions secrets feed the stack's secret files: `R2_ACCOUNT_ID`,
 and `RESTIC_PASSWORD`. The restic password is also kept in Bitwarden: without
 it the snapshots cannot be decrypted, and GitHub will not show it again.
 
-## Alerting
+## Alerting and the size cap
 
-Each successful run logs `backup ok` and writes its time to
-`/var/lib/homelab-metrics/backup.prom`, which Alloy exports to Prometheus as
-`homelab_backup_last_success_timestamp_seconds`. **Nightly backup didn't run**
-fires when that is over 26 hours old, which covers failed
-runs, a stopped container and a server that was down overnight. A failed run
-logs `backup FAILED at <step>` and writes its time to
-`/var/lib/homelab-metrics/backup-failure.prom` as
-`homelab_backup_last_failure_timestamp_seconds{step="cap|backup|forget|check"}`;
-the next good run removes it. The alert names that step, or says no failure was
-recorded when the run never happened. Do not alert on `backup ok` log lines instead: a log store can
-miss a line and fire while backups succeed.
+**Nightly backup didn't run** fires when no run has succeeded for 26 hours, which covers failed runs, a stopped
+container and a server that was down overnight; a failed run names its step. It reads the time `backup.sh` writes
+to `/var/lib/homelab-metrics/`: do not alert on `backup ok` log lines instead, since a log store can miss a line
+and fire while backups succeed.
 
-## Size cap
-
-R2 is free up to 10 GB and has no server-side quota, so the script enforces
-the limit itself. Before uploading it adds the repository's stored size to
-the size of the pending changes; if the total would pass 8 GB
-(`MAX_REPO_BYTES`) it uploads nothing, logs `backup SKIPPED`, and the run
-counts as failed, so **Nightly backup didn't run** fires. **Backup storage nearly full** warns
-earlier, at 5 GB. The bucket's token is scoped to this bucket and nothing
-else writes to it.
-
-To recover, find what grew (`docker exec backup restic stats`, then
-`restic diff` between snapshots), exclude it in `backup.sh`, and forget the
+R2 is free up to 10 GB and has no server-side quota, so `backup.sh` uploads nothing past its `MAX_REPO_BYTES` (8 GB)
+and the run counts as failed; **Backup storage nearly full** warns earlier. To recover, find what grew
+(`docker exec backup restic stats`, then `restic diff` between snapshots), exclude it in `backup.sh`, and forget the
 oversized snapshots with `restic forget --prune <id>`.
 
 ## Operating

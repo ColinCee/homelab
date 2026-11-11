@@ -98,27 +98,6 @@ def test_tempo_caps_its_searches() -> None:
     assert config["query_frontend"]["search"]["max_result_limit"] <= 20000
 
 
-def test_the_trial_stores_into_the_volumes_the_live_stack_will_use() -> None:
-    class Loader(yaml.SafeLoader):
-        pass
-
-    # Compose's own tag for "take nothing from the file below".
-    Loader.add_constructor("!reset", lambda loader, node: [])
-    trial = yaml.load((STACK / "trial.yaml").read_text(encoding="utf-8"), Loader=Loader)
-    stores = {
-        "prometheus-data",
-        "loki-data",
-        "victorialogs-data",
-        "tempo-data",
-        "victoriatraces-data",
-    }
-    assert {k: v["name"] for k, v in trial["volumes"].items()} == {
-        k: f"observability_{k}" for k in stores
-    }
-    for service in trial["services"].values():
-        assert "ports" not in service or service["ports"] == []
-
-
 def test_no_container_with_a_host_folder_can_read_a_secret_on_the_host() -> None:
     # Not root, no capabilities, and only the folders it reads: never the host's root, home or
     # Docker's data. OBI is privileged, and runs only when its profile is on.

@@ -54,6 +54,15 @@
       "matchStrings": [
         "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=(?<currentValue>\\S+)"
       ]
+    },
+    {
+      "description": "A GitHub release asset's hash moves with its version. Only this datasource's digest is a file hash; for the others it is a commit.",
+      "customType": "regex",
+      "managerFilePatterns": ["/^ci-runner/versions\\.env$/"],
+      "datasourceTemplate": "github-release-attachments",
+      "matchStrings": [
+        "# renovate-hash: depName=(?<depName>\\S+)\\n[A-Z_]+_VERSION=(?<currentValue>\\S+)\\n[A-Z_]+_SHA256=(?<currentDigest>[0-9a-f]{64})"
+      ]
     }
   ]
 }

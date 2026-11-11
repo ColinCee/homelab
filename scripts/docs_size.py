@@ -3,7 +3,8 @@
 Docs grow one appended line per change until nobody reads them, so growth has to be a choice:
 run `mise run docs:size -- --update` and commit the new baseline, where the pull request shows
 it. A doc that shrinks passes; updating the baseline then lowers its cap. Decision records
-(docs/adr/) are left out: each keeps to one page (the recording-learnings skill).
+themselves are left out, since each keeps to one page (the recording-learnings skill); their
+evidence folders and the repo's skills are capped.
 """
 
 from __future__ import annotations
@@ -19,12 +20,12 @@ BASELINE = Path("docs-size.json")
 def docs() -> list[Path]:
     """The tracked Markdown files the cap covers."""
     out = subprocess.run(
-        ["git", "ls-files", "README.md", "AGENTS.md", "docs/*.md"],
+        ["git", "ls-files", "README.md", "AGENTS.md", "docs/*.md", ".github/skills/*/SKILL.md"],
         check=True,
         capture_output=True,
         text=True,
     ).stdout
-    return sorted(Path(p) for p in out.split() if not p.startswith("docs/adr/"))
+    return sorted(Path(p) for p in out.split() if Path(p).parent != Path("docs/adr"))
 
 
 def words(path: Path) -> int:

@@ -1,12 +1,15 @@
 {
- "AGENTS.md": 424,
- "docs/architecture.md": 241,
- "docs/ci-runner-performance.md": 2064,
- "docs/observability.md": 1506,
- "docs/public-stats.md": 689,
- "docs/runbooks/backups.md": 923,
- "docs/runbooks/ci-runner.md": 2646,
- "docs/runbooks/deploying-services.md": 1819,
- "docs/runbooks/security-audit.md": 463,
- "README.md": 675
+ ".github/skills/building-dashboards/SKILL.md": 673,
+ ".github/skills/reaching-homelab-devices/SKILL.md": 223,
+ "AGENTS.md": 281,
+ "docs/adr/0001-observability-stack/results.md": 1680,
+ "docs/architecture.md": 239,
+ "docs/ci-runner-performance.md": 505,
+ "docs/observability.md": 1020,
+ "docs/public-stats.md": 630,
+ "docs/runbooks/backups.md": 798,
+ "docs/runbooks/ci-runner.md": 2176,
+ "docs/runbooks/deploying-services.md": 1032,
+ "docs/runbooks/security-audit.md": 410,
+ "README.md": 398
 }

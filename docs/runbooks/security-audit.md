@@ -53,6 +53,7 @@ ls -d ~/actions-runner*
 cat /sys/kernel/mm/ksm/run                      # 0
 pgrep -a firecracker                            # only while a job runs
 sudo nft list table inet homelab_ci | head -3   # present
+sudo nft list table inet homelab_wall | head -3 # present
 sudo bash ci-runner/tests/test-wall.sh
 sudo ci-runner/tests/audit.sh                   # passes
 ```
@@ -72,15 +73,6 @@ The last command must print only the homelab repo's deploy runner. A runner on a
 repo has the same power over the host without the
 [runner job guard](deploying-services.md#runner-job-guard).
 
-## Lessons
-
-- **Experiments leave residue.** After installing anything to test, check
-  processes, `lsmod`, `/proc/sys/kernel/tainted`, `dpkg --verify` and the
-  filesystem, then reboot. A cleanup reported as done in October 2026 was not.
-- **Unused services are attack surface.** When a stack is retired, also remove
-  its runner, credentials and network grants; see
-  [Remove a service](deploying-services.md#remove-a-service).
-- **Verify a control with a real attempt.** A failing runner hook did not stop
-  later `if: always()` steps; only a real refused run showed it.
-- **Record answers.** Write down what each odd finding turned out to be, so
-  the next audit starts from it.
+Write down what each odd finding turned out to be, in the private notes, so the next audit starts from it. When a
+stack is retired, also remove its runner, credentials and network grants
+([Remove a service](deploying-services.md#remove-a-service)).
