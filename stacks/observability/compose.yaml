@@ -85,9 +85,9 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: colin
       # Set when its volume is first made; a later change of the secret needs `grafana cli admin reset-admin-password`.
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       # Encrypts the data sources' passwords in its volume; the default key is published.
-      GF_SECURITY_SECRET_KEY: ${GRAFANA_SECRET_KEY:?}
+      GF_SECURITY_SECRET_KEY__FILE: /run/secrets/grafana_secret_key
       GF_SERVER_DOMAIN: beelink.tail4f465e.ts.net
       GF_SERVER_ROOT_URL: http://beelink.tail4f465e.ts.net:5080
       GF_SERVER_ENFORCE_DOMAIN: "true"
@@ -105,8 +105,11 @@ services:
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       # Go grows its heap to twice what is live by default.
       GOMEMLIMIT: 400MiB
-      # Read by the data sources' provisioning, for the gateway.
-      AGENTS_PASSWORD: ${AGENTS_PASSWORD:?}
+    # agents_password: read by the data sources' provisioning, for the gateway.
+    secrets:
+      - grafana_admin_password
+      - grafana_secret_key
+      - agents_password
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
@@ -139,8 +142,9 @@ services:
     mem_limit: 32m
     environment:
       GRAFANA_ADMIN_USER: colin
-      GRAFANA_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
-      AGENTS_PASSWORD: ${AGENTS_PASSWORD:?}
+    secrets:
+      - grafana_admin_password
+      - agents_password
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -166,7 +170,7 @@ services:
       - --storage.path=/alertmanager
       # One instance: no peers to gossip with.
       - --cluster.listen-address=
-    # Not read-only: Compose copies a secret from the environment into the container, which a read-only one refuses.
+    read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -202,9 +206,9 @@ services:
     mem_limit: 64m
     ports:
       - "100.100.146.119:5081:5080"
-    environment:
-      STATS_PASSWORD: ${STATS_PASSWORD:?}
-      AGENTS_PASSWORD: ${AGENTS_PASSWORD:?}
+    secrets:
+      - stats_password
+      - agents_password
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     tmpfs:
@@ -332,17 +336,17 @@ services:
     read_only: true
     tmpfs:
       - /run:uid=65534,gid=65534
+    # What Alloy asks for: container lists and inspects (cAdvisor and the log tailer need them), logs, networks for
+    # discovery, info and version. An inspect shows every container's environment and labels, so no secret goes in
+    # either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
     environment:
       ALLOW_LOGS: 1
       CONTAINERS: 1
-      IMAGES: 1
       INFO: 1
       NETWORKS: 1
       POST: 0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-    # Only Alloy can reach it: container inspect shows every container's
-    # environment, secrets included.
     networks:
       - docker-api
 
@@ -380,9 +384,8 @@ services:
       - "127.0.0.1:5082:5080"
     mem_limit: 2g
     environment:
+      # No root password: its volume holds the root login, which it starts on without one.
       ZO_ROOT_USER_EMAIL: root@homelab.internal
-      # The same secret as OpenObserve's root password, which its volume already holds.
-      ZO_ROOT_USER_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
       ZO_DATA_DIR: /data
       # Nothing expires while it is read: its 30-day keep would delete what it is kept for.
       ZO_COMPACT_DATA_RETENTION_DAYS: "3650"
@@ -415,9 +418,13 @@ services:
     environment:
       FLIGHTS_URL: https://api.colincheung.dev/aircraft
       PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
-      PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
+      PUBLIC_STATS_KEY_FILE: /run/secrets/public_stats_key
       PROMETHEUS_URL: http://gateway:5080/prometheus
-      PROMETHEUS_LOGIN: stats@homelab.internal:${STATS_PASSWORD:?}
+      PROMETHEUS_USER: stats@homelab.internal
+      PROMETHEUS_PASSWORD_FILE: /run/secrets/stats_password
+    secrets:
+      - public_stats_key
+      - stats_password
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -462,9 +469,21 @@ networks:
     internal: true
   openobserve-history:
 
+# Rendered by scripts/generate-env.sh from secrets/*.example, out of the OpenObserve-named GitHub secrets.
 secrets:
   discord_webhook:
-    environment: DISCORD_PRIVATE_WEBHOOK_URL
+    file: ./secrets/discord_webhook
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password
+  # OpenObserve's ingest password, which nothing else uses, so Grafana's key shares no value.
+  grafana_secret_key:
+    file: ./secrets/grafana_secret_key
+  agents_password:
+    file: ./secrets/agents_password
+  stats_password:
+    file: ./secrets/stats_password
+  public_stats_key:
+    file: ./secrets/public_stats_key
 
 volumes:
   # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot

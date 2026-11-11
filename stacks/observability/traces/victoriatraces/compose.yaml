@@ -7,6 +7,8 @@ services:
       - -storageDataPath=/vtraces
       # The default is 7 days.
       - -retentionPeriod=30d
+      # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
+      - -inmemoryDataFlushInterval=1s
       # As the log store's: two queries at a time, a minute each, at most a month back.
       - -search.maxConcurrentRequests=2
       - -search.maxQueryDuration=60s

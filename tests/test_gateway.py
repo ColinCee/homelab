@@ -10,9 +10,11 @@ import json
 import shutil
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 import yaml
@@ -23,6 +25,8 @@ SERVICE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["
     "gateway"
 ]
 PASSWORDS = {"stats": "s", "agents": "a"}
+# Removed when the tests end.
+SECRETS = tempfile.TemporaryDirectory()
 STORES = ("prometheus", "alertmanager", "logs", "traces")
 PAIRS = [("loki", "tempo"), ("victorialogs", "victoriatraces")]
 QUERY = "/prometheus/api/v1/query?query=up"
@@ -73,8 +77,7 @@ def run_gateway(
     port: int, upstreams: dict[str, int], logs: str, traces: str, remove: bool = True, **passwords
 ) -> subprocess.CompletedProcess[str]:
     """The gateway as compose.yaml runs it, with the stores at the host's stand-ins."""
-    env = {f"{k.upper()}_PASSWORD": v for k, v in passwords.items()}
-    env |= {name.upper(): f"host.docker.internal:{p}" for name, p in upstreams.items()}
+    env = {name.upper(): f"host.docker.internal:{p}" for name, p in upstreams.items()}
     command = ["docker", "run", "-d", *(["--rm"] if remove else [])]
     command += ["-p", f"127.0.0.1:{port}:5080", "--add-host", "host.docker.internal:host-gateway"]
     command += ["--read-only", "--user", "65534:65534"]
@@ -84,6 +87,12 @@ def run_gateway(
         command += ["-v", f"{STACK / 'gateway' / name}:/etc/caddy/{name}:ro"]
     command += ["-v", f"{STACK / 'logs' / logs / 'gateway.caddy'}:/etc/caddy/logs.caddy:ro"]
     command += ["-v", f"{STACK / 'traces' / traces / 'gateway.caddy'}:/etc/caddy/traces.caddy:ro"]
+    secrets = Path(tempfile.mkdtemp(dir=SECRETS.name))
+    for name, password in passwords.items():
+        secret = secrets / f"{name}_password"
+        secret.write_text(password, encoding="utf-8")
+        secret.chmod(0o444)
+        command += ["-v", f"{secret}:/run/secrets/{secret.name}:ro"]
     for k, v in env.items():
         command += ["-e", f"{k}={v}"]
     command += ["--entrypoint", "/bin/sh", SERVICE["image"], "/etc/caddy/start.sh"]

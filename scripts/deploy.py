@@ -87,6 +87,11 @@ def discover_stack_plans(
                 raise DeploymentInputError(
                     f"{name}: missing {env_file}; render it with scripts/generate-env.sh"
                 )
+            for secret in rendered_secrets(stack_dir):
+                if not secret.is_file():
+                    raise DeploymentInputError(
+                        f"{name}: missing {secret}; render it with scripts/generate-env.sh"
+                    )
 
             plans.append(
                 StackPlan(
@@ -332,12 +337,14 @@ def deploy(
 
 
 def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
-    """Hash a stack's tracked config files.
+    """Hash a stack's tracked config files and when each secret file last changed.
 
     Compose does not notice edits to bind-mounted files, so services that
     should restart on config changes put this in a label. Only git-tracked
-    files count, which keeps runtime data dirs (config/, data/) out. Outside
-    a git checkout the hash is empty, so labels never change.
+    files count, which keeps runtime data dirs (config/, data/) out. A secret
+    counts by its file's time alone, since anything that may inspect
+    containers reads the label. Outside a git checkout the hash is empty, so
+    labels never change.
     """
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--", str(stack_dir.relative_to(repo_root))],
@@ -353,7 +360,15 @@ def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
         if path.name == "compose.yaml" or not path.is_file():
             continue
         digest.update(name + b"\0" + path.read_bytes() + b"\0")
+    for secret in rendered_secrets(stack_dir):
+        if secret.is_file():
+            digest.update(f"{secret.name}\0{secret.stat().st_mtime_ns}\0".encode())
     return digest.hexdigest()[:16]
+
+
+def rendered_secrets(stack_dir: Path) -> tuple[Path, ...]:
+    """The secret files a stack's templates render to (generate_env.py)."""
+    return tuple(path.with_suffix("") for path in sorted(stack_dir.glob("secrets/*.example")))
 
 
 def compose_command(

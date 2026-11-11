@@ -12,7 +12,7 @@ datasources:
     basicAuth: true
     basicAuthUser: agents@homelab.internal
     secureJsonData:
-      basicAuthPassword: $AGENTS_PASSWORD
+      basicAuthPassword: $__file{/run/secrets/agents_password}
     editable: false
     jsonData:
       httpMethod: POST
@@ -28,7 +28,7 @@ datasources:
     basicAuth: true
     basicAuthUser: agents@homelab.internal
     secureJsonData:
-      basicAuthPassword: $AGENTS_PASSWORD
+      basicAuthPassword: $__file{/run/secrets/agents_password}
     editable: false
     jsonData:
       implementation: prometheus

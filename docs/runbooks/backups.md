@@ -53,7 +53,7 @@ files. On the PC, `python scripts\pc_backup.py --dry-run` packs without sending;
 
 ## Credentials
 
-Four GitHub Actions secrets feed the stack's `.env`: `R2_ACCOUNT_ID`,
+Four GitHub Actions secrets feed the stack's secret files: `R2_ACCOUNT_ID`,
 `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (an R2 token scoped to the bucket)
 and `RESTIC_PASSWORD`. The restic password is also kept in Bitwarden: without
 it the snapshots cannot be decrypted, and GitHub will not show it again.

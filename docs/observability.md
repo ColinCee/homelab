@@ -85,7 +85,8 @@ already kept; it drops none by name.
 - **The stores and cloudflared:** their own metrics (`job="logs"`, `"traces"`, `"cloudflared"`), for "A store is
   down" and "A store stopped taking data". Home Assistant, CoreDNS and Caddy run on the host's network, which the
   firewall keeps Alloy from reaching, so their metrics are not collected.
-- **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on, OBI's request rate, errors and
+- **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on (off until its `containers_only`
+  works: in the trial it also traced host programs and the CI VMs), OBI's request rate, errors and
   duration for every program in a container, named after its executable.
 - **Flight tracker:** the `blackbox` container probes the public
   `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any

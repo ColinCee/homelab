@@ -1,18 +1,18 @@
 # Switching observability
 
 How the observability stack moves from OpenObserve to Prometheus, Grafana and the picked log and trace stores
-([ADR 0004](../adr/0004-prometheus-grafana.md)) in one deploy, and back. It changes the `observability`, `backup` and
-`internal-names` stacks together. No new secret: `.env.example` maps the OpenObserve-named ones.
+([ADR 0004](../adr/0004-prometheus-grafana.md)) in one deploy, and back. It changes the `observability`, `backup`,
+`flight-tracker` and `internal-names` stacks together, and every stack's secrets become files, so each labelled
+container is recreated once (cloudflared's tunnel blips). No new secret: `secrets/*.example` maps the
+OpenObserve-named ones.
 
 ## Before the merge
 
-1. Colin's choice: the trial. The branch's stack runs beside the live one as Compose project `obs-trial`, with
-   [`trial.yaml`](../../stacks/observability/trial.yaml) (no host ports, alerts to a local sink, no restarts) under a
-   3 GiB `obs-trial.slice`. It shows memory at the real rate, crash and outage loss, and expiry. ADR 0004 is set to
-   Accepted only after it, or after Colin decides to skip it. Its stores write to the volumes the live stack will
-   use, so before the merge stop it and remove its containers, keeping those volumes:
-   `docker compose -p obs-trial ... -f compose.yaml -f trial.yaml down` (no `-v`). The switch then starts on what the
-   trial stored.
+1. The trial ran beside the live stack as Compose project `obs-trial`, with
+   [`trial.yaml`](../../stacks/observability/trial.yaml) (no host ports, alerts to a local sink, no restarts), and
+   was stopped after its crash, outage and burst tests (ADR 0004's results, "Beside the live stack"); everything it
+   made is removed. Running it again needs the stack's secret files rendered in that checkout
+   (`scripts/generate-env.sh observability`) and its `obs-trial.slice` memory cap set again.
 2. Check the pick in `stacks/observability/.env.example` (`LOG_STORE`, `TRACE_STORE`) matches ADR 0004's. Set its
    status to Accepted and ADR 0001's to "Superseded by 0004", in this pull request.
 3. Wait for CI to pass, and for no CI job to run on the Beelink (`gh run list --status in_progress`).
@@ -63,11 +63,12 @@ nothing while it runs. Stop it with the same command's `stop openobserve-history
 
 Revert the merge commit in a pull request and merge it: the deploy brings OpenObserve back on its kept volume and
 removes the new services. OpenObserve has no data for the time the new stack ran. The same silence as above keeps
-the start-up page away. Then delete the new stores' volumes:
+the start-up page away. Then delete the rendered secret files, which the old `.gitignore` does not ignore
+(`find stacks/*/secrets -type f ! -name '*.example' -delete` in the server checkout), and the new stores' volumes:
 
 ```bash
 docker volume rm observability_prometheus-data observability_grafana-data observability_victorialogs-data \
-  observability_tempo-data
+  observability_victoriatraces-data
 ```
 
 Rollback works until OpenObserve's volume is deleted.

@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -199,6 +200,28 @@ def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> N
     up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
     assert isinstance(up_env, dict)
     assert up_env["STACK_CONFIG_HASH"] == after
+
+
+def test_a_changed_secret_changes_the_hash_but_its_value_does_not_reach_it(
+    tmp_path: Path,
+) -> None:
+    stack_dir = _make_stack(tmp_path, "sample")
+    (stack_dir / "secrets").mkdir()
+    (stack_dir / "secrets" / "token.example").write_text("${TOKEN}", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
+        deploy.discover_stack_plans(tmp_path)
+
+    secret = stack_dir / "secrets" / "token"
+    secret.write_text("a", encoding="utf-8")
+    os.utime(secret, (1, 1))
+    first = deploy.stack_config_hash(tmp_path, stack_dir)
+    secret.write_text("b", encoding="utf-8")
+    os.utime(secret, (1, 1))
+    assert deploy.stack_config_hash(tmp_path, stack_dir) == first
+    os.utime(secret, (2, 2))
+    assert deploy.stack_config_hash(tmp_path, stack_dir) != first
 
 
 def _git(repo_root: Path, *arguments: str) -> str:

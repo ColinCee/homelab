@@ -77,6 +77,22 @@ Run on 11 November 2026, 04:34-08:36 UTC: one test Alloy with the live scrapes a
 
 Prometheus stored every sample Alloy sent at 2.83 B a reading in its first 2-hour block, at most 93 MiB; VictoriaMetrics took 1.90 B and 74 MiB, gaps the pick rule does not reach. Loki's earlier shortfall was its own deduplication of identical lines, so both log stores pass; the live feed carried too few lines to re-measure disk per line. Grafana under a 320 MiB cap hit it often at 311 MiB, so it runs under 512 MiB.
 
+## Beside the live stack
+
+Run on 11 November 2026, 11:15-13:45 UTC, then stopped early: the four stores side by side on the live feed, about 130 lines and 230 spans a second, each with an untouched copy as the control, and a numbered emitter so every loss can be named.
+
+| | VictoriaLogs | Loki | Tempo | VictoriaTraces |
+|---|---|---|---|---|
+| Lost at three `kill -9` | 180 lines, one gap at each | 0 | 27 spans | 19 spans |
+| Lost after a 10-minute outage | 0 | 0 | 555 spans, those Alloy held and sent late | 0 |
+| Stored of a 15-minute burst (3,000 lines, 150 spans a second) | all | all | all | all |
+| Memory peak in the burst, of its cap (MiB) | 282 of 1,024 | 582 of 1,024, 1,868 cap hits | 476 of 512, 1,741 cap hits | 378 of 512 |
+| Disk per item in the burst, before compaction | 7 B a line | 105 B a line, unflushed | 630 B a span | 72 B a span |
+
+Tempo also hit its cap every 5 minutes on the normal feed, grew its disk about 11 GB a day against about 1.7 GB for VictoriaTraces (a feed the trial's own stores inflated), and refuses a search over more than 7 days. The VictoriaLogs gaps at each kill were 4.9 to 6.8 s of lines, about their 5 s default for saving what they hold in memory; both now save each second, not yet re-measured. No set of stores stayed under 1 GiB in the burst (VictoriaLogs and VictoriaTraces 1,102 MiB, the lowest).
+
+OBI's `containers_only` failed with OBI on its own network: it compares network namespaces, so it traced host programs, the Docker daemon and the CI VMs until they were excluded by path.
+
 ## Not yet tested
 
-Memory over 7 days, a catch-up after an outage, crash and outage loss, expiry, and the real alert timers with a real Discord post. The 7-day run covers them before this record is accepted.
+Memory over 7 days, expiry, the alert timers on a real alert beside the live Alertmanager, and a real Discord post seen in the channel (Discord accepted the trial's two).

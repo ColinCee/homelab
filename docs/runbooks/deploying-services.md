@@ -2,7 +2,7 @@
 
 The [deploy workflow](../../.github/workflows/deploy.yaml) runs on Beelink for
 stack, script, or workflow changes pushed to protected `main`. Actions resets
-the server checkout to the triggering commit, renders `.env` files from an
+the server checkout to the triggering commit, renders `.env` and secret files from an
 explicit secret allowlist, and invokes the shared deployment command for the
 stacks whose files changed since the last full deploy. A change to `scripts/`
 or the deploy workflow, or an unknown last deploy, deploys every stack. The
@@ -147,8 +147,9 @@ before building or starting anything. It uses existing per-stack `.env` files
 and never resets Git. A stack failure does not roll back earlier stacks; the
 command attempts the remaining selections, prints an explicit partial result,
 and exits nonzero. To render new files, export only the values named by the
-stack's `.env.example` and run `scripts/generate-env.sh <stack>`. The renderer
-writes Docker Compose dotenv data atomically with mode `0600`; never source a
+stack's `.env.example` and `secrets/*.example` and run `scripts/generate-env.sh <stack>`. The renderer
+writes dotenv data atomically with mode `0600`, and each secret raw, mode `0444` in a `0700` folder (every
+container user reads it, no other host user); never source a
 generated `.env` as shell.
 
 ## Adding a stack
@@ -162,8 +163,9 @@ generated `.env` as shell.
    Set `init: true` when the main process does not handle SIGTERM (a shell
    script, a plain Python loop): as PID 1 it ignores it, so every stop waits
    10 s and then kills it.
-2. If needed, add `.env.example` and explicitly name its secrets in the deploy
-   workflow. Do not pass the entire GitHub secrets collection.
+2. If needed, add `.env.example` for settings and `secrets/<name>.example` per secret, and name the secrets in the
+   deploy workflow, never the whole collection. A secret reaches a container as a Compose `secrets:` file, read by
+   the program's `*_FILE` option, never `environment:`, which container inspect shows (`tests/test_no_secret_in_env.py`).
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
    deployment registry needs updating.
 

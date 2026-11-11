@@ -49,7 +49,7 @@ def test_grafana_asks_for_a_login_and_fetches_nothing_at_start() -> None:
     assert env["GF_AUTH_ANONYMOUS_ENABLED"] == "false"
     assert "GF_USERS_VIEWERS_CAN_EDIT" not in env
     assert env["GF_SERVER_ENFORCE_DOMAIN"] == "true"
-    assert env["GF_SECURITY_SECRET_KEY"].startswith("${")
+    assert env["GF_SECURITY_SECRET_KEY__FILE"] == "/run/secrets/grafana_secret_key"
     assert "GF_PLUGINS_PREINSTALL_SYNC" not in env
     dockerfile = (STACK / "grafana.Dockerfile").read_text(encoding="utf-8")
     assert "ADD --checksum=sha256:" in dockerfile

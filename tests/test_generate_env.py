@@ -65,3 +65,57 @@ def test_unknown_stack_does_not_replace_already_planned_files(tmp_path: Path) ->
         generate_env_files(tmp_path, ("known", "typo"), environment={})
 
     assert (stack / ".env").read_text() == "VALUE=old\n"
+
+
+def test_secret_files_hold_the_raw_value_open_to_containers_but_not_host_users(
+    tmp_path: Path,
+) -> None:
+    secrets = tmp_path / "stacks" / "sample" / "secrets"
+    secrets.mkdir(parents=True)
+    (secrets / "login.example").write_text("user:${PASSWORD}\n", encoding="utf-8")
+
+    generated = generate_env_files(tmp_path, None, environment={"PASSWORD": 'p$"#'})
+
+    assert generated == (secrets / "login",)
+    assert (secrets / "login").read_text() == 'user:p$"#'
+    assert (secrets / "login").stat().st_mode & 0o777 == 0o444
+    assert secrets.stat().st_mode & 0o777 == 0o700
+
+
+def test_an_unchanged_secret_keeps_its_file_so_its_readers_are_not_recreated(
+    tmp_path: Path,
+) -> None:
+    secrets = tmp_path / "stacks" / "sample" / "secrets"
+    secrets.mkdir(parents=True)
+    (secrets / "token.example").write_text("${TOKEN}", encoding="utf-8")
+    generate_env_files(tmp_path, ("sample",), environment={"TOKEN": "a"})
+    first = (secrets / "token").stat().st_ino
+
+    generate_env_files(tmp_path, ("sample",), environment={"TOKEN": "a"})
+    assert (secrets / "token").stat().st_ino == first
+
+    generate_env_files(tmp_path, ("sample",), environment={"TOKEN": "b"})
+    assert (secrets / "token").read_text() == "b"
+
+
+def test_a_missing_secret_input_replaces_nothing(tmp_path: Path) -> None:
+    stack = tmp_path / "stacks" / "sample"
+    (stack / "secrets").mkdir(parents=True)
+    (stack / ".env.example").write_text("A=${A}\n", encoding="utf-8")
+    (stack / "secrets" / "token.example").write_text("${TOKEN}", encoding="utf-8")
+
+    with pytest.raises(EnvGenerationError, match="TOKEN"):
+        generate_env_files(tmp_path, ("sample",), environment={"A": "a"})
+
+    assert not (stack / ".env").exists()
+
+
+def test_a_stack_whose_settings_all_became_secret_files_loses_its_old_env(tmp_path: Path) -> None:
+    stack = tmp_path / "stacks" / "sample"
+    (stack / "secrets").mkdir(parents=True)
+    (stack / "secrets" / "token.example").write_text("${TOKEN}", encoding="utf-8")
+    (stack / ".env").write_text('TOKEN="old"\n', encoding="utf-8")
+
+    generate_env_files(tmp_path, None, environment={"TOKEN": "a"})
+
+    assert not (stack / ".env").exists()

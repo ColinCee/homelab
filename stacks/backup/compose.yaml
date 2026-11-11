@@ -20,11 +20,14 @@ services:
     environment:
       TZ: Etc/UTC
       BACKUP_TIME: "02:30"
-      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?}
-      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?}
-      AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?}
-      AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?}
+      RESTIC_REPOSITORY_FILE: /run/secrets/restic_repository
+      RESTIC_PASSWORD_FILE: /run/secrets/restic_password
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/r2_credentials
       RESTIC_CACHE_DIR: /cache
+    secrets:
+      - restic_repository
+      - restic_password
+      - r2_credentials
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -45,6 +48,15 @@ services:
       - heatmap-data:/data/flight-tracker:ro
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
       - /home/colin/pc-backups:/data/pc-backups:ro
+
+# Rendered by scripts/generate-env.sh from secrets/*.example.
+secrets:
+  restic_repository:
+    file: ./secrets/restic_repository
+  restic_password:
+    file: ./secrets/restic_password
+  r2_credentials:
+    file: ./secrets/r2_credentials
 
 volumes:
   restic-cache:

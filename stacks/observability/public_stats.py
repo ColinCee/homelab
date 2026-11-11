@@ -59,11 +59,18 @@ def get_json(url: str, login: str | None = None) -> Any:
         return json.load(response)
 
 
+def prometheus_login() -> str | None:
+    """The gateway's `user:password`, from PROMETHEUS_USER and PROMETHEUS_PASSWORD_FILE."""
+    password_file = os.environ.get("PROMETHEUS_PASSWORD_FILE")
+    if not password_file:
+        return None
+    password = Path(password_file).read_text(encoding="utf-8").strip()
+    return f"{os.environ['PROMETHEUS_USER']}:{password}"
+
+
 def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     url = f"{prometheus}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
-    # `user:password`, which the gateway needs. An environment variable, not a
-    # file: Compose cannot mount a secret from the environment into a read-only container.
-    body = get_json(url, os.environ.get("PROMETHEUS_LOGIN"))
+    body = get_json(url, prometheus_login())
     if body.get("status") != "success":
         raise StatsError(f"prometheus: {body.get('error', 'query failed')}")
     return body["data"]["result"]
@@ -140,7 +147,8 @@ def main() -> None:
     flights = os.environ["FLIGHTS_URL"]
     url = os.environ["PUBLIC_STATS_URL"]
     # The only copy of the private key is the PUBLIC_STATS_KEY GitHub secret.
-    key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(os.environ["PUBLIC_STATS_KEY"]))
+    key_hex = Path(os.environ["PUBLIC_STATS_KEY_FILE"]).read_text(encoding="utf-8").strip()
+    key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
     while True:
         try:
             push(url, key, gather(prometheus, flights))
