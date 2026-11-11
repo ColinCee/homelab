@@ -1113,22 +1113,23 @@
       "id": 19,
       "type": "timeseries",
       "title": "Error lines per hour, by container",
-      "description": "Lines that log an error, a fatal or a Python exception. Loki drops a line resent with the same time and text, so Alloy's resends on a restart count once.",
+      "description": "Lines that log an error, a fatal or a Python exception. Alloy resends a container's recent lines when it restarts; this chart counts those twice (stats over a range cannot drop repeats first), the table below does not.",
       "datasource": {
-        "type": "loki",
+        "type": "victoriametrics-logs-datasource",
         "uid": "logs"
       },
       "targets": [
         {
           "datasource": {
-            "type": "loki",
+            "type": "victoriametrics-logs-datasource",
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "sum by (container_name) (count_over_time({container_name=~\".+\"} |~ \"(?i)error|fatal|panic|crit|critical|exception|limited\" | label_format body_text=\"{{ __line__ }}\" | level=~\"error|fatal|critical\" or body_text=~\"(?s)(.{0,40}\\\\b(ERROR|FATAL|PANIC|CRITICAL)\\\\b.*|.*(?i:level=(error|fatal|crit)).*|(\\\\w+\\\\.)+[A-Z]\\\\w*: .*|[A-Z]\\\\w*(Error|Exception): .*)\" [1h]))",
+          "expr": "(i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): `) | stats by (container_name) count() as lines",
           "legendFormat": "{{container_name}}",
-          "queryType": "range",
-          "step": "1h"
+          "queryType": "statsRange",
+          "step": "1h",
+          "editorMode": "code"
         }
       ],
       "fieldConfig": {
@@ -1479,48 +1480,60 @@
       "title": "Most repeated error lines, last hour",
       "description": "Numbers and ids show as #, so repeats of one error count together; each line is cut at 80 characters.",
       "datasource": {
-        "type": "loki",
+        "type": "victoriametrics-logs-datasource",
         "uid": "logs"
       },
       "targets": [
         {
           "datasource": {
-            "type": "loki",
+            "type": "victoriametrics-logs-datasource",
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "topk(20, sum by (short, msg) (count_over_time({container_name=~\".+\"} |~ \"(?i)error|fatal|panic|crit|critical|exception|limited\" | label_format body_text=\"{{ __line__ }}\" | level=~\"error|fatal|critical\" or body_text=~\"(?s)(.{0,40}\\\\b(ERROR|FATAL|PANIC|CRITICAL)\\\\b.*|.*(?i:level=(error|fatal|crit)).*|(\\\\w+\\\\.)+[A-Z]\\\\w*: .*|[A-Z]\\\\w*(Error|Exception): .*)\" | label_format msg=\"{{ trunc 80 (regexReplaceAll `[0-9a-f]*[0-9][0-9a-f]*` (regexReplaceAll `\\\\x1b\\\\[[0-9;]*m|^\\\\S*\\\\d{4}-\\\\d\\\\d-\\\\d\\\\d[T ][0-9:.,]+\\\\S*\\\\s*` __line__ ``) `#`) }}\", short=\"{{ regexReplaceAll `^observability-|-1$` .container_name `` }}\" [1h])))",
-          "legendFormat": "",
-          "queryType": "instant"
+          "expr": "_time:1h (i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): `) | uniq by (_time, container_name, _msg) | replace_regexp (\"^observability-|-1$\", \"\") at container_name | replace_regexp (`\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*`, \"\") at _msg | replace_regexp (\"[0-9a-f]*[0-9][0-9a-f]*\", \"#\") at _msg | extract_regexp `^(?P<line>.{0,80})` from _msg | stats by (container_name, line) count() as hits | sort by (hits desc) limit 20",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 20
         }
       ],
       "transformations": [
         {
-          "id": "labelsToFields",
+          "id": "extractFields",
           "options": {
-            "mode": "columns"
+            "source": "labels",
+            "format": "auto",
+            "replace": false
           }
-        },
-        {
-          "id": "merge",
-          "options": {}
         },
         {
           "id": "organize",
           "options": {
-            "excludeByName": {
-              "Time": true
+            "includeByName": {
+              "container_name": true,
+              "line": true,
+              "hits": true
             },
             "indexByName": {
-              "short": 0,
-              "msg": 1,
-              "Value": 2
+              "container_name": 0,
+              "line": 1,
+              "hits": 2
             },
             "renameByName": {
-              "short": "Container",
-              "msg": "Line",
-              "Value": "Lines"
+              "container_name": "Container",
+              "line": "Line",
+              "hits": "Lines"
             }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Lines",
+                "destinationType": "number"
+              }
+            ]
           }
         },
         {
@@ -3987,31 +4000,73 @@
         },
         {
           "id": 36,
-          "type": "logs",
+          "type": "table",
           "title": "Runs",
-          "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, and each deep check. One line per event, newest first: Loki cannot group lines by day.",
+          "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, when it started and finished, and how many deep checks read every byte back.",
           "datasource": {
-            "type": "loki",
+            "type": "victoriametrics-logs-datasource",
             "uid": "logs"
           },
           "targets": [
             {
               "datasource": {
-                "type": "loki",
+                "type": "victoriametrics-logs-datasource",
                 "uid": "logs"
               },
               "refId": "A",
-              "expr": "{container_name=\"backup\"} |~ \"^backup (ok|FAILED|SKIPPED)|^deep check ok$\"",
-              "queryType": "range",
-              "maxLines": 200
+              "expr": "container_name:=\"backup\" | uniq by (_time, _msg) | stats by (_time:1d) min(_time) as started, max(_msg) if (_msg:~\"^backup (ok|FAILED|SKIPPED)\") as result, max(_time) if (_msg:~\"^backup (ok|FAILED|SKIPPED)\") as finished, count() if (_msg:=\"deep check ok\") as deep_checks | sort by (started desc)",
+              "queryType": "instant",
+              "editorMode": "code",
+              "maxLines": 100
             }
           ],
+          "transformations": [
+            {
+              "id": "extractFields",
+              "options": {
+                "source": "labels",
+                "format": "auto",
+                "replace": false
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "includeByName": {
+                  "started": true,
+                  "result": true,
+                  "finished": true,
+                  "deep_checks": true
+                },
+                "indexByName": {
+                  "started": 0,
+                  "result": 1,
+                  "finished": 2,
+                  "deep_checks": 3
+                },
+                "renameByName": {
+                  "started": "Started",
+                  "result": "Result",
+                  "finished": "Finished",
+                  "deep_checks": "Deep checks"
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "custom": {
+                "cellOptions": {
+                  "type": "auto"
+                },
+                "inspect": false
+              }
+            },
+            "overrides": []
+          },
           "options": {
-            "showTime": true,
-            "wrapLogMessage": false,
-            "sortOrder": "Descending",
-            "dedupStrategy": "exact",
-            "enableLogDetails": false
+            "showHeader": true,
+            "cellHeight": "sm"
           },
           "gridPos": {
             "x": 12,
@@ -4379,6 +4434,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "pc-backup-stale"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "upkeep-failed"
                 },
                 "properties": [
                   {

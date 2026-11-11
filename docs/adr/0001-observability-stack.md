@@ -21,8 +21,8 @@ So six whole stacks were tested side by side on the Beelink's live feed, then ea
 ## Decision
 
 - Prometheus stores metrics and runs the alert rules from a file in Git; Alertmanager posts to Discord, repeats and clears alerts, and holds back those that depend on another that is firing; Grafana shows every store from files in Git; Alloy collects.
-- VictoriaLogs stores logs and VictoriaTraces stores traces. Loki and Tempo stay one setting away: `LOG_STORE` and `TRACE_STORE` in `stacks/observability/settings.env`, each store's differences in its own folder under `logs/` or `traces/`.
-- A read-only gateway (Caddy) is the only way any reader reaches a store: Grafana's data sources, agents, server-health and public stats each log in there and reach only read paths. Every store tested serves writes or admin calls beside its reads, and none has read-only users. Networks keep the rest apart: Alloy is the only writer, and Grafana and public stats reach only the gateway.
+- VictoriaLogs stores logs and VictoriaTraces stores traces.
+- A read-only gateway (Caddy) is the only way any reader reaches a store: Grafana's data sources, agents and public stats each log in there and reach only read paths. Every store tested serves writes or admin calls beside its reads, and none has read-only users. Networks keep the rest apart: Alloy is the only writer, and Grafana and public stats reach only the gateway.
 - OBI, which traces every program in a container from the kernel (eBPF) without changing it, stays off until its `containers_only` setting works: on its own network it traced the host's programs and the CI VMs too.
 
 Why each store (numbers in [results.md](0001-observability-stack/results.md)):

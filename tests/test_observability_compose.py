@@ -59,10 +59,8 @@ def test_one_heavy_query_cannot_take_prometheus_memory() -> None:
     flags = SERVICES["prometheus"]["command"]
     assert any(f.startswith("--query.max-samples=") for f in flags)
     assert any(f.startswith("--query.timeout=") for f in flags)
-    for store in ("logs/victorialogs", "traces/victoriatraces"):
-        spec = yaml.safe_load((STACK / store / "compose.yaml").read_text(encoding="utf-8"))
-        command = next(iter(spec["services"].values()))["command"]
-        assert "-search.maxConcurrentRequests=2" in command, store
+    for store in ("logs", "traces"):
+        assert "-search.maxConcurrentRequests=2" in SERVICES[store]["command"], store
 
 
 def test_openobserve_history_starts_only_by_hand_and_on_loopback() -> None:
@@ -72,15 +70,13 @@ def test_openobserve_history_starts_only_by_hand_and_on_loopback() -> None:
     assert int(history["environment"]["ZO_COMPACT_DATA_RETENTION_DAYS"]) > 365
 
 
-def test_a_log_line_opens_its_trace_in_either_log_store() -> None:
-    for store in ("loki", "victorialogs"):
-        provisioned = yaml.safe_load(
-            (STACK / "logs" / store / "datasource.yaml").read_text(encoding="utf-8")
-        )
-        [field] = provisioned["datasources"][0]["jsonData"]["derivedFields"]
-        assert field["matcherRegex"] == "trace_id" and field["datasourceUid"] == "traces", store
-        # `$$` keeps provisioning from expanding Grafana's own variable.
-        assert field["url"] == "$${__value.raw}", store
+def test_a_log_line_opens_its_trace() -> None:
+    provisioned = yaml.safe_load((STACK / "grafana/datasources.yaml").read_text(encoding="utf-8"))
+    [logs] = [source for source in provisioned["datasources"] if source["uid"] == "logs"]
+    [field] = logs["jsonData"]["derivedFields"]
+    assert field["matcherRegex"] == "trace_id" and field["datasourceUid"] == "traces"
+    # `$$` keeps provisioning from expanding Grafana's own variable.
+    assert field["url"] == "$${__value.raw}"
 
 
 def test_obi_traces_every_container_only_when_turned_on() -> None:
@@ -90,12 +86,6 @@ def test_obi_traces_every_container_only_when_turned_on() -> None:
     assert int(obi["mem_limit"].removesuffix("m")) >= 448
     config = yaml.safe_load((STACK / "obi/obi.yaml").read_text(encoding="utf-8"))
     assert config["discovery"]["instrument"] == [{"containers_only": True, "exe_path": "*"}]
-
-
-def test_tempo_caps_its_searches() -> None:
-    config = yaml.safe_load((STACK / "traces/tempo/tempo.yaml").read_text(encoding="utf-8"))
-    assert config["querier"]["max_concurrent_queries"] <= 4
-    assert config["query_frontend"]["search"]["max_result_limit"] <= 20000
 
 
 def test_no_container_with_a_host_folder_can_read_a_secret_on_the_host() -> None:

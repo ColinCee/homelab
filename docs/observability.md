@@ -19,7 +19,7 @@ Monitoring on the Beelink cannot see its own outage, so what watches what:
 |-----------|---------------|
 | **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces and logs sent to `alloy:4318` to the trace and log stores; a log line with a `trace_id` opens its trace in Grafana |
 | **Prometheus** | Metrics and the [alert rules](../stacks/observability/prometheus/rules.yml) |
-| **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`settings.env`](../stacks/observability/settings.env) pick each, one folder per store under `logs/` and `traces/`; a swap starts the other store empty |
+| **Log store, trace store** | VictoriaLogs and VictoriaTraces |
 | **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, logged in as `colin` (admin) or `agents` (Viewer, `OPENOBSERVE_AGENTS_PASSWORD`) |
 | **Alertmanager** | Posts Prometheus's alerts to Discord, repeats, clears and holds them back |
 | **Gateway** | The only way to read the stores, for Grafana, agents and scripts: each login reads only read paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
@@ -62,7 +62,8 @@ silences without a login; list its alerts with
 
 ### The standard
 
-An alert exists only if all three hold; anything else is a dashboard number:
+Anything that needs Colin's attention alerts at once, through Alertmanager to Discord; there are no reports to
+read. An alert exists only if all three hold; anything else is a dashboard number:
 
 1. Something is harmed now or soon.
 2. Colin can act on it.

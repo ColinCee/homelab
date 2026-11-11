@@ -1,18 +1,14 @@
-"""Grafana's Home (stacks/observability/logs/<store>/home.json) keeps the layout, colours and
-queries in .github/skills/building-dashboards/SKILL.md, and its two copies, one per log store,
-differ only in their log panels."""
+"""Grafana's Home (stacks/observability/grafana/home.json) keeps the layout, colours and queries in
+.github/skills/building-dashboards/SKILL.md."""
 
 import json
 import re
 from pathlib import Path
 
-import pytest
 import yaml
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
-HOMES = {
-    p.parent.name: json.loads(p.read_text(encoding="utf-8")) for p in STACK.glob("logs/*/home.json")
-}
+HOME = json.loads((STACK / "grafana/home.json").read_text(encoding="utf-8"))
 SOURCES = {"prometheus", "alertmanager", "logs", "traces"}
 
 # These dataviz steps pass contrast checks on Grafana's light and dark themes.
@@ -90,35 +86,18 @@ def levels() -> dict[str, str]:
     return {name: NOW if level == "now" else WEEK for name, level in found.items()}
 
 
-def test_there_is_one_home_per_log_store_and_each_is_read_only() -> None:
-    assert set(HOMES) == {"loki", "victorialogs"}
-    for home in HOMES.values():
-        assert home["uid"] == "home" and home["title"] == "Home"
-        assert home["editable"] is False and "id" not in home
+def test_home_is_read_only_and_its_log_panels_read_victorialogs() -> None:
+    assert HOME["uid"] == "home" and HOME["title"] == "Home"
+    assert HOME["editable"] is False and "id" not in HOME
+    logs = [p for p in charts(HOME) if uid(p) == "logs"]
+    assert len(logs) == 3
+    assert all(p["datasource"]["type"] == "victoriametrics-logs-datasource" for p in logs)
 
 
-def test_the_two_homes_differ_only_in_their_log_panels() -> None:
-    def without_logs(home: dict) -> list[dict]:
-        return [
-            {k: v for k, v in p.items() if k != "panels"}
-            if uid(p) != "logs"
-            else {"title": p["title"], "gridPos": p["gridPos"]}
-            for p in panels(home)
-        ]
-
-    assert without_logs(HOMES["loki"]) == without_logs(HOMES["victorialogs"])
-    for store, home in HOMES.items():
-        kind = {"loki": "loki", "victorialogs": "victoriametrics-logs-datasource"}[store]
-        logs = [p for p in charts(home) if uid(p) == "logs"]
-        assert len(logs) == 3
-        assert all(p["datasource"]["type"] == kind for p in logs)
-
-
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_every_panel_reads_a_provisioned_source(store: str) -> None:
-    ids = [p["id"] for p in panels(HOMES[store])]
+def test_every_panel_reads_a_provisioned_source() -> None:
+    ids = [p["id"] for p in panels(HOME)]
     assert len(ids) == len(set(ids))
-    for panel in charts(HOMES[store]):
+    for panel in charts(HOME):
         assert uid(panel) in SOURCES, panel["title"]
         assert panel["targets"], panel["title"]
         refs = [t["refId"] for t in panel["targets"]]
@@ -127,9 +106,7 @@ def test_every_panel_reads_a_provisioned_source(store: str) -> None:
             assert target["datasource"]["uid"] in SOURCES, panel["title"]
 
 
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_no_two_panels_overlap_and_all_fit_the_width(store: str) -> None:
-    home = HOMES[store]
+def test_no_two_panels_overlap_and_all_fit_the_width() -> None:
 
     def place(group: list[dict]) -> None:
         cells: set[tuple[int, int]] = set()
@@ -145,8 +122,8 @@ def test_no_two_panels_overlap_and_all_fit_the_width(store: str) -> None:
             cells |= mine
 
     # What shows with every row closed, then each closed row's panels as it opens.
-    place(home["panels"])
-    for row in home["panels"]:
+    place(HOME["panels"])
+    for row in HOME["panels"]:
         if row["type"] == "row" and row["collapsed"]:
             assert all(p["gridPos"]["y"] > row["gridPos"]["y"] for p in row["panels"])
             place(row["panels"])
@@ -155,7 +132,7 @@ def test_no_two_panels_overlap_and_all_fit_the_width(store: str) -> None:
 
 
 def test_home_opens_on_whether_anything_is_wrong_with_the_detail_folded_away() -> None:
-    rows = [(p["title"], p["collapsed"]) for p in HOMES["loki"]["panels"] if p["type"] == "row"]
+    rows = [(p["title"], p["collapsed"]) for p in HOME["panels"] if p["type"] == "row"]
     assert rows == [
         ("Is anything wrong?", False),
         ("Headroom", False),
@@ -168,9 +145,8 @@ def test_home_opens_on_whether_anything_is_wrong_with_the_detail_folded_away() -
     ]
 
 
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_groups_containers_and_rules_wear_one_colour_on_every_panel(store: str) -> None:
-    every = charts(HOMES[store])
+def test_groups_containers_and_rules_wear_one_colour_on_every_panel() -> None:
+    every = charts(HOME)
     by_container = [p for p in every if set(series_colours(p)) & set(containers())]
     assert len(by_container) == 6
     for panel in by_container:
@@ -182,9 +158,8 @@ def test_groups_containers_and_rules_wear_one_colour_on_every_panel(store: str) 
     assert series_colours(rules) == levels()
 
 
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_tiles_are_red_or_amber_and_unlisted_series_gray(store: str) -> None:
-    for panel in charts(HOMES[store]):
+def test_tiles_are_red_or_amber_and_unlisted_series_gray() -> None:
+    for panel in charts(HOME):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
         if panel["type"] == "stat":
             steps = defaults["thresholds"]["steps"]
@@ -195,7 +170,7 @@ def test_tiles_are_red_or_amber_and_unlisted_series_gray(store: str) -> None:
 
 
 def test_a_tile_past_a_rules_threshold_turns_that_rules_colour() -> None:
-    tiles = {p["title"]: p for p in charts(HOMES["loki"]) if p["type"] == "stat"}
+    tiles = {p["title"]: p for p in charts(HOME) if p["type"] == "stat"}
     assert tiles["Memory"]["fieldConfig"]["defaults"]["thresholds"]["steps"][1] == {
         "color": NOW,
         "value": 90,
@@ -206,9 +181,8 @@ def test_a_tile_past_a_rules_threshold_turns_that_rules_colour() -> None:
     }
 
 
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_prometheus_queries_name_metrics_as_alloy_sends_them(store: str) -> None:
-    for query in prometheus_queries(HOMES[store]):
+def test_prometheus_queries_name_metrics_as_alloy_sends_them() -> None:
+    for query in prometheus_queries(HOME):
         bare = re.sub(r'"[^"]*"', '""', query)
         for name in re.findall(r"\b[a-zA-Z_:][a-zA-Z0-9_:]*\b", bare):
             assert MIXED_CASE.get(name.lower(), name) == name, query
@@ -216,15 +190,14 @@ def test_prometheus_queries_name_metrics_as_alloy_sends_them(store: str) -> None
             assert bare.count(left) == bare.count(right), query
         assert not re.search(r"(_timestamp|SELECT)", query), query
     # Grafana's legends are `{{label}}`; OpenObserve's `{label}` shows as text.
-    for panel in charts(HOMES[store]):
+    for panel in charts(HOME):
         for target in panel["targets"]:
             legend = target.get("legendFormat", "")
             assert not re.search(r"(?<!\{)\{\w+\}(?!\})", legend), panel["title"]
 
 
-@pytest.mark.parametrize("store", sorted(HOMES))
-def test_log_patterns_hold_no_control_characters(store: str) -> None:
+def test_log_patterns_hold_no_control_characters() -> None:
     # A "\b" written through a non-raw string becomes a backspace and the pattern matches nothing.
-    for panel in charts(HOMES[store]):
+    for panel in charts(HOME):
         for target in panel["targets"]:
             assert target["expr"].isprintable(), panel["title"]

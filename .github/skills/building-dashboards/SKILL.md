@@ -5,10 +5,8 @@ description: Edit homelab dashboards: Grafana's Home, from Git. Use when changin
 
 # Dashboards
 
-Grafana's Home is `stacks/observability/logs/<store>/home.json`, one per log store; compose mounts the
-one `LOG_STORE` names. Until the unpicked store's folder goes, change both: they must be equal outside the
-three log panels (datasource uid `logs`). Grafana loads the file on start and every 30 s, and refuses
-a save from the UI: edit the file, not the UI. Open it at `http://grafana.internal/d/home` (save
+Grafana's Home is `stacks/observability/grafana/home.json`. Grafana loads the file on start and every
+30 s, and refuses a save from the UI: edit the file, not the UI. Open it at `http://grafana.internal/d/home` (save
 `http://beelink.tail4f465e.ts.net:5080/d/home`).
 
 ## Home
@@ -61,10 +59,8 @@ starts.
 - A top 10 is an instant query, `sort_desc(topk(10, ...))`, in a horizontal bar gauge.
 - Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (the watchdog always fires), a
   sample a minute. A table over the time range uses `[$__range]` in instant queries, merged.
-- Logs: Loki's stream label is `container_name`; `level` and the rest are structured metadata, and
-  the line is the body. VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends
-  a container's recent lines when it restarts: Loki drops an exact repeat, VictoriaLogs needs
-  `uniq by (_time, container_name, _msg)` before `stats` (not allowed in a range query, which then
-  counts repeats).
+- Logs: VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends a container's
+  recent lines when it restarts, so use `uniq by (_time, container_name, _msg)` before `stats` (not
+  allowed in a range query, which then counts repeats).
 
 Check with `uv run python -m pytest tests/test_dashboards.py`.

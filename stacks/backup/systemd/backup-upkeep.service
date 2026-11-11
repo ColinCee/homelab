@@ -1,0 +1,12 @@
+[Unit]
+Description=Prune unused Docker images and build cache, and test-restore a file from the latest backup
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/runbooks/backups.md
+
+[Service]
+Type=oneshot
+# Only what has been unused for a week, so a deploy running alongside loses nothing.
+ExecStart=/usr/bin/docker image prune -af --filter until=168h
+ExecStart=/usr/bin/docker builder prune -af --filter until=168h
+ExecStart=/usr/bin/docker exec backup /bin/sh /backup.sh restore-test
+# The result's time, for the Monthly upkeep failed alert. `$$` and `%%` keep systemd from expanding them.
+ExecStopPost=/bin/sh -c 'result=failure; [ "$$SERVICE_RESULT" = success ] && result=success; file=/var/lib/homelab-metrics/upkeep-$$result.prom; printf "homelab_upkeep_last_%%s_timestamp_seconds %%s\n" "$$result" "$$(date +%%s)" > "$$file.tmp" && mv "$$file.tmp" "$$file"'

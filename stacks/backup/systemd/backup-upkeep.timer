@@ -1,0 +1,9 @@
+[Unit]
+Description=Monthly upkeep, clear of the 02:30 UTC backup and the 04:00 UTC reboot
+
+[Timer]
+OnCalendar=*-*-01 05:00:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,5 +1,5 @@
 """Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
-loads with each pick of log and trace store (its validate command, so that test needs Docker)."""
+loads (its validate command, so that test needs Docker)."""
 
 import functools
 import re
@@ -14,7 +14,7 @@ ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
 CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
 READERS = (
-    "scripts/server-health.sh",
+    "stacks/observability/grafana/home.json",
     "stacks/observability/public_stats.py",
 )
 
@@ -23,8 +23,6 @@ def queries() -> list[str]:
     """Every alert and Home dashboard query, and the scripts that read metrics."""
     rules = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))
     texts = [rule["expr"] for group in rules["groups"] for rule in group["rules"]]
-    for dashboard in STACK.glob("logs/*/home.json"):
-        texts.append(dashboard.read_text(encoding="utf-8"))
     return texts + [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
 
 
@@ -54,20 +52,11 @@ def docker() -> bool:
 
 
 @pytest.mark.skipif("not docker()", reason="needs Docker")
-@pytest.mark.parametrize("logs", ["loki", "victorialogs"])
-@pytest.mark.parametrize("traces", ["tempo", "victoriatraces"])
-def test_the_config_loads_with_each_store(logs: str, traces: str) -> None:
+def test_the_config_loads() -> None:
     image = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["services"]
-    command = [
-        "docker",
-        "run",
-        "--rm",
-        "-v",
-        f"{STACK / 'config.alloy'}:/etc/alloy/config.alloy:ro",
-    ]
-    command += ["-v", f"{STACK / 'logs' / logs / 'alloy.alloy'}:/etc/alloy/logs.alloy:ro"]
-    command += ["-v", f"{STACK / 'traces' / traces / 'alloy.alloy'}:/etc/alloy/traces.alloy:ro"]
-    command += [image["alloy"]["image"], "validate", "/etc/alloy"]
+    config = f"{STACK / 'config.alloy'}:/etc/alloy/config.alloy:ro"
+    command = ["docker", "run", "--rm", "-v", config, image["alloy"]["image"]]
+    command += ["validate", "/etc/alloy/config.alloy"]
     ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
     assert ran.returncode == 0, ran.stdout + ran.stderr
 
