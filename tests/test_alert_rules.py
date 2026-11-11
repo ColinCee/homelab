@@ -213,7 +213,7 @@ CASES = {
         ],
     ),
     "a store that was never sent data is not named": (
-        # Nothing sends spans while OBI is off.
+        # With OBI off, nothing sends spans.
         [('vt_rows_ingested_total{job="traces"}', "0x50")],
         [at(40, "store-stopped")],
     ),

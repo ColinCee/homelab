@@ -182,6 +182,16 @@ loki.process "docker" {
     }
   }
 
+  // The same, as `trace_id=` in a plain line, where OBI writes it (obi/obi.yaml, log_enricher).
+  stage.regex {
+    expression = "(?:^|\\s)trace_id=(?P<trace_id>[0-9a-f]{32})(?:\\s+span_id=(?P<span_id>[0-9a-f]{16}))?"
+  }
+
+  // The NULs OBI leaves where it took a line to write it again with its trace.
+  stage.drop {
+    expression = "^[\\x00\\s]*$"
+  }
+
   // The label and the metadata below reach the log store as fields of each line.
   stage.labels {
     values = {

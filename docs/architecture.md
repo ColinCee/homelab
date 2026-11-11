@@ -72,10 +72,11 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 
 ## Monitoring and alerts
 
-Alloy collects metrics into Prometheus and logs and traces into VictoriaLogs and VictoriaTraces, 30 days each;
+Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observability/obi/obi.yaml) container traces into
+VictoriaLogs and VictoriaTraces, 30 days each;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as the `agents` login. Dashboards come from Git: the building-dashboards skill.
+agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 
 | Problem | Who warns |
 |---|---|
