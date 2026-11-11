@@ -1,4 +1,4 @@
-# The one way to read the stores (compose.yaml, gateway): Grafana's data sources, agents, the heartbeat and
+# The one way to read the stores (compose.yaml, gateway): Grafana's data sources, agents and
 # server-health log in as `agents`, public stats as `stats`. None of the stores has logins or read-only users, and
 # each serves writes and admin calls beside its reads, so each reader may reach only the read paths listed here and
 # the log and trace stores' own files (../logs/*/gateway.caddy, ../traces/*/gateway.caddy). Anything else is

@@ -9,17 +9,20 @@ route:
   group_interval: 1m
   repeat_interval: 24h
   routes:
+    # Never posts: a ping each minute, and Healthchecks.io posts to Discord when they stop.
+    - matchers: ['alertname="watchdog"']
+      receiver: healthchecks
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 1m
     - matchers: ['level="now"']
       repeat_interval: 4h
-    # A deploy or an install is an event, not a state: one post, and no "Cleared".
-    - matchers: ['level="notice"']
-      receiver: discord-notice
 
 # Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
 # rules on Prometheus's own health and the flight tracker's probe read its own scrape, so they still post.
 inhibit_rules:
   - source_matchers: ['alertname="beelink-metrics-stopped"']
-    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down"']
+    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|watchdog"']
 
 receivers:
   - name: discord
@@ -29,12 +32,10 @@ receivers:
         title: '{{ template "homelab.title" . }}'
         message: '{{ template "homelab.message" . }}'
         content: '{{ template "homelab.mention" . }}'
-  - name: discord-notice
-    discord_configs:
-      - webhook_url_file: /run/secrets/discord_webhook
+  - name: healthchecks
+    webhook_configs:
+      - url_file: /run/secrets/healthchecks_ping
         send_resolved: false
-        title: '{{ template "homelab.title" . }}'
-        message: '{{ template "homelab.message" . }}'
 
 templates:
   - /etc/alertmanager/discord.tmpl

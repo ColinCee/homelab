@@ -16,7 +16,6 @@ CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
 READERS = (
     "scripts/server-health.sh",
     "stacks/observability/public_stats.py",
-    ".github/workflows/heartbeat.yaml",
 )
 
 
