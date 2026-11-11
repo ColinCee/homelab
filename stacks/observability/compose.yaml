@@ -433,29 +433,6 @@ services:
     depends_on:
       - prometheus
 
-  # OpenObserve on its kept volume, to read the history from before the switch. Started by hand only, on loopback
-  # (`--profile history up -d openobserve-history`), and deleted once nothing from before the switch is wanted.
-  openobserve-history:
-    image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
-    profiles: [history]
-    restart: "no"
-    security_opt:
-      - no-new-privileges:true
-    ports:
-      - "127.0.0.1:5082:5080"
-    mem_limit: 2g
-    environment:
-      # No root password: its volume holds the root login, which it starts on without one.
-      ZO_ROOT_USER_EMAIL: root@homelab.internal
-      ZO_DATA_DIR: /data
-      # Nothing expires while it is read: its 30-day keep would delete what it is kept for.
-      ZO_COMPACT_DATA_RETENTION_DAYS: "3650"
-      ZO_TELEMETRY: "false"
-    volumes:
-      - openobserve-data:/data
-    networks:
-      - openobserve-history
-
   # Pushes a few numbers to the blog's home page; nothing connects in. See
   # docs/architecture.md, "Public stats" for what it publishes.
   public-stats:
@@ -528,7 +505,6 @@ networks:
   otlp:
     name: observability-otlp
     internal: true
-  openobserve-history:
   # Prometheus, for host-metrics alone.
   host-writes:
     internal: true
@@ -558,13 +534,9 @@ secrets:
     file: ../../secrets/homeassistant_metrics_token
 
 volumes:
-  # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot
-  # write.
   alloy-state:
   prometheus-data:
   grafana-data:
   alertmanager-data:
-  # OpenObserve's history, until it is deleted by hand.
-  openobserve-data:
   victorialogs-data:
   victoriatraces-data:

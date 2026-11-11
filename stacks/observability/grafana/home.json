@@ -1336,21 +1336,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "observability-openobserve-history-1"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#2a78d6"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "observability-gateway-1"
             },
             "properties": [
@@ -1834,21 +1819,6 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "observability-openobserve-history-1"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "#2a78d6"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
                   "options": "observability-gateway-1"
                 },
                 "properties": [
@@ -2196,21 +2166,6 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-users-1"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "#2a78d6"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "observability-openobserve-history-1"
                 },
                 "properties": [
                   {
@@ -2578,21 +2533,6 @@
               {
                 "matcher": {
                   "id": "byName",
-                  "options": "observability-openobserve-history-1"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "#2a78d6"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
                   "options": "observability-gateway-1"
                 },
                 "properties": [
@@ -2935,21 +2875,6 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-users-1"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "#2a78d6"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "observability-openobserve-history-1"
                 },
                 "properties": [
                   {
@@ -3458,21 +3383,6 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-users-1"
-                },
-                "properties": [
-                  {
-                    "id": "color",
-                    "value": {
-                      "mode": "fixed",
-                      "fixedColor": "#2a78d6"
-                    }
-                  }
-                ]
-              },
-              {
-                "matcher": {
-                  "id": "byName",
-                  "options": "observability-openobserve-history-1"
                 },
                 "properties": [
                   {

@@ -39,4 +39,4 @@ Why each store (numbers in [results.md](0001-observability-stack/results.md)):
 - Six programs to keep upgraded instead of four. Grafana is a small image of our own with the VictoriaLogs plugin added by checksum, moved by hand.
 - Three `kill -9`s lost 4.9 to 6.8 s of logs each and 19 spans in all, about the stores' 5 s default for saving what they hold in memory; both now save each second.
 - In a 15-minute burst at about 100 times the log feed, no whole stack (stores, Grafana, rule runner, gateway and Alertmanager) stayed under the 1 GiB it is meant to fit in; the lowest, with this pair, held 1,102 MiB.
-- The new stores start empty at the switch; OpenObserve's volume is kept for its 30 days, readable on demand and for a rollback (homelab#1328). What the trials left untested is homelab#1330.
+- The new stores start empty at the switch, and OpenObserve's data is not kept. What the trials left untested is homelab#1330.

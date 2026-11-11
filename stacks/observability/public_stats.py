@@ -106,9 +106,6 @@ def build_body(
     return {
         "at": int(now),
         "allUp": all(stack in running for stack in STACKS),
-        # CrowdSec is gone and the blog no longer shows it, but its Worker
-        # still requires the key.
-        "blocked": None,
         "tracking": whole(kpis.get("trackedAircraft")),
         "londonHour": whole(kpis.get("throughputLast60Min")),
     }
