@@ -7,6 +7,10 @@ services:
       - -storageDataPath=/vtraces
       # The default is 7 days.
       - -retentionPeriod=30d
+      # As the log store's: two queries at a time, a minute each, at most a month back.
+      - -search.maxConcurrentRequests=2
+      - -search.maxQueryDuration=60s
+      - -search.maxQueryTimeRange=31d
     # It held at most 106 MiB at ten times the real span rate.
     mem_limit: 512m
     volumes:

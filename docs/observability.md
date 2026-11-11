@@ -27,15 +27,15 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 | **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces sent to `alloy:4318` to the trace store |
 | **Prometheus** | Metrics and the [alert rules](../stacks/observability/prometheus/rules.yml) |
 | **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`.env.example`](../stacks/observability/.env.example) pick each, one folder per store under `logs/` and `traces/` |
-| **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, open to anyone on Tailscale as a Viewer |
+| **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, logged in as `colin` (admin) or `agents` (Viewer, `OPENOBSERVE_AGENTS_PASSWORD`) |
 | **Alertmanager** | Posts Prometheus's alerts to Discord, repeats, clears and holds them back |
 | **Gateway** | The only way to read the stores, for Grafana, agents and scripts: each login reads only read paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
 
 Home, the data sources and the rules come from Git on each deploy; Grafana refuses saves from its UI (the
 building-dashboards skill, `.github/skills/building-dashboards/SKILL.md`).
 
-Agents read with the gateway's `agents` login (`OPENOBSERVE_AGENTS_PASSWORD`):
-`curl -u agents@homelab.internal:... http://beelink.tail4f465e.ts.net:5081/prometheus/api/v1/query?query=up`.
+Agents read through Grafana's API (or `mcp-grafana`) as `agents`; on the Beelink, also through the gateway:
+`curl -u agents@homelab.internal:... http://100.100.146.119:5081/prometheus/api/v1/query?query=up`.
 
 ### Dashboard patterns
 

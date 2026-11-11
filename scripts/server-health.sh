@@ -83,14 +83,16 @@ promql() { # QUERY: the Prometheus API's JSON answer
   login | curl -sf -m 10 -K - -G "$gateway/prometheus/api/v1/query" --data-urlencode "query=$1"
 }
 # Firing rules by title; one whose query failed, or not run for 5 minutes, is named too.
-firing="$(login | curl -sf -m 10 -K - "$gateway/prometheus/api/v1/rules" |
-  jq -r --argjson stale "$(( $(date +%s) - 300 ))" '[.data.groups[].rules[] |
+if ! rules="$(login | curl -sf -m 10 -K - "$gateway/prometheus/api/v1/rules")"; then
+  firing="unknown (gateway unreachable)"
+elif ! firing="$(jq -r --argjson stale "$(( $(date +%s) - 300 ))" '[.data.groups[].rules[] |
     (.annotations.title // .name) as $rule |
     if .health != "ok" then "\($rule) (query fails)"
     elif (.lastEvaluation | sub("\\.[0-9]+"; "") | fromdateiso8601) < $stale then "\($rule) (not run for 5 min)"
     elif .state == "firing" then $rule
-    else empty end] | join(", ")' 2>/dev/null)" ||
-  firing="unknown (gateway unreachable)"
+    else empty end] | join(", ")' <<<"$rules" 2>/dev/null)"; then
+  firing="unknown (Prometheus's rule list did not parse)"
+fi
 if [[ -n "$firing" ]]; then
   bad "Firing alerts" "$firing"
 else

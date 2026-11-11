@@ -21,7 +21,7 @@ GreptimeDB failed a must-have (its `absent_over_time` returns nothing, so no-dat
 
 ## Decision
 
-Prometheus stores metrics and runs the rules, Grafana shows every store from files in Git, Alertmanager posts to Discord, and Alloy collects. One Caddy gateway is the only way to read a store: Grafana's data sources, agents, the heartbeat and public stats all log in there, and each login reaches only read paths. Every store tested serves writes or admin calls beside its reads (a Viewer's GET through Grafana shut Loki down; a Viewer's POST wrote into VictoriaLogs), and none has read-only users, so the gateway is the one place that keeps readers to reading.
+Prometheus stores metrics and runs the rules, Grafana shows every store from files in Git, Alertmanager posts to Discord, and Alloy collects. One Caddy gateway is the only way to read a store: Grafana's data sources, agents, the heartbeat and public stats all log in there, and each login reaches only read paths. Every store tested serves writes or admin calls beside its reads (a Viewer's GET through Grafana shut Loki down; a Viewer's POST wrote into VictoriaLogs), and none has read-only users, so the gateway is the one place that keeps readers to reading. Networks keep the rest apart: only Alloy reaches the stores' write paths, only Prometheus and the gateway reach Alertmanager, and Grafana reaches only the gateway. Grafana itself asks for a login, as OpenObserve did: Colin's admin login and a Viewer login for agents. Prometheus and the stores cap each query's time and size, so one heavy query cannot take the memory the alerts need.
 
 The log store and the trace store are each one of two, picked by `LOG_STORE` (Loki or VictoriaLogs) and `TRACE_STORE` (Tempo or VictoriaTraces) in the stack's `.env.example`. Each store's folder holds all that differs: its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs, the Home dashboard in its query language.
 
@@ -37,5 +37,6 @@ Both picks rest on short runs, not the real rate over days; the 7-day run beside
 - No code of our own runs the alerts: the rules are a Prometheus file tested with `promtool`, and the hold, per-series clears, no-data and the hold-back come from Prometheus and Alertmanager.
 - Agents read logs and traces as well as metrics, read-only.
 - Six programs to keep upgraded instead of four.
-- Metric and log history starts again at the switch; OpenObserve's volume is kept for a rollback ([switching-observability.md](../runbooks/switching-observability.md)).
+- The new stores start empty at the switch. OpenObserve's volume is kept for its full 30 days, readable on demand and for a rollback ([switching-observability.md](../runbooks/switching-observability.md)).
+- Grafana is a small image of our own, the maker's with the VictoriaLogs plugin added by checksum, so it fetches nothing at start; the plugin's version is moved by hand.
 - Until the pick, two Home dashboards are kept in step; the other store's folder goes once it is made.

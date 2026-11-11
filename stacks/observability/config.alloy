@@ -241,20 +241,6 @@ otelcol.processor.batch "traces" {
 }
 
 // ================================
-// Alertmanager
-// ================================
-
-// Whether it is up, and its notifications_failed_total: posts that did not reach Discord.
-prometheus.scrape "alertmanager" {
-  targets = [{
-    __address__ = "alertmanager:9093",
-  }]
-  forward_to      = [prometheus.remote_write.default.receiver]
-  scrape_interval = "30s"
-  job_name        = "alertmanager"
-}
-
-// ================================
 // Flight Tracker (end-to-end probe)
 // ================================
 

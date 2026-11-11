@@ -29,6 +29,9 @@ storage_config:
     directory: /loki/chunks
 limits_config:
   retention_period: 30d
+  # One heavy query must not take its memory: a minute each, at most a month back, two at a time (querier).
+  query_timeout: 1m
+  max_query_length: 31d
   allow_structured_metadata: true
   volume_enabled: true
   # Alloy's OTLP sends each line's labels as attributes of the line, not of its resource, and Loki indexes only
@@ -41,3 +44,5 @@ compactor:
   working_directory: /loki/compactor
   retention_enabled: true
   delete_request_store: filesystem
+querier:
+  max_concurrent: 2

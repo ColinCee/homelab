@@ -6,6 +6,11 @@ services:
     command:
       - -storageDataPath=/vlogs
       - -retentionPeriod=30d
+      # One heavy query must not take its memory: two at a time, a minute each, at most a month back. A 30-day count
+      # took 8 s.
+      - -search.maxConcurrentRequests=2
+      - -search.maxQueryDuration=60s
+      - -search.maxQueryTimeRange=31d
     # It held a median 363 and at most 650 MiB through a 30-day backfill and heavy queries.
     mem_limit: 1g
     volumes:
