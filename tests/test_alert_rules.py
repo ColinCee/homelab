@@ -1,16 +1,18 @@
 """Every alert rule (stacks/observability/prometheus/rules.yml) meets the alert standard in
 docs/architecture.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
-as the standard says: promtool runs them over made-up series, so those tests need Docker."""
+as the standard says: promtool runs them over made-up series."""
 
-import functools
 import json
+import os
 import re
-import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 import yaml
+
+from tests.conftest import tool
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
 GROUPS = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
@@ -19,7 +21,6 @@ HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
 TEMPLATE = (STACK / "alertmanager/discord.tmpl").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
-PROMETHEUS = COMPOSE["services"]["prometheus"]["image"]
 HOME = "http://beelink.tail4f465e.ts.net:5080/d/home"
 
 
@@ -113,27 +114,15 @@ def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
         assert re.match(aggregated, expr), name
 
 
-@functools.cache
-def docker() -> bool:
-    if not shutil.which("docker"):
-        return False
-    return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
+def promtool(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run([tool("promtool"), *args], capture_output=True, text=True, timeout=300)
 
 
-needs_docker = pytest.mark.skipif("not docker()", reason="needs Docker")
-
-
-def promtool(tmp_path: Path, *args: str) -> subprocess.CompletedProcess[str]:
-    command = ["docker", "run", "--rm", "--entrypoint", "promtool"]
-    command += ["-v", f"{STACK / 'prometheus'}:/etc/prometheus:ro", "-v", f"{tmp_path}:/t:ro"]
-    return subprocess.run(
-        [*command, PROMETHEUS, *args], capture_output=True, text=True, timeout=300
-    )
-
-
-@needs_docker
-def test_the_config_and_rules_load(tmp_path: Path) -> None:
-    checked = promtool(tmp_path, "check", "config", "/etc/prometheus/prometheus.yml")
+def test_the_config_and_rules_load() -> None:
+    # The config names the rules by their path in the container, so they are checked on their own.
+    checked = promtool("check", "config", "--syntax-only", str(STACK / "prometheus/prometheus.yml"))
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+    checked = promtool("check", "rules", str(STACK / "prometheus/rules.yml"))
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
@@ -531,27 +520,41 @@ CASES = {
 }
 
 
-@needs_docker
+@pytest.fixture(scope="module")
+def rule_runs(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> dict[str, subprocess.CompletedProcess[str]]:
+    """Every case's promtool run, all at once: one after another they were most of CI's time."""
+    folder = tmp_path_factory.mktemp("rules")
+
+    def run(numbered: tuple[int, str]) -> subprocess.CompletedProcess[str]:
+        n, case = numbered
+        series, checks, *rest = CASES[case]
+        step = rest[0] if rest else "1m"
+        tests = {
+            "rule_files": [str(STACK / "prometheus/rules.yml")],
+            "evaluation_interval": step,
+            "tests": [
+                {
+                    "interval": step,
+                    "input_series": [{"series": s, "values": v} for s, v in series],
+                    "alert_rule_test": checks,
+                }
+            ],
+        }
+        path = folder / f"{n}.yml"
+        path.write_text(json.dumps(tests), encoding="utf-8")
+        return promtool("test", "rules", str(path))
+
+    with ThreadPoolExecutor(os.cpu_count() or 1) as pool:
+        return dict(zip(CASES, pool.map(run, enumerate(CASES)), strict=True))
+
+
 @pytest.mark.parametrize("case", CASES)
-def test_rules_fire_hold_and_clear_as_the_standard_says(tmp_path: Path, case: str) -> None:
-    series, checks, *rest = CASES[case]
-    step = rest[0] if rest else "1m"
-    tests = {
-        "rule_files": ["/etc/prometheus/rules.yml"],
-        "evaluation_interval": step,
-        "tests": [
-            {
-                "interval": step,
-                "input_series": [{"series": s, "values": v} for s, v in series],
-                "alert_rule_test": checks,
-            }
-        ],
-    }
-    (tmp_path / "test.yml").write_text(json.dumps(tests), encoding="utf-8")
-    # promtool runs as nobody, and pytest makes the folder for its owner only.
-    tmp_path.chmod(0o755)
-    (tmp_path / "test.yml").chmod(0o644)
-    ran = promtool(tmp_path, "test", "rules", "/t/test.yml")
+def test_rules_fire_hold_and_clear_as_the_standard_says(
+    rule_runs: dict[str, subprocess.CompletedProcess[str]], case: str
+) -> None:
+    ran = rule_runs[case]
     assert ran.returncode == 0, ran.stdout + ran.stderr
 
 

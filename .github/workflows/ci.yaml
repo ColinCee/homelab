@@ -11,7 +11,13 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-26.04
+    # Colin's own pushes and pull requests from this repo run in the homelab-fc VMs, everyone else's (forks, Renovate)
+    # on GitHub's runners. The VMs' job guard refuses any other job however it asks for them (docs/architecture.md,
+    # "CI runner"). The repo variable HOMELAB_FC turns it on (true) or off, as when the VMs are down.
+    runs-on: >-
+      ${{ fromJSON(vars.HOMELAB_FC == 'true' && github.actor_id == '11246116' && github.triggering_actor == 'ColinCee'
+      && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
+      && '["self-hosted", "linux", "x64", "homelab-fc"]' || '"ubuntu-26.04"') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -44,25 +50,34 @@ jobs:
         if: github.event_name == 'pull_request'
         timeout-minutes: 30
         run: |
-          git diff --quiet HEAD^1 HEAD -- ci-runner/rootfs ci-runner/versions.env && exit 0
+          git diff --quiet HEAD^1 HEAD -- ci-runner/rootfs ci-runner/versions.env scripts/runner_job_guard.py && exit 0
           set -a && source ci-runner/versions.env && set +a
           args=()
           while IFS='=' read -r name _; do
             if [[ $name =~ ^[A-Z0-9_]+$ ]]; then args+=(--build-arg "$name"); fi
           done < ci-runner/versions.env
-          docker build -q "${args[@]}" ci-runner/rootfs > /dev/null
+          docker build -q "${args[@]}" --build-context scripts=scripts ci-runner/rootfs > /dev/null
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5
-        if: steps.pins.outputs.only != 'true'
+        if: steps.pins.outputs.only != 'true' && runner.environment == 'github-hosted'
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
       # so each run reuses them instead of compiling for ~10 seconds.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        if: steps.pins.outputs.only != 'true'
+        if: steps.pins.outputs.only != 'true' && runner.environment == 'github-hosted'
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', 'mise.toml') }}
+      # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
+      - name: Install tools from the cache disk
+        if: steps.pins.outputs.only != 'true' && runner.environment == 'self-hosted'
+        run: |
+          export MISE_DATA_DIR=/cache/mise MISE_YES=1 MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE"
+          env | grep '^MISE_' >> "$GITHUB_ENV"
+          mise install
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'
         run: mise run check
+      - uses: ./.github/actions/fc-cache
+        if: runner.environment == 'self-hosted'

@@ -45,6 +45,15 @@
     {
       "groupName": "uv",
       "matchPackageNames": ["uv", "ghcr.io/astral-sh/uv"]
+    },
+    {
+      "description": "The tests run the stack's Prometheus and Alloy from mise.toml, at its images' versions.",
+      "groupName": "prometheus",
+      "matchPackageNames": ["prom/prometheus", "prometheus/prometheus"]
+    },
+    {
+      "groupName": "alloy",
+      "matchPackageNames": ["grafana/alloy"]
     }
   ],
   "customManagers": [

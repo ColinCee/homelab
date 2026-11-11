@@ -44,7 +44,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## CI runner
 
-CI for Colin's private repositories, each job in its own Firecracker VM, thrown away after one job. Why Firecracker,
+CI for Colin's own jobs, each in its own Firecracker VM, thrown away after one job. Why Firecracker,
 and how fast: [ADR 0002](adr/0002-ci-runner.md).
 
 | `runs-on` | VM |
@@ -56,14 +56,15 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   [`versions.env`](../ci-runner/versions.env)), so a job needs no setup actions. Each VM gets its repo's cache disk
   at `/cache`, from the last green push to the default branch; a job saves it with
   [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
-- Only private repos the token sees, with no other writer, are served
-  ([`ci_supervisor.py`](../scripts/ci_supervisor.py), `served_repos`). Before making one public, move its workflows
-  to GitHub's runners and take it off the token.
+- Served, with no other writer: private repos the token sees, and `PUBLIC_REPOS`
+  ([`ci_supervisor.py`](../scripts/ci_supervisor.py)) while GitHub holds outside contributors' runs for approval. A
+  runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py),
+  vm policy) kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
   VMs run at CPU weight 20 against the services' 100. Why a job waits: `journalctl -u homelab-ci-supervisor | grep
   'has waited'`.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within about 2 minutes (5 when the image
-  rebuilds) and running jobs carry on ([`update.sh`](../ci-runner/update.sh)). Slots, standby VMs and
+  rebuilds); running jobs carry on ([`update.sh`](../ci-runner/update.sh)). Slots, standby VMs and
   the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
   the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
   connection.

@@ -2,6 +2,7 @@
 with a host folder can read the host's secrets, and nothing opens a way in without a login
 (stacks/observability/compose.yaml)."""
 
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -83,3 +84,15 @@ def test_nothing_reads_or_changes_the_stack_without_a_login() -> None:
     assert "GF_USERS_VIEWERS_CAN_EDIT" not in grafana
     flags = SERVICES["prometheus"]["command"]
     assert not [f for f in flags if "admin" in f or "lifecycle" in f]
+
+
+def test_the_tests_tools_are_the_versions_the_stack_runs() -> None:
+    # A rule or config the tests pass could otherwise fail in the running stack.
+    tools = tomllib.loads((Path(__file__).parent.parent / "mise.toml").read_text(encoding="utf-8"))
+    for service, name in [
+        ("prometheus", "aqua:prometheus/prometheus"),
+        ("alloy", "aqua:grafana/alloy"),
+    ]:
+        image = SERVICES[service]["image"]
+        tag = image.split("@")[0].rsplit(":", 1)[1].removeprefix("v")
+        assert tools["tools"][name] == tag, f"mise.toml {name} is not compose.yaml's {image}"

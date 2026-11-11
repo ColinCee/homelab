@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Refuse any job on the Beelink deploy runner except the listed workflows on main.
+"""Refuse any job on the Beelink deploy runner except the listed workflows on main, and
+(vm policy) any job on a public repo's CI VM that is not Colin's own.
 
 Runs as the runner's job-started hook (ACTIONS_RUNNER_HOOK_JOB_STARTED), before the
 job's first step. A failing hook only marks the job failed: the runner still runs later
@@ -17,11 +18,13 @@ cannot rewrite the policy. See docs/architecture.md, "Deploys".
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import signal
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 REPOSITORY = "ColinCee/homelab"
 REF = "refs/heads/main"
@@ -90,6 +93,54 @@ def decide(env: Mapping[str, str]) -> Decision:
     if triggering not in TRIGGERING_ACTORS:
         return Decision(False, f"triggering actor {triggering or '(missing)'} is not allowed")
     return Decision(True, f"{event} of {workflow} by {ACTOR_IDS[actor_id]}")
+
+
+# The CI VMs (vm policy): what the supervisor says a VM serves, written by ci-boot.
+SERVES = "/etc/homelab-ci/serves.json"
+VM_EVENTS = frozenset({"push", "pull_request", "workflow_dispatch"})
+OWNER_ID, OWNER = "11246116", "ColinCee"
+
+
+def decide_vm(
+    env: Mapping[str, str], serves: Mapping[str, Any], event: Mapping[str, Any]
+) -> Decision:
+    """A private repo's VM takes its repo's jobs. A public repo's takes only Colin's, from
+    the repo itself, never a fork: its runner takes any queued job of the repo, whoever
+    queued it (docs/architecture.md, "CI runner"). Missing means no."""
+    for name in INJECTION_VARIABLES:
+        if env.get(name):
+            return Decision(False, f"{name} is set; workflow environment reached the hook")
+    served = serves.get("repo")
+    repository = env.get("GITHUB_REPOSITORY", "")
+    if not isinstance(served, str) or not served or repository.lower() != served.lower():
+        return Decision(False, f"repository {repository or '(missing)'} is not the served {served}")
+    if serves.get("public") is False:
+        return Decision(True, f"a job of private {repository}")
+    kind = env.get("GITHUB_EVENT_NAME", "")
+    if kind not in VM_EVENTS:
+        return Decision(False, f"event {kind or '(missing)'} is not one of {sorted(VM_EVENTS)}")
+    if env.get("GITHUB_ACTOR_ID", "") != OWNER_ID:
+        actor = env.get("GITHUB_ACTOR", "") or "(missing)"
+        return Decision(False, f"actor {actor} is not {OWNER}")
+    triggering = env.get("GITHUB_TRIGGERING_ACTOR", "")
+    if triggering != OWNER:
+        return Decision(False, f"triggering actor {triggering or '(missing)'} is not {OWNER}")
+    if kind == "pull_request":
+        head = ((event.get("pull_request") or {}).get("head") or {}).get("repo") or {}
+        source = head.get("full_name") if isinstance(head, Mapping) else None
+        if not isinstance(source, str) or source.lower() != repository.lower():
+            return Decision(False, f"pull request from {source or '(unknown)'}, not {repository}")
+    return Decision(True, f"{kind} of public {repository} by {OWNER}")
+
+
+def read_json(path: str) -> Mapping[str, Any]:
+    """A JSON object from path, {} when missing or not one: the policy then refuses."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            value = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def audit_line(env: Mapping[str, str], decision: Decision, mode: str) -> str:
@@ -174,9 +225,19 @@ def main(
         default="enforce",
         help="observe logs the decision but lets every job run (for rollout only)",
     )
+    parser.add_argument(
+        "--policy",
+        choices=("deploy", "vm"),
+        default="deploy",
+        help="deploy: the Beelink deploy runner; vm: a CI VM, by what it serves (SERVES)",
+    )
     args = parser.parse_args(argv)
     env = os.environ if env is None else env
-    decision = decide(env)
+    if args.policy == "vm":
+        event = read_json(env.get("GITHUB_EVENT_PATH", ""))
+        decision = decide_vm(env, read_json(SERVES), event)
+    else:
+        decision = decide(env)
     _journal(audit_line(env, decision, args.mode))
     if decision.allowed:
         print(f"Runner guard: allowed ({decision.reason}).")

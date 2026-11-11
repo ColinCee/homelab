@@ -171,3 +171,67 @@ def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
     out = capsys.readouterr().out
     assert f"{nl}::add-mask::" not in out
     assert "%0A::add-mask::y%25" in out
+
+
+PUBLIC = {"repo": "ColinCee/homelab", "public": True}
+
+
+def _pr(source: str) -> dict:
+    return {"pull_request": {"head": {"repo": {"full_name": source}}}}
+
+
+@pytest.mark.parametrize(
+    ("env", "event"),
+    [
+        (_env(), {}),
+        (_env(GITHUB_EVENT_NAME="workflow_dispatch"), {}),
+        (_env(GITHUB_EVENT_NAME="pull_request"), _pr("ColinCee/homelab")),
+    ],
+)
+def test_a_public_repos_vm_takes_colins_own_jobs(env: dict[str, str], event: dict) -> None:
+    assert guard.decide_vm(env, PUBLIC, event).allowed
+
+
+@pytest.mark.parametrize(
+    ("env", "serves", "event"),
+    [
+        (_env(GITHUB_EVENT_NAME="pull_request"), PUBLIC, _pr("someone/homelab")),  # a fork
+        (_env(GITHUB_EVENT_NAME="pull_request"), PUBLIC, {}),  # no event file
+        (_env(GITHUB_ACTOR="renovate[bot]", GITHUB_ACTOR_ID="29139614"), PUBLIC, {}),
+        (_env(GITHUB_TRIGGERING_ACTOR="someone"), PUBLIC, {}),
+        (_env(GITHUB_EVENT_NAME="pull_request_target"), PUBLIC, _pr("ColinCee/homelab")),
+        (_env(GITHUB_REPOSITORY="ColinCee/other"), PUBLIC, {}),
+        (_env(BASH_ENV="/tmp/x"), PUBLIC, {}),
+        (_env(), {}, {}),  # serves.json missing
+        # Visibility unknown counts as public.
+        (
+            _env(GITHUB_ACTOR="renovate[bot]", GITHUB_ACTOR_ID="29139614"),
+            {"repo": "ColinCee/homelab"},
+            {},
+        ),
+    ],
+)
+def test_a_public_repos_vm_refuses_every_other_job(
+    env: dict[str, str], serves: dict, event: dict
+) -> None:
+    assert not guard.decide_vm(env, serves, event).allowed
+
+
+def test_a_private_repos_vm_takes_any_job_of_its_repo_only() -> None:
+    private = {"repo": "ColinCee/cortex", "public": False}
+    renovate = _env(GITHUB_REPOSITORY="ColinCee/cortex", GITHUB_ACTOR="renovate[bot]")
+    assert guard.decide_vm(renovate, private, {}).allowed
+    assert not guard.decide_vm(_env(), private, {}).allowed
+
+
+def test_the_vm_policy_reads_what_the_vm_serves_and_the_event(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    serves, event = tmp_path / "serves.json", tmp_path / "event.json"
+    serves.write_text('{"repo": "ColinCee/homelab", "public": true}')
+    event.write_text('{"pull_request": {"head": {"repo": {"full_name": "someone/homelab"}}}}')
+    monkeypatch.setattr(guard, "SERVES", str(serves))
+    env = _env(GITHUB_EVENT_NAME="pull_request", GITHUB_EVENT_PATH=str(event))
+    assert guard.main(["--policy", "vm"], env, lambda pid: "stub") == 1
+    event.write_text('{"pull_request": {"head": {"repo": {"full_name": "ColinCee/homelab"}}}}')
+    assert guard.main(["--policy", "vm"], env, lambda pid: "stub") == 0

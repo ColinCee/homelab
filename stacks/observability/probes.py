@@ -27,12 +27,12 @@ def http_status(url: str, host: str | None = None) -> int:
         return 0
 
 
-def resolves(name: str, server: str, address: str, port: int = 53) -> bool:
+def resolves(name: str, server: str, address: str, port: int = 53, timeout: float = 5) -> bool:
     """Whether `server` answers an A query for `name` with `address`."""
     labels = b"".join(bytes([len(p)]) + p.encode() for p in name.split("."))
     question = struct.pack(">HHHHHH", 0x4B1D, 0x0100, 1, 0, 0, 0) + labels + b"\0\0\1\0\1"
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-        s.settimeout(5)
+        s.settimeout(timeout)
         try:
             s.sendto(question, (server, port))
             reply = s.recv(512)
