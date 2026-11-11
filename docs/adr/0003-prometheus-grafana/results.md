@@ -36,6 +36,28 @@ A front service that passes only read paths turns each "Reader writes refused" f
 | Log panels, median (ms) | 21 | 36 | 11.5 | 3.2 | 3.2 | 19 |
 | Clean hold-back, of 3 copies | 1 | 1 | 3 | 3 | 1 | 0 |
 
+## Log and trace stores
+
+Run on 11 November 2026, 00:07-02:05 UTC, in its own Compose project beside the live stack. A replay of two days of the live log export, shifted back to fill 30 days (full volume for 24 h and 7 d, 48% of the planned volume for 30 d), went to both log stores through one Alloy; synthetic traces went to both trace stores at about five times the estimated real span rate. Three interleaved rounds; the answer key is a grep of the replay file, and every answer matched it.
+
+| Logs | Loki 3.7.9 | VictoriaLogs 1.53.0 |
+|---|---|---|
+| 24 h substring search, newest 100, cold (s) | 2.22 | 0.35 |
+| 7 d search / count (s) | 18.3 / 24.8 | 2.21 / 3.74 |
+| 30 d search / count (s) | 15.1 / 67.0 | 5.88 / 7.90 |
+| Memory during the backfill and queries, median / peak (MiB) | 1,016 / 2,004, killed at a 1 GiB cap | 363 / 650 under 1 GiB |
+| Disk per line | 34.8 B | 15.9 B |
+| Lines stored of 115,234,477 sent | 2,740 short, cause unproven | all |
+| Viewer writes through Grafana, behind a front | all refused | all refused |
+
+| Traces | Tempo 3.1.1 | VictoriaTraces 0.13.0 |
+|---|---|---|
+| Spans stored of 135,000 sent | all | all |
+| Find by trace ID (s) | 0.026-0.141 | 0.010-0.022 |
+| Memory during the load, median / peak (MiB) | 209 / 314 | 91 / 106 |
+| Disk per span | at most 345 B | 89 B |
+| Viewer through Grafana, no front | read the config, reached a lifecycle call | every probe refused |
+
 ## Not yet tested
 
-Log search over 30 days, crash and outage loss, expiry, memory over 7 days, the real alert timers, the read-only front itself under every probe, and the trace stores at ten times the real span rate. The longer tests cover them before the pick.
+Memory at the real rate over 7 days, a catch-up after an outage, crash and outage loss, expiry, the real alert timers with a real Discord post, and the trace stores at ten times the real span rate. The 7-day run covers them before this record is accepted.

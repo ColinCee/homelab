@@ -25,7 +25,12 @@ Prometheus stores metrics and runs the rules, Grafana shows every store from fil
 
 The log store and the trace store are each one of two, picked by `LOG_STORE` (Loki or VictoriaLogs) and `TRACE_STORE` (Tempo or VictoriaTraces) in the stack's `.env.example`. Each store's folder holds all that differs: its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs, the Home dashboard in its query language.
 
-The pick: _to be filled in from the longer tests, by the same rule, before this record is accepted._
+The pick, by the same rule, is VictoriaLogs and VictoriaTraces, which `.env.example` sets:
+
+- Logs: both stores pass the musts and tie on workarounds and programs, so memory decides: VictoriaLogs held a median 363 MiB through a 30-day backfill and heavy queries, Loki 1,016 MiB (killed at a 1 GiB cap). VictoriaLogs also took 2.2 times less disk and searched 6 to 9 times faster over 7 and 30 days.
+- Traces: both stored every span, but through Grafana a Viewer reached Tempo's config and a lifecycle call, and VictoriaTraces refused every probe: 3 workaround points against 0. VictoriaTraces is not yet a finished release, which counts only as a nice for traces.
+
+Both picks rest on short runs, not the real rate over days; the 7-day run beside the live stack checks memory, crash loss and expiry before this record is accepted.
 
 ## Consequences
 

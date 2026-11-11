@@ -6,8 +6,8 @@ How the observability stack moves from OpenObserve to Prometheus, Grafana and th
 
 ## Before the merge
 
-1. Set the pick in `stacks/observability/.env.example` (`LOG_STORE`, `TRACE_STORE`), fill in ADR 0003's pick, set its
-   status to Accepted and ADR 0001's to "Superseded by 0003", in the same pull request.
+1. Check the pick in `stacks/observability/.env.example` (`LOG_STORE`, `TRACE_STORE`) matches ADR 0003's, then set
+   its status to Accepted and ADR 0001's to "Superseded by 0003", in the same pull request.
 2. Wait for CI to pass, and for no CI job to be running on the Beelink (`gh run list --status in_progress`).
 3. Note what is firing now, to compare after: Alertmanager's list,
    `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
