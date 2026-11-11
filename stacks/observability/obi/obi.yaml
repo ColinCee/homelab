@@ -1,8 +1,23 @@
-# What OBI (../compose.yaml, obi) should instrument: every program in a container, none of the host's own.
-# containers_only compares network namespaces, so with OBI on its own network it also traced host programs and the
-# CI VMs: off until fixed.
+# What OBI (../compose.yaml, obi) instruments: the programs in Docker's containers, each named after its Compose
+# service. Both come from Docker's API: a host program or a CI VM has no container, so it matches no `container_name`,
+# and with no Docker API nothing matches.
 # https://opentelemetry.io/docs/zero-code/obi/configure/service-discovery/
 discovery:
   instrument:
-    - containers_only: true
-      exe_path: "*"
+    - container_name: "*"
+  # The telemetry's own path: every send Alloy makes would be a span, which it would then send, and the socket proxy
+  # answers Alloy's polls many times a second.
+  exclude_instrument:
+    - container_name: "observability-{alloy,prometheus,logs,traces,docker-socket-proxy}-*"
+ebpf:
+  # Half the default map sizes halves the kernel memory its maps take (about 330 to 170 MiB); one host's traffic needs
+  # no more.
+  maps_config:
+    global_scale_factor: -1
+  # The flight tracker's request lines get the request's `trace_id=`, which Alloy reads out (config.alloy, loki.process
+  # "docker") and Grafana opens as the trace. OBI zeroes each line the program writes and writes it again with the IDs,
+  # so the log keeps a line of NULs in its place, which Alloy drops.
+  log_enricher:
+    services:
+      - service:
+          - container_name: "flight-tracker-backend-*"

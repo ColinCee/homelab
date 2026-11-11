@@ -315,17 +315,19 @@ services:
       - default
       - probe
 
-  # Traces and request rate, errors and duration for every program in a container, with no change to them, by eBPF
-  # (OpenTelemetry's OBI; obi/obi.yaml). It needs the host's processes and the kernel's tracing, so it runs
-  # privileged, and only when the `obi` profile is on (COMPOSE_PROFILES in settings.env). Sends both to Alloy.
+  # Traces and request rate, errors and duration for every program in a container, with no change to them but the
+  # trace in the flight tracker's log lines, by eBPF (OpenTelemetry's OBI; obi/obi.yaml). It needs the host's processes
+  # and the kernel's tracing, so it runs privileged, and only when the `obi` profile is on (COMPOSE_PROFILES in
+  # settings.env). Sends both to Alloy.
   obi:
     image: otel/ebpf-instrument:v1.0.0@sha256:a68d70e934260f72540f157ccf4fb4adfa38f11de060d7d905696dad6a3fca02
     profiles: [obi]
     restart: unless-stopped
     privileged: true
     pid: host
-    # Its Go tracer failed to make its maps under 320 MiB.
-    mem_limit: 640m
+    # It holds about 270 MiB, two thirds of it its maps' kernel memory, but needs more while it reads every program at
+    # start: 384 MiB killed it there.
+    mem_limit: 512m
     environment:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
       OTEL_EBPF_METRICS_FEATURES: application
@@ -333,14 +335,17 @@ services:
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       # Spans are not linked across programs: that writes headers into their requests.
       OTEL_EBPF_BPF_CONTEXT_PROPAGATION: disabled
+      # Which container each program is in, and its Compose service.
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
       - ./obi/obi.yaml:/etc/obi/obi.yaml:ro
     networks:
       - otlp
+      - docker-api
 
-  # Read-only Docker API for Alloy; a raw socket mount would be root-equivalent.
+  # Read-only Docker API for Alloy and OBI; a raw socket mount would be root-equivalent.
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
@@ -353,12 +358,13 @@ services:
     read_only: true
     tmpfs:
       - /run:uid=65534,gid=65534
-    # What Alloy asks for: container lists and inspects (cAdvisor and the log tailer need them), logs, networks for
-    # discovery, info and version. An inspect shows every container's environment and labels, so no secret goes in
+    # What they ask for: container lists, inspects and events (cAdvisor, the log tailer and OBI need them), logs,
+    # networks for discovery, info and version. An inspect shows every container's environment and labels, so no secret goes in
     # either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
     environment:
       ALLOW_LOGS: 1
       CONTAINERS: 1
+      EVENTS: 1
       INFO: 1
       NETWORKS: 1
       POST: 0
