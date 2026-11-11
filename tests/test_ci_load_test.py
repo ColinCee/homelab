@@ -191,7 +191,6 @@ def test_after_the_drain_the_supervisor_takes_the_lowered_count_and_jobs_again(
     starts: list[int] = []
     monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: starts.append(slot))
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
-    monkeypatch.setattr(sup, "deploy_standby_count", lambda: 0)
     state = sup.State(slots=5, draining=True)
     (host / "slots").write_text("4\n")
 
