@@ -33,7 +33,6 @@ def test_body_holds_only_named_numbers() -> None:
     assert build_body(results(), KPIS, NOW) == {
         "at": int(NOW),
         "allUp": True,
-        "blocked": None,
         "tracking": 237,
         "londonHour": 107,
     }

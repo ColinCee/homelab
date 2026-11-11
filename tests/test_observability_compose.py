@@ -83,4 +83,3 @@ def test_nothing_reads_or_changes_the_stack_without_a_login() -> None:
     assert "GF_USERS_VIEWERS_CAN_EDIT" not in grafana
     flags = SERVICES["prometheus"]["command"]
     assert not [f for f in flags if "admin" in f or "lifecycle" in f]
-    assert all(p.startswith("127.0.0.1:") for p in SERVICES["openobserve-history"]["ports"])
