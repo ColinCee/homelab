@@ -419,14 +419,15 @@ services:
     cap_drop:
       - ALL
     user: "65534:65534"
-    mem_limit: 64m
+    # It held 33 MiB; its write log, in memory, grows while Prometheus is away.
+    mem_limit: 128m
     network_mode: host
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     secrets:
       - homeassistant_metrics_token
     tmpfs:
-      - /agent:uid=65534,gid=65534
+      - /agent:uid=65534,gid=65534,size=48m
     volumes:
       - ./host-metrics/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     depends_on:

@@ -109,8 +109,8 @@ Traps:
 
 - Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
   `job="ci-vms"`, present only while a slot runs a VM.
-- Caddy, CoreDNS and Home Assistant answer only on loopback: `host-metrics` scrapes them from the host's network,
-  Home Assistant once it has `prometheus:` and the `HOMEASSISTANT_METRICS_TOKEN` secret;
+- Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network,
+  Home Assistant once it has `prometheus:` and `HOMEASSISTANT_METRICS_TOKEN` secret;
   [`probes.py`](../stacks/observability/probes.py) checks them for the alerts. The flight tracker's `probe_success` is 1
   only when its public API says its data is live; the public sites' (`job="integrations/blackbox/sites"`) only on a
   200.

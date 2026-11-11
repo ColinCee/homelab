@@ -3773,7 +3773,7 @@
                 "uid": "prometheus"
               },
               "refId": "B",
-              "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"caddy\",code=~\"5..\"}[5m]))",
+              "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"caddy\",code=~\"5..\"}[5m])) or vector(0)",
               "legendFormat": "Proxy errors (5xx)"
             },
             {
@@ -3782,13 +3782,13 @@
                 "uid": "prometheus"
               },
               "refId": "C",
-              "expr": "sum(rate(coredns_dns_responses_total{job=\"coredns\",rcode!~\"NOERROR|NXDOMAIN\"}[5m]))",
+              "expr": "sum(rate(coredns_dns_responses_total{job=\"coredns\",rcode!~\"NOERROR|NXDOMAIN\"}[5m])) or vector(0)",
               "legendFormat": "DNS failures"
             }
           ],
           "fieldConfig": {
             "defaults": {
-              "unit": "none",
+              "unit": "reqps",
               "decimals": 2,
               "min": 0,
               "color": {
@@ -3847,7 +3847,7 @@
                     "id": "color",
                     "value": {
                       "mode": "fixed",
-                      "fixedColor": "#199e70"
+                      "fixedColor": "#d03b3b"
                     }
                   }
                 ]
