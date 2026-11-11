@@ -35,7 +35,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    mem_limit: 1g
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
 
@@ -46,7 +45,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    mem_limit: 1g
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
 

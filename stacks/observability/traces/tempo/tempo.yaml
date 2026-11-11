@@ -1,9 +1,15 @@
 # From the maker's single-binary example (example/docker-compose/single-binary/tempo.yaml at v3.1.1), keeping 30
 # days: https://grafana.com/docs/tempo/latest/configuration/
 stream_over_http_enabled: true
+# The query API only, under /tempo: Grafana's proxy cannot leave a data source's path, and Tempo's other routes,
+# config and lifecycle calls included, answer anyone.
+http_api_prefix: /tempo
 server:
   http_listen_port: 3200
   log_level: warn
+# Its Go memory limit from the container's (compose.yaml): big searches grow it, and it gives memory back late.
+memory:
+  automemlimit_enabled: true
 distributor:
   receivers:
     otlp:

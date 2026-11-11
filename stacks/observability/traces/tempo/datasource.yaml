@@ -5,7 +5,7 @@ datasources:
     uid: traces
     type: tempo
     access: proxy
-    url: http://gateway:5080/traces
+    url: http://gateway:5080/traces/tempo
     basicAuth: true
     basicAuthUser: agents@homelab.internal
     secureJsonData:

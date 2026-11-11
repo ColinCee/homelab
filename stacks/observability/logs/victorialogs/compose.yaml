@@ -6,6 +6,8 @@ services:
     command:
       - -storageDataPath=/vlogs
       - -retentionPeriod=30d
+    # It held a median 363 and at most 650 MiB through a 30-day backfill and heavy queries.
+    mem_limit: 1g
     volumes:
       - victorialogs-data:/vlogs
 

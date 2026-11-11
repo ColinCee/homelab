@@ -50,14 +50,20 @@ Run on 11 November 2026, 00:07-02:05 UTC, in its own Compose project beside the 
 | Lines stored of 115,234,477 sent | 2,740 short, cause unproven | all |
 | Viewer writes through Grafana, behind a front | all refused | all refused |
 
+The trace stores ran again at 03:28-04:23 UTC at ten times the estimated real span rate (150 spans a second for 20 minutes).
+
 | Traces | Tempo 3.1.1 | VictoriaTraces 0.13.0 |
 |---|---|---|
-| Spans stored of 135,000 sent | all | all |
-| Find by trace ID (s) | 0.026-0.141 | 0.010-0.022 |
-| Memory during the load, median / peak (MiB) | 209 / 314 | 91 / 106 |
-| Disk per span | at most 345 B | 89 B |
-| Viewer through Grafana, no front | read the config, reached a lifecycle call | every probe refused |
+| Spans stored of 180,000 sent | all | all |
+| Find by trace ID (s) | 0.022-0.054 | 0.009-0.013 |
+| Search, limit 20 (s) | 0.011-0.016 | 0.067-0.092 (its experimental Tempo API) |
+| Memory during the load, median / peak (MiB) | 173 / 316 | 71 / 93 |
+| Memory peak over the whole run, searches over every trace included (MiB) | 734 | 106 |
+| Disk per span | about 500 B | about 97 B |
+| Viewer through Grafana, stock | read the config; a POST changed a partition's state | every probe refused |
+| Viewer through Grafana, with `http_api_prefix: /tempo` | only the query API answered | |
+| Finished release | yes | no |
 
 ## Not yet tested
 
-Memory at the real rate over 7 days, a catch-up after an outage, crash and outage loss, expiry, the real alert timers with a real Discord post, and the trace stores at ten times the real span rate. The 7-day run covers them before this record is accepted.
+Memory at the real rate over 7 days, a catch-up after an outage, crash and outage loss, expiry, the real alert timers with a real Discord post, and Tempo's memory under a lower cap. The 7-day run covers them before this record is accepted.
