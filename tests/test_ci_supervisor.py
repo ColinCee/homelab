@@ -8,7 +8,6 @@ import subprocess
 import tarfile
 import threading
 import urllib.error
-from collections import Counter
 from pathlib import Path
 from typing import ClassVar
 
@@ -753,10 +752,6 @@ def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
     )
     state.waits = {9: sup.Wait("octo/other", 0.0)}
     state.launches[1].repo = "octo/product"  # product CI holds one build VM
-    peer = sup.Peer("token", pc_slots=2)
-    peer.pc_heard = 100.0
-    monkeypatch.setattr(sup, "PEER", peer)
-    monkeypatch.setattr(sup, "PEER_DIR", tmp_path / "peer")
     machines = tmp_path / "machines.json"
     sup.write_status(machines, sup.status(state, 100.0, github_ok=True, mem_available=9000))
     monkeypatch.setattr(sup, "STATUS_FILE", machines)
@@ -779,9 +774,6 @@ def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
         "queued": 1,
         "held_for_memory": 0,
         "in_use_other_repos": 1,
-        "pc_up": 1,
-        "pc_slots": 2,
-        "pc_in_use": 0,
     }
     assert b"octo" not in answer.lower()
 
@@ -1626,31 +1618,26 @@ def test_the_light_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, te
     assert sup.light_slot_count() == slots
 
 
-def _install_counts(etc: Path, **files: str) -> tuple[str, str]:
-    """The light slots and role install-host.sh would write for a host folder with these files."""
+def _install_light_slots(etc: Path, **files: str) -> str:
+    """The light slots install-host.sh would write for a host folder with these files."""
     for name, text in files.items():
         (etc / name.replace("_", "-")).write_text(text)
     script = Path(__file__).parent.parent / "ci-runner" / "slots.sh"
     env = {"PATH": os.environ["PATH"], "etc": str(etc)}
-    out = subprocess.run(
-        ["bash", "-c", f'set -euo pipefail; source "{script}"; echo "$LIGHT_SLOTS $ROLE"'],
+    return subprocess.run(
+        ["bash", "-c", f'set -euo pipefail; source "{script}"; echo "$LIGHT_SLOTS"'],
         env=env,
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.split()
-    return out[0], out[1]
+    ).stdout.strip()
 
 
 @pytest.mark.parametrize(("have", "want"), [("7", "10"), ("12", "12"), ("lots", "10")])
 def test_install_raises_the_beelinks_light_slots_to_the_repos_minimum_and_keeps_more(
     tmp_path, have, want
 ) -> None:
-    assert _install_counts(tmp_path, light_slots=have, role="beelink") == (want, "beelink")
-
-
-def test_install_leaves_the_pc_with_no_light_slots(tmp_path) -> None:
-    assert _install_counts(tmp_path, light_slots="7", role="pc") == ("0", "pc")
+    assert _install_light_slots(tmp_path, light_slots=have) == want
 
 
 def test_an_old_last_repo_file_with_the_repo_alone_still_loads(monkeypatch, tmp_path) -> None:
@@ -2583,38 +2570,6 @@ def test_the_light_standby_keeps_its_memory_for_its_older_light_job(host, monkey
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     assert stopped == []  # its light job came first; the build waits
     assert started == [] and state.held == {2: "o/ok"}
-
-
-def test_an_idle_pc_runner_covers_a_young_job_and_stands_in_for_the_standby(
-    host, monkeypatch
-) -> None:
-    queue, started, _ = host
-    queue(jobs=2, free_mib=1 << 20)
-    monkeypatch.setattr(sup, "PEER", sup.Peer("token"))
-    monkeypatch.setattr(sup, "peer_ready", lambda now: Counter({("o/ok", ""): 1}))
-    state = sup.State()
-    sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
-    # One job is the PC runner's; one VM boots for the other, and no standby.
-    assert started == [("o/ok", 4096, False)]
-    assert sup.PEER.wants == ()  # type: ignore[union-attr]
-    # A job still waiting past PEER_COVER_SECONDS is booted for here.
-    state.launches.clear()
-    started.clear()
-    queue(jobs=1, free_mib=1 << 20)
-    sup.tick(None, state, ["o/ok"], float(sup.PEER_COVER_SECONDS))  # type: ignore[arg-type]
-    assert started == [("o/ok", 4096, False)]
-
-
-def test_the_pc_door_learns_the_newest_auto_kaizen_builds_label(host, monkeypatch) -> None:
-    label = "fc-cache-colincee--servo"
-    monkeypatch.setattr(
-        sup,
-        "find_queued",
-        lambda gh, repo: [sup.Job(repo, 7, "build", (*sup.RUNNER_LABELS, label))],
-    )
-    monkeypatch.setattr(sup, "PEER", sup.Peer("token"))
-    sup.tick(None, sup.State(), [sup.LIVE_REPO], 0.0)  # type: ignore[arg-type]
-    assert sup.PEER.last == (sup.LIVE_REPO, label)  # type: ignore[union-attr]
 
 
 def test_the_console_reader_keeps_only_exact_memory_lines() -> None:

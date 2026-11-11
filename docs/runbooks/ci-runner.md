@@ -1,7 +1,6 @@
 # CI runner (Firecracker)
 
-CI for Colin's private repositories, each job in its own throwaway Firecracker microVM on the Beelink, and Auto
-Kaizen's builds also on Colin's PC when it gives slots ([PC build slots](#pc-build-slots)). Public repositories use
+CI for Colin's private repositories, each job in its own throwaway Firecracker microVM on the Beelink. Public repositories use
 GitHub-hosted runners; the deploy runner is separate ([Deploying services](deploying-services.md)). How fast it is:
 [CI runner performance](../ci-runner-performance.md).
 
@@ -98,7 +97,7 @@ can see how many are free:
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1, "queued": 0, "held_for_memory": 0,
- "in_use_other_repos": 1, "pc_up": 1, "pc_slots": 6, "pc_in_use": 2}
+ "in_use_other_repos": 1}
 ```
 
 Fields are as in [`machines.json`](#status-files); `in_use_other_repos` counts build VMs running other repos' jobs.
@@ -143,13 +142,11 @@ Fine-grained tokens): within a minute its `homelab-fc` jobs get VMs. Nothing cha
 
 ### Changing the Beelink while jobs run
 
-A change goes in by merging it. Within a minute or two each host takes it (`homelab-ci-update.timer` runs
-`update.sh --follow`): the Beelink reads main's commit, and the PC reads the commit and job image the Beelink runs,
-so it never takes a commit before its image is built. A code change is live on both in about 2 minutes; one that
-rebuilds the image, in about 5. `ci-runner/update-hosts.sh`, from Colin's PC, runs that pass on both now and shows
-what it did. `update.sh` refuses a commit not on main or older than the installed one, names the pull requests
+A change goes in by merging it. Within a minute or two the Beelink takes it (`homelab-ci-update.timer` runs
+`update.sh --follow`, which reads main's commit). A code change is live in about 2 minutes; one that rebuilds the
+image, in about 5. `ci-runner/update-beelink.sh`, from Colin's PC, runs that pass now and shows what it did. `update.sh` refuses a commit not on main or older than the installed one, names the pull requests
 each install ships (the Control room links them), and writes `/etc/homelab-ci/commit` last, so that file says how
-current a host is.
+current the Beelink is.
 
 - **Running jobs carry on.** Each VM is its own systemd unit (`homelab-ci-vm-<runner name>`), and a restarted
   supervisor takes the running VMs back in seconds.
@@ -159,14 +156,13 @@ current a host is.
   public address in one transaction, so running VMs never see it unblocked.
 - **A change whose install or image fails twice** is tried again an hour after its last failure. A second `install-host.sh` waits
   for the first and names it.
-- **Going back** is a hand step on each host, Beelink first, which pins the host there until
+- **Going back** is a hand step, which pins the Beelink there until
   `sudo rm /etc/homelab-ci/pinned`: `sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>`.
-- **Kernel upgrade:** the VMs boot the Beelink's kernel, so rebuild by hand (`sudo ci-runner/build-rootfs.sh`, then
-  delete `/var/lib/homelab-ci/images/commit` so the PC takes it).
+- **Kernel upgrade:** the VMs boot the Beelink's kernel, so rebuild by hand (`sudo ci-runner/build-rootfs.sh`).
 - **Version upgrade:** a stale hash fails CI (`scripts/versions_hash.py`), which prints the right one; a passing
   non-major bump merges itself. Run the audit.
 - **Stopping every VM** on purpose: `sudo ci-runner/stop-vms.sh`.
-- **First time on a host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
+- **First time on a new host**, `update.sh` is not there yet: run `sudo ci-runner/install-host.sh` once from a checkout
   of main; the first update then rebuilds the image (several minutes).
 - **Run any wait on the Beelink as a named systemd unit**, never a loop on your own connection.
 
@@ -175,7 +171,7 @@ current a host is.
 | File | Default | Sets |
 |---|---|---|
 | `/etc/homelab-ci/slots` | 5 | Build VMs at once |
-| `/etc/homelab-ci/light-slots` | 5 (none while the file is missing); on the Beelink at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered; 0 on the PC | Light VMs at once |
+| `/etc/homelab-ci/light-slots` | 5 (none while the file is missing); at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered | Light VMs at once |
 | `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 3, 1, 1 (0 for none) | VMs kept booted and waiting; a build standby always has 4 vCPUs |
 | `/etc/homelab-ci/memory-reserve-mib` | 3072 | Memory left for the home's services |
 
@@ -203,7 +199,7 @@ function named.
 
 | File | Holds | Code |
 |---|---|---|
-| `/var/lib/homelab-ci/status/machines.json` (0644, replaced after every poll) | Slots, VMs busy and waiting ready, cache disks, free memory, jobs queued and held, the PC's slots, the last load test. Counts and repo names only | `status` |
+| `/var/lib/homelab-ci/status/machines.json` (0644, replaced after every poll) | Slots, VMs busy and waiting ready, cache disks, free memory, jobs queued and held, the last load test. Counts and repo names only | `status` |
 | `status/waits.jsonl` (0644, 30 days) | One line per job that waited, when it stops: seconds per kind of wait and the reason for the longest | `wait_kind` |
 | `status/live.json` | Each running auto-kaizen Builder's and Reviewer's latest console line (auto-kaizen's `docs/live-view.md`) | `LIVE_LINE` |
 | `status/sessions/<runner name>.jsonl` (root only, 30 MB cap, 30 days) | Auto-kaizen agents' whole sessions for the Control room's chat page (auto-kaizen's `docs/live-session.md`) | `SESSION_LINE` |
@@ -218,7 +214,6 @@ queued job not started yet, and `github_ok` is false when the last poll failed o
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
  "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "small_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0, "queued": 0, "in_use_repos": {"ColinCee/example": 1}, "draining": false,
- "pc": {"up": true, "slots": 6, "in_use": 2},
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
 
@@ -261,60 +256,6 @@ expected, such as a burst of tasks on full slots. The "Kaizen's Watcher stopped 
 Watcher's job and Auto Kaizen's longest job have waited for a VM: a waiting job means a capacity problem, none means
 GitHub is not starting jobs. No VM starts while every poll fails, so "CI supervisor's poll keeps failing" fires
 after 10 failures in a row for 2 minutes.
-
-## PC build slots
-
-Colin's gaming PC gives Auto Kaizen extra build slots from a Hyper-V Ubuntu VM, `kaizen-ci` (VHDX on D:, nested
-virtualisation, its own NAT switch 192.168.250.0/24, no shared folders or guest file copy). It runs the same
-Firecracker VMs and network rules (`install-host.sh` with `ROLE=pc`) and keeps one idle registered runner per slot it
-gives, so GitHub hands a `homelab-fc` build to whichever it picks. Light jobs stay on the Beelink.
-
-- **No GitHub key in the guest.** It reaches the Beelink only as `ci-peer` over SSH on port 2222 of the Beelink's
-  Tailscale address (Tailscale SSH answers port 22 and would skip the forced command), forced into `socat` to the
-  supervisor's socket. Through it the Beelink registers the PC's `pc-<slot>-<time>` runners (at most
-  `/etc/homelab-ci/peer-slots-max`), reads their VMs' live lines, sessions and handoff asks with the same checks as a
-  local VM's, files their outboxes and sends cache disks; the PC also asks which commit and image to run. A PC
-  runner still offline 10 minutes after registering, or idle 45 minutes, is deleted (`peer_*` in the supervisor).
-- **Image:** copied from the Beelink compressed (about 1.2 GB, about 2 minutes at the 10 MB/s measured between
-  them, at most 4 an hour) and used only if it hashes to the Beelink's `images/sha256`. Until it lands, new PC VMs
-  boot the old image.
-- **Capacity:** on Windows, `D:\kaizen-ci\kaizen-pc.ps1 6` (slots), `off` (finish running jobs, then power the guest
-  off and give its RAM back) or `on` (the last number). The guest holds 4 vCPU and 4 GiB per VM; its own size is
-  set once in Hyper-V for the most slots it will give.
-- **Gaming:** `keeper.ps1`, run by `keeper-tray.pyw` from Colin's Startup folder (a tray dot: green busy, amber
-  paused, grey off, red restarting; its menu sets the slots or quits), gives 0 slots while a full-screen app has the
-  screen for 15 s or another `gpu` lease is held, caps the guest at 10% of the CPU, and gives the slots back after 5
-  quiet minutes. The tray app judges full screen (Windows' flag, or the front window covering its monitor, so a
-  full-screen video pauses jobs too) and must be running, or nothing pauses. GPU load is no signal: the desktop alone
-  sits near 30%. Ready runners stop at once; a job still running after 20 minutes is stopped and the Watcher reruns
-  it as machine trouble. `lease free --force --name kaizen-ci` powers the guest off at once. Its lease's status, after
-  `kaizen-ci` in the band above Claude's prompt, is the PC runners busy/online (`‖` while paused).
-- **Task cap:** the keeper sets auto-kaizen's `KAIZEN_TASK_SLOTS` (with Colin's `gh`) to 5 plus the PC VMs up (down
-  at once, up after 10 minutes). If the PC dies with it raised, extra tasks wait for a machine;
-  `gh variable set KAIZEN_TASK_SLOTS --body 5 -R ColinCee/auto-kaizen` sets it back.
-
-Setting it up (the Hyper-V VM, its first admin step and Colin's sign-in are his; the rest an agent does):
-
-1. The guest: Ubuntu 24.04 cloud image as a Gen2 VM with `Set-VMProcessor -ExposeVirtualizationExtensions $true`,
-   static memory of 2 GiB plus 4.25 GiB per slot it will ever give, and Colin in Hyper-V Administrators (the
-   keeper starts it and caps its CPU).
-2. In the guest, from a checkout of `main`: `sudo apt install docker.io` (its network rules need Docker's chain),
-   then `sudo ROLE=pc SLOTS=<most slots> REASON="homelab#<n>: <why>" ci-runner/install-host.sh`; the job image
-   comes from the Beelink with the first update. Then `ssh-keygen -t ed25519 -N "" -f /etc/homelab-ci/peer-key`, the
-   door's address in `/etc/homelab-ci/peer` (`ssh://ci-peer@<the Beelink's Tailscale address>:2222`) and that port's
-   host key in root's `known_hosts`.
-3. On the Beelink: the guest's `peer-key.pub` as `/etc/homelab-ci/peer.pub`, the PC's Tailscale address (what the
-   guest's traffic leaves Windows as) in `/etc/homelab-ci/peer-from`, then
-   `sudo PEER_SLOTS=<most slots> REASON=... ci-runner/install-host.sh` (it opens the door: user, keys, sshd).
-4. On Windows: the `lease` command from ColinCee/agents (`npm run install-lease`, a version with `--status`),
-   `ci-runner/pc/keeper.ps1`, `kaizen-pc.ps1` and `keeper-tray.pyw` copied to `D:\kaizen-ci`, a Startup-folder
-   `kaizen-ci-keeper.vbs` with `CreateObject("WScript.Shell").Run "uvw run --no-project --quiet --python 3.14
-   --with pystray --with pillow D:\kaizen-ci\keeper-tray.pyw", 0`, `gh` signed in as Colin, then
-   `kaizen-pc.ps1 <slots>`. Check `pc-*` runners show online in auto-kaizen's runner list before trusting the cap.
-
-Switching it off for good: `kaizen-pc.ps1 off`, wait for the guest to power off, choose Quit on the tray dot,
-remove `kaizen-ci-keeper.vbs` from the Startup folder, `sudo PEER_SLOTS=0 ci-runner/install-host.sh` on the Beelink
-(closes the door), and set the task cap to 5.
 
 ## Design
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Bring this CI host to homelab's main every minute (the PC: to what the Beelink runs)
+Description=Bring this CI host to homelab's main every minute
 
 [Timer]
 OnBootSec=1min
