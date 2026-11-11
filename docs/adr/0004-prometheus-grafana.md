@@ -25,10 +25,10 @@ Prometheus stores metrics and runs the rules, Grafana shows every store from fil
 
 The log store and the trace store are each one of two, picked by `LOG_STORE` (Loki or VictoriaLogs) and `TRACE_STORE` (Tempo or VictoriaTraces) in the stack's `.env.example`. Each store's folder holds all that differs: its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs, the Home dashboard in its query language.
 
-The pick, by the same rule, is VictoriaLogs for logs, and for traces VictoriaTraces, by a narrow margin a measurement at the real rate settles; `.env.example` sets both:
+The pick, by the same rule, is VictoriaLogs for logs and Tempo for traces, which `.env.example` sets:
 
 - Logs: both stores pass the musts and tie on workarounds and programs, so memory decides: VictoriaLogs held a median 363 MiB through a 30-day backfill and heavy queries, Loki 1,016 MiB (killed at a 1 GiB cap). VictoriaLogs also took 2.2 times less disk and searched 2.6 to 8.5 times faster over 7 and 30 days.
-- Traces: both stored every span at ten times the real rate. Stock Tempo let a Viewer read its config and change its state through Grafana, but its own `http_api_prefix` keeps Grafana to its query API, so both need no workaround and run as one program. Tempo is a finished release where VictoriaTraces is not, which counts only as a nice for traces; VictoriaTraces held at most 106 MiB where Tempo reached 734 MiB on searches over every trace, and takes about a fifth of the disk per span.
+- Traces: both stored every span at ten times the real rate. Stock Tempo let a Viewer read its config and change its state through Grafana, but its own `http_api_prefix` keeps Grafana to its query API, so both need no workaround and run as one program. Four hours on the live feed then settled it: Tempo held at most 361 MiB under a 512 MiB cap, and its compacted blocks take about the disk VictoriaTraces does per span (85 against 79 B). Upkeep decides: Tempo is a finished release, VictoriaTraces is not. VictoriaTraces stays one setting away; it was lighter in every run (at most 106 MiB), and Tempo reached 734 MiB on searches over every trace under a 1 GiB cap.
 
 Both picks rest on short runs, not the real rate over days; the 7-day run beside the live stack checks memory, crash loss and expiry before this record is accepted.
 

@@ -64,6 +64,19 @@ The trace stores ran again at 03:28-04:23 UTC at ten times the estimated real sp
 | Viewer through Grafana, with `http_api_prefix: /tempo` | only the query API answered | |
 | Finished release | yes | no |
 
+## On the live feed
+
+Run on 11 November 2026, 04:34-08:36 UTC: one test Alloy with the live scrapes and log pipeline, fanned out to two stores per layer, each alone under its own cap; traces at the estimated real rate of 15 spans a second; searches in 5 rounds, store order alternating.
+
+| | Tempo 3.1.1, 512 MiB cap | VictoriaTraces 0.13.0, 256 MiB cap |
+|---|---|---|
+| Spans stored of 206,472 sent | all | all |
+| Memory peak, searches included (MiB) | 361, no cap hit | 84, no cap hit |
+| Disk per span | 85 B in its compacted blocks, plus a rolling 43-72 MB of replaced ones | 79 B |
+| Viewer held to the query API | yes, with `http_api_prefix: /tempo` | yes |
+
+Prometheus stored every sample Alloy sent at 2.83 B a reading in its first 2-hour block, at most 93 MiB; VictoriaMetrics took 1.90 B and 74 MiB, gaps the pick rule does not reach. Loki's earlier shortfall was its own deduplication of identical lines, so both log stores pass; the live feed carried too few lines to re-measure disk per line. Grafana under a 320 MiB cap hit it often at 311 MiB, so it runs under 512 MiB.
+
 ## Not yet tested
 
-Memory at the real rate over 7 days, a catch-up after an outage, crash and outage loss, expiry, the real alert timers with a real Discord post, and Tempo's memory under a lower cap. The 7-day run covers them before this record is accepted.
+Memory over 7 days, a catch-up after an outage, crash and outage loss, expiry, and the real alert timers with a real Discord post. The 7-day run covers them before this record is accepted.

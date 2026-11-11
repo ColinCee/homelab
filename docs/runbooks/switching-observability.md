@@ -57,7 +57,7 @@ the start-up page away. Then delete the new stores' volumes:
 
 ```bash
 docker volume rm observability_prometheus-data observability_grafana-data observability_victorialogs-data \
-  observability_victoriatraces-data
+  observability_tempo-data
 ```
 
 Rollback works until OpenObserve's volume is deleted.
