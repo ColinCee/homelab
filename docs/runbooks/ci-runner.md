@@ -149,7 +149,7 @@ function named.
 | `/var/lib/homelab-ci/status/machines.json` (0644, replaced after every poll) | Slots, VMs busy and waiting ready, cache disks, free memory, jobs queued and held, the last load test. Counts and repo names only | `status` |
 | `status/waits.jsonl` (0644, 30 days) | One line per job that waited, when it stops: seconds per kind of wait and the reason for the longest | `wait_kind` |
 | `/var/lib/homelab-metrics/ci-waits.prom` | The longest-waiting job's seconds per kind, each workflow's longest queued job, busy VMs, failed polls | `homelab_ci_*` |
-| `/var/lib/homelab-metrics/ci-vm-memory.prom` | VMs ended, near full (over 80%) and out-of-memory kills by kind of job | `MEMORY_METRICS` |
+| `/var/lib/homelab-metrics/ci-vm-memory.prom` | VMs ended, near full (over 80%) and out-of-memory kills | `MEMORY_METRICS` |
 | `/etc/homelab-ci/waits.json` in each VM | How long its repo and label's queued jobs had waited and why | `vm_waits` |
 
 `machines.json` looks like this; `held_for_memory` counts jobs held for memory or a busy disk, `queued` every
@@ -166,7 +166,7 @@ The console reader keeps only lines in the exact memory format; everything else 
 
 When a VM ends, the journal says how much host memory it touched, what it wrote to the SSD, and what its job needed
 with its out-of-memory kills: `slot N: VM ended (exit 0), its memory peaked at X MiB of Y, it wrote Z MiB` and
-`slot N: <runner> (<kind>) needed at least X MiB of Y, K out-of-memory kills`. Its own lines are in
+`slot N: <runner> (build) needed at least X MiB of Y, K out-of-memory kills`. Its own lines are in
 `journalctl -t homelab-ci-vm`.
 
 ### Why a job waits

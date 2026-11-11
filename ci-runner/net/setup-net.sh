@@ -55,7 +55,7 @@ esac
 # The rules and the public address in one transaction, so running VMs never see the blocked
 # address set empty. Without the address, rules already in place are kept; on a first start
 # they load without it, and run-vm.sh refuses VMs until it is set.
-# Every fc-slot user that exists, not the slot counts, so a user left from a larger
+# Every fc-slot user that exists, not the slot count, so a user left from a larger
 # count stays walled off too.
 uids=$(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $3}' | paste -sd, -)
 slot_uids=${uids:+"add element inet homelab_ci slot_uids { $uids }"}

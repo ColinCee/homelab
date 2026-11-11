@@ -130,8 +130,8 @@ CONSOLE_LINE_MAX = 4096
 # What the job really needed (cache left out), the VM's memory and the kernel's out-of-memory
 # kills, from the VM's ci-memwatch. A job can print it too: it only skews the counts.
 MEM_LINE = re.compile(rb"HOMELAB-MEM 1 ([0-9]{1,7}) ([0-9]{1,7}) ([0-9]{1,9})")
-# Counts by kind of VM for OpenObserve (Alloy's textfile collector), and the share of its memory a
-# job may need before its kind counts as near full.
+# Counts of ended VMs for OpenObserve (Alloy's textfile collector), and the share of its memory a
+# job may need before its VM counts as near full.
 MEMORY_METRICS = Path("/var/lib/homelab-metrics/ci-vm-memory.prom")
 NEAR_FULL = 0.8
 # A VM starts only if the host's available memory, less the VM's size, still leaves this
@@ -417,9 +417,7 @@ def start_order(jobs: Iterable[Job], waited_since: Callable[[int], float], now: 
         return now - (job.queued_at or waited_since(job.id))
 
     def new(job: Job) -> bool:
-        if job.run_started or not on_build_label(job.labels):
-            return False
-        return waited(job) < FIRST_BUILD_WAIT_MAX
+        return not job.run_started and waited(job) < FIRST_BUILD_WAIT_MAX
 
     return sorted(jobs, key=lambda job: (new(job), job.id))
 
@@ -703,15 +701,6 @@ def remember(path: Path, text: str) -> None:
         log(f"could not keep the last job's repo: {type(e).__name__}: {e}")
 
 
-def recalled_repo(path: Path, default: str) -> str:
-    """The repo kept in a last-repo file: its first line (older files add a label after it)."""
-    try:
-        lines = path.read_text().split()
-    except OSError:
-        return default
-    return lines[0] if lines else default
-
-
 def recalled_last_job() -> Want:
     """The last build job's repo and cache label ("" for none, as from an older file)."""
     try:
@@ -792,8 +781,8 @@ def forget(run: Launch) -> None:
         path.unlink(missing_ok=True)
 
 
-# Ended job VMs, near-full ones and out-of-memory kills, by kind; every kind from 0, so the
-# first kill after a restart still shows as an increase.
+# Ended job VMs, near-full ones and out-of-memory kills, each from 0, so the first kill after
+# a restart still shows as an increase. Labelled kind="build" so the series go on unbroken.
 MEMORY_COUNTS: dict[str, list[int]] = {"build": [0, 0, 0]}
 
 
