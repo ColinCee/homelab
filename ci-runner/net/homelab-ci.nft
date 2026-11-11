@@ -49,8 +49,16 @@ table inet homelab_ci {
     oifname "fc-tap*" counter drop
   }
 
+  # The slot users Firecracker runs as (setup-net.sh fills it). Firecracker needs no
+  # sockets of its own (its tap carries the VM's traffic), so one that escaped its VM
+  # may not open any connection from Beelink: loopback, LAN, tailnet or internet.
+  set slot_uids {
+    type uid
+  }
+
   chain output {
     type filter hook output priority filter; policy accept;
+    meta skuid @slot_uids counter drop
     # Beelink's own processes (tailscaled, host-network containers) may not
     # open connections to a VM either.
     oifname "fc-tap*" ct state established,related accept
