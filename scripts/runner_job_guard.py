@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refuse any job on the Beelink deploy runner except the listed workflows on main.
+"""Refuse any job on the Beelink deploy runner except the deploy workflow on main.
 
 Runs as the runner's job-started hook (ACTIONS_RUNNER_HOOK_JOB_STARTED), before the
 job's first step. A failing hook only marks the job failed: the runner still runs later
@@ -25,10 +25,8 @@ from dataclasses import dataclass
 
 REPOSITORY = "ColinCee/homelab"
 REF = "refs/heads/main"
-EVENTS = frozenset({"push", "schedule", "workflow_dispatch"})
-WORKFLOWS = frozenset(
-    f"{REPOSITORY}/.github/workflows/{name}@{REF}" for name in ("deploy.yaml", "server-health.yaml")
-)
+EVENTS = frozenset({"push", "workflow_dispatch"})
+WORKFLOWS = frozenset({f"{REPOSITORY}/.github/workflows/deploy.yaml@{REF}"})
 # Who may start a job here: Colin, and Renovate merging its own pull requests.
 # The actor is checked by ID. The triggering actor (who started a re-run) is only
 # available by name, so renaming any account means updating this list.
@@ -64,7 +62,7 @@ class Decision:
 
 
 def decide(env: Mapping[str, str]) -> Decision:
-    """Allow only the deploy workflows, from main, on this repository. Missing means no."""
+    """Allow only the deploy workflow, from main, on this repository. Missing means no."""
     for name in INJECTION_VARIABLES:
         if env.get(name):
             return Decision(False, f"{name} is set; workflow environment reached the hook")
@@ -79,9 +77,7 @@ def decide(env: Mapping[str, str]) -> Decision:
         return Decision(False, f"ref {ref or '(missing)'} is not {REF}")
     workflow = env.get("GITHUB_WORKFLOW_REF", "")
     if workflow not in WORKFLOWS:
-        return Decision(
-            False, f"workflow {workflow or '(missing)'} is not an allowed deploy workflow"
-        )
+        return Decision(False, f"workflow {workflow or '(missing)'} is not the deploy workflow")
     actor_id = env.get("GITHUB_ACTOR_ID", "")
     if actor_id not in ACTOR_IDS:
         actor = env.get("GITHUB_ACTOR", "") or "(missing)"

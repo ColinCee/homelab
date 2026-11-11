@@ -3,7 +3,6 @@ import pytest
 from scripts import runner_job_guard as guard
 
 DEPLOY = "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main"
-HEALTH = "ColinCee/homelab/.github/workflows/server-health.yaml@refs/heads/main"
 
 
 @pytest.fixture(autouse=True)
@@ -30,7 +29,7 @@ def _env(**overrides: str) -> dict[str, str]:
     "env",
     [
         _env(),
-        _env(GITHUB_EVENT_NAME="schedule", GITHUB_WORKFLOW_REF=HEALTH),
+        _env(GITHUB_EVENT_NAME="workflow_dispatch"),
         _env(
             GITHUB_ACTOR="renovate[bot]",
             GITHUB_ACTOR_ID="29139614",
@@ -44,7 +43,7 @@ def _env(**overrides: str) -> dict[str, str]:
         ),
     ],
 )
-def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
+def test_allows_the_deploy_workflow_on_main(env: dict[str, str]) -> None:
     assert guard.decide(env).allowed
 
 
@@ -52,6 +51,7 @@ def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
     ("env", "reason"),
     [
         (_env(GITHUB_EVENT_NAME="pull_request_target"), "event"),
+        (_env(GITHUB_EVENT_NAME="schedule"), "event"),
         (_env(GITHUB_REF="refs/heads/feature"), "ref"),
         (
             _env(GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/x"),
@@ -60,6 +60,12 @@ def test_allows_the_deploy_workflows_on_main(env: dict[str, str]) -> None:
         (
             _env(
                 GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/evil.yaml@refs/heads/main"
+            ),
+            "workflow",
+        ),
+        (
+            _env(
+                GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/server-health.yaml@refs/heads/main"
             ),
             "workflow",
         ),

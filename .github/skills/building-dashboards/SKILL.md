@@ -32,7 +32,7 @@ into the query instead (`[7d]`, `_time:1h`).
 ## Colour and order
 
 Each colour means one thing on every panel. The hexes live in `tests/test_dashboards.py` (`GROUPS`,
-`NOW`, `WEEK`, `NEUTRAL`), which checks both files against them and against the containers compose
+`NOW`, `WEEK`, `NEUTRAL`), which checks Home against them and against the containers compose
 starts.
 
 | Colour | Means |
@@ -51,7 +51,8 @@ starts.
 ## Queries
 
 - Metric names are as Alloy sends them, mixed case included (`node_memory_MemAvailable_bytes`).
-- Legends are `{{label}}`.- Use `max by (name)` for container metrics and `max()` for a single host value, which removes
+- Legends are `{{label}}`.
+- Use `max by (name)` for container metrics and `max()` for a single host value, which removes
   duplicate series; `name!=""` selects containers. The CI VMs are not containers: their series
   are `job="ci-vms"`.
 - A tile shows the last value; `graphMode: area` adds the trend.
