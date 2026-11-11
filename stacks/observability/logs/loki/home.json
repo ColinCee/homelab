@@ -1429,7 +1429,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "topk(20, sum by (short, msg) (count_over_time({container_name=~\".+\"} |~ \"(?i)error|fatal|panic|crit|critical|exception|limited\" | label_format body_text=\"{{ __line__ }}\" | level=~\"error|fatal|critical\" or body_text=~\"(?s)(.{0,40}\\\\b(ERROR|FATAL|PANIC|CRITICAL)\\\\b.*|.*(?i:level=(error|fatal|crit)).*|(\\\\w+\\\\.)+[A-Z]\\\\w*: .*|[A-Z]\\\\w*(Error|Exception): .*)\" | label_format msg=\"{{ trunc 80 (regexReplaceAll `[0-9a-f]*[0-9][0-9a-f]*` (regexReplaceAll `\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*` __line__ ``) `#`) }}\", short=\"{{ regexReplaceAll `^observability-|-1$` .container_name `` }}\" [1h])))",
+          "expr": "topk(20, sum by (short, msg) (count_over_time({container_name=~\".+\"} |~ \"(?i)error|fatal|panic|crit|critical|exception|limited\" | label_format body_text=\"{{ __line__ }}\" | level=~\"error|fatal|critical\" or body_text=~\"(?s)(.{0,40}\\\\b(ERROR|FATAL|PANIC|CRITICAL)\\\\b.*|.*(?i:level=(error|fatal|crit)).*|(\\\\w+\\\\.)+[A-Z]\\\\w*: .*|[A-Z]\\\\w*(Error|Exception): .*)\" | label_format msg=\"{{ trunc 80 (regexReplaceAll `[0-9a-f]*[0-9][0-9a-f]*` (regexReplaceAll `\\\\x1b\\\\[[0-9;]*m|^\\\\S*\\\\d{4}-\\\\d\\\\d-\\\\d\\\\d[T ][0-9:.,]+\\\\S*\\\\s*` __line__ ``) `#`) }}\", short=\"{{ regexReplaceAll `^observability-|-1$` .container_name `` }}\" [1h])))",
           "legendFormat": "",
           "queryType": "instant"
         }
