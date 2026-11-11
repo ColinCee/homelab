@@ -220,7 +220,7 @@ def _commit_all(repo_root: Path) -> str:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "init", "-q")
-    for name in ("kaizen-control-room", "observability"):
+    for name in ("gateway", "observability"):
         _make_stack(tmp_path, name)
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts" / "deploy.py").write_text("", encoding="utf-8")
@@ -230,12 +230,12 @@ def repo(tmp_path: Path) -> Path:
 
 def test_a_change_to_one_stack_selects_only_that_stack(repo: Path) -> None:
     before = _git(repo, "rev-parse", "HEAD")
-    (repo / "stacks" / "kaizen-control-room" / "compose.yaml").write_text(
+    (repo / "stacks" / "gateway" / "compose.yaml").write_text(
         "services: {app: {image: new}}\n", encoding="utf-8"
     )
     _commit_all(repo)
 
-    assert deploy.changed_stacks(repo, before) == ("kaizen-control-room",)
+    assert deploy.changed_stacks(repo, before) == ("gateway",)
 
 
 def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
@@ -259,7 +259,7 @@ def test_deploys_changed_stacks_and_records_the_commit(
     output = state.with_name("github-output")
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     state.write_text(_git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
-    (repo / "stacks" / "kaizen-control-room" / "compose.yaml").write_text(
+    (repo / "stacks" / "gateway" / "compose.yaml").write_text(
         "services: {app: {image: new}}\n", encoding="utf-8"
     )
     head = _commit_all(repo)
@@ -268,13 +268,13 @@ def test_deploys_changed_stacks_and_records_the_commit(
     assert deploy.run(repo, (), last_deployed=state, runner=runner) == 0
 
     composed = {command[command.index("-f") + 1] for command, _ in calls if "-f" in command}
-    assert composed == {str(repo / "stacks" / "kaizen-control-room" / "compose.yaml")}
+    assert composed == {str(repo / "stacks" / "gateway" / "compose.yaml")}
     assert state.read_text(encoding="utf-8").strip() == head
     deployed, ready = output.read_text(encoding="utf-8").splitlines()
-    assert deployed == 'deployed=["kaizen-control-room"]'
+    assert deployed == 'deployed=["gateway"]'
     ready_at = json.loads(ready.removeprefix("ready_at="))
-    assert list(ready_at) == ["kaizen-control-room"]
-    assert datetime.fromisoformat(ready_at["kaizen-control-room"]).tzinfo is not None
+    assert list(ready_at) == ["gateway"]
+    assert datetime.fromisoformat(ready_at["gateway"]).tzinfo is not None
 
 
 def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
@@ -296,9 +296,9 @@ def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
 # What `docker compose config --format json` reports for each stack's networks and volumes.
 _COMPOSE_CONFIG = {
     "backup": {"volumes": {"data": {"name": "observability_data", "external": True}}},
-    "kaizen-control-room": {
+    "gateway": {
         "networks": {
-            "default": {"name": "kaizen-control-room_default"},
+            "default": {"name": "gateway_default"},
             "shared": {"name": "shared"},
         },
     },
@@ -348,18 +348,18 @@ def test_a_full_deploy_puts_the_pushs_changed_stack_first(stacks: Path) -> None:
 
     assert deploy.run(stacks, (), first_changed_since=before, runner=runner) == 0
 
-    assert _up_order(calls) == ["web", "backup", "kaizen-control-room", "observability"]
+    assert _up_order(calls) == ["web", "backup", "gateway", "observability"]
 
 
 def test_a_changed_stack_waits_for_the_stacks_creating_what_it_uses(stacks: Path) -> None:
-    # On a fresh host observability's external network exists only once the Control room
+    # On a fresh host observability's external network exists only once the gateway
     # creates it, and backup's external volume only once observability does.
     before = _change(stacks, "backup", "observability")
     runner, calls = _describing_runner()
 
     assert deploy.run(stacks, (), first_changed_since=before, runner=runner) == 0
 
-    assert _up_order(calls) == ["kaizen-control-room", "observability", "backup", "web"]
+    assert _up_order(calls) == ["gateway", "observability", "backup", "web"]
 
 
 @pytest.mark.parametrize("since", ["", "0" * 40])
@@ -368,4 +368,4 @@ def test_an_unknown_before_commit_keeps_the_name_order(stacks: Path, since: str)
 
     assert deploy.run(stacks, (), first_changed_since=since, runner=runner) == 0
 
-    assert _up_order(calls) == ["backup", "kaizen-control-room", "observability", "web"]
+    assert _up_order(calls) == ["backup", "gateway", "observability", "web"]

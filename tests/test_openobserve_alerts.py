@@ -190,13 +190,11 @@ def test_every_rule_posts_each_minute_to_alertmanager_alone() -> None:
 def test_the_old_destinations_and_templates_are_removed() -> None:
     fake = FakeOpenObserve()
     fake.destinations |= {
-        n: {"name": n} for n in ("homelab-shadow", "homelab-kaizen", "homelab-discord")
+        n: {"name": n} for n in ("homelab-shadow", "homelab-old", "homelab-discord")
     }
-    fake.templates |= {
-        n: {"name": n} for n in ("homelab-kaizen", "homelab-kaizen-kind", "someone-elses")
-    }
+    fake.templates |= {n: {"name": n} for n in ("homelab-old", "homelab-old-kind", "someone-elses")}
     changes = applied(CONFIG, fake)[1]
-    for name in ("homelab-shadow", "homelab-kaizen", "homelab-discord"):
+    for name in ("homelab-shadow", "homelab-old", "homelab-discord"):
         assert f"deleted destination {name}" in changes
     assert set(fake.templates) == {
         "homelab-alertmanager",

@@ -9,7 +9,7 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
 source "$here/versions.env"
-# Slot counts (slots.sh), written to /etc/homelab-ci below so the supervisor, network and slot users match:
+# The slot count (slots.sh), written to /etc/homelab-ci below so the supervisor, network and slot users match:
 #   sudo SLOTS=4 ci-runner/install-host.sh
 # shellcheck source=ci-runner/slots.sh
 source "$here/slots.sh"
@@ -36,8 +36,8 @@ if ! /usr/local/bin/firecracker --version 2>/dev/null | grep -q "Firecracker ${F
   install -o root -g root -m 0755 "$rel/jailer-${FIRECRACKER_VERSION}-x86_64" /usr/local/bin/jailer
 fi
 
-# One unprivileged user per slot, light slots too; the jailer drops to it.
-for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
+# One unprivileged user per slot; the jailer drops to it.
+for ((n = 0; n < SLOTS; n++)); do
   id "fc-slot$n" >/dev/null 2>&1 ||
     useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin "fc-slot$n"
 done
@@ -94,7 +94,7 @@ done
 systemctl daemon-reload
 systemctl enable --now homelab-ssd-wear.timer
 
-# The supervisor, the network rules and the slot counts take a restart. Running VMs carry
+# The supervisor, the network rules and the slot count take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the
 # rules reload in one transaction, so a restart takes seconds and cuts off nothing.
 changed() { ! cmp -s "$1" "$2"; }
@@ -105,9 +105,7 @@ for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
   "systemd/$service:/etc/systemd/system/$service"; do
   if changed "$here/${pair%%:*}" "${pair#*:}"; then restart=true; fi
 done
-for setting in "slots:$SLOTS" "light-slots:$LIGHT_SLOTS"; do
-  [[ "$(cat "/etc/homelab-ci/${setting%%:*}" 2>/dev/null)" == "${setting#*:}" ]] || restart=true
-done
+[[ "$(cat /etc/homelab-ci/slots 2>/dev/null)" == "$SLOTS" ]] || restart=true
 systemctl is-active --quiet "$service" || restart=true
 
 if ! $restart; then
@@ -129,7 +127,6 @@ else
   # repository access. Written before the network, which reads the slot count.
   install -d -o root -g root -m 0700 /etc/homelab-ci
   echo "$SLOTS" > /etc/homelab-ci/slots
-  echo "$LIGHT_SLOTS" > /etc/homelab-ci/light-slots
 
   install_vm_files
   install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
@@ -158,4 +155,4 @@ install -o root -g root -m 0644 "$here/systemd/homelab-ci-load-test.service" /et
 systemctl daemon-reload
 systemctl enable --now homelab-ci-update.timer
 
-echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots and $LIGHT_SLOTS light slots, $how."
+echo "Firecracker $(/usr/local/bin/firecracker --version | head -n 1 | awk '{print $2}'), $SLOTS slots, $how."

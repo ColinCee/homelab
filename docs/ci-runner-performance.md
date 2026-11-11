@@ -57,7 +57,7 @@ Per step (seconds):
 - **Tools in the image save the downloads** (`setup-node` 11 s → 5 s), but the
   setup actions still cost 4–5 s each while they restore GitHub's caches.
 - **The cache disk removes those restores** (9 s). It is built by a green push
-  to main, which pays about 12 s more to save it (auto-kaizen's 260 MB, 6 Nov).
+  to main, which pays about 12 s more to save it (260 MB, 6 Nov).
 - **The last stage** (8 s) is the actions unpacked in the image, no setup
   actions, `node_modules` copied from the cache disk when the lockfile matches
   main's, and `uv sync --no-install-project`.
