@@ -114,6 +114,7 @@ services:
       - grafana cli admin reset-admin-password --password-from-stdin < /run/secrets/grafana_admin_password && exec /run.sh
     environment:
       GF_SECURITY_ADMIN_USER: colin
+      # Still needed: it makes the login when the volume is new.
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
       # Encrypts the data sources' passwords in its volume, which provisioning writes again at each start, so a new key
       # needs nothing else; the default key is published.
