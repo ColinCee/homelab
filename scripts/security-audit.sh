@@ -51,10 +51,10 @@ ls -d ~/actions-runner*
 cat /sys/kernel/mm/ksm/run
 sudo nft list table inet homelab_ci | head -3
 sudo nft list table inet homelab_wall | head -3
-sudo ci-runner/tests/audit.sh
+# ci-runner/tests/audit.sh needs the CI supervisor stopped, so it runs after upgrades, not here.
 sudo bash ci-runner/tests/test-wall.sh
 
-if command -v gh >/dev/null; then
+if gh auth status >/dev/null 2>&1; then
   section "GitHub: runners, collaborators, hooks, deploy keys"
   gh api repos/ColinCee/homelab/actions/runners --jq '.runners[].name'
   gh api repos/ColinCee/homelab/collaborators --jq '.[].login'
@@ -63,4 +63,6 @@ if command -v gh >/dev/null; then
   section "Runners on other repos (should be empty): one has the deploy runner's power without its guard"
   gh api "users/ColinCee/repos?per_page=100" --jq '.[].name' | grep -vx homelab |
     xargs -I{} gh api repos/ColinCee/{}/actions/runners --jq '.runners[] | "{} \(.name)"'
+else
+  section "GitHub checks skipped: run this where gh is signed in"
 fi
