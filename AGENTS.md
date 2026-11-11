@@ -41,7 +41,7 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
 - Update the relevant operational doc when behavior changes. Keep necessary
   rationale beside its instructions or code; a decision between designs gets a
   record in `docs/adr/` (the recording-learnings skill).
-  Delete obsolete guidance (decision records stay; see above); archive only
+  Delete obsolete guidance and rewrite a decision record in place; archive only
   for a concrete retention need.
   Track future work in issues rather than another roadmap.
 - Docs may not grow past `docs-size.json` (`mise run docs:size`): cut first; if growth
