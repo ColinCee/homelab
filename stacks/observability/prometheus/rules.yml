@@ -346,6 +346,7 @@ groups:
             `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
           dashboard: *home
           value: '{{ $value }}'
+      # Only a store that took data in the last day: nothing sends spans while OBI is off.
       - alert: store-stopped
         expr: |
           sum by (job) (
@@ -355,6 +356,13 @@ groups:
             or rate(tempo_distributor_spans_received_total{job="traces"}[15m])
             or rate(vt_rows_ingested_total{job="traces"}[15m])
           ) == 0
+          and on (job) sum by (job) (
+            increase(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[1d])
+            or increase(loki_distributor_lines_received_total{job="logs"}[1d])
+            or increase(vl_rows_ingested_total{job="logs"}[1d])
+            or increase(tempo_distributor_spans_received_total{job="traces"}[1d])
+            or increase(vt_rows_ingested_total{job="traces"}[1d])
+          ) > 0
         for: 15m
         keep_firing_for: 10m
         labels:

@@ -242,6 +242,11 @@ CASES = {
             at(16, "new-container", posts("new-container", "1", name="byhand")),
         ],
     ),
+    "a store that was never sent data is not named": (
+        # Nothing sends spans while OBI is off.
+        [('vt_rows_ingested_total{job="traces"}', "0x50")],
+        [at(40, "store-stopped")],
+    ),
     "a store taking nothing is named, one still taking data is not": (
         [
             ('vl_rows_ingested_total{job="logs",type="opentelemetry"}', "0+60x10 600x30"),
