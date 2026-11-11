@@ -236,6 +236,9 @@ def test_rules_fire_hold_and_clear_as_the_standard_says(tmp_path: Path, case: st
         ],
     }
     (tmp_path / "test.yml").write_text(json.dumps(tests), encoding="utf-8")
+    # promtool runs as nobody, and pytest makes the folder for its owner only.
+    tmp_path.chmod(0o755)
+    (tmp_path / "test.yml").chmod(0o644)
     ran = promtool(tmp_path, "test", "rules", "/t/test.yml")
     assert ran.returncode == 0, ran.stdout + ran.stderr
 
