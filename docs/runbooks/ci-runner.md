@@ -12,13 +12,9 @@ fallback (those runs are billed and can be refused), and a pull-request job uses
 | `runs-on` | For | VM |
 |---|---|---|
 | `[self-hosted, linux, x64, homelab-fc]` | Builds and tests | 4 vCPU and 4 GiB alone, 2 and 2 GiB beside other jobs; the repo's cache disk |
-| `[..., homelab-fc-light]` | Auto Kaizen's merge and agent steps | 1 vCPU, 2 GiB, no cache disk, 3-hour timeout |
-| `[..., homelab-fc-small]` | A light job that runs no agent (peaks under 700 MiB) | 1 vCPU, 1 GiB |
-| `[..., homelab-fc-deploy]` | A merge's deploy | 1 vCPU, 1 GiB, a standby no other job can take |
 | add `fc-cache-<owner>--<name>` (lowercase) to a build | A job working on another served repo's code | That repo's cache disk, if it is served, private and has one; else none |
 
-Light, small and deploy jobs run in light slots of their own, so a merge waiting on CI never takes the slot CI
-needs, and a light VM never takes a build job. The light standby also takes small jobs, which then run at 2 GiB. A job that runs out of memory loses the greedy process, not the VM.
+A job that runs out of memory loses the greedy process, not the VM.
 GitHub can still hand a job without an `fc-cache-` label to a VM booted with one when both are queued in the same
 repo; that job then starts with the named repo's disk.
 
@@ -125,14 +121,12 @@ current the Beelink is.
 | File | Default | Sets |
 |---|---|---|
 | `/etc/homelab-ci/slots` | 5 | Build VMs at once |
-| `/etc/homelab-ci/light-slots` | 5 (none while the file is missing); at least `LIGHT_SLOTS_MIN` in [`slots.sh`](../../ci-runner/slots.sh), never lowered | Light VMs at once |
-| `/etc/homelab-ci/standbys`, `light-standbys`, `deploy-standbys`, `small-standbys` | 2, 3, 1, 1 (0 for none) | VMs kept booted and waiting; a build standby always has 4 vCPUs |
+| `/etc/homelab-ci/standbys` | 2 (0 for none) | VMs kept booted and waiting; a standby always has 4 vCPUs |
 | `/etc/homelab-ci/memory-reserve-mib` | 3072 | Memory left for the home's services |
 
-Change slot counts only through `install-host.sh`, so the network has a tap for every slot:
+Change the slot count only through `install-host.sh`, so the network has a tap for every slot:
 
-1. `sudo SLOTS=5 ci-runner/install-host.sh` (or `LIGHT_SLOTS=`; raising `LIGHT_SLOTS_MIN` and merging raises the
-   Beelink's). It makes the slot users and taps and restarts the supervisor.
+1. `sudo SLOTS=5 ci-runner/install-host.sh`. It makes the slot users and taps and restarts the supervisor.
 2. `sudo ci-runner/tests/audit.sh` must pass.
 
 The Beelink then load-tests the new count itself: `update.sh` starts `homelab-ci-load-test.service` when
@@ -141,10 +135,9 @@ The Beelink then load-tests the new count itself: `update.sh` starts `homelab-ci
 `/etc/homelab-ci/slots` by one, never below 3, which the next pass tests. Follow it with
 `journalctl -u homelab-ci-load-test`.
 
-With N build slots the VMs use up to 2 + 2N GiB on paper, plus 1 to 2 GiB per light slot, more than the host has.
-That works because a job touches far less than its size (about 1 GB) and a VM starts only when the host's
-`MemAvailable`, less the VM's size, still leaves the reserve, so builds get memory in start order and light VMs
-mostly wait.
+With N slots the VMs use up to 2 + 2N GiB on paper, more than the host has. That works because a job touches far
+less than its size (about 1 GB) and a VM starts only when the host's `MemAvailable`, less the VM's size, still
+leaves the reserve, so jobs get memory in start order.
 
 ### Status files
 
@@ -164,7 +157,7 @@ queued job not started yet, and `github_ok` is false when the last poll failed o
 
 ```json
 {"updated": 1793000000, "slots": 5, "in_use": 1, "standby": 1,
- "light_slots": 5, "light_in_use": 2, "light_standby": 1, "deploy_standby": 1, "small_standby": 1, "cache_disks": ["ColinCee/example"], "github_ok": true,
+ "cache_disks": ["ColinCee/example"], "github_ok": true,
  "mem_available_mib": 9216, "held_for_memory": 0, "queued": 0, "in_use_repos": {"ColinCee/example": 1}, "draining": false,
  "load_test": {"slots": 5, "passed": true, "ran": true, "line": "PASS 5 slots: ...", "at": 1793000000, "commit": "...", "test": "..."}}
 ```
@@ -186,9 +179,8 @@ journalctl -u homelab-ci-supervisor --since -1h | grep -E 'has waited|stopped wa
 
 | Line ends with | Means | Do |
 |---|---|---|
-| `all N build slots in use` (or `light`) | Every slot of its kind holds a VM; a light job adds `, one more kept for deploys` or `for small jobs` per slot kept for a standby not yet up | More slots, or shorter jobs |
+| `all N build slots in use` | Every slot holds a VM | More slots, or shorter jobs |
 | `memory (X MiB free above the R MiB reserve, a VM needs Y)` | Starting it would eat into the services' reserve | Fewer or smaller VMs, not more |
-| `an older light job waiting for memory` | Queued behind a 2 GiB light job held for memory | As memory |
 | `the disk (tasks waited on it P% of the last minute)` | Disk wait over 50%, or over 25% (then one VM a minute) | As memory |
 | `a VM booting for it` | Logged after 3 minutes only | Slow boots |
 | `a VM ready for it that GitHub has not given the job` | Its runner is online and idle; logged after 3 minutes only | GitHub is slow |
@@ -206,13 +198,11 @@ gets `stopped waiting after Xm, Ym since GitHub queued it` once it starts or is 
   thrown away with it. However the job ends, the VM ends within seconds; one left without a job is stopped about
   30 to 40 seconds after boot.
 - **VMs wait ready.** Standbys are kept booted and registered for the repos and labels likely next, so a job starts
-  in about a second instead of about 11. Build standbys follow the last build job, then each running one (a task's
-  Reviewer finds one booted while its Builder ran); each costs about 450 MB idle and is replaced every 45 minutes.
-  Standbys give way to waiting jobs, except the deploy and small ones, which a merge's deploy and a task's first step
-  need. Which boots when is `standby_wants` and the light, deploy and small counterparts in the supervisor.
-- **Oldest job first, with two exceptions.** A started task run's later jobs (its review, merge) go before a new
-  run's first build or other workflows' light jobs, for at most 10 or 5 minutes (`start_order`). GitHub, not the
-  supervisor, picks which of a repo's queued jobs a VM takes.
+  in about a second instead of about 11. Standbys follow the last job, then each running one (a run's next job
+  finds one booted while the one before it ran); each costs about 450 MB idle, is replaced every 45 minutes, and
+  gives way to waiting jobs. Which boots when is `standby_wants` in the supervisor.
+- **Oldest job first, with one exception.** A started run's later jobs go before a new run's first job, for at
+  most 10 minutes (`start_order`). GitHub, not the supervisor, picks which of a repo's queued jobs a VM takes.
 - **The home's services come first.** A VM starts only while it leaves the memory reserve and while tasks waited on
   the disk under half the last minute (one a minute over a quarter; `DISK_WAIT_LIMIT`). A VM never swaps: its memory
   cap also counts the host's cache of its disk ([`run-vm.sh`](../../ci-runner/run-vm.sh)). In the VM, `ci-trim-cache`

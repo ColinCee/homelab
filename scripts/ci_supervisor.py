@@ -89,9 +89,8 @@ DEFAULT_SLOTS = 5
 # Unchanged answers are free conditional requests, so polling often costs nothing.
 POLL_SECONDS = 2
 # A VM covers a queued job of its repo and label only while it is starting: until its runner
-# takes a job, and for at most this long. VMs start in seconds since the disk image is no
-# longer copied (homelab#759); 600 s, set while copies took minutes, made a busy VM hold back
-# the next job of its kind with slots free (5 Nov: a task's Reviewer behind its Builder).
+# takes a job, and for at most this long: longer, a busy VM holds back the next job of its
+# kind while slots are free.
 BOOT_GRACE_SECONDS = 120
 # Time for a VM to boot and connect. After it, a VM with no job while nothing is
 # queued for its repo (the job was cancelled, or another runner took it) is stopped.
@@ -221,7 +220,7 @@ class Job:
     queued_at: float = 0.0
     # Its workflow's name, "" when unknown.
     workflow: str = ""
-    # Its run already finished a job on the build label (a task's review after its build).
+    # Its run already finished a job on the build label.
     run_started: bool = False
 
     @property
@@ -285,7 +284,7 @@ class State:
         default_factory=lambda: ThreadPoolExecutor(ASK_THREADS, thread_name_prefix="ask")
     )
     # The repository and cache label of the last build job a VM started for: the standby
-    # boots for the same, so the next such job (a task's Builder, then its Reviewer) takes it.
+    # boots for the same, so the next such job of the run takes it.
     last_repo: str = ""
     last_label: str = ""
     # Repos that have had a job here (or have a cache disk): polled every poll, the rest
@@ -410,9 +409,9 @@ def on_build_label(labels: Iterable[str]) -> bool:
 
 def start_order(jobs: Iterable[Job], waited_since: Callable[[int], float], now: float) -> list[Job]:
     """Jobs in the order they get slots and memory: oldest first, except that a new run's
-    first build job waits behind later jobs of runs already started (a task's review), so a
-    task half done is not left behind newer tasks' builds. A job queued over
-    FIRST_BUILD_WAIT_MAX goes back to oldest first."""
+    first build job waits behind later jobs of runs already started, so a run half done is
+    not left behind newer runs. A job queued over FIRST_BUILD_WAIT_MAX goes back to oldest
+    first."""
 
     def waited(job: Job) -> float:
         return now - (job.queued_at or waited_since(job.id))
@@ -1078,9 +1077,9 @@ def reap(
             forget(run)
         with bookkeeping(run, "bookkeeping"):
             delete_runner(gh, run.repo, run.runner_id, run.runner_name)
-        # A task's next build job (its Reviewer after its Builder) asks for the same repo and
-        # cache label seconds after this one ends: the standby booting in the freed slot is
-        # for those, not for the last job started, so the next job need not wait for a boot.
+        # A run's next job often asks for the same repo and cache label seconds after this one
+        # ends: the standby booting in the freed slot is for those, not for the last job
+        # started, so the next job need not wait for a boot.
         if not run.standby:
             with bookkeeping(run, "bookkeeping"):
                 note_last_job(state, run.repo, run.label)
@@ -1519,7 +1518,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     # while a build job waits for a slot (one at a time while free slots outnumber them).
     waiting_builds = sum(n for n in waiting.values() if n > 0)
     # Each want gets one first; once all have one, a further standby waits for the most needed,
-    # so two tasks of the busiest repo starting builds together both find one booted.
+    # so two runs of the busiest repo starting jobs together both find one booted.
     wants = standby_wants(state, repos, private)
     uncovered = next((w for w in wants if all(r.want != w for r in standbys)), None)
     target = uncovered or (wants[0] if wants else None)
@@ -1553,8 +1552,8 @@ def with_job_ids(
     rank: Mapping[tuple[int, Want], int],
 ) -> list[tuple[int, Want]]:
     """Each planned start with the id of the job it is for: a want's first jobs in start
-    order not covered by a VM already on its way, so a task's review sharing a want with an
-    older goal owner gets memory at the review's place."""
+    order not covered by a VM already on its way, so a started run's job sharing a want with
+    an older job gets memory at its own place in start order."""
     taken = Counter(covered)
     paired: list[tuple[int, Want]] = []
     for want in starts:
@@ -1761,8 +1760,8 @@ def prune_waits(now: float) -> None:
 def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Want]:
     """The repos and cache labels build standbys boot for, most needed first: the last build
     job's (or the first polled repo's) once no VM runs it, then each running build job's,
-    oldest first (a task's Reviewer asks for its Builder's seconds after the Builder ends, even
-    when another task's build started in between). Booted for the cache label too, else a job
+    oldest first (a run's next job asks for the one before it seconds after it ends, even when
+    another run's job started in between). Booted for the cache label too, else a job
     asking for it never takes the standby and stops it as in the way. Each gets one standby
     first; any left under standby_count() go to the first, and give way to a want with none."""
     running = sorted(
