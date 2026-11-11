@@ -20,17 +20,26 @@ services:
       - no-new-privileges:true
     # The token is read from a file, so it stays out of the process list and
     # docker inspect.
-    command: ["tunnel", "run"]
+    # Its metrics for the observability stack's Alloy, which reaches it on observability-otlp.
+    command: ["tunnel", "--metrics", "0.0.0.0:2000", "run"]
     environment:
       TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
     secrets:
       - tunnel_token
     depends_on:
       - backend
+    networks:
+      - default
+      - observability-otlp
 
 secrets:
   tunnel_token:
     environment: TUNNEL_TOKEN
+
+networks:
+  # Owned by the observability stack; deploy it first on a fresh host.
+  observability-otlp:
+    external: true
 
 volumes:
   heatmap-data:

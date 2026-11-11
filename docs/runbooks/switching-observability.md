@@ -6,10 +6,13 @@ How the observability stack moves from OpenObserve to Prometheus, Grafana and th
 
 ## Before the merge
 
-1. Colin's choice: the 7-day run. The branch's stack runs beside the live one for 7 days as Compose project
-   `obs-shadow-new`, with no host ports, alerts to a local sink, restarts off, a 3 GiB slice and its own name for
-   the `observability-otlp` network, which the switch would otherwise find taken. It shows memory at the real rate, crash and outage loss, and expiry. ADR 0004 is set to Accepted only after
-   it, or after Colin decides to skip it.
+1. Colin's choice: the trial. The branch's stack runs beside the live one as Compose project `obs-trial`, with
+   [`trial.yaml`](../../stacks/observability/trial.yaml) (no host ports, alerts to a local sink, no restarts) under a
+   3 GiB `obs-trial.slice`. It shows memory at the real rate, crash and outage loss, and expiry. ADR 0004 is set to
+   Accepted only after it, or after Colin decides to skip it. Its stores write to the volumes the live stack will
+   use, so before the merge stop it and remove its containers, keeping those volumes:
+   `docker compose -p obs-trial ... -f compose.yaml -f trial.yaml down` (no `-v`). The switch then starts on what the
+   trial stored.
 2. Check the pick in `stacks/observability/.env.example` (`LOG_STORE`, `TRACE_STORE`) matches ADR 0004's. Set its
    status to Accepted and ADR 0001's to "Superseded by 0004", in this pull request.
 3. Wait for CI to pass, and for no CI job to run on the Beelink (`gh run list --status in_progress`).

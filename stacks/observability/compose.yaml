@@ -269,6 +269,31 @@ services:
       - ingest
       - otlp
 
+  # Traces and request rate, errors and duration for every program in a container, with no change to them, by eBPF
+  # (OpenTelemetry's OBI; obi/obi.yaml). It needs the host's processes and the kernel's tracing, so it runs
+  # privileged, and only when the `obi` profile is on (COMPOSE_PROFILES in .env.example). Sends both to Alloy.
+  obi:
+    image: otel/ebpf-instrument:v1.0.0@sha256:a68d70e934260f72540f157ccf4fb4adfa38f11de060d7d905696dad6a3fca02
+    profiles: [obi]
+    restart: unless-stopped
+    privileged: true
+    pid: host
+    # Its Go tracer failed to make its maps under 320 MiB.
+    mem_limit: 640m
+    environment:
+      OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
+      OTEL_EBPF_METRICS_FEATURES: application
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      # Spans are not linked across programs: that writes headers into their requests.
+      OTEL_EBPF_BPF_CONTEXT_PROPAGATION: disabled
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - ./obi/obi.yaml:/etc/obi/obi.yaml:ro
+    networks:
+      - otlp
+
   # Read-only Docker API for Alloy; a raw socket mount would be root-equivalent.
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d

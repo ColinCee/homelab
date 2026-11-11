@@ -1290,6 +1290,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "observability-obi-1"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "observability-grafana-users-1"
             },
             "properties": [
@@ -1731,6 +1746,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "observability-obi-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "observability-grafana-users-1"
                 },
                 "properties": [
@@ -2048,6 +2078,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "observability-obi-1"
                 },
                 "properties": [
                   {
@@ -2385,6 +2430,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "observability-obi-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "observability-grafana-users-1"
                 },
                 "properties": [
@@ -2697,6 +2757,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "observability-obi-1"
                 },
                 "properties": [
                   {
@@ -3175,6 +3250,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "observability-grafana-1"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#2a78d6"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "observability-obi-1"
                 },
                 "properties": [
                   {
@@ -4139,6 +4229,36 @@
                 "matcher": {
                   "id": "byName",
                   "options": "PrometheusBadConfig"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "store-down"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "store-stopped"
                 },
                 "properties": [
                   {

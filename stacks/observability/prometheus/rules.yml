@@ -322,3 +322,52 @@ groups:
             files.
           dashboard: *home
           value: '{{ $value }}'
+
+  # The stores themselves: a store down, or up and no longer taking what Alloy sends, loses data. The log and trace
+  # stores' own metrics come from Alloy's scrape of them (logs/*/alloy.alloy, traces/*/alloy.alloy); Alloy stopping is
+  # "Beelink metrics stopped".
+  - name: stores
+    interval: 1m
+    rules:
+      - alert: store-down
+        expr: min by (job) (up{job=~"logs|traces"}) == 0
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A store is down'
+          measure: 'Answering (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            Alloy holds what it cannot send for an hour, then drops it, so logs or traces from the outage are lost.
+          action: >-
+            Check `docker ps -a --filter name=observability-` and `docker logs --tail 50 observability-<job>-1`, then
+            `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: store-stopped
+        expr: |
+          sum by (job) (
+            rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[15m])
+            or rate(loki_distributor_lines_received_total{job="logs"}[15m])
+            or rate(vl_rows_ingested_total{job="logs"}[15m])
+            or rate(tempo_distributor_spans_received_total{job="traces"}[15m])
+            or rate(vt_rows_ingested_total{job="traces"}[15m])
+          ) == 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A store stopped taking data'
+          measure: 'Taken in the last 15 min, a second'
+          unit: ''
+          harm: >-
+            The store answers but stores nothing new, so what is happening now is missing from the dashboards and the
+            alerts that read it.
+          action: >-
+            Read `docker logs --tail 100 observability-alloy-1` for refused sends, then `docker logs --tail 100` the
+            store's own container (`observability-<job>-1`).
+          dashboard: *home
+          value: '{{ $value }}'

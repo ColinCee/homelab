@@ -49,9 +49,14 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
-def test_the_13_rules_and_the_two_on_prometheus_itself_run_each_minute() -> None:
+def test_the_13_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
     assert len(HOMELAB) == 13
-    assert set(RULES) - set(HOMELAB) == {"PrometheusRuleFailures", "PrometheusBadConfig"}
+    assert set(RULES) - set(HOMELAB) == {
+        "PrometheusRuleFailures",
+        "PrometheusBadConfig",
+        "store-down",
+        "store-stopped",
+    }
     assert all(g["interval"] == "1m" for g in GROUPS)
 
 
@@ -62,8 +67,11 @@ def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() ->
 
 
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
-    # The rules on Prometheus itself read its own scrape, not Alloy's.
-    assert set(RULES) - set(HOMELAB) == {n for n in RULES if n.startswith("Prometheus")}
+    # The rules on Prometheus itself read its own scrape, not Alloy's; the store rules read Alloy's.
+    assert {n for n in RULES if n.startswith("Prometheus")} == {
+        "PrometheusRuleFailures",
+        "PrometheusBadConfig",
+    }
     assert ALERTMANAGER["inhibit_rules"] == [
         {
             "source_matchers": ['alertname="beelink-metrics-stopped"'],
@@ -208,6 +216,18 @@ CASES = {
         [
             at(14, "new-container"),
             at(16, "new-container", posts("new-container", "1", name="byhand")),
+        ],
+    ),
+    "a store taking nothing is named, one still taking data is not": (
+        [
+            ('vl_rows_ingested_total{job="logs",type="opentelemetry"}', "0+60x10 600x30"),
+            ('tempo_distributor_spans_received_total{job="traces"}', "0+60x50"),
+            ('prometheus_tsdb_head_samples_appended_total{job="prometheus"}', "0+600x50"),
+        ],
+        [
+            # Flat from 10 min, so the 15-minute rate is 0 from 24, then 15 min of `for`.
+            at(38, "store-stopped"),
+            at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
         ],
     ),
     "metrics stopping is one alert with no labels": (

@@ -1,0 +1,6 @@
+# What OBI (../compose.yaml, obi) instruments: every program in a container, none of the host's own.
+# https://opentelemetry.io/docs/zero-code/obi/configure/service-discovery/
+discovery:
+  instrument:
+    - containers_only: true
+      exe_path: "*"

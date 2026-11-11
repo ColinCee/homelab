@@ -2,7 +2,7 @@
 # itself, for the rules on its own health (rules.yml, group "prometheus"), and Alertmanager, whose API only it and
 # the gateway may reach (../compose.yaml, alerting).
 global:
-  scrape_interval: 30s
+  scrape_interval: 15s
   evaluation_interval: 1m
 
 storage:

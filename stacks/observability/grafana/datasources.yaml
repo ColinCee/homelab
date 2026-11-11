@@ -18,7 +18,7 @@ datasources:
       httpMethod: POST
       prometheusType: Prometheus
       prometheusVersion: 3.16.0
-      timeInterval: 30s
+      timeInterval: 15s
       manageAlerts: false
   - name: Alertmanager
     uid: alertmanager

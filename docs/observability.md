@@ -50,7 +50,7 @@ and memory come from their slot cgroups (`job="ci-vms"`).
 
 Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
 label, and sends logs over OTLP to the log store (`stacks/observability/config.alloy`), with `container_name` as the
-stream. It skips the proxy's and Alloy's lines; `docker logs` still has them.
+stream, and the host's systemd journal as the container `journal` with each line's `unit`.
 
 To inspect a service, find its current container name (`docker ps --format '{{.Names}}'`) and query it in Grafana's
 Explore, on the Logs data source:
@@ -62,7 +62,7 @@ container_name:"<name>" ERROR                        VictoriaLogs (LogsQL)
 
 ## Metrics
 
-Prometheus receives metrics by remote write from the sources below, each scraped every 30 s (the flight-tracker probe
+Prometheus receives metrics by remote write from the sources below, each scraped every 15 s (the flight-tracker probe
 each minute). Alloy sends every metric they expose, so what a later fix needs is
 already kept; it drops none by name.
 
@@ -78,6 +78,11 @@ already kept; it drops none by name.
   `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, the backups' `homelab_backup_*` and
   `homelab_pc_backup_*`, and `homelab_probe_*` from `probes.py`.
 - **Alertmanager:** its own metrics (`job="alertmanager"`), such as posts that failed to reach Discord.
+- **The stores and cloudflared:** their own metrics (`job="logs"`, `"traces"`, `"cloudflared"`), for "A store is
+  down" and "A store stopped taking data". Home Assistant, CoreDNS and Caddy run on the host's network, which the
+  firewall keeps Alloy from reaching, so their metrics are not collected.
+- **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on, OBI's request rate, errors and
+  duration for every program in a container, named after its executable.
 - **Flight tracker:** Alloy's blackbox exporter probes the public
   `https://api.colincheung.dev/aircraft` every minute
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only

@@ -17,7 +17,7 @@ prometheus.scrape "host" {
   targets    = prometheus.exporter.unix.host.targets
   forward_to = [prometheus.remote_write.default.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
 }
 
 // ================================
@@ -55,7 +55,7 @@ prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
   forward_to = [prometheus.remote_write.default.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
   // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
   // time compresses better.
   honor_timestamps = false
@@ -92,7 +92,7 @@ prometheus.scrape "ci_vms" {
   targets    = discovery.relabel.ci_vms.output
   forward_to = [prometheus.relabel.ci_vms.receiver]
 
-  scrape_interval = "30s"
+  scrape_interval = "15s"
   // As for the containers above.
   honor_timestamps = false
 }
@@ -127,18 +127,6 @@ discovery.docker "containers" {
   host = "tcp://docker-socket-proxy:2375"
 }
 
-// The socket proxy logs every Alloy API request. It is left out here, before
-// tailing: a drop in relabel_rules only strips the labels and still ships the lines.
-discovery.relabel "docker_log_targets" {
-  targets = discovery.docker.containers.targets
-
-  rule {
-    source_labels = ["__meta_docker_container_name"]
-    regex         = "/.*docker-socket-proxy.*"
-    action        = "drop"
-  }
-}
-
 discovery.relabel "docker_logs" {
   targets = []
 
@@ -163,7 +151,7 @@ discovery.relabel "docker_logs" {
 
 loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
-  targets       = discovery.relabel.docker_log_targets.output
+  targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.docker_logs.rules
   forward_to    = [loki.process.docker.receiver]
 }
@@ -198,12 +186,35 @@ loki.process "docker" {
       span_id  = "span_id",
     }
   }
+}
 
-  // Alloy's own lines would feed back into what it ships.
-  stage.drop {
-    source     = "container_name"
-    expression = "alloy"
+// ================================
+// Host Logs (systemd journal)
+// ================================
+
+// The host's own services (Docker, Tailscale, the CI supervisor, the timers), as the container `journal` with each
+// line's unit, so the log store files them like a container's.
+loki.relabel "journal" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
   }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "host" {
+  path          = "/rootfs/var/log/journal"
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {
+    container_name = "journal",
+    instance       = constants.hostname,
+  }
+  forward_to = [otelcol.receiver.loki.logs.receiver]
 }
 
 // ================================
@@ -228,7 +239,7 @@ otelcol.processor.batch "logs" {
 // OTLP from programs (traces and their logs)
 // ================================
 
-// Programs send traces and logs here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to the
+// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to the
 // picked trace store's exporter `traces` (traces/<store>/alloy.alloy), logs to the log store with their trace and
 // span IDs, which Grafana links to the trace.
 otelcol.receiver.otlp "programs" {
@@ -236,15 +247,33 @@ otelcol.receiver.otlp "programs" {
     endpoint = "0.0.0.0:4318"
   }
   output {
-    traces = [otelcol.processor.batch.traces.input]
-    logs   = [otelcol.processor.batch.logs.input]
+    traces  = [otelcol.processor.batch.traces.input]
+    logs    = [otelcol.processor.batch.logs.input]
+    metrics = [otelcol.exporter.prometheus.programs.input]
   }
+}
+
+// Programs' metrics, OBI's request rate, errors and duration among them, go to Prometheus with the rest.
+otelcol.exporter.prometheus "programs" {
+  forward_to = [prometheus.remote_write.default.receiver]
 }
 
 otelcol.processor.batch "traces" {
   output {
     traces = [otelcol.exporter.otlphttp.traces.input]
   }
+}
+
+// ================================
+// Flight Tracker's tunnel (cloudflared)
+// ================================
+
+// Its own metrics: requests through the tunnel and its connections to Cloudflare.
+prometheus.scrape "cloudflared" {
+  targets         = [{ __address__ = "flight-tracker-cloudflared-1:2000" }]
+  job_name        = "cloudflared"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.default.receiver]
 }
 
 // ================================
@@ -266,7 +295,7 @@ prometheus.exporter.blackbox "flight_tracker" {
 prometheus.scrape "flight_tracker" {
   targets         = prometheus.exporter.blackbox.flight_tracker.targets
   forward_to      = [prometheus.remote_write.default.receiver]
-  // Each minute, not 30 s: every probe is a request to the public API (scripts/server-health.sh counts 1440 a day).
+  // Each minute, not 15 s: every probe is a request to the public API (scripts/server-health.sh counts 1440 a day).
   scrape_interval = "60s"
 }
 

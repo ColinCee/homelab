@@ -29,7 +29,7 @@ def test_only_prometheus_and_the_gateway_reach_alertmanager() -> None:
 
 
 def test_programs_that_send_traces_reach_alloy_alone() -> None:
-    assert members("otlp") == {"alloy"}
+    assert members("otlp") == {"alloy", "obi"}
     assert COMPOSE["networks"]["otlp"]["internal"] is True
 
 
@@ -80,3 +80,39 @@ def test_a_log_line_opens_its_trace_in_either_log_store() -> None:
         assert field["matcherRegex"] == "trace_id" and field["datasourceUid"] == "traces", store
         # `$$` keeps provisioning from expanding Grafana's own variable.
         assert field["url"] == "$${__value.raw}", store
+
+
+def test_obi_traces_every_container_only_when_turned_on() -> None:
+    obi = SERVICES["obi"]
+    assert obi["profiles"] == ["obi"] and obi["privileged"] is True
+    # Its Go tracer failed to make its maps under 320 MiB.
+    assert int(obi["mem_limit"].removesuffix("m")) >= 448
+    config = yaml.safe_load((STACK / "obi/obi.yaml").read_text(encoding="utf-8"))
+    assert config["discovery"]["instrument"] == [{"containers_only": True, "exe_path": "*"}]
+
+
+def test_tempo_caps_its_searches() -> None:
+    config = yaml.safe_load((STACK / "traces/tempo/tempo.yaml").read_text(encoding="utf-8"))
+    assert config["querier"]["max_concurrent_queries"] <= 4
+    assert config["query_frontend"]["search"]["max_result_limit"] <= 20000
+
+
+def test_the_trial_stores_into_the_volumes_the_live_stack_will_use() -> None:
+    class Loader(yaml.SafeLoader):
+        pass
+
+    # Compose's own tag for "take nothing from the file below".
+    Loader.add_constructor("!reset", lambda loader, node: [])
+    trial = yaml.load((STACK / "trial.yaml").read_text(encoding="utf-8"), Loader=Loader)
+    stores = {
+        "prometheus-data",
+        "loki-data",
+        "victorialogs-data",
+        "tempo-data",
+        "victoriatraces-data",
+    }
+    assert {k: v["name"] for k, v in trial["volumes"].items()} == {
+        k: f"observability_{k}" for k in stores
+    }
+    for service in trial["services"].values():
+        assert "ports" not in service or service["ports"] == []
