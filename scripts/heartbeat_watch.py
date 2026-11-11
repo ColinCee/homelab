@@ -67,7 +67,7 @@ def message(kind: str, successes: list[float], now: float, runs: str) -> str:
     return (
         f"<@{COLIN}> **Alert monitoring stopped**\n"
         f"The Beelink's heartbeat has not passed since {when}.\n"
-        "**Why it matters:** while it fails, an alert may never reach you: OpenObserve, "
+        "**Why it matters:** while it fails, an alert may never reach you: Prometheus, "
         "Alertmanager or the Beelink itself may be down.\n"
         f"**What to do:** open the latest run in {runs} to see which check failed; "
         "if none ran, the Beelink or its runner is down."

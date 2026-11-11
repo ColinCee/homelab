@@ -1,0 +1,11 @@
+// The log store when it is VictoriaLogs (../../compose.yaml mounts the chosen store's file beside config.alloy).
+otelcol.exporter.otlphttp "logs" {
+  client {
+    endpoint = "http://logs:9428/insert/opentelemetry"
+    // Alloy's OTLP sends each line's labels as attributes of the line, and VictoriaLogs makes streams only of
+    // resource attributes unless told.
+    headers = {
+      "VL-Stream-Fields" = "container_name",
+    }
+  }
+}

@@ -78,7 +78,7 @@ journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -
 
 `install-host.sh` also trims the SSD hourly, since the VMs' throwaway disks churn about 0.5 TB a day and untrimmed
 they slow every write, and on the Beelink installs `homelab-ssd-wear.timer`, which writes the SSD's wear to
-`ssd.prom` for OpenObserve every 15 minutes (`systemctl status homelab-ssd-wear.service`).
+`ssd.prom` for Prometheus every 15 minutes (`systemctl status homelab-ssd-wear.service`).
 
 The GitHub token is fine-grained, with Administration read and write (for one-job registrations) and Actions
 read. Store it without it reaching the screen or shell history:
@@ -141,7 +141,7 @@ leaves the reserve, so jobs get memory in start order.
 
 ### Status files
 
-The supervisor writes these for OpenObserve, `server-health.sh` and speed reports. What each field counts is in the
+The supervisor writes these for Prometheus, `server-health.sh` and speed reports. What each field counts is in the
 function named.
 
 | File | Holds | Code |
@@ -236,7 +236,7 @@ gets `stopped waiting after Xm, Ym since GitHub queued it` once it starts or is 
 | `audit.sh` | The gate: host settings, what a slot user could read or write after escaping a VM (the token, Docker, Colin's home, the image), that the image holds no keys, how a live Firecracker is confined, that a VM is told only its task, and the network test |
 | `test-network.sh` | A VM reaches GitHub, PyPI and npm, times out on every private address and the public one, cannot get out with another address, and cannot be reached from a container or the host |
 | `test-tools.sh` | Each baked-in tool runs as the runner user, and Docker builds, runs with a published port and serves a page. Run after `build-rootfs.sh` with the supervisor stopped (`sudo systemctl stop homelab-ci-supervisor`) and its VMs finished, since they outlive it (`sudo ci-runner/stop-vms.sh`): it boots in slot 0 |
-| `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and OpenObserve once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
+| `test-load.sh` | A VM in every slot at 2 vCPU and 2 GiB, flat out on CPU and memory, while timing Home Assistant and Grafana once a second; fails on a failed request or a worst response over `MAX_RESPONSE` (1 s) |
 
 Every quarter, and after every Firecracker, kernel or runner upgrade: run `audit.sh` and the
 [security audit](security-audit.md) checks.

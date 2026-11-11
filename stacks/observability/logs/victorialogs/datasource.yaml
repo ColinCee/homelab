@@ -1,0 +1,14 @@
+# Grafana reads VictoriaLogs through the gateway, never directly: Grafana passes every method and path to a plugin's
+# store. The plugin is installed by compose.yaml (grafana, GF_PLUGINS_PREINSTALL_SYNC).
+apiVersion: 1
+datasources:
+  - name: Logs
+    uid: logs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://gateway:5080/logs
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $AGENTS_PASSWORD
+    editable: false

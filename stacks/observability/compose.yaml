@@ -1,42 +1,97 @@
 services:
-  # Metrics, logs and alerts (docs/adr/0001-openobserve.md).
-  openobserve:
-    image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
+  # Metrics and the alert rules (prometheus/; docs/adr/0003-prometheus-grafana.md). Alloy writes to it.
+  prometheus:
+    image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 1g
+    # No published port: readers go through the gateway, since it serves admin calls beside its reads.
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    # Refused rules stop it at start, which fails the deploy's wait.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 30s
+      start_period: 60s
+      start_interval: 2s
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+
+  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0003). Each
+  # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
+  # the Home dashboard written in its query language; the services below mount the picked store's files.
+  logs:
+    extends:
+      file: logs/${LOG_STORE:?}/compose.yaml
+      service: logs
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    mem_limit: 1g
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+
+  traces:
+    extends:
+      file: traces/${TRACE_STORE:?}/compose.yaml
+      service: traces
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+
+  # Dashboards and Explore over every store, from Git (grafana/, logs/*/home.json). Anyone on Tailscale may view;
+  # edits and admin need the admin password, and provisioned dashboards and data sources refuse edits even then.
+  grafana:
+    image: grafana/grafana:13.3.0@sha256:488984b716c0862639f91a698adbe2862677a5a07bad42da5f03f3030883b205
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # 5080, the address alert posts, bookmarks and grafana.internal use.
     ports:
-      - "100.100.146.119:5080:5080"
-    # A fast 6-day load peaked at 1548 MiB; the real rate holds about 750 MiB.
-    mem_limit: 2g
+      - "100.100.146.119:5080:3000"
+    mem_limit: 512m
     environment:
-      ZO_ROOT_USER_EMAIL: root@homelab.internal
-      ZO_ROOT_USER_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
-      ZO_DATA_DIR: /data
-      ZO_COMPACT_DATA_RETENTION_DAYS: "30"
-      # At its defaults it confirms writes before saving them, and a kill lost the last few seconds (ADR 0001).
-      ZO_WAL_WRITE_QUEUE_ENABLED: "false"
-      ZO_WAL_FSYNC_DISABLED: "false"
-      # The trials' setup: a 512 MB cache, and the makers' flattening for performance.
-      ZO_MEMORY_CACHE_MAX_SIZE: "512"
-      ZO_INGEST_FLATTEN_LEVEL: "2"
-      # Its memory table (a quarter of the 2 GiB) held 10 minutes of the host's metrics before writing them out, and
-      # overflowed: refused writes. Two minutes fit.
-      ZO_MAX_FILE_RETENTION_TIME: "120"
-      # Its metric caches default to 128 MB and 100 MB; this small store needs far less.
-      ZO_METRICS_BLOCKS_CACHE_MAX_SIZE: "32"
-      ZO_METRICS_LABEL_CACHE_MAX_SIZE: "64"
-      # Merged files wait this long for queries still reading them before they are deleted; the default is 2 h.
-      ZO_COMPACT_DELETE_FILES_DELAY_MINUTES: "10"
-      ZO_TELEMETRY: "false"
-      # Alerts may post to Alertmanager by its name, and to the internet; any other private address is refused.
-      ZO_SSRF_ALLOWED_HOSTS: alertmanager
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_SERVER_ROOT_URL: http://beelink.tail4f465e.ts.net:5080
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/home.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # VictoriaLogs' data source, signed by its maker; unused while LOG_STORE is loki.
+      GF_PLUGINS_PREINSTALL_SYNC: victoriametrics-logs-datasource@0.34.0
+      # Go grows its heap to twice what is live by default.
+      GOMEMLIMIT: 400MiB
+      # Read by the data sources' provisioning, for the gateway.
+      AGENTS_PASSWORD: ${AGENTS_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
-      - openobserve-data:/data
+      - grafana-data:/var/lib/grafana
+      - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - ./logs/${LOG_STORE:?}/datasource.yaml:/etc/grafana/provisioning/datasources/logs.yaml:ro
+      - ./traces/${TRACE_STORE:?}/datasource.yaml:/etc/grafana/provisioning/datasources/traces.yaml:ro
+      - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./logs/${LOG_STORE:?}/home.json:/var/lib/grafana/dashboards/home.json:ro
+    depends_on:
+      - gateway
 
-  # Posts OpenObserve's alerts to Discord, repeats, clears and holds them back (alertmanager/alertmanager.yml).
+  # Posts Prometheus's alerts to Discord, repeats, clears and holds them back (alertmanager/alertmanager.yml).
   alertmanager:
     image: prom/alertmanager:v0.34.2@sha256:39d8bb3966c694a124428a3a88fbcffd40bd069129ecd47c059f8a3f17c55f3b
     restart: unless-stopped
@@ -51,7 +106,8 @@ services:
     cap_drop:
       - ALL
     mem_limit: 128m
-    # No published port: its API takes silences and alerts without a login. OpenObserve and Alloy reach it here.
+    # No published port: its API takes silences and alerts without a login. Prometheus and Alloy reach it here,
+    # readers through the gateway.
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     secrets:
@@ -61,9 +117,10 @@ services:
       # What it has posted, so a restart does not post firing alerts again.
       - alertmanager-data:/alertmanager
 
-  # How OpenObserve's readers reach it without root's login: each logs in here with its own and reads only its own
-  # paths (gateway/Caddyfile). Public stats on their network, server-health and agents on Tailscale.
-  openobserve-gateway:
+  # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
+  # only read paths (gateway/Caddyfile). Grafana and public stats on their networks, server-health and agents on
+  # Tailscale.
+  gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/etc/caddy/start.sh"]
@@ -77,9 +134,8 @@ services:
     ports:
       - "100.100.146.119:5081:5080"
     environment:
-      OPENOBSERVE_ROOT_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
-      OPENOBSERVE_STATS_PASSWORD: ${OPENOBSERVE_STATS_PASSWORD:?}
-      OPENOBSERVE_AGENTS_PASSWORD: ${OPENOBSERVE_AGENTS_PASSWORD:?}
+      STATS_PASSWORD: ${STATS_PASSWORD:?}
+      AGENTS_PASSWORD: ${AGENTS_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     tmpfs:
@@ -88,41 +144,11 @@ services:
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./gateway/start.sh:/etc/caddy/start.sh:ro
+      - ./logs/${LOG_STORE:?}/gateway.caddy:/etc/caddy/logs.caddy:ro
+      - ./traces/${TRACE_STORE:?}/gateway.caddy:/etc/caddy/traces.caddy:ro
     networks:
       - default
       - public-stats
-    depends_on:
-      - openobserve
-
-  # Makes OpenObserve's alerts and dashboards match openobserve/, then idles: `up --wait` fails the deploy on a
-  # container that exits, so a refused rule fails it and a finished run must not exit. A restart applies again.
-  openobserve-apply:
-    image: python:3.15.2-alpine@sha256:a0f2e268f2ce8f3709611a90054ec6a8ae31f6251f5896b8648b9bb99835e30a
-    restart: unless-stopped
-    command: ["sh", "-c", "python -I /apply/apply.py /apply/alerts.toml && touch /tmp/applied && exec sleep infinity"]
-    init: true
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    user: "65534:65534"
-    mem_limit: 64m
-    environment:
-      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
-    labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
-    healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/applied"]
-      interval: 60s
-      start_period: 110s
-      start_interval: 2s
-    tmpfs:
-      - /tmp
-    volumes:
-      - ./openobserve:/apply:ro
-    depends_on:
-      - openobserve
 
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
@@ -135,18 +161,20 @@ services:
       - DAC_READ_SEARCH
       - DAC_OVERRIDE
       - FOWNER
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy/config.alloy
+    # The folder: config.alloy and the picked stores' exporters load as one configuration.
+    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy
     # The `instance` label on every series; a container ID would change on each recreate.
     hostname: beelink
     environment:
       ALLOY_DEPLOY_MODE: docker
       # Go grows its heap to twice what is live by default; this keeps it a little above what is live.
       GOMEMLIMIT: 192MiB
-      OPENOBSERVE_PASSWORD: ${OPENOBSERVE_ROOT_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
+      - ./logs/${LOG_STORE:?}/alloy.alloy:/etc/alloy/logs.alloy:ro
+      - ./traces/${TRACE_STORE:?}/alloy.alloy:/etc/alloy/traces.alloy:ro
       - alloy-data:/var/lib/alloy/data
       - /proc:/rootproc:ro
       - /sys:/sys:ro
@@ -158,7 +186,9 @@ services:
     devices:
       - /dev/kmsg
     depends_on:
-      - openobserve
+      - prometheus
+      - logs
+      - traces
       - docker-socket-proxy
     networks:
       - default
@@ -233,8 +263,8 @@ services:
       FLIGHTS_URL: https://api.colincheung.dev/aircraft
       PUBLIC_STATS_URL: https://colincheung.dev/homelab.json
       PUBLIC_STATS_KEY: ${PUBLIC_STATS_KEY:?}
-      PROMETHEUS_URL: http://openobserve-gateway:5080/api/default/prometheus
-      PROMETHEUS_LOGIN: stats@homelab.internal:${OPENOBSERVE_STATS_PASSWORD:?}
+      PROMETHEUS_URL: http://gateway:5080/prometheus
+      PROMETHEUS_LOGIN: stats@homelab.internal:${STATS_PASSWORD:?}
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -248,12 +278,12 @@ services:
       - /tmp
     volumes:
       - ./public_stats.py:/public_stats.py:ro
-    # Its own network, shared with OpenObserve's gateway only, where its login reads one query; outbound, the
+    # Its own network, shared with the gateway only, where its login reads one query; outbound, the
     # internet.
     networks:
       - public-stats
     depends_on:
-      - openobserve-gateway
+      - gateway
 
 networks:
   docker-api:
@@ -266,5 +296,11 @@ secrets:
 
 volumes:
   alloy-data:
-  openobserve-data:
+  prometheus-data:
+  grafana-data:
   alertmanager-data:
+  # The stores' own, declared here for their folders' compose.yaml; only the picked ones are made.
+  loki-data:
+  victorialogs-data:
+  tempo-data:
+  victoriatraces-data:

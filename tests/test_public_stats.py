@@ -85,11 +85,11 @@ def test_a_login_logs_in_to_the_prometheus_api_only(monkeypatch: pytest.MonkeyPa
         return io.BytesIO(json.dumps(answer if prometheus else {"kpis": KPIS}).encode())
 
     monkeypatch.setattr(urllib.request, "urlopen", urlopen)
-    public_stats.gather("http://openobserve-gateway:5080/api/default/prometheus", "https://flights")
+    public_stats.gather("http://gateway:5080/prometheus", "https://flights")
     assert all(r.get_header("Authorization") is None for r in sent)
     monkeypatch.setenv("PROMETHEUS_LOGIN", "stats@homelab.internal:pw")
     sent.clear()
-    body = public_stats.gather("http://openobserve:5080/api/default/prometheus", "https://flights")
+    body = public_stats.gather("http://gateway:5080/prometheus", "https://flights")
     assert body["allUp"]
     query, flights = sent
     assert query.unredirected_hdrs["Authorization"] == "Basic c3RhdHNAaG9tZWxhYi5pbnRlcm5hbDpwdw=="

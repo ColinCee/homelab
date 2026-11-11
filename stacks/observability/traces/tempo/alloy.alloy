@@ -1,0 +1,6 @@
+// The trace store when it is Tempo (../../compose.yaml mounts the chosen store's file beside config.alloy).
+otelcol.exporter.otlphttp "traces" {
+  client {
+    endpoint = "http://traces:4318"
+  }
+}

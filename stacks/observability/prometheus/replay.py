@@ -1,0 +1,109 @@
+"""Replays rules.yml's rules over history and counts the Discord posts each would have made, for the
+noise budget in docs/observability.md ("Alerts"), which has the command.
+
+    replay.py [days] [rule ...]
+
+Reads Prometheus through the read-only gateway (GATEWAY_URL, default the Beelink's; GATEWAY_LOGIN,
+user:password). Runs each rule's query a minute apart and follows Prometheus and Alertmanager: a
+post once the query has returned for `for`, a repeat every 4 h (now) or 24 h (week) while it fires,
+and a "Cleared" once it has stayed empty for `keep_firing_for`. Inhibits are not replayed."""
+
+import base64
+import json
+import os
+import re
+import sys
+import time
+import urllib.parse
+import urllib.request
+from collections import defaultdict
+from pathlib import Path
+
+import yaml
+
+STEP = 60
+REPEAT = {"now": 4 * 3600, "week": 24 * 3600}
+RULES = Path(__file__).with_name("rules.yml")
+
+
+def seconds(duration: str) -> int:
+    match = re.fullmatch(r"(\d+)([smh])", duration)
+    if not match:
+        raise SystemExit(f"{duration}: not a duration like 10m")
+    return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
+
+
+def query_range(promql: str, start: int, end: int) -> list[dict]:
+    url = os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
+    query = urllib.parse.urlencode({"query": promql, "start": start, "end": end, "step": STEP})
+    login = base64.b64encode(os.environ["GATEWAY_LOGIN"].encode()).decode()
+    request = urllib.request.Request(
+        f"{url}/prometheus/api/v1/query_range?{query}", headers={"Authorization": f"Basic {login}"}
+    )
+    with urllib.request.urlopen(request, timeout=120) as response:
+        return json.load(response)["data"]["result"]
+
+
+def history(promql: str, start: int, end: int) -> dict[str, set[int]]:
+    """The minutes each series of the query returned, a day per request."""
+    series: dict[str, set[int]] = defaultdict(set)
+    while start < end:
+        stop = min(start + 86400, end)
+        for result in query_range(promql, start, stop):
+            key = ",".join(f"{k}={v}" for k, v in sorted(result["metric"].items()))
+            series[key] |= {int(float(t)) for t, _ in result["values"]}
+        start = stop + STEP
+    return series
+
+
+def posts(returned: set[int], rule: dict, start: int, end: int) -> list[tuple[int, str]]:
+    wait, hold = seconds(rule["for"]), seconds(rule.get("keep_firing_for", "0m"))
+    level = rule["labels"]["level"]
+    out: list[tuple[int, str]] = []
+    since: int | None = None
+    last_true = last_post = 0
+    firing = False
+    for t in range(start - start % STEP, end, STEP):
+        if t in returned:
+            since = t if since is None else since
+            last_true = t
+            if not firing and t - since >= wait:
+                firing, last_post = True, t
+                out.append((t, "firing"))
+            elif firing and t - last_post >= REPEAT[level]:
+                last_post = t
+                out.append((t, "repeat"))
+        else:
+            since = None
+            if firing and t - last_true >= hold:
+                firing = False
+                out.append((t, "cleared"))
+    return out
+
+
+def main() -> None:
+    days = int(sys.argv[1]) if len(sys.argv) > 1 else 7
+    only = set(sys.argv[2:])
+    rules = [
+        r for g in yaml.safe_load(RULES.read_text(encoding="utf-8"))["groups"] for r in g["rules"]
+    ]
+    end = int(time.time()) // STEP * STEP
+    start = end - days * 86400
+    total = 0
+    for rule in rules:
+        if only and rule["alert"] not in only:
+            continue
+        found = [
+            (t, kind, key)
+            for key, returned in history(rule["expr"], start, end).items()
+            for t, kind in posts(returned, rule, start, end)
+        ]
+        total += len(found)
+        print(f"{rule['alert']} ({rule['labels']['level']}): {len(found)} posts in {days} days")
+        for t, kind, key in sorted(found)[:10]:
+            print(f"  {time.strftime('%m-%d %H:%M', time.gmtime(t))} {kind} {key}")
+    print(f"All rules: {total} posts in {days} days")
+
+
+if __name__ == "__main__":
+    main()

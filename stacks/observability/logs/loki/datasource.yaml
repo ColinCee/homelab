@@ -1,0 +1,15 @@
+# Grafana reads Loki through the gateway, never directly: Grafana lets a Viewer's GET through to any path.
+apiVersion: 1
+datasources:
+  - name: Logs
+    uid: logs
+    type: loki
+    access: proxy
+    url: http://gateway:5080/logs
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $AGENTS_PASSWORD
+    editable: false
+    jsonData:
+      manageAlerts: false

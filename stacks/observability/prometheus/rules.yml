@@ -1,0 +1,322 @@
+# The alert rules, held to the alert standard in docs/observability.md ("Alerts"). Prometheus runs them each
+# minute and sends the firing ones to Alertmanager (../alertmanager), which posts to Discord, repeats and holds back.
+#
+# Each post shows `measure: value unit`, so a query gives display units, rounded. A rule that is not per series
+# takes `max` or `min` of its query, so its post carries no labels: the title prints every label but `alertname`
+# and `level`. A per-series rule keeps only the labels that tell its series apart (`max by (name)`): one post per
+# series. Only metrics written outside Alloy carry a no-data arm, `or on() max(absent_over_time(...)) * -1`, shown as
+# "no data"; "Beelink metrics stopped" covers Alloy's own. `keep_firing_for` is the 10-minute hold: a return inside
+# it is the same alert. Tests: tests/test_alert_rules.py, with promtool on rules.test.yml.
+
+groups:
+  - name: homelab
+    interval: 1m
+    rules:
+      - alert: beelink-metrics-stopped
+        expr: |
+          (
+            max(
+              absent_over_time(up{job="integrations/unix"}[5m]) or absent_over_time(up{job="docker"}[5m])
+            )
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink metrics stopped'
+          measure: 'Missing for'
+          unit: ' 5 min or more'
+          harm: >-
+            No alert can see the Beelink while its numbers are missing, so the alerts that read them are held
+            back. A real outage could be going on unseen.
+          action: >-
+            On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50
+            observability-alloy-1`, then `docker compose up -d` in
+            /home/colin/code/homelab/stacks/observability.
+          dashboard: &home http://beelink.tail4f465e.ts.net:5080/d/home
+          value: '{{ $value }}'
+      - alert: flight-tracker-down
+        expr: |
+          (
+            max(probe_success{job="integrations/blackbox/flight-tracker"})
+          ) < 1
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Flight Tracker site down'
+          measure: 'Live aircraft check passing (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            https://api.colincheung.dev/aircraft is not serving live aircraft, so the public radar is blank or
+            stale.
+          action: >-
+            Check `docker logs --tail 50 flight-tracker-backend-1` (upstream 403 or 429?) and `docker logs
+            --tail 50 flight-tracker-cloudflared-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: home-assistant-down
+        expr: |
+          (
+            max(homelab_probe_success{target="home-assistant"})
+            * (time() - max(homelab_probe_timestamp_seconds) < bool 300)
+          ) < 1
+          or on() max(absent_over_time(homelab_probe_success{target="home-assistant"}[15m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Home Assistant down'
+          measure: 'Answering (1 yes, 0 no)'
+          unit: ''
+          harm: 'The house''s automations and its app stop working.'
+          action: >-
+            Check `docker ps -a --filter name=homeassistant` and `docker logs --tail 50 homeassistant`; restart
+            it with `docker restart homeassistant`. If it is up, the check itself stopped: `docker logs
+            observability-probes-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: dns-or-names-down
+        expr: |
+          (
+            min(homelab_probe_success{target=~"names-(dns|proxy)"})
+            * (time() - max(homelab_probe_timestamp_seconds) < bool 300)
+          ) < 1
+          or on() max(absent_over_time(homelab_probe_success{target="names-dns"}[15m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'DNS or .internal names down'
+          measure: 'Both checks passing (1 yes, 0 no)'
+          unit: ''
+          harm: 'home.internal, grafana.internal and the other .internal names stop opening on every device.'
+          action: >-
+            Check `docker ps -a --filter name=internal-names` and `docker logs --tail 50 internal-names-dns-1`
+            and `internal-names-proxy-1`. If both are up, the check itself stopped: `docker logs
+            observability-probes-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: high-ram
+        expr: |
+          (
+            max(
+              round(100 * (1 - node_memory_MemAvailable_bytes{job="integrations/unix"}
+              / node_memory_MemTotal_bytes{job="integrations/unix"}))
+            )
+          ) > 90
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink running out of memory'
+          measure: 'Memory use'
+          unit: '%'
+          harm: 'Past this the kernel kills processes, and any container may be the one stopped.'
+          action: >-
+            Find the container that grew with `docker stats --no-stream`, then restart it or give it a
+            `mem_limit` in its compose.yaml.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: restart-loop
+        expr: |
+          (
+            max by (name) (changes(container_start_time_seconds{job="docker",name!=""}[30m]))
+          ) > 2
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A container keeps restarting'
+          measure: 'Starts in the last 30 min'
+          unit: ''
+          harm: 'The service in this container is down most of the time.'
+          action: 'Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: new-container
+        expr: |
+          (
+            count by (name) (container_last_seen{job="docker",name!=""})
+            unless count by (name) (container_last_seen{job="docker",name!="",container_label_com_docker_compose_project!=""})
+            unless count by (name) (max_over_time(container_last_seen{job="docker",name!=""}[7d] offset 1h))
+          ) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Unknown container started'
+          measure: 'Containers of this name'
+          unit: ''
+          harm: >-
+            Something started a container outside the reviewed deploy path; if it was not you, someone else can
+            run code here.
+          action: >-
+            Expected if you ran one by hand. Otherwise check `docker ps -a --filter name=<name>` and `docker
+            inspect` its image and command, then stop it.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: backup-missed
+        expr: |
+          (
+            round((time() - max(homelab_backup_last_success_timestamp_seconds)) / 3600)
+          ) > 26
+          or on() max(absent_over_time(homelab_backup_last_success_timestamp_seconds[15m])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Nightly backup didn''t run'
+          measure: 'Last good backup'
+          unit: ' h ago'
+          harm: 'Without a nightly copy in R2, a lost disk loses everything since the last good backup.'
+          action: 'Check `docker logs --tail 100 backup`; see docs/runbooks/backups.md.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: pc-backup-stale
+        expr: |
+          (
+            round((time() - max(homelab_pc_backup_newest_timestamp_seconds)) / 3600)
+          ) > 50
+          or on() max(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[15m])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'PC backup stopped arriving'
+          measure: 'Newest PC backup'
+          unit: ' h old'
+          harm: 'The Windows PC''s files are no longer copied off it, so a dead PC disk loses them.'
+          action: >-
+            Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl --user status
+            backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: high-disk
+        expr: |
+          (
+            max(
+              round(100 * (1 - node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+              / node_filesystem_size_bytes{mountpoint="/",job="integrations/unix"}))
+            )
+          ) > 80
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Beelink disk filling up'
+          measure: 'Disk use'
+          unit: '%'
+          harm: >-
+            A full disk stops every stack writing: Prometheus, the logs, the backups and Home Assistant's
+            history.
+          action: >-
+            Find what grew with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`; prune
+            images or old data, never Docker volumes.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: backup-storage-high
+        expr: |
+          (
+            round(max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9, 0.1)
+          ) > 5
+          or on() max(absent_over_time(homelab_backup_repository_bytes[26h])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Backup storage nearly full'
+          measure: 'Backup storage'
+          unit: ' GB'
+          harm: 'Uploads stop at 8 GB, so backups stop; R2 bills past 10 GB.'
+          action: 'Find what grew with `docker exec backup restic stats`; see docs/runbooks/backups.md.'
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssd-worn
+        expr: |
+          (
+            max(homelab_ssd_percentage_used)
+          ) > 80
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Beelink SSD wearing out'
+          measure: 'Endurance used'
+          unit: '%'
+          harm: 'Past 100% of its rated writes the SSD may start failing, and everything on the Beelink is on it.'
+          action: >-
+            Order a replacement SSD and plan the move. To see how fast it wears, chart
+            `homelab_ssd_written_bytes_total`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssd-wear-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60)
+          ) > 60
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'SSD wear check stopped'
+          measure: 'Last check'
+          unit: ' min ago'
+          harm: 'A wearing SSD would go unnoticed.'
+          action: >-
+            Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
+            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'
+
+  # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), expr and
+  # `for` unchanged, on Prometheus's own metrics (prometheus.yml, job "prometheus").
+  - name: prometheus
+    interval: 1m
+    rules:
+      - alert: PrometheusRuleFailures
+        expr: increase(prometheus_rule_evaluation_failures_total{job="prometheus"}[5m]) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'An alert rule is failing'
+          measure: 'Failed evaluations in 5 min'
+          unit: ''
+          harm: 'An alert whose query fails can never fire, so the problem it watches goes unseen.'
+          action: >-
+            Read `lastError` for the failing rule in `/prometheus/api/v1/rules` on the gateway (port 5081), fix
+            its query in stacks/observability/prometheus/rules.yml and deploy.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: PrometheusBadConfig
+        expr: max_over_time(prometheus_config_last_reload_successful{job="prometheus"}[5m]) == 0
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Prometheus refused its config'
+          measure: 'Last reload worked (1 yes, 0 no)'
+          unit: ''
+          harm: 'The changed rules or scrapes are not running; the ones before them still are.'
+          action: >-
+            Read `docker logs --tail 50 observability-prometheus-1` and run `promtool check config` on the
+            files.
+          dashboard: *home
+          value: '{{ $value }}'

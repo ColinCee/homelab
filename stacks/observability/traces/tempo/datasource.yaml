@@ -1,0 +1,18 @@
+# Grafana reads Tempo through the gateway, never directly: Grafana lets a Viewer's GET through to any path.
+apiVersion: 1
+datasources:
+  - name: Traces
+    uid: traces
+    type: tempo
+    access: proxy
+    url: http://gateway:5080/traces
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $AGENTS_PASSWORD
+    editable: false
+    jsonData:
+      # Streaming search is gRPC, which the gateway does not pass.
+      streamingEnabled:
+        search: false
+        metrics: false

@@ -1,0 +1,35 @@
+# Grafana reads every store through the gateway (../gateway/Caddyfile), never directly: its data source proxy lets a
+# Viewer's GET through to any path of a store, and Prometheus and Alertmanager serve admin calls and silences. The
+# log and trace stores' data sources are beside them (../logs/*/datasource.yaml, ../traces/*/datasource.yaml).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://gateway:5080/prometheus
+    isDefault: true
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $AGENTS_PASSWORD
+    editable: false
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      prometheusVersion: 3.16.0
+      timeInterval: 30s
+      manageAlerts: false
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://gateway:5080/alertmanager
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $AGENTS_PASSWORD
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

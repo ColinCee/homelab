@@ -110,16 +110,12 @@ prometheus.relabel "ci_vms" {
 }
 
 // ================================
-// Metrics Destination (OpenObserve)
+// Metrics Destination (Prometheus)
 // ================================
 
 prometheus.remote_write "default" {
   endpoint {
-    url = "http://openobserve:5080/api/default/prometheus/api/v1/write"
-    basic_auth {
-      username = "root@homelab.internal"
-      password = sys.env("OPENOBSERVE_PASSWORD")
-    }
+    url = "http://prometheus:9090/api/v1/write"
   }
 }
 
@@ -173,15 +169,7 @@ loki.source.docker "containers" {
 }
 
 loki.process "docker" {
-  forward_to = [otelcol.receiver.loki.openobserve.receiver]
-
-  // OpenObserve logs a line at INFO for each push and query it serves, Alloy's
-  // own included; keep only its warnings, errors and unprefixed lines.
-  stage.match {
-    selector            = "{container_name=\"observability-openobserve-1\"} |~ \"^[^ ]+ +(INFO|DEBUG|TRACE) \""
-    action              = "drop"
-    drop_counter_reason = "openobserve_routine"
-  }
+  forward_to = [otelcol.receiver.loki.logs.receiver]
 
   // Parse JSON log lines (silently passes through non-JSON lines)
   stage.json {
@@ -191,7 +179,7 @@ loki.process "docker" {
     }
   }
 
-  // The label and the metadata below reach OpenObserve as fields of each line.
+  // The label and the metadata below reach the log store as fields of each line.
   stage.labels {
     values = {
       level = "level",
@@ -214,35 +202,41 @@ loki.process "docker" {
 }
 
 // ================================
-// Logs Destination (OpenObserve)
+// Logs Destination (the log store)
 // ================================
 
-// Over OTLP.
-otelcol.receiver.loki "openobserve" {
+// Over OTLP, to the picked store's exporter `logs` (logs/<store>/alloy.alloy).
+otelcol.receiver.loki "logs" {
   output {
-    logs = [otelcol.processor.batch.openobserve.input]
+    logs = [otelcol.processor.batch.logs.input]
   }
 }
 
 // One request per line filled the exporter's queue.
-otelcol.processor.batch "openobserve" {
+otelcol.processor.batch "logs" {
   output {
-    logs = [otelcol.exporter.otlphttp.openobserve.input]
+    logs = [otelcol.exporter.otlphttp.logs.input]
   }
 }
 
-otelcol.auth.basic "openobserve" {
-  username = "root@homelab.internal"
-  password = sys.env("OPENOBSERVE_PASSWORD")
+// ================================
+// Traces (the trace store)
+// ================================
+
+// Programs on this stack's network send their traces here, by OTLP over HTTP; they go on to the picked store's
+// exporter `traces` (traces/<store>/alloy.alloy).
+otelcol.receiver.otlp "traces" {
+  http {
+    endpoint = "0.0.0.0:4318"
+  }
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
 }
 
-otelcol.exporter.otlphttp "openobserve" {
-  client {
-    endpoint = "http://openobserve:5080/api/default"
-    auth     = otelcol.auth.basic.openobserve.handler
-    headers  = {
-      "stream-name" = "containers",
-    }
+otelcol.processor.batch "traces" {
+  output {
+    traces = [otelcol.exporter.otlphttp.traces.input]
   }
 }
 
@@ -256,7 +250,7 @@ prometheus.scrape "alertmanager" {
     __address__ = "alertmanager:9093",
   }]
   forward_to      = [prometheus.remote_write.default.receiver]
-  scrape_interval = "60s"
+  scrape_interval = "30s"
   job_name        = "alertmanager"
 }
 
@@ -279,6 +273,7 @@ prometheus.exporter.blackbox "flight_tracker" {
 prometheus.scrape "flight_tracker" {
   targets         = prometheus.exporter.blackbox.flight_tracker.targets
   forward_to      = [prometheus.remote_write.default.receiver]
+  // Each minute, not 30 s: every probe is a request to the public API (scripts/server-health.sh counts 1440 a day).
   scrape_interval = "60s"
 }
 

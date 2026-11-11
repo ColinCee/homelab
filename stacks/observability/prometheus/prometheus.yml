@@ -1,0 +1,24 @@
+# Alloy scrapes every source and writes here (../config.alloy); Prometheus scrapes only itself, for the rules on its
+# own health (rules.yml, group "prometheus").
+global:
+  scrape_interval: 30s
+  evaluation_interval: 1m
+
+storage:
+  tsdb:
+    # No size cap: 30 days at this feed is about 2 GB, so a cap near that would cut the keep short.
+    retention:
+      time: 30d
+
+rule_files:
+  - /etc/prometheus/rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

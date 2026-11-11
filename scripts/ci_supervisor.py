@@ -130,7 +130,7 @@ CONSOLE_LINE_MAX = 4096
 # What the job really needed (cache left out), the VM's memory and the kernel's out-of-memory
 # kills, from the VM's ci-memwatch. A job can print it too: it only skews the counts.
 MEM_LINE = re.compile(rb"HOMELAB-MEM 1 ([0-9]{1,7}) ([0-9]{1,7}) ([0-9]{1,9})")
-# Counts of ended VMs for OpenObserve (Alloy's textfile collector), and the share of its memory a
+# Counts of ended VMs for Prometheus (Alloy's textfile collector), and the share of its memory a
 # job may need before its VM counts as near full.
 MEMORY_METRICS = Path("/var/lib/homelab-metrics/ci-vm-memory.prom")
 NEAR_FULL = 0.8
@@ -174,7 +174,7 @@ WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
 WAIT_KINDS = ("memory", "disk", "slots", "booting", "ready", "unseen", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
 WAITS_PRUNE_SECONDS = 3600.0
-# The longest-waiting queued job's seconds so far per kind of wait, for OpenObserve (Alloy's
+# The longest-waiting queued job's seconds so far per kind of wait, for Prometheus (Alloy's
 # textfile collector), at most every WAIT_METRICS_SECONDS: a write every 2 s poll would only
 # add load to the shared disk.
 WAIT_METRICS = MEMORY_METRICS.with_name("ci-waits.prom")
@@ -1673,7 +1673,7 @@ def write_wait_metrics(state: State, now: float) -> None:
 
 
 def note_poll(state: State, ok: bool, now: float) -> None:
-    """Counts failed polls in a row, for OpenObserve: no VM starts while every poll fails. The
+    """Counts failed polls in a row, for Prometheus: no VM starts while every poll fails. The
     metrics are written at once when polls start or stop
     failing, and otherwise at most every WAIT_METRICS_SECONDS."""
     was_failing = state.poll_failures > 0

@@ -3,7 +3,7 @@
 #   sudo ci-runner/tests/test-load.sh [SECONDS]
 # Boots a VM in every slot at the size the supervisor gives a job when others run
 # (2 vCPUs, 2 GiB), each burning all its CPUs and holding nearly all its memory,
-# while timing Home Assistant and OpenObserve once a second against a quiet baseline.
+# while timing Home Assistant and Grafana once a second against a quiet baseline.
 # Ends with one PASS or FAIL line; exits 1 when a VM does not boot or finish its
 # burn, a request fails, or a service's worst response is over MAX_RESPONSE seconds.
 set -euo pipefail
@@ -21,7 +21,7 @@ if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else
 export VCPUS=2 MEM_MIB=2048
 run_vm=${RUN_VM:-/usr/local/lib/homelab-ci/run-vm.sh}
 tailnet=$(ip -4 -br addr show tailscale0 | awk '{print $3}' | cut -d/ -f1)
-names=("Home Assistant" "OpenObserve")
+names=("Home Assistant" "Grafana")
 urls=("http://$tailnet:8123/" "http://$tailnet:5080/healthz")
 
 tmp=$(mktemp -d)

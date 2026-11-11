@@ -214,7 +214,7 @@ services with their existing `.env` and named volumes:
 
 ```bash
 docker compose --env-file stacks/observability/.env \
-  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps openobserve
+  -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana gateway
 ```
 
 ## Remove a service

@@ -1,7 +1,8 @@
 """Push a few read-only numbers about this server to the blog's home page.
 
 Runs in this stack's public-stats container. Every five minutes
-it asks OpenObserve's Prometheus API and the already-public flight-tracker API for a handful of
+it asks Prometheus, through the stack's read-only gateway, and the already-public
+flight-tracker API for a handful of
 numbers and PUTs them to the blog, which shows them in its home-lab figure.
 The body is built from named numbers only, never by forwarding a response, so
 nothing else about the host can leak. See docs/public-stats.md.
@@ -60,7 +61,7 @@ def get_json(url: str, login: str | None = None) -> Any:
 
 def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     url = f"{prometheus}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
-    # `user:password`, which OpenObserve's Prometheus API needs. An environment variable, not a
+    # `user:password`, which the gateway needs. An environment variable, not a
     # file: Compose cannot mount a secret from the environment into a read-only container.
     body = get_json(url, os.environ.get("PROMETHEUS_LOGIN"))
     if body.get("status") != "success":
@@ -86,7 +87,7 @@ def build_body(
     project = "container_label_com_docker_compose_project"
     running = {r["metric"].get(project) for r in results["running"]}
     if not running:
-        # cAdvisor or OpenObserve is not reporting; publishing "all down" would be a lie.
+        # cAdvisor or Prometheus is not reporting; publishing "all down" would be a lie.
         raise StatsError("no running containers reported")
     if not isinstance(kpis, dict) or kpis.get("apiHealth") != "live":
         kpis = {}

@@ -36,8 +36,8 @@ jobs:
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
+          # Grafana's admin password, and the readers' logins to the read-only gateway (stacks/observability/.env.example).
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
-          # Readers' logins to OpenObserve's read-only gateway (stacks/observability/gateway).
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
           OPENOBSERVE_STATS_PASSWORD: ${{ secrets.OPENOBSERVE_STATS_PASSWORD }}
           PUBLIC_STATS_KEY: ${{ secrets.PUBLIC_STATS_KEY }}

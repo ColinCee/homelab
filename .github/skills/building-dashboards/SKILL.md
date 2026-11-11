@@ -1,19 +1,20 @@
 ---
 name: building-dashboards
-description: Edit homelab dashboards: OpenObserve's Home, from Git. Use when changing dashboard JSON or a panel's query.
+description: Edit homelab dashboards: Grafana's Home, from Git. Use when changing dashboard JSON or a panel's query.
 ---
 
 # Dashboards
 
-OpenObserve's Home is `stacks/observability/openobserve/dashboards/home.json`. On each deploy
-`openobserve-apply` makes OpenObserve's `homelab` dashboard folder hold that folder's files, keyed by
-title (`apply_dashboards` in `apply.py`), and deletes one Git removed. Edit the file, not the UI.
-Open it at `http://openobserve.internal` (save `http://beelink.tail4f465e.ts.net:5080`).
+Grafana's Home is `stacks/observability/logs/<store>/home.json`, one per log store; compose mounts the
+one `LOG_STORE` names. Until the log store is picked, change both: they must be equal outside the
+three log panels (datasource uid `logs`). Grafana loads the file on start and every 30 s, and refuses
+a save from the UI: edit the file, not the UI. Open it at `http://grafana.internal/d/home` (save
+`http://beelink.tail4f465e.ts.net:5080/d/home`).
 
 ## Home
 
-The top answers "is anything wrong, and where?"; detail sits in the other tabs, which load only
-when opened. The Home tab, from the top:
+The top answers "is anything wrong, and where?"; detail sits in the collapsed rows below, which load
+only when opened. From the top:
 
 1. Is anything wrong: a tile per service (Flight tracker, Home Assistant, DNS and proxy, Backup,
    Alerts), red when down, showing how long it has been up or down.
@@ -22,63 +23,47 @@ when opened. The Home tab, from the top:
 3. Who uses the box: memory and CPU over 24 h, stacked by group: Monitoring, System and Apps.
 4. Errors in the logs: error lines per hour by container, and the most repeated in the last hour.
 
-The other tabs: Containers, Network, Backups, Alerts. Put a new panel in its section or
-tab, or add a tab, rather than another dashboard. Group numbers that belong together under a
-heading, and size each panel to its content, with no empty space around its values.
+The collapsed rows: Containers, Network, Backups, Alerts. Put a new panel in its section or row, or
+add a row, rather than another dashboard. A heading is a row. A collapsed row keeps its panels in
+its own `panels`, placed from the line under it; an open row's panels follow it at the top level.
 
-Every number must read whole at 1200 px wide:
-- A panel's header keeps about 210 px for its icons and refresh time, so a tile 48 columns wide
-  (a quarter) has room for a title of about seven letters, and 64 columns for about fifteen.
-- A heading is a markdown panel 2 rows tall whose title is the text; a markdown body shows only
-  from 4 rows tall.
-- No panel has its own time range: OpenObserve draws a time picker on it, which hides a tile's
-  value. Write a fixed window into the query instead (`_timestamp >= ...` in SQL, `[7d]` in PromQL).
+Every number must read whole at 1200 px wide: the grid is 24 columns, so a tile 6 wide (a quarter)
+has room for a title of about fifteen letters. No panel has its own time range; write a fixed window
+into the query instead (`[7d]`, `_time:1h`).
 
 ## Colour and order
 
-Each colour means one thing on every tab. The hexes live in `tests/test_openobserve_alerts.py`
-(`GROUPS`, `NOW`, `WEEK`, `NEUTRAL`), which checks the file against them.
+Each colour means one thing on every panel. The hexes live in `tests/test_dashboards.py` (`GROUPS`,
+`NOW`, `WEEK`, `NEUTRAL`), which checks both files against them and against the containers compose
+starts.
 
 | Colour | Means |
 |---|---|
 | Blue, aqua, orange | Monitoring, System, Apps, and each container in its group's colour |
-| Red | A service down, any alert firing, or a tile past a `level = "now"` rule's threshold |
-| Amber | A tile past a `"week"` rule's threshold, or a warning with no rule. None means fine |
-| Gray | One measure (sparklines, Stored over time), or a series Git no longer has |
+| Red | A service down, any alert firing, or a tile past a `level: now` rule's threshold |
+| Amber | A tile past a `week` rule's threshold, or a warning with no rule. None means fine |
+| Gray | One measure, or a series no list names (a removed container) |
 | Blue, orange, aqua, yellow | Series of any other kind (Network), in that order |
 
-- A tile's colour is a value mapping (`gt` or `lt`; the last match wins) with a colour and no text.
-- A series' colour is `config.color.colorBySeries` by name, with `mode: "fixed"` and a gray
-  `fixedColor` for any series not listed. Without a mode, unlisted series get a value gradient.
-- Bars run largest first. Stacks keep a fixed order with the largest at the bottom, and the legend
-  follows: PromQL series come in query order, SQL series in the order rows first name them.
-  OpenObserve runs a SQL chart in time slices (the current hour is its own), so a series new in
-  the newest slice comes first whatever its total.
-- Tables sort by their obvious column: the count, or the newest first. A row is one line
-  (`wrap_table_cells: false`), with long text cut in SQL and in the last column.
+- A tile's colour is its thresholds: base `text`, then a step at the rule's threshold (or base red
+  or amber and a `text` step, for "under").
+- A series' colour is a field override `byName` with a fixed colour; the default is fixed gray.
+- Stacks keep a fixed order with the largest at the bottom: queries in that order, as refIds A, B, C.
 
 ## Queries
 
-- Metric names are lower case (`node_memory_memavailable_bytes`).
-- The `bytes` unit counts in 1024s; show GB as the alerts count them (`/ 1e9`, custom unit ` GB`).
-- A matcher like `=""` cannot select a series that lacks the label; `name!=""` works. Use
-  `max by (name)` for container metrics, as `docs/observability.md` says.
-- Every PromQL panel runs a range query over the dashboard's time: OpenObserve drops a query's
-  `query_type`. A tile shows the last value; a `sparkline` adds the trend.
-- A top 10 is SQL on the metric's stream (`ORDER BY y_axis_1 DESC LIMIT 10`; an `h-stacked` panel
-  draws the first row at the top). PromQL bars come in label order: `sort_desc` does nothing in a
-  range query, and a PromQL top 10 must pin `@ end()` or each step picks its own ten.
-- OpenObserve drops an `ORDER BY` on an expression it does not select: select it (`sum(y_axis_1)
-  OVER (PARTITION BY breakdown_1) AS total`) and order by its name.
-- Logs are the `containers` stream. Alloy resends a container's old lines when it restarts, so
-  count `DISTINCT _timestamp, body`; filter with `match_all` words (the text index) before a
-  `regexp_like`, which is slow over a day of logs.
-- Alert states are the `triggers` stream (`module = 'alert'`): a firing rule logs `firing`, or
-  `notify_failed` when its post fails.
-- Before running `apply.py` by hand, rebase on main: it makes OpenObserve match the files you
-  have, so an old checkout reverts newer alerts.
+- Metric names are as Alloy sends them, mixed case included (`node_memory_MemAvailable_bytes`).
+- Legends are `{{label}}`.
+- Use `max by (name)` for container metrics, as `docs/observability.md` says; `name!=""` selects
+  containers.
+- A tile shows the last value; `graphMode: area` adds the trend.
+- A top 10 is an instant query, `sort_desc(topk(10, ...))`, in a horizontal bar gauge.
+- Alert history is Prometheus's own `ALERTS{alertstate="firing"}`, one sample per rule evaluation (a
+  minute). A table over the time range uses `[$__range]` in instant queries, merged.
+- Logs: Loki's stream label is `container_name`; `level` and the rest are structured metadata, and
+  the line is the body. VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends
+  a container's recent lines when it restarts: Loki drops an exact repeat, VictoriaLogs needs
+  `uniq by (_time, container_name, _msg)` before `stats` (not allowed in a range query, which then
+  counts repeats).
 
-To try a change live, from a tab signed in to OpenObserve PUT the whole file to
-`/api/default/dashboards/<id>?folder=<id>&hash=<hash>` (both ids and the hash from
-`GET /api/default/dashboards?folder=<id>`). Check with
-`uv run python -m pytest tests/test_openobserve_alerts.py`.
+Check with `uv run python -m pytest tests/test_dashboards.py`.

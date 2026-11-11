@@ -1,9 +1,14 @@
-"""Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read."""
+"""Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
+loads with each pick of log and trace store (its validate command, so that test needs Docker)."""
 
-import json
+import functools
 import re
-import tomllib
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
+import yaml
 
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
@@ -17,15 +22,10 @@ READERS = (
 
 def queries() -> list[str]:
     """Every alert and Home dashboard query, and the scripts that read metrics."""
-    rules = tomllib.loads((STACK / "openobserve/alerts.toml").read_text(encoding="utf-8"))["rules"]
-    texts = [q for rule in rules.values() for q in (rule["promql"], rule.get("no_data", ""))]
-    for dashboard in (STACK / "openobserve/dashboards").glob("*.json"):
-        texts += [
-            q["query"]
-            for tab in json.loads(dashboard.read_text(encoding="utf-8"))["tabs"]
-            for panel in tab["panels"]
-            for q in panel["queries"]
-        ]
+    rules = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))
+    texts = [rule["expr"] for group in rules["groups"] for rule in group["rules"]]
+    for dashboard in STACK.glob("logs/*/home.json"):
+        texts.append(dashboard.read_text(encoding="utf-8"))
     return texts + [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
 
 
@@ -45,3 +45,29 @@ def test_every_container_label_read_is_sent() -> None:
     read = {name for text in queries() for name in re.findall(r"\bcontainer_label_\w+", text)}
     assert "container_label_com_docker_compose_project" in read
     assert read <= sent
+
+
+@functools.cache
+def docker() -> bool:
+    if not shutil.which("docker"):
+        return False
+    return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
+
+
+@pytest.mark.skipif("not docker()", reason="needs Docker")
+@pytest.mark.parametrize("logs", ["loki", "victorialogs"])
+@pytest.mark.parametrize("traces", ["tempo", "victoriatraces"])
+def test_the_config_loads_with_each_store(logs: str, traces: str) -> None:
+    image = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["services"]
+    command = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{STACK / 'config.alloy'}:/etc/alloy/config.alloy:ro",
+    ]
+    command += ["-v", f"{STACK / 'logs' / logs / 'alloy.alloy'}:/etc/alloy/logs.alloy:ro"]
+    command += ["-v", f"{STACK / 'traces' / traces / 'alloy.alloy'}:/etc/alloy/traces.alloy:ro"]
+    command += [image["alloy"]["image"], "validate", "/etc/alloy"]
+    ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
+    assert ran.returncode == 0, ran.stdout + ran.stderr

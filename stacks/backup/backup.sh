@@ -89,7 +89,7 @@ report() {
   fi
 }
 
-# Alloy reads this file into OpenObserve for the Nightly backup didn't run alert. A metric,
+# Alloy reads this file into Prometheus for the Nightly backup didn't run alert. A metric,
 # not the "backup ok" log line: a log store missed that line once and the alert fired with
 # backups succeeding.
 METRICS_FILE=/metrics/backup.prom

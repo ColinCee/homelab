@@ -1,0 +1,6 @@
+// The log store when it is Loki (../../compose.yaml mounts the chosen store's file beside config.alloy).
+otelcol.exporter.otlphttp "logs" {
+  client {
+    endpoint = "http://logs:3100/otlp"
+  }
+}
