@@ -6,7 +6,7 @@ description: Edit homelab dashboards: Grafana's Home, from Git. Use when changin
 # Dashboards
 
 Grafana's Home is `stacks/observability/logs/<store>/home.json`, one per log store; compose mounts the
-one `LOG_STORE` names. Until the log store is picked, change both: they must be equal outside the
+one `LOG_STORE` names. Until the unpicked store's folder goes, change both: they must be equal outside the
 three log panels (datasource uid `logs`). Grafana loads the file on start and every 30 s, and refuses
 a save from the UI: edit the file, not the UI. Open it at `http://grafana.internal/d/home` (save
 `http://beelink.tail4f465e.ts.net:5080/d/home`).

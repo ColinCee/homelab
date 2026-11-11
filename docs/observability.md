@@ -2,7 +2,7 @@
 
 Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
 settings and retention. Alloy collects metrics into Prometheus and logs and traces into the log and trace stores, each
-keeping 30 days, and Grafana shows them ([ADR 0003](adr/0003-prometheus-grafana.md)). The switch from OpenObserve and
+keeping 30 days, and Grafana shows them ([ADR 0004](adr/0004-prometheus-grafana.md)). The switch from OpenObserve and
 back: [the runbook](runbooks/switching-observability.md).
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
@@ -34,10 +34,8 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 Home, the data sources and the rules come from Git on each deploy; Grafana refuses saves from its UI (the
 building-dashboards skill, `.github/skills/building-dashboards/SKILL.md`).
 
-Agents read with the gateway's `agents` login (`OPENOBSERVE_AGENTS_PASSWORD`), for example
-`curl -u agents@homelab.internal:... http://beelink.tail4f465e.ts.net:5081/prometheus/api/v1/query?query=up`. Paths
-start with the store: `/prometheus/api/v1/...` and `/alertmanager/api/v2/...`, and `/logs/...` and `/traces/...`
-followed by the picked store's own read API.
+Agents read with the gateway's `agents` login (`OPENOBSERVE_AGENTS_PASSWORD`):
+`curl -u agents@homelab.internal:... http://beelink.tail4f465e.ts.net:5081/prometheus/api/v1/query?query=up`.
 
 ### Dashboard patterns
 
@@ -134,8 +132,7 @@ Noise budget: at most one post a day across all rules, over 14 days. Replay befo
 GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14
 ```
 
-Prometheus's history starts at the switch from OpenObserve, so a replay covers fewer days until 14 have passed. Home
-Assistant and the `.internal` names are checked by
+Home Assistant and the `.internal` names are checked by
 [`probes.py`](../stacks/observability/probes.py) on the host's network, since the firewall admits only Tailscale and
 loopback; its results reach the rules through the textfile collector.
 

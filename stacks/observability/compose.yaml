@@ -1,5 +1,5 @@
 services:
-  # Metrics and the alert rules (prometheus/; docs/adr/0003-prometheus-grafana.md). Alloy writes to it.
+  # Metrics and the alert rules (prometheus/; docs/adr/0004-prometheus-grafana.md). Alloy writes to it.
   prometheus:
     image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     restart: unless-stopped
@@ -25,7 +25,7 @@ services:
       - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
 
-  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0003). Each
+  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0004). Each
   # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
   # the Home dashboard written in its query language; the services below mount the picked store's files.
   logs:
