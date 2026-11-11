@@ -54,13 +54,3 @@ def test_a_missing_secret_writes_nothing(repo: Path) -> None:
         render(repo, {"TOKEN": "a"})
 
     assert not (repo / "secrets").exists()
-
-
-def test_a_stacks_old_env_which_held_its_secrets_is_removed(repo: Path) -> None:
-    stack = repo / "stacks/sample"
-    stack.mkdir(parents=True)
-    (stack / ".env").write_text('TOKEN="old"\n', encoding="utf-8")
-
-    render(repo, {"TOKEN": "a", "PASSWORD": "b"})
-
-    assert not (stack / ".env").exists()

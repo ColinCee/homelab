@@ -50,10 +50,6 @@ def render(repo_root: Path, environment: Mapping[str, str] | None = None) -> tup
     for path, name in zip(written, names, strict=True):
         # No trailing newline: not every reader trims one.
         _write(path, environment[name].rstrip("\r\n"))
-    # A stack's .env held its secrets before they were files, and Compose reads one it finds.
-    for stale in sorted(repo_root.glob("stacks/*/.env")):
-        stale.unlink()
-        print(f"Removed {stale}")
     return written
 
 
