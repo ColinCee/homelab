@@ -164,8 +164,8 @@ generated `.env` as shell.
    script, a plain Python loop): as PID 1 it ignores it, so every stop waits
    10 s and then kills it.
 2. If needed, add `.env.example` for settings and `secrets/<name>.example` per secret, and name the secrets in the
-   deploy workflow, never the whole collection. A secret reaches a container as a Compose `secrets:` file, read by
-   the program's `*_FILE` option, never `environment:`, which container inspect shows (`tests/test_no_secret_in_env.py`).
+   deploy workflow, not all. Containers read a secret as a Compose `secrets:` file, never from `environment:`,
+   which inspect shows (`tests/test_no_secret_in_env.py`).
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
    deployment registry needs updating.
 
