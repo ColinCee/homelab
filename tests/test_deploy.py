@@ -20,8 +20,7 @@ def _make_stack(repo_root: Path, name: str, *, with_env: bool = False) -> Path:
     stack_dir.mkdir(parents=True)
     (stack_dir / "compose.yaml").write_text("services: {}\n", encoding="utf-8")
     if with_env:
-        (stack_dir / ".env.example").write_text("TOKEN=${TOKEN}\n", encoding="utf-8")
-        (stack_dir / ".env").write_text("TOKEN='value'\n", encoding="utf-8")
+        (stack_dir / "settings.env").write_text("SETTING=value\n", encoding="utf-8")
     return stack_dir
 
 
@@ -156,8 +155,7 @@ def test_a_profile_in_the_stacks_env_reaches_up(
     (stack_dir / "compose.yaml").write_text(
         "services:\n  app: {image: x}\n  extra: {image: x, profiles: [extra]}\n", encoding="utf-8"
     )
-    (stack_dir / ".env.example").write_text("COMPOSE_PROFILES=\n", encoding="utf-8")
-    (stack_dir / ".env").write_text(f'COMPOSE_PROFILES="{profiles}"\n', encoding="utf-8")
+    (stack_dir / "settings.env").write_text(f"COMPOSE_PROFILES={profiles}\n", encoding="utf-8")
     [plan] = deploy.discover_stack_plans(tmp_path)
 
     listed = subprocess.run(
@@ -234,14 +232,16 @@ def test_a_changed_secret_changes_the_hash_but_its_value_does_not_reach_it(
     tmp_path: Path,
 ) -> None:
     stack_dir = _make_stack(tmp_path, "sample")
-    (stack_dir / "secrets").mkdir()
-    (stack_dir / "secrets" / "token.example").write_text("${TOKEN}", encoding="utf-8")
+    (stack_dir / "compose.yaml").write_text(
+        "services: {}\nsecrets:\n  token:\n    file: ../../secrets/token\n", encoding="utf-8"
+    )
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
     with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
         deploy.discover_stack_plans(tmp_path)
 
-    secret = stack_dir / "secrets" / "token"
+    secret = tmp_path / "secrets" / "token"
+    secret.parent.mkdir()
     secret.write_text("a", encoding="utf-8")
     os.utime(secret, (1, 1))
     first = deploy.stack_config_hash(tmp_path, stack_dir)

@@ -17,8 +17,7 @@ __pycache__/
 .env
 access.md
 stacks/*/.env
-stacks/*/secrets/*
-!stacks/*/secrets/*.example
+/secrets/
 stacks/*/config/
 stacks/*/data/
 stacks/*/log/

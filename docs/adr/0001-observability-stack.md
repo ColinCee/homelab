@@ -21,7 +21,7 @@ So six whole stacks were tested side by side on the Beelink's live feed, then ea
 ## Decision
 
 - Prometheus stores metrics and runs the alert rules from a file in Git; Alertmanager posts to Discord, repeats and clears alerts, and holds back those that depend on another that is firing; Grafana shows every store from files in Git; Alloy collects.
-- VictoriaLogs stores logs and VictoriaTraces stores traces. Loki and Tempo stay one setting away: `LOG_STORE` and `TRACE_STORE` in `stacks/observability/.env.example`, each store's differences in its own folder under `logs/` or `traces/`.
+- VictoriaLogs stores logs and VictoriaTraces stores traces. Loki and Tempo stay one setting away: `LOG_STORE` and `TRACE_STORE` in `stacks/observability/settings.env`, each store's differences in its own folder under `logs/` or `traces/`.
 - A read-only gateway (Caddy) is the only way any reader reaches a store: Grafana's data sources, agents, the heartbeat and public stats each log in there and reach only read paths. Every store tested serves writes or admin calls beside its reads, and none has read-only users. Networks keep the rest apart: Alloy is the only writer, and Grafana and public stats reach only the gateway.
 - OBI, which traces every program in a container from the kernel (eBPF) without changing it, stays off until its `containers_only` setting works: on its own network it traced the host's programs and the CI VMs too.
 
@@ -40,4 +40,4 @@ Why each store:
 - Three `kill -9`s lost 4.9 to 6.8 s of logs each and 19 spans in all, about the stores' 5 s default for saving what they hold in memory; both now save each second, not yet re-measured.
 - In a 15-minute burst at about 100 times the log feed, no whole stack (stores, Grafana, rule runner, gateway and Alertmanager) stayed under the 1 GiB it is meant to fit in; the lowest, with this pair, held 1,102 MiB.
 - Not yet tested: memory over 7 days, expiry of old data, the alert timers on a real alert, and a post seen in the Discord channel.
-- The new stores start empty at the switch; OpenObserve's volume is kept for its 30 days, readable on demand and for a rollback ([switching-observability.md](../runbooks/switching-observability.md)).
+- The new stores start empty at the switch; OpenObserve's volume is kept for its 30 days, readable on demand and for a rollback ([observability.md](../observability.md#openobserves-kept-history)).

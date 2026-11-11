@@ -2,8 +2,7 @@
 
 Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
 settings and retention. Alloy collects metrics into Prometheus and logs and traces into the log and trace stores, each
-keeping 30 days, and Grafana shows them ([ADR 0001](adr/0001-observability-stack.md)). The switch from OpenObserve and
-back: [the runbook](runbooks/switching-observability.md).
+keeping 30 days, and Grafana shows them ([ADR 0001](adr/0001-observability-stack.md)).
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
 Retain an independent external heartbeat when host-outage detection is needed;
@@ -27,7 +26,7 @@ heartbeat workflows without a post; Renovate's merges keep the repository active
 |-----------|---------------|
 | **Alloy** | Ships metrics to Prometheus, Docker logs to the log store, and OTLP traces and logs sent to `alloy:4318` to the trace and log stores; a log line with a `trace_id` opens its trace in Grafana |
 | **Prometheus** | Metrics and the [alert rules](../stacks/observability/prometheus/rules.yml) |
-| **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`.env.example`](../stacks/observability/.env.example) pick each, one folder per store under `logs/` and `traces/` |
+| **Log store, trace store** | Loki or VictoriaLogs, Tempo or VictoriaTraces: `LOG_STORE` and `TRACE_STORE` in [`settings.env`](../stacks/observability/settings.env) pick each, one folder per store under `logs/` and `traces/`; a swap starts the other store empty |
 | **Grafana** | The Home dashboard and Explore over every store; `http://grafana.internal`, logged in as `colin` (admin) or `agents` (Viewer, `OPENOBSERVE_AGENTS_PASSWORD`) |
 | **Alertmanager** | Posts Prometheus's alerts to Discord, repeats, clears and holds them back |
 | **Gateway** | The only way to read the stores, for Grafana, agents and scripts: each login reads only read paths ([`Caddyfile`](../stacks/observability/gateway/Caddyfile)); port 5081 |
@@ -46,6 +45,16 @@ where deduplication is needed.
 Host metrics (`node_*`) cover the whole machine, Firecracker CI VMs included.
 Container metrics do not: the VMs are processes, not containers, so their CPU
 and memory come from their slot cgroups (`job="ci-vms"`).
+
+## OpenObserve's kept history
+
+OpenObserve's volume holds the metrics and logs from before the switch to this stack. On the Beelink, from the
+server checkout, `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml
+--profile history up -d openobserve-history`, then `ssh -L 5082:127.0.0.1:5082 beelink` and open
+`http://localhost:5082` as `root@homelab.internal` (the `OPENOBSERVE_ROOT_PASSWORD` secret); stop it with `stop
+openobserve-history`. It expires nothing while it runs. Once nothing from before the switch is wanted, 30 days
+after it at the earliest, `docker volume rm observability_openobserve-data observability_alloy-data`, then remove
+`openobserve-history` and its volume from `compose.yaml`.
 
 ## Logs
 
@@ -91,8 +100,8 @@ already kept; it drops none by name.
 - **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on (off until its `containers_only`
   works: in the trial it also traced host programs and the CI VMs), OBI's request rate, errors and
   duration for every program in a container, named after its executable. `COMPOSE_PROFILES=obi` in
-  `.env.example` turns it on at the next deploy; clearing it leaves OBI running until
-  `docker compose --env-file stacks/observability/.env -f stacks/observability/compose.yaml rm -sf obi` on the Beelink.
+  `settings.env` turns it on at the next deploy; clearing it leaves OBI running until
+  `docker compose --env-file stacks/observability/settings.env -f stacks/observability/compose.yaml rm -sf obi`.
 - **Flight tracker:** the `blackbox` container probes the public
   `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any
   address its caller names and Alloy must not reach the internet

@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import yaml
+
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 
 
@@ -81,16 +83,13 @@ def discover_stack_plans(
             if not compose_file.is_file():
                 raise DeploymentInputError(f"{name}: missing {compose_file}")
 
-            example_file = stack_dir / ".env.example"
-            env_file = stack_dir / ".env" if example_file.is_file() else None
-            if env_file is not None and not env_file.is_file():
-                raise DeploymentInputError(
-                    f"{name}: missing {env_file}; render it with scripts/generate-env.sh"
-                )
-            for secret in rendered_secrets(stack_dir):
+            # The stack's own settings, tracked; secrets are files (secret_files).
+            settings = stack_dir / "settings.env"
+            env_file = settings if settings.is_file() else None
+            for secret in secret_files(stack_dir):
                 if not secret.is_file():
                     raise DeploymentInputError(
-                        f"{name}: missing {secret}; render it with scripts/generate-env.sh"
+                        f"{name}: missing {secret}; render it with scripts/render-secrets.sh"
                     )
 
             plans.append(
@@ -360,15 +359,21 @@ def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
         if path.name == "compose.yaml" or not path.is_file():
             continue
         digest.update(name + b"\0" + path.read_bytes() + b"\0")
-    for secret in rendered_secrets(stack_dir):
+    for secret in secret_files(stack_dir):
         if secret.is_file():
             digest.update(f"{secret.name}\0{secret.stat().st_mtime_ns}\0".encode())
     return digest.hexdigest()[:16]
 
 
-def rendered_secrets(stack_dir: Path) -> tuple[Path, ...]:
-    """The secret files a stack's templates render to (generate_env.py)."""
-    return tuple(path.with_suffix("") for path in sorted(stack_dir.glob("secrets/*.example")))
+def secret_files(stack_dir: Path) -> tuple[Path, ...]:
+    """The files a stack's compose.yaml mounts as secrets (render_secrets.py writes them)."""
+    compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
+    secrets = compose.get("secrets") or {}
+    return tuple(
+        Path(os.path.normpath(stack_dir / spec["file"]))
+        for spec in secrets.values()
+        if isinstance(spec, dict) and "file" in spec
+    )
 
 
 def compose_command(
@@ -459,7 +464,7 @@ def _compose_environment() -> dict[str, str]:
         "XDG_CONFIG_HOME",
         "XDG_RUNTIME_DIR",
     }
-    # No COMPOSE_PROFILES: a stack's .env turns its profiles on, which this would override.
+    # No COMPOSE_PROFILES: a stack's settings.env turns its profiles on, which this would override.
     return {key: value for key, value in os.environ.items() if key in allowed}
 
 

@@ -20,14 +20,16 @@ services:
     environment:
       TZ: Etc/UTC
       BACKUP_TIME: "02:30"
-      RESTIC_REPOSITORY_FILE: /run/secrets/restic_repository
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
-      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/r2_credentials
+      # Written by backup.sh at start from the R2 secrets, so a `docker exec backup restic ...` finds them too.
+      RESTIC_REPOSITORY_FILE: /tmp/restic_repository
+      AWS_SHARED_CREDENTIALS_FILE: /tmp/r2_credentials
       RESTIC_CACHE_DIR: /cache
     secrets:
-      - restic_repository
       - restic_password
-      - r2_credentials
+      - r2_account_id
+      - r2_access_key_id
+      - r2_secret_access_key
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     healthcheck:
@@ -49,14 +51,17 @@ services:
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/runbooks/backups.md).
       - /home/colin/pc-backups:/data/pc-backups:ro
 
-# Rendered by scripts/generate-env.sh from secrets/*.example.
+# Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:
-  restic_repository:
-    file: ./secrets/restic_repository
   restic_password:
-    file: ./secrets/restic_password
-  r2_credentials:
-    file: ./secrets/r2_credentials
+    file: ../../secrets/restic_password
+  r2_account_id:
+    file: ../../secrets/r2_account_id
+  # An R2 token scoped to the bucket.
+  r2_access_key_id:
+    file: ../../secrets/r2_access_key_id
+  r2_secret_access_key:
+    file: ../../secrets/r2_secret_access_key
 
 volumes:
   restic-cache:

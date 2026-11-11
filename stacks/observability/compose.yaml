@@ -35,7 +35,7 @@ services:
       - alerting
       - probe
 
-  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0001). Each
+  # The log store and the trace store, each one of two picked in settings.env (LOG_STORE, TRACE_STORE; ADR 0001). Each
   # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
   # the Home dashboard written in its query language; the services below mount the picked store's files.
   logs:
@@ -300,7 +300,7 @@ services:
 
   # Traces and request rate, errors and duration for every program in a container, with no change to them, by eBPF
   # (OpenTelemetry's OBI; obi/obi.yaml). It needs the host's processes and the kernel's tracing, so it runs
-  # privileged, and only when the `obi` profile is on (COMPOSE_PROFILES in .env.example). Sends both to Alloy.
+  # privileged, and only when the `obi` profile is on (COMPOSE_PROFILES in settings.env). Sends both to Alloy.
   obi:
     image: otel/ebpf-instrument:v1.0.0@sha256:a68d70e934260f72540f157ccf4fb4adfa38f11de060d7d905696dad6a3fca02
     profiles: [obi]
@@ -373,7 +373,7 @@ services:
       - /var/lib/homelab-metrics:/metrics
 
   # OpenObserve on its kept volume, to read the history from before the switch. Started by hand only, on loopback
-  # (docs/runbooks/switching-observability.md, "Reading OpenObserve's history").
+  # (docs/observability.md, "OpenObserve's kept history").
   openobserve-history:
     image: openobserve/openobserve:v1.1.2@sha256:4a154849432f75c4fb024de32fe34163c02406c905dab22bf8d213d2e3386392
     profiles: [history]
@@ -469,21 +469,21 @@ networks:
     internal: true
   openobserve-history:
 
-# Rendered by scripts/generate-env.sh from secrets/*.example, out of the OpenObserve-named GitHub secrets.
+# Written from GitHub secrets by scripts/render-secrets.sh; the logins' secrets kept their OpenObserve names.
 secrets:
   discord_webhook:
-    file: ./secrets/discord_webhook
+    file: ../../secrets/discord_private_webhook_url
   grafana_admin_password:
-    file: ./secrets/grafana_admin_password
+    file: ../../secrets/openobserve_root_password
   # OpenObserve's ingest password, which nothing else uses, so Grafana's key shares no value.
   grafana_secret_key:
-    file: ./secrets/grafana_secret_key
+    file: ../../secrets/openobserve_ingest_password
   agents_password:
-    file: ./secrets/agents_password
+    file: ../../secrets/openobserve_agents_password
   stats_password:
-    file: ./secrets/stats_password
+    file: ../../secrets/openobserve_stats_password
   public_stats_key:
-    file: ./secrets/public_stats_key
+    file: ../../secrets/public_stats_key
 
 volumes:
   # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot
@@ -492,7 +492,7 @@ volumes:
   prometheus-data:
   grafana-data:
   alertmanager-data:
-  # OpenObserve's history, until it is deleted by hand (docs/runbooks/switching-observability.md).
+  # OpenObserve's history, until it is deleted by hand (docs/observability.md).
   openobserve-data:
   # The stores' own, declared here for their folders' compose.yaml; only the picked ones are made.
   loki-data:

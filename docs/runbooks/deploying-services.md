@@ -2,8 +2,8 @@
 
 The [deploy workflow](../../.github/workflows/deploy.yaml) runs on Beelink for
 stack, script, or workflow changes pushed to protected `main`. Actions resets
-the server checkout to the triggering commit, renders `.env` and secret files from an
-explicit secret allowlist, and invokes the shared deployment command for the
+the server checkout to the triggering commit, writes each secret in its render step's
+allowlist to `secrets/<name in lower case>` (`scripts/render-secrets.sh`), and invokes the shared deployment command for the
 stacks whose files changed since the last full deploy. A change to `scripts/`
 or the deploy workflow, or an unknown last deploy, deploys every stack. The
 last fully deployed commit is kept in `~/.local/state/homelab/last-deployed` and
@@ -39,7 +39,7 @@ not a continuously running GitOps controller.
 
 - `stacks/<name>/compose.yaml` is the required entry point. Discover it without
   a stack registry; support deploying all stacks or explicitly selected names.
-- Keep optional `.env.example`, configuration, application code, and operational
+- Keep optional `settings.env`, configuration, application code, and operational
   commands beside Compose. An external workflow may trigger stack-owned
   commands without owning their logic.
 - Reserve `stacks/<name>/systemd/` for optional user `.service`/`.timer` pairs,
@@ -142,15 +142,13 @@ scripts/deploy.sh observability backup          # Deploy selected stacks
 scripts/deploy.sh --readiness-timeout 180 observability
 ```
 
-The command validates every selected Compose file, `.env`, and systemd pair
-before building or starting anything. It uses existing per-stack `.env` files
+The command validates every selected Compose file, secret file and systemd pair
+before building or starting anything. It reads a stack's tracked `settings.env`, if any,
 and never resets Git. A stack failure does not roll back earlier stacks; the
 command attempts the remaining selections, prints an explicit partial result,
-and exits nonzero. To render new files, export only the values named by the
-stack's `.env.example` and `secrets/*.example` and run `scripts/generate-env.sh <stack>`. The renderer
-writes dotenv data atomically with mode `0600`, and each secret raw, mode `0444` in a `0700` folder (every
-container user reads it, no other host user); never source a
-generated `.env` as shell.
+and exits nonzero. To write new secret files, export the deploy workflow's render-step
+secrets and run `scripts/render-secrets.sh`: each is raw text, mode `0444` in a `0700` folder (every container
+user reads it, no other host user).
 
 ## Adding a stack
 
@@ -163,8 +161,8 @@ generated `.env` as shell.
    Set `init: true` when the main process does not handle SIGTERM (a shell
    script, a plain Python loop): as PID 1 it ignores it, so every stop waits
    10 s and then kills it.
-2. If needed, add `.env.example` for settings and `secrets/<name>.example` per secret, and name the secrets in the
-   deploy workflow, not all. Containers read a secret as a Compose `secrets:` file, never from `environment:`,
+2. If needed, add settings to `settings.env`, and each secret to the deploy workflow's render step (not all of
+   them). A container reads one as a Compose `secrets:` file from `../../secrets/`, never from `environment:`,
    which inspect shows (`tests/test_no_secret_in_env.py`).
 3. Run `mise run validate:compose`. Stack discovery is automatic; no task or
    deployment registry needs updating.
@@ -212,10 +210,10 @@ update this drop-in, the Compose bindings, `stacks/internal-names` (Caddyfile,
 Corefile) and the `.internal` nameserver in Tailscale's DNS settings.
 
 For containers already stranded without networking, recreate only affected
-services with their existing `.env` and named volumes:
+services with their settings and named volumes:
 
 ```bash
-docker compose --env-file stacks/observability/.env \
+docker compose --env-file stacks/observability/settings.env \
   -f stacks/observability/compose.yaml up -d --force-recreate --no-deps grafana gateway
 ```
 

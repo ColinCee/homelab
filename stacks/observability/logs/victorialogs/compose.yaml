@@ -1,4 +1,4 @@
-# The log store when LOG_STORE=victorialogs (../../.env.example); ../../compose.yaml runs it as `logs`. Flags:
+# The log store when LOG_STORE=victorialogs (../../settings.env); ../../compose.yaml runs it as `logs`. Flags:
 # https://docs.victoriametrics.com/victorialogs/#list-of-command-line-flags
 services:
   logs:

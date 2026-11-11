@@ -8,6 +8,17 @@ set -eu
 # here: a run that would take the repository over this size uploads nothing.
 MAX_REPO_BYTES="${MAX_REPO_BYTES:-8000000000}"
 
+# The repository and its S3 login, in the files restic reads (compose.yaml), from the R2 secrets.
+(
+  umask 077
+  account=$(cat /run/secrets/r2_account_id)
+  key=$(cat /run/secrets/r2_access_key_id)
+  secret=$(cat /run/secrets/r2_secret_access_key)
+  echo "s3:https://$account.r2.cloudflarestorage.com/beelink-backups" >"$RESTIC_REPOSITORY_FILE"
+  printf '[default]\naws_access_key_id = %s\naws_secret_access_key = %s\n' "$key" "$secret" \
+    >"$AWS_SHARED_CREDENTIALS_FILE"
+)
+
 backup_data() {
   # The live recorder database, logs, and re-downloadable plugins are left out:
   # a live copy of the database would be inconsistent, so history-snapshot.db

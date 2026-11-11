@@ -48,7 +48,7 @@ creating another runner or Git hook.
 
 Each `stacks/<name>/` directory is a self-contained Compose stack. Pushes to
 `main` that touch stacks, scripts, or the deploy workflow run the deploy
-workflow on the host, which renders `.env` and secret files from allowed secrets and
+workflow on the host, which writes the allowed secrets to files and
 applies the stacks with one shared command. See
 [Deploy and manage services](docs/runbooks/deploying-services.md).
 

@@ -39,11 +39,12 @@ jobs:
           git fetch --no-tags origin main
           git reset --hard "$DEPLOY_REF"
 
-      - name: Render stack environments
+      # The one list of secret names: render-secrets writes each to secrets/<name in lower case>.
+      - name: Render secrets
         env:
           CF_TUNNEL_TOKEN: ${{ secrets.CF_TUNNEL_TOKEN }}
           DISCORD_PRIVATE_WEBHOOK_URL: ${{ secrets.DISCORD_PRIVATE_WEBHOOK_URL }}
-          # Grafana's admin password and key, and the readers' logins (stacks/observability/secrets/*.example).
+          # Grafana's admin password and key (ingest, unused since OpenObserve), and the readers' logins.
           OPENOBSERVE_ROOT_PASSWORD: ${{ secrets.OPENOBSERVE_ROOT_PASSWORD }}
           OPENOBSERVE_INGEST_PASSWORD: ${{ secrets.OPENOBSERVE_INGEST_PASSWORD }}
           OPENOBSERVE_AGENTS_PASSWORD: ${{ secrets.OPENOBSERVE_AGENTS_PASSWORD }}
@@ -55,7 +56,7 @@ jobs:
           RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
         run: |
           cd /home/colin/code/homelab
-          scripts/generate-env.sh
+          scripts/render-secrets.sh
 
       # The login lives in the job's temp directory, which the runner deletes
       # after the job, so no registry credential stays on the host.

@@ -1,5 +1,5 @@
-# The trial beside the live stack (docs/runbooks/switching-observability.md, "Before the merge"), never deployed:
-#   docker compose -p obs-trial --env-file <trial env> -f compose.yaml -f trial.yaml up -d
+# The trial beside the live stack, never deployed, and only before the switch to this stack, since it names the live
+# stack's volumes: docker compose -p obs-trial --env-file settings.env -f compose.yaml -f trial.yaml up -d
 # No host ports, alerts to a local sink (trial-webhook; edit it to post to Discord), and no restarts,
 # since the live stack's restart rule would post about them. The stores keep their data in the volumes the live
 # stack will use, so nothing they hold is lost at the switch.

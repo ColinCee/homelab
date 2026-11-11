@@ -1,12 +1,14 @@
 """No secret goes in a container's environment, command or labels: anything allowed to inspect
 containers reads them, Alloy's Docker API proxy included (stacks/observability/compose.yaml,
-docker-socket-proxy). A secret is a file under /run/secrets (scripts/generate_env.py)."""
+docker-socket-proxy). A secret is a file under /run/secrets (scripts/render_secrets.py)."""
 
 import re
 from pathlib import Path
 
 import pytest
 import yaml
+
+from scripts import render_secrets
 
 ROOT = Path(__file__).parent.parent
 STACKS = ROOT / "stacks"
@@ -91,15 +93,26 @@ def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict) -> N
     assert problems({"services": {"s": service}})
 
 
-def test_no_deploy_secret_reaches_a_stacks_env_file() -> None:
-    """Compose interpolates only what a stack's .env holds, so a GitHub secret kept out of every
-    .env.example reaches a container only as a secret file, whatever it is named."""
-    workflow = (ROOT / ".github/workflows/deploy.yaml").read_text(encoding="utf-8")
-    deployed = set(re.findall(r"\$\{\{\s*secrets\.([A-Z0-9_]+)\s*\}\}", workflow))
-    assert "RESTIC_PASSWORD" in deployed
-    for example in STACKS.glob("*/.env.example"):
-        used = set(re.findall(r"\$\{([A-Z0-9_]+)\}", example.read_text(encoding="utf-8")))
-        assert not used & deployed, example
+def test_each_secret_file_a_stack_mounts_is_one_the_deploy_writes_and_each_is_used() -> None:
+    written = {name.lower() for name in render_secrets.secret_names(ROOT)}
+    assert "restic_password" in written
+    mounted = set()
+    for compose in STACKS.glob("*/compose.yaml"):
+        spec = load(compose)
+        assert isinstance(spec, dict)
+        for secret in (spec.get("secrets") or {}).values():
+            folder, _, name = secret["file"].rpartition("/")
+            assert folder == "../../secrets", compose
+            mounted.add(name)
+    assert mounted == written
+
+
+def test_no_secret_reaches_a_stacks_settings() -> None:
+    """Compose interpolates only what a stack's settings.env holds."""
+    names = render_secrets.secret_names(ROOT)
+    for settings in STACKS.glob("*/settings.env"):
+        text = settings.read_text(encoding="utf-8")
+        assert not [name for name in names if name in text], settings
 
 
 def test_a_secret_file_and_its_path_pass() -> None:

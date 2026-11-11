@@ -2,4 +2,4 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-exec python3 "$repo_root/scripts/generate_env.py" "$@"
+exec python3 "$repo_root/scripts/render_secrets.py" "$@"

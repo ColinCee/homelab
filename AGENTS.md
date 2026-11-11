@@ -17,7 +17,7 @@ That runs what CI's check job runs: lint, typecheck, test, docs:size and validat
   when required by the service.
 - Pin container images and Actions. Renovate may auto-merge non-major updates
   after checks and the release-age gate pass; major updates remain manual.
-- Never source generated `.env` files or expose secrets. Private operational
+- Never print or expose secrets. Private operational
   records belong in the separate notes repository, not this public repository.
 - Do not add image polling or stack-specific deployment branches. Git owns
   pinned image revisions (moved by Renovate); Compose and stack-owned units own

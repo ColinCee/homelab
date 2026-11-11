@@ -32,10 +32,10 @@ services:
       - default
       - observability-otlp
 
-# Rendered by scripts/generate-env.sh from secrets/*.example.
+# Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:
   tunnel_token:
-    file: ./secrets/tunnel_token
+    file: ../../secrets/cf_tunnel_token
 
 networks:
   # Owned by the observability stack; deploy it first on a fresh host.

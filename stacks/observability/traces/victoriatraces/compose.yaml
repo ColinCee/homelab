@@ -1,4 +1,4 @@
-# The trace store when TRACE_STORE=victoriatraces (../../.env.example); ../../compose.yaml runs it as `traces`. Flags:
+# The trace store when TRACE_STORE=victoriatraces (../../settings.env); ../../compose.yaml runs it as `traces`. Flags:
 # https://docs.victoriametrics.com/victoriatraces/#list-of-command-line-flags
 services:
   traces:

@@ -1,4 +1,4 @@
-# The trace store when TRACE_STORE=tempo (../../.env.example); ../../compose.yaml runs it as `traces`. One process on
+# The trace store when TRACE_STORE=tempo (../../settings.env); ../../compose.yaml runs it as `traces`. One process on
 # local disk, Tempo's monolithic mode, which needs no Kafka.
 services:
   traces:
