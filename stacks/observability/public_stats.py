@@ -2,8 +2,8 @@
 
 Runs in this stack's public-stats container. Every five minutes
 it asks Prometheus, through the stack's read-only gateway, and the already-public
-flight-tracker API for a handful of
-numbers and PUTs them to the blog, which shows them in its home-lab figure.
+flight-tracker API for a handful of numbers and PUTs them to the blog, which shows
+them in its home-lab figure.
 The body is built from named numbers only, never by forwarding a response, so
 nothing else about the host can leak. See docs/public-stats.md.
 """
