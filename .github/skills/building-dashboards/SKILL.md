@@ -32,7 +32,7 @@ into the query instead (`[7d]`, `_time:1h`).
 ## Colour and order
 
 Each colour means one thing on every panel. The hexes live in `tests/test_dashboards.py` (`GROUPS`,
-`NOW`, `WEEK`, `NEUTRAL`), which checks both files against them and against the containers compose
+`NOW`, `WEEK`, `NEUTRAL`), which checks Home against them and against the containers compose
 starts.
 
 | Colour | Means |
