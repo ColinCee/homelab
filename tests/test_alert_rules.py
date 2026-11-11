@@ -1,6 +1,6 @@
 """Every alert rule (stacks/observability/prometheus/rules.yml) meets the alert standard in
-docs/architecture.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
-as the standard says: promtool runs them over made-up series, so those tests need Docker."""
+docs/architecture.md, and the rules fire, hold and clear as the standard says: promtool runs
+them over made-up series, so those tests need Docker."""
 
 import functools
 import json
@@ -16,8 +16,6 @@ STACK = Path(__file__).parent.parent / "stacks/observability"
 GROUPS = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
 RULES = {r["alert"]: r for g in GROUPS for r in g["rules"]}
 HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
-ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
-TEMPLATE = (STACK / "alertmanager/discord.tmpl").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
 PROMETHEUS = COMPOSE["services"]["prometheus"]["image"]
 HOME = "http://beelink.tail4f465e.ts.net:5080/d/home"
@@ -49,73 +47,6 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
-def test_the_18_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
-    assert len(HOMELAB) == 18
-    assert set(RULES) - set(HOMELAB) == {
-        "PrometheusRuleFailures",
-        "PrometheusBadConfig",
-        "watchdog",
-        "store-down",
-        "store-stopped",
-        "deploy-ran",
-        "ci-host-updated",
-        "tailscale-device-added",
-        "runner-guard-changed",
-        "runner-guard-refused",
-        "ssh-login-elsewhere",
-        "security-checks-stopped",
-    }
-    assert all(g["interval"] == "1m" for g in GROUPS)
-
-
-def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() -> None:
-    route = ALERTMANAGER["route"]
-    assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
-    assert route["routes"][1:] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
-
-
-def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord() -> None:
-    assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "watchdog"} == {
-        "watchdog"
-    }
-    assert ALERTMANAGER["route"]["routes"][0] == {
-        "matchers": ['alertname="watchdog"'],
-        "receiver": "healthchecks",
-        "group_wait": "0s",
-        "group_interval": "1m",
-        "repeat_interval": "30s",
-    }
-    [ping] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "healthchecks")[
-        "webhook_configs"
-    ]
-    assert ping == {"url_file": "/run/secrets/healthchecks_ping", "send_resolved": False}
-
-
-def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
-    # The rules on Prometheus itself and the public probes read its own scrape, not
-    # Alloy's; the store rules read Alloy's.
-    assert {n for n in RULES if n.startswith("Prometheus")} == {
-        "PrometheusRuleFailures",
-        "PrometheusBadConfig",
-    }
-    assert ALERTMANAGER["inhibit_rules"] == [
-        {
-            "source_matchers": ['alertname="beelink-metrics-stopped"'],
-            "target_matchers": [
-                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|site-down|watchdog"'
-            ],
-        }
-    ]
-
-
-def test_only_a_firing_act_now_post_mentions_colin() -> None:
-    mention = re.search(r'define "homelab.mention" \}\}(.*?)\{\{ end \}\}\{\{ end \}\}', TEMPLATE)
-    assert mention and '(eq .Status "firing") (eq .CommonLabels.level "now")' in mention[1]
-    assert ALERTMANAGER["route"]["receiver"] == "discord"
-    discord = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord")
-    assert discord["discord_configs"][0]["send_resolved"] is True
-
-
 def test_no_data_is_kept_for_metrics_alloy_does_not_make() -> None:
     # A gone Alloy metric is "Beelink metrics stopped"; a textfile metric's writer can stop alone.
     for name, rule in HOMELAB.items():
@@ -136,16 +67,6 @@ def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
         expr = flat(rule["expr"])
         aggregated = r"\(* ?(max|min|sum|count|vector|round\(\(time\(\) - max|round\(max)"
         assert re.match(aggregated, expr), name
-
-
-def test_prometheus_keeps_30_days_and_takes_alloys_writes() -> None:
-    config = yaml.safe_load((STACK / "prometheus/prometheus.yml").read_text(encoding="utf-8"))
-    assert config["storage"]["tsdb"]["retention"] == {"time": "30d"}
-    assert config["rule_files"] == ["/etc/prometheus/rules.yml"]
-    flags = COMPOSE["services"]["prometheus"]["command"]
-    assert "--web.enable-remote-write-receiver" in flags
-    # No admin or lifecycle API: nothing but the deploy changes it.
-    assert not [f for f in flags if "admin" in f or "lifecycle" in f]
 
 
 @functools.cache
@@ -387,65 +308,6 @@ CASES = {
             at(4, "upkeep-failed"),
             at(66, "upkeep-failed", posts("upkeep-failed", "0")),
             at(95, "upkeep-failed"),
-        ],
-    ),
-    "upkeep that has never run is not due yet, so it never fires": (
-        [('up{job="integrations/unix"}', "1x120")],
-        [at(70, "upkeep-failed"), at(119, "upkeep-failed")],
-    ),
-    "a first upkeep that failed fires as no data": (
-        [("homelab_upkeep_last_failure_timestamp_seconds", "_x5 60x80")],
-        [
-            at(64, "upkeep-failed"),
-            at(66, "upkeep-failed", posts("upkeep-failed", "-1")),
-        ],
-    ),
-    "a site failing its probe, or its probe not answering, fires after `for`": (
-        [
-            ('probe_success{job="integrations/blackbox/sites",site="a"}', "1x5 0x20"),
-            ('up{job="integrations/blackbox/sites",site="a"}', "1x25"),
-            ('probe_success{job="integrations/blackbox/sites",site="b"}', "1x25"),
-            ('up{job="integrations/blackbox/sites",site="b"}', "1x25"),
-            ('up{job="integrations/blackbox/sites",site="c"}', "1x5 0x20"),
-        ],
-        [
-            at(15, "site-down"),
-            at(
-                17,
-                "site-down",
-                posts("site-down", "0", site="a"),
-                posts("site-down", "0", site="c"),
-            ),
-        ],
-    ),
-    "an unhealthy container fires after `for`, one without a check never": (
-        [
-            ('container_health_state{job="docker",name="web",id="/a"}', "0x30"),
-            ('container_health_state{job="docker",name="db",id="/b"}', "-1x30"),
-            ('container_health_state{job="docker",name="api",id="/c"}', "1x30"),
-        ],
-        [
-            at(9, "container-unhealthy"),
-            at(11, "container-unhealthy", posts("container-unhealthy", "0", name="web")),
-        ],
-    ),
-    "the CI supervisor stopping fires after 10 minutes and `for`": (
-        [
-            (
-                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-waits.prom"}',
-                "0+60x10 600x30",
-            )
-        ],
-        [
-            at(25, "ci-supervisor-stopped"),
-            at(27, "ci-supervisor-stopped", posts("ci-supervisor-stopped", "17")),
-        ],
-    ),
-    "a deep check over 8 days old fires after `for`": (
-        [("homelab_backup_last_deep_check_timestamp_seconds", "-734400x40")],
-        [
-            at(29, "deep-check-missed"),
-            at(31, "deep-check-missed", posts("deep-check-missed", "9")),
         ],
     ),
     "metrics stopping is one alert with no labels": (

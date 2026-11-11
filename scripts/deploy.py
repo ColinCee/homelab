@@ -499,7 +499,7 @@ def main() -> int:
     parser.add_argument(
         "--readiness-timeout",
         type=_positive_int,
-        default=os.environ.get("DEPLOY_READINESS_TIMEOUT_SECONDS", "120"),
+        default=120,
         help="Compose readiness wait in seconds (default: 120)",
     )
     parser.add_argument(

@@ -54,19 +54,10 @@ def test_stale_flight_data_is_not_shown_as_live() -> None:
     assert (body["tracking"], body["londonHour"]) == (None, None)
 
 
-@pytest.mark.parametrize(
-    "kpis",
-    [
-        None,
-        {"apiHealth": "live"},
-        {**KPIS, "trackedAircraft": None},
-        {**KPIS, "throughputLast60Min": "x"},
-        {**KPIS, "trackedAircraft": 10_000_000},
-    ],
-)
-def test_odd_flight_data_leaves_the_flight_numbers_empty(kpis: dict | None) -> None:
-    body = build_body(results(), kpis, NOW)
-    assert body["tracking"] in (None, 237)
+@pytest.mark.parametrize("tracked", ["x", 10_000_000])
+def test_odd_flight_data_leaves_the_flight_numbers_empty(tracked: object) -> None:
+    body = build_body(results(), {**KPIS, "trackedAircraft": tracked}, NOW)
+    assert body["tracking"] is None
 
 
 def test_the_signature_covers_exactly_the_bytes_sent() -> None:

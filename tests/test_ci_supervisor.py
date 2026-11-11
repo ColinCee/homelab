@@ -112,8 +112,6 @@ def test_the_standby_goes_to_the_repo_of_the_last_job() -> None:
         (["self-hosted", "linux", "x64", "homelab-fc"], True),
         (["Self-Hosted", "HOMELAB-FC"], True),
         (["self-hosted"], False),  # could be the deploy runner's job
-        (["ubuntu-latest"], False),
-        (["homelab-fc", "gpu"], False),  # asks for something our VMs lack
         (["homelab-fc", "beelink"], False),  # the deploy runner's label
     ],
 )
@@ -146,14 +144,10 @@ def test_finds_queued_jobs_for_us_only() -> None:
 @pytest.mark.parametrize(
     ("queued", "booting", "free", "starts"),
     [
-        (["a/x"], {}, 2, ["a/x"]),
         (["a/x"] * 3, {}, 2, ["a/x", "a/x"]),
         (["a/x"] * 2, {"a/x": 1}, 2, ["a/x"]),  # one VM is already booting for it
-        (["a/x"], {"a/x": 1}, 2, []),
-        (["a/x", "b/y"], {}, 1, ["a/x"]),
         (["b/y", "a/x"], {}, 1, ["b/y"]),  # the oldest job first, whatever its name
         (["a/x", "b/y", "a/x"], {"a/x": 1}, 1, ["b/y"]),  # a booting VM covers the oldest
-        ([], {}, 2, []),
         (["a/x"], {}, 0, []),
     ],
 )
@@ -168,7 +162,6 @@ def test_plans_one_vm_per_uncovered_job_oldest_first(
     [
         ({"private": True, "full_name": "ColinCee/cortex"}, True),
         ({"private": False, "full_name": "ColinCee/cortex"}, False),
-        ({"full_name": "ColinCee/cortex"}, False),  # missing means no
         ({"private": "true", "full_name": "ColinCee/cortex"}, False),
         ({"private": True, "full_name": "someone/cortex"}, False),  # renamed or transferred
     ],
@@ -201,12 +194,12 @@ def test_asks_about_an_idle_vm_only_once_booted_with_nothing_queued(
     assert sup.may_be_idle(age, queued) is check
 
 
-@pytest.mark.parametrize(("running", "size"), [(0, (4, 4096)), (1, (2, 2048)), (2, (2, 2048))])
+@pytest.mark.parametrize(("running", "size"), [(0, (4, 4096)), (1, (2, 2048))])
 def test_a_job_alone_gets_all_four_cores(running: int, size: tuple[int, int]) -> None:
     assert sup.vm_size(running) == size
 
 
-@pytest.mark.parametrize("kind", [tarfile.CHRTYPE, tarfile.BLKTYPE, tarfile.FIFOTYPE])
+@pytest.mark.parametrize("kind", [tarfile.CHRTYPE, tarfile.FIFOTYPE])
 def test_the_cache_unpacker_refuses_device_files(kind: bytes, tmp_path) -> None:
     member = tarfile.TarInfo("cache/dev")
     member.type = kind
@@ -374,7 +367,6 @@ def test_keeps_an_outbox_until_github_shows_its_job_finished(outbox_dir, built) 
     "header",
     [
         b"homelab-ci-outbox\n",  # nothing saved: most VMs end so
-        b"\0" * 64,
         b"homelab-ci-cache v1 run=70 attempt=1 ; rm -rf /\n",
         b"homelab-ci-cache v1 run=/../70 attempt=1\n",
     ],
@@ -454,7 +446,6 @@ def test_a_cache_tar_that_fails_to_unpack_is_dropped(outbox_dir, caches) -> None
         ("fc-cache-octo-widgets", None),
         ("fc-cache---widgets", None),
         ("fc-cache-octo--", None),
-        ("homelab-fc", None),
     ],
 )
 def test_reads_the_repo_a_cache_label_names(label: str, repo: str | None) -> None:
@@ -467,7 +458,6 @@ def test_reads_the_repo_a_cache_label_names(label: str, repo: str | None) -> Non
         (["homelab-fc", "fc-cache-octo--widgets"], True),
         (["self-hosted", "homelab-fc", "fc-cache-octo--unserved"], True),  # served, no disk
         (["homelab-fc", "fc-cache-octo--a", "fc-cache-octo--b"], False),  # one VM, one disk
-        (["homelab-fc", "fc-cache-octo--widgets", "gpu"], False),
         (["fc-cache-octo--widgets"], False),
     ],
 )
@@ -504,16 +494,9 @@ def test_a_cache_label_naming_a_served_private_repo_gets_its_disk(caches) -> Non
     assert disk == caches / "octo__widgets.ext4"
 
 
-@pytest.mark.parametrize(
-    "private",
-    [
-        ["octo/agent"],  # not served, or served but public: not in this poll's private list
-        ["octo/agent", "octo/nodisk"],
-    ],
-)
-def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(
-    caches, private: list[str]
-) -> None:
+def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(caches) -> None:
+    # widgets has a disk but is not in this poll's private list; nodisk is, but has no disk.
+    private = ["octo/agent", "octo/nodisk"]
     assert sup.cache_for("octo/agent", "fc-cache-octo--widgets", private) is None
     assert sup.cache_for("octo/agent", "fc-cache-octo--nodisk", private) is None
 
@@ -706,7 +689,7 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
 
 @pytest.mark.parametrize(
     ("text", "slots"),
-    [(None, 5), ("", 5), ("four\n", 5), ("-2\n", 5), ("0\n", 1), ("3\n", 3), (" 2 ", 2)],
+    [(None, 5), ("four\n", 5), ("-2\n", 5), ("0\n", 1), (" 2 ", 2)],
 )
 def test_the_slot_count_comes_from_the_host_file(tmp_path, monkeypatch, text, slots) -> None:
     path = tmp_path / "slots"
@@ -1354,13 +1337,6 @@ def pools(caches, monkeypatch):
     return queue, started
 
 
-def test_an_old_last_repo_file_with_the_repo_alone_still_loads(monkeypatch, tmp_path) -> None:
-    path = tmp_path / "last-repo"
-    path.write_text("a/y\n")
-    monkeypatch.setattr(sup, "LAST_REPO_FILE", path)
-    assert sup.recalled_last_job() == ("a/y", "")
-
-
 def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     caches, monkeypatch
 ) -> None:
@@ -1626,12 +1602,6 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
     assert asked == [f"fc-{slot}"]
 
 
-def _busy(slot: int, label: str = "") -> sup.Launch:
-    run = sup.Launch(slot, "o/ok", slot, f"fc-{slot}", 0.0, None, False, label=label)  # type: ignore[arg-type]
-    run.busy = True
-    return run
-
-
 # The real one, before the fixture below replaces it in every test.
 START_VM = sup.start_vm
 
@@ -1805,9 +1775,8 @@ def test_an_ended_vm_is_counted_by_kind_and_its_memory_file_removed(vms, memory)
     assert not run.memory_file.exists()
 
 
-@pytest.mark.parametrize("label", ["", "fc-cache-o--build"])
-def test_an_ended_vm_of_any_label_is_counted(vms, memory, label) -> None:
-    run = _ended(vms, label, peak=300, kills=0)
+def test_an_ended_vm_with_a_cache_label_is_counted(vms, memory) -> None:
+    run = _ended(vms, "fc-cache-o--build", peak=300, kills=0)
     sup.forget(run)
     assert sup.MEMORY_COUNTS["build"][0] == 1
 

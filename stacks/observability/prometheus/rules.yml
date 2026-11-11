@@ -202,7 +202,7 @@ groups:
           harm: 'No CI machine starts, so private repositories'' checks wait and nothing of theirs merges.'
           action: >-
             Read `sudo journalctl -u homelab-ci-supervisor -n 100` on the Beelink, fix the cause, then `sudo
-            systemctl restart homelab-ci-supervisor`; see docs/runbooks/ci-runner.md.
+            systemctl restart homelab-ci-supervisor`; see docs/architecture.md, "CI runner".
           dashboard: *home
           value: '{{ $value }}'
       - alert: new-container
@@ -264,8 +264,8 @@ groups:
           unit: ' days ago'
           harm: 'Damaged data in R2 goes unseen until a restore needs it.'
           action: >-
-            Run the check now with DEEP_CHECK=1 as docs/runbooks/backups.md says, and read why it fails in its
-            output; a deploy since Sunday has wiped that run's log.
+            Run the check now with `docker exec -e DEEP_CHECK=1 backup sh -c '/bin/sh /backup.sh once'` and read why
+            it fails in its output; a deploy since Sunday has wiped that run's log.
           dashboard: *home
           value: '{{ $value }}'
       - alert: pc-backup-stale
