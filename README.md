@@ -2,7 +2,7 @@
 
 One Beelink mini-PC running Docker Compose stacks: Home Assistant, the
 [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend, monitoring with alerts to Discord,
-nightly encrypted backups to Cloudflare R2, and CI for private repositories in Firecracker VMs. Nothing accepts a
+nightly encrypted backups to Cloudflare R2, and Colin's CI in Firecracker VMs. Nothing accepts a
 connection from the internet: admin access is over Tailscale, and the flight tracker's API leaves through Cloudflare
 Tunnel.
 

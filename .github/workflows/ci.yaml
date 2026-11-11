@@ -72,6 +72,9 @@ jobs:
       # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
       - name: Install tools from the cache disk
         if: steps.pins.outputs.only != 'true' && runner.environment == 'self-hosted'
+        env:
+          # Downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address shares.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           export MISE_DATA_DIR=/cache/mise MISE_YES=1 MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE"
           env | grep '^MISE_' >> "$GITHUB_ENV"

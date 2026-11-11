@@ -107,15 +107,15 @@ def decide_vm(
     """A private repo's VM takes its repo's jobs. A public repo's takes only Colin's, from
     the repo itself, never a fork: its runner takes any queued job of the repo, whoever
     queued it (docs/architecture.md, "CI runner"). Missing means no."""
-    for name in INJECTION_VARIABLES:
-        if env.get(name):
-            return Decision(False, f"{name} is set; workflow environment reached the hook")
     served = serves.get("repo")
     repository = env.get("GITHUB_REPOSITORY", "")
     if not isinstance(served, str) or not served or repository.lower() != served.lower():
         return Decision(False, f"repository {repository or '(missing)'} is not the served {served}")
     if serves.get("public") is False:
         return Decision(True, f"a job of private {repository}")
+    for name in INJECTION_VARIABLES:
+        if env.get(name):
+            return Decision(False, f"{name} is set; workflow environment reached the hook")
     kind = env.get("GITHUB_EVENT_NAME", "")
     if kind not in VM_EVENTS:
         return Decision(False, f"event {kind or '(missing)'} is not one of {sorted(VM_EVENTS)}")

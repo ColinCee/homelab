@@ -56,6 +56,9 @@ OWNER_ID = 11246116
 # job (runner_job_guard.py, vm policy), since a repo's runner takes any queued job.
 PUBLIC_REPOS = frozenset({"ColinCee/homelab"})
 STRICT_APPROVAL = "all_external_contributors"
+# Written by build-rootfs.sh when the VM image carries that guard: until then (an image not yet
+# rebuilt, or a failed rebuild) no public repo is served.
+GUARD_MARKER = Path("/var/lib/homelab-ci/images/job-guard")
 # How often to ask GitHub which repositories the token can see. The listing and its
 # collaborator checks (two requests a repo) run beside the poll, never holding it up.
 REPOS_EVERY = 60
@@ -462,7 +465,7 @@ def is_served(repo_data: Mapping[str, Any], repo: str, approval: Callable[[], st
     if repo_data.get("private") is True:
         return True
     listed = repo_data.get("private") is False and repo in PUBLIC_REPOS
-    return listed and approval() == STRICT_APPROVAL
+    return listed and GUARD_MARKER.exists() and approval() == STRICT_APPROVAL
 
 
 def approval_policy(gh: GitHub, repo: str) -> str:

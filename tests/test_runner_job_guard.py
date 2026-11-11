@@ -221,6 +221,7 @@ def test_a_private_repos_vm_takes_any_job_of_its_repo_only() -> None:
     private = {"repo": "ColinCee/cortex", "public": False}
     renovate = _env(GITHUB_REPOSITORY="ColinCee/cortex", GITHUB_ACTOR="renovate[bot]")
     assert guard.decide_vm(renovate, private, {}).allowed
+    assert guard.decide_vm(renovate | {"ENV": "production"}, private, {}).allowed
     assert not guard.decide_vm(_env(), private, {}).allowed
 
 

@@ -169,9 +169,14 @@ def test_plans_one_vm_per_uncovered_job_oldest_first(
     ],
 )
 def test_serves_a_private_repo_or_a_listed_public_one_holding_runs_for_approval(
-    repo: str, private: object, approval: str, served: bool
+    repo: str, private: object, approval: str, served: bool, tmp_path, monkeypatch
 ) -> None:
+    monkeypatch.setattr(sup, "GUARD_MARKER", tmp_path / "job-guard")
     data = {"private": private, "full_name": repo}
+    if private is False:
+        # An image without the job guard serves no public repo.
+        assert sup.is_served(data, repo, lambda: approval) is False
+    (tmp_path / "job-guard").touch()
     assert sup.is_served(data, repo, lambda: approval) is served
     # Renamed or transferred.
     assert sup.is_served(data | {"full_name": "someone/x"}, repo, lambda: approval) is False
