@@ -1,20 +1,19 @@
 # Switching observability
 
 How the observability stack moves from OpenObserve to Prometheus, Grafana and the picked log and trace stores
-([ADR 0004](../adr/0004-prometheus-grafana.md)) in one deploy, and back. It changes the `observability`, `backup`,
+([ADR 0001](../adr/0001-observability-stack.md)) in one deploy, and back. It changes the `observability`, `backup`,
 `flight-tracker` and `internal-names` stacks together, and every stack's secrets become files, so each labelled
 container is recreated once (cloudflared's tunnel blips). No new secret: `secrets/*.example` maps the
 OpenObserve-named ones.
 
 ## Before the merge
 
-1. The trial ran beside the live stack as Compose project `obs-trial`, with
-   [`trial.yaml`](../../stacks/observability/trial.yaml) (no host ports, alerts to a local sink, no restarts), and
-   was stopped after its crash, outage and burst tests (ADR 0004's results, "Beside the live stack"); everything it
-   made is removed. Running it again needs the stack's secret files rendered in that checkout
-   (`scripts/generate-env.sh observability`) and its `obs-trial.slice` memory cap set again.
-2. Check the pick in `stacks/observability/.env.example` (`LOG_STORE`, `TRACE_STORE`) matches ADR 0004's. Set its
-   status to Accepted and ADR 0001's to "Superseded by 0004", in this pull request.
+1. The trial ([`trial.yaml`](../../stacks/observability/trial.yaml), Compose project `obs-trial`) ran beside the live
+   stack ([results](../adr/0001-observability-stack/results.md), "Beside the live stack"). Run it only before the
+   switch, since it names the live stack's volumes, with its secret files rendered and its `obs-trial.slice` cap set.
+2. Colin's step: the GitHub secrets `TAILNET_KNOWN_DEVICES` (each tailnet device's name, `|`-separated) and
+   `TAILNET_SSH_DEVICES` (the devices SSH may come from), with `gh secret set <name> -R ColinCee/homelab`. The
+   intrusion rules alert on any other device; without them every deploy fails.
 3. Wait for CI to pass, and for no CI job to run on the Beelink (`gh run list --status in_progress`).
 4. On the Beelink, with `am="docker exec observability-alertmanager-1 amtool --alertmanager.url=http://localhost:9093"`:
    - `$am alert query` lists nothing. Alertmanager keeps alerts in memory and is recreated, so an alert firing at the

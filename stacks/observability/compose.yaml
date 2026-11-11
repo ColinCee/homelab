@@ -1,5 +1,5 @@
 services:
-  # Metrics and the alert rules (prometheus/; docs/adr/0004-prometheus-grafana.md). Alloy writes to it.
+  # Metrics and the alert rules (prometheus/; docs/adr/0001-observability-stack.md). Alloy writes to it.
   prometheus:
     image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
       - alerting
       - probe
 
-  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0004). Each
+  # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0001). Each
   # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
   # the Home dashboard written in its query language; the services below mount the picked store's files.
   logs:
@@ -248,6 +248,9 @@ services:
       ALLOY_DEPLOY_MODE: docker
       # Go grows its heap to twice what is live by default; this keeps it a little above what is live.
       GOMEMLIMIT: 192MiB
+    secrets:
+      - known_devices
+      - ssh_devices
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     tmpfs:
@@ -484,6 +487,11 @@ secrets:
     file: ./secrets/stats_password
   public_stats_key:
     file: ./secrets/public_stats_key
+  # The tailnet devices the intrusion rules expect, for Alloy (config.alloy, known_devices).
+  known_devices:
+    file: ./secrets/known_devices
+  ssh_devices:
+    file: ./secrets/ssh_devices
 
 volumes:
   # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot

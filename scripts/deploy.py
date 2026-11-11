@@ -459,9 +459,8 @@ def _compose_environment() -> dict[str, str]:
         "XDG_CONFIG_HOME",
         "XDG_RUNTIME_DIR",
     }
-    environment = {key: value for key, value in os.environ.items() if key in allowed}
-    environment["COMPOSE_PROFILES"] = ""
-    return environment
+    # No COMPOSE_PROFILES: a stack's .env turns its profiles on, which this would override.
+    return {key: value for key, value in os.environ.items() if key in allowed}
 
 
 def _atomic_copy(source: Path, destination: Path) -> None:

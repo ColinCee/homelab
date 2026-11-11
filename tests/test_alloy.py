@@ -82,5 +82,12 @@ def test_a_line_keeps_its_trace_so_grafana_can_link_it() -> None:
     assert re.search(r'trace_id\s*=\s*"trace_id"', metadata)
     receiver = CONFIG[CONFIG.index('otelcol.receiver.otlp "programs"') :]
     receiver = receiver[: receiver.index("\n}\n")]
-    assert re.search(r"logs\s*=\s*\[otelcol\.processor\.batch\.logs\.input\]", receiver)
+    assert re.search(r"logs\s*=\s*\[otelcol\.exporter\.loki\.programs\.input\]", receiver)
     assert re.search(r"traces\s*=\s*\[otelcol\.processor\.batch\.traces\.input\]", receiver)
+    # They pass the secret filter in Loki's form, so their trace ID comes back out of the JSON line.
+    programs = CONFIG[CONFIG.index('loki.process "programs"') :]
+    programs = programs[: programs.index("\n}\n")]
+    assert re.search(r'trace_id\s*=\s*"traceid"', programs)
+    assert re.search(
+        r'trace_id\s*=\s*"trace_id"', programs[programs.index("structured_metadata") :]
+    )

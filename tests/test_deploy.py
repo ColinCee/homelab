@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -122,7 +123,10 @@ def test_deployment_does_not_forward_shell_secrets_to_compose(
             assert "not-forwarded" not in environment.values()
 
 
-def test_builds_all_profiles_but_does_not_start_profile_jobs(tmp_path: Path) -> None:
+def test_builds_all_profiles_but_starts_only_those_its_env_turns_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("COMPOSE_PROFILES", "from-the-shell")
     _make_stack(tmp_path, "sample")
     runner, calls = _recording_runner()
     plans = deploy.discover_stack_plans(tmp_path)
@@ -139,7 +143,31 @@ def test_builds_all_profiles_but_does_not_start_profile_jobs(tmp_path: Path) -> 
     up_call = next(kwargs for command, kwargs in calls if command == up)
     environment = up_call["env"]
     assert isinstance(environment, dict)
-    assert environment["COMPOSE_PROFILES"] == ""
+    assert "COMPOSE_PROFILES" not in environment
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="needs Docker")
+@pytest.mark.parametrize(("profiles", "started"), [("", ["app"]), ("extra", ["app", "extra"])])
+def test_a_profile_in_the_stacks_env_reaches_up(
+    tmp_path: Path, profiles: str, started: list[str]
+) -> None:
+    stack_dir = tmp_path / "stacks" / "sample"
+    stack_dir.mkdir(parents=True)
+    (stack_dir / "compose.yaml").write_text(
+        "services:\n  app: {image: x}\n  extra: {image: x, profiles: [extra]}\n", encoding="utf-8"
+    )
+    (stack_dir / ".env.example").write_text("COMPOSE_PROFILES=\n", encoding="utf-8")
+    (stack_dir / ".env").write_text(f'COMPOSE_PROFILES="{profiles}"\n', encoding="utf-8")
+    [plan] = deploy.discover_stack_plans(tmp_path)
+
+    listed = subprocess.run(
+        deploy.compose_command(plan, "config", "--services"),
+        env=deploy._compose_environment(),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert sorted(listed.stdout.split()) == started
 
 
 def test_failed_stack_is_reported_while_other_stacks_continue(tmp_path: Path) -> None:

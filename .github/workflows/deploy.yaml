@@ -53,6 +53,9 @@ jobs:
           R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
+          # The tailnet devices the intrusion rules expect, and those SSH may come from, as a|b (config.alloy).
+          TAILNET_KNOWN_DEVICES: ${{ secrets.TAILNET_KNOWN_DEVICES }}
+          TAILNET_SSH_DEVICES: ${{ secrets.TAILNET_SSH_DEVICES }}
         run: |
           cd /home/colin/code/homelab
           scripts/generate-env.sh

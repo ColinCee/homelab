@@ -21,9 +21,38 @@ prometheus.exporter.unix "host" {
 
 prometheus.scrape "host" {
   targets    = prometheus.exporter.unix.host.targets
-  forward_to = [prometheus.remote_write.default.receiver]
+  forward_to = [prometheus.relabel.known_devices.receiver]
 
   scrape_interval = "15s"
+}
+
+// The tailnet devices Colin expects, and those SSH may come from, as `|`-separated names in secret files
+// (secrets/*.example), so the public repo names none. The intrusion rules alert on a series without known="true".
+local.file "known_devices" {
+  filename = "/run/secrets/known_devices"
+}
+
+local.file "ssh_devices" {
+  filename = "/run/secrets/ssh_devices"
+}
+
+prometheus.relabel "known_devices" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  // homelab_tailscale_device_created_timestamp_seconds, from security.prom.
+  rule {
+    source_labels = ["name"]
+    regex         = local.file.known_devices.content
+    target_label  = "known"
+    replacement   = "true"
+  }
+  // homelab_ssh_login_timestamp_seconds, from security.prom.
+  rule {
+    source_labels = ["device"]
+    regex         = local.file.ssh_devices.content
+    target_label  = "known"
+    replacement   = "true"
+  }
 }
 
 // ================================
@@ -159,7 +188,13 @@ loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
   targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.docker_logs.rules
-  forward_to    = [loki.process.docker.receiver]
+  forward_to    = [loki.secretfilter.docker.receiver]
+}
+
+// As loki.secretfilter "logs" below, but before the fields of each line are copied out (next block).
+loki.secretfilter "docker" {
+  redact_percent = 100
+  forward_to     = [loki.process.docker.receiver]
 }
 
 loki.process "docker" {
@@ -203,6 +238,13 @@ loki.process "docker" {
 loki.relabel "journal" {
   forward_to = []
 
+  // sudo logs each command it runs, and tailscaled each Tailscale SSH session's command, over as many lines as it has:
+  // secrets in their arguments included. Nothing reads them from the store; journalctl on the Beelink still has them.
+  rule {
+    source_labels = ["__journal__comm"]
+    regex         = "sudo|tailscaled"
+    action        = "drop"
+  }
   rule {
     source_labels = ["__journal__systemd_unit"]
     target_label  = "unit"
@@ -220,12 +262,20 @@ loki.source.journal "host" {
     container_name = "journal",
     instance       = constants.hostname,
   }
-  forward_to = [otelcol.receiver.loki.logs.receiver]
+  forward_to = [loki.secretfilter.logs.receiver]
 }
 
 // ================================
 // Logs Destination (the log store)
 // ================================
+
+// The journal's and programs' lines pass here, the containers' through loki.secretfilter "docker": secrets in them, by
+// gitleaks' default rules, become REDACTED, since the agents' login reads the store.
+loki.secretfilter "logs" {
+  // All of it: by default it keeps a fifth of each secret.
+  redact_percent = 100
+  forward_to     = [otelcol.receiver.loki.logs.receiver]
+}
 
 // Over OTLP, to the picked store's exporter `logs` (logs/<store>/alloy.alloy).
 otelcol.receiver.loki "logs" {
@@ -254,8 +304,32 @@ otelcol.receiver.otlp "programs" {
   }
   output {
     traces  = [otelcol.processor.batch.traces.input]
-    logs    = [otelcol.processor.batch.logs.input]
+    logs    = [otelcol.exporter.loki.programs.input]
     metrics = [otelcol.exporter.prometheus.programs.input]
+  }
+}
+
+// Programs' logs pass the secret filter too, which takes Loki's form: each line becomes JSON with its body, attributes and
+// IDs, and its trace and span IDs come back out as fields, for Grafana's link to the trace.
+otelcol.exporter.loki "programs" {
+  forward_to = [loki.process.programs.receiver]
+}
+
+loki.process "programs" {
+  forward_to = [loki.secretfilter.logs.receiver]
+
+  stage.json {
+    expressions = {
+      trace_id = "traceid",
+      span_id  = "spanid",
+    }
+  }
+
+  stage.structured_metadata {
+    values = {
+      trace_id = "trace_id",
+      span_id  = "span_id",
+    }
   }
 }
 

@@ -9,13 +9,13 @@ STATUS = {
     "Self": {"DNSName": "beelink.tail4f465e.ts.net.", "Created": "2026-01-31T18:28:12.625380059Z"},
     "Peer": {
         "a": {
-            "DNSName": "biggus-chongus.tail4f465e.ts.net.",
+            "DNSName": "desktop.tail4f465e.ts.net.",
             "Created": "2026-01-31T18:28:48.59761034Z",
             "TailscaleIPs": ["100.64.0.10", "fd7a:115c:a1e0::10"],
         },
         # Its host name is "localhost", so a device is named by its DNS name.
         "b": {
-            "DNSName": "iphone182.tail4f465e.ts.net.",
+            "DNSName": "phone.tail4f465e.ts.net.",
             "HostName": "localhost",
             "Created": "2026-02-03T22:15:42Z",
         },
@@ -35,10 +35,10 @@ def test_devices_are_named_by_dns_name_with_when_they_were_added() -> None:
     added, names = security_facts.tailnet(STATUS)
     assert added == {
         "beelink": 1769884092.62538,
-        "biggus-chongus": 1769884128.59761,
-        "iphone182": 1770156942.0,
+        "desktop": 1769884128.59761,
+        "phone": 1770156942.0,
     }
-    assert names["100.64.0.10"] == "biggus-chongus"
+    assert names["100.64.0.10"] == "desktop"
 
 
 def test_each_event_keeps_its_newest_time_and_who() -> None:
@@ -85,7 +85,7 @@ def test_each_event_keeps_its_newest_time_and_who() -> None:
         "ci_host_install": {("Colin Cheung", "0123456789ab"): 120},
         "runner_guard_refusal": {("someone/fork", "someone"): 150},
         "ssh_login": {
-            ("ci-peer", "100.64.0.10", "biggus-chongus"): 170,
+            ("ci-peer", "100.64.0.10", "desktop"): 170,
             ("colin", "203.0.113.9", ""): 180,
         },
     }
@@ -96,13 +96,13 @@ def test_the_file_holds_each_fact_with_its_labels(tmp_path: Path) -> None:
     found["ci_host_install"] = {('Colin "C"', "0123456789ab"): 120.0}
     out = tmp_path / "security.prom"
 
-    security_facts.write(security_facts.render(found, {"macbook": 1794080335.1}, False), out)
+    security_facts.write(security_facts.render(found, {"laptop": 1794080335.1}, False), out)
 
     samples = [line for line in out.read_text().splitlines() if not line.startswith("#")]
     assert samples == [
         "homelab_ci_host_install_timestamp_seconds"
         '{author="Colin \\"C\\"",commit="0123456789ab"} 120',
-        'homelab_tailscale_device_created_timestamp_seconds{name="macbook"} 1794080335',
+        'homelab_tailscale_device_created_timestamp_seconds{name="laptop"} 1794080335',
         "homelab_runner_guard_matches_main 0",
     ]
     assert [p.name for p in tmp_path.iterdir()] == ["security.prom"]

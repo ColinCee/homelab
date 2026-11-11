@@ -2,7 +2,7 @@
 
 Start here when a service is unhealthy. Compose and `config.alloy` under `stacks/observability/` own exact
 settings and retention. Alloy collects metrics into Prometheus and logs and traces into the log and trace stores, each
-keeping 30 days, and Grafana shows them ([ADR 0004](adr/0004-prometheus-grafana.md)). The switch from OpenObserve and
+keeping 30 days, and Grafana shows them ([ADR 0001](adr/0001-observability-stack.md)). The switch from OpenObserve and
 back: [the runbook](runbooks/switching-observability.md).
 
 Monitoring on Beelink cannot detect its own complete outage from outside.
@@ -51,7 +51,10 @@ and memory come from their slot cgroups (`job="ci-vms"`).
 
 Alloy discovers Docker containers through a read-only socket proxy, adds a `container_name`
 label, and sends logs over OTLP to the log store (`stacks/observability/config.alloy`), with `container_name` as the
-stream, and the host's systemd journal as the container `journal` with each line's `unit`.
+stream, and the host's systemd journal as the container `journal` with each line's `unit`, without sudo's and
+tailscaled's lines, which carry command lines.
+Every line first passes `loki.secretfilter`, which replaces each secret it recognises with `REDACTED`; a secret in a
+form its rules miss still reaches the store.
 
 To inspect a service, find its current container name (`docker ps --format '{{.Names}}'`) and query it in Grafana's
 Explore, on the Logs data source:
@@ -87,7 +90,9 @@ already kept; it drops none by name.
   firewall keeps Alloy from reaching, so their metrics are not collected.
 - **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on (off until its `containers_only`
   works: in the trial it also traced host programs and the CI VMs), OBI's request rate, errors and
-  duration for every program in a container, named after its executable.
+  duration for every program in a container, named after its executable. `COMPOSE_PROFILES=obi` in
+  `.env.example` turns it on at the next deploy; clearing it leaves OBI running until
+  `docker compose --env-file stacks/observability/.env -f stacks/observability/compose.yaml rm -sf obi` on the Beelink.
 - **Flight tracker:** the `blackbox` container probes the public
   `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any
   address its caller names and Alloy must not reach the internet
@@ -111,7 +116,7 @@ max by (name) (container_last_seen{job="docker", name!=""})
 
 Prometheus runs the rules in [`rules.yml`](../stacks/observability/prometheus/rules.yml) each minute. Rules it cannot
 load stop it, which fails the deploy; a rule whose query fails at run time fires "An alert rule is failing". A firing
-rule goes to [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0002](adr/0002-alertmanager.md)), which
+rule goes to [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0001](adr/0001-observability-stack.md)), which
 posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.

@@ -419,7 +419,7 @@ groups:
         expr: |
           max by (name) (round((time() - homelab_tailscale_device_created_timestamp_seconds) / 3600))
           and on (name) (
-            max by (name) (homelab_tailscale_device_created_timestamp_seconds{name!~"beelink|biggus-chongus|iphone182|macbook"})
+            max by (name) (homelab_tailscale_device_created_timestamp_seconds{known!="true"})
             or max by (name) (time() - homelab_tailscale_device_created_timestamp_seconds) < 3600
           )
         for: 0m
@@ -434,8 +434,8 @@ groups:
             A device on the tailnet reaches the Beelink's ports, Grafana and SSH as the tailnet's rules allow; one you
             did not add means someone else holds a login or a key.
           action: >-
-            If you added or re-added it, add its name to this rule's list in stacks/observability/prometheus/rules.yml.
-            Otherwise remove it at https://login.tailscale.com/admin/machines and rotate your Tailscale login.
+            If you added or re-added it, add its name to the TAILNET_KNOWN_DEVICES GitHub secret, which applies at the
+            observability stack's next deploy. Otherwise remove it at https://login.tailscale.com/admin/machines and rotate your Tailscale login.
           dashboard: *home
           value: '{{ $value }}'
       - alert: runner-guard-changed
@@ -478,7 +478,8 @@ groups:
       - alert: ssh-login-elsewhere
         expr: |
           max by (user, from, device) (
-            round((time() - homelab_ssh_login_timestamp_seconds{device!~"biggus-chongus|macbook"}) / 60)
+            round((time() - homelab_ssh_login_timestamp_seconds{known!="true"}) / 60)
+            or round((time() - homelab_ssh_login_timestamp_seconds{device=""}) / 60)
           ) < 10
         for: 0m
         keep_firing_for: 10m

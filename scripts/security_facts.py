@@ -3,8 +3,9 @@
 the last hour's deploys, CI-host installs, runner guard refusals and SSH logins from the journal,
 every tailnet device and when it was added, and whether the installed runner guard is main's.
 
-A host job, not a container, so no container needs a path to the host, its Tailscale or the
-journal's files. Installed by ci-runner/install-host.sh, run each minute by
+A host job, not a container, so no container needs a path to the host or its Tailscale. (Alloy
+reads the journal too, for the log store, without sudo's or tailscaled's lines.) Installed by
+ci-runner/install-host.sh, run each minute by
 homelab-security-facts.timer. On any error the old file stays and the unit fails, so "Security
 checks stopped" fires.
 """

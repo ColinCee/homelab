@@ -282,12 +282,18 @@ CASES = {
     "a re-added Tailscale device fires for its first hour, a listed one never": (
         [
             # Added a day before the series start.
-            ('homelab_tailscale_device_created_timestamp_seconds{name="beelink"}', "-86400x100"),
-            ('homelab_tailscale_device_created_timestamp_seconds{name="macbook"}', "_x10 600x90"),
+            (
+                'homelab_tailscale_device_created_timestamp_seconds{name="beelink",known="true"}',
+                "-86400x100",
+            ),
+            (
+                'homelab_tailscale_device_created_timestamp_seconds{name="laptop",known="true"}',
+                "_x10 600x90",
+            ),
         ],
         [
             at(9, "tailscale-device-added"),
-            at(11, "tailscale-device-added", posts("tailscale-device-added", "0", name="macbook")),
+            at(11, "tailscale-device-added", posts("tailscale-device-added", "0", name="laptop")),
             # An hour after it was added, then the hold.
             at(85, "tailscale-device-added"),
         ],
@@ -310,10 +316,14 @@ CASES = {
                 "_x5 300x30",
             ),
             (
-                'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="biggus-chongus"}',
+                'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="desktop",known="true"}',
                 "_x5 300x30",
             ),
-            ('homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9"}', "_x5 300x30"),
+            # From outside the tailnet: no device, which a stray `|` in the SSH list marks known.
+            (
+                'homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9",known="true"}',
+                "_x5 300x30",
+            ),
         ],
         [
             at(

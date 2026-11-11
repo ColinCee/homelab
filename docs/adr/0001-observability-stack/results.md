@@ -1,8 +1,23 @@
-# Side-by-side test of six stacks
+# Observability stack evidence
+
+The tests behind [the observability stack record](../0001-observability-stack.md). The raw results and test harnesses are kept privately.
+
+## The first bake-off
+
+Seven setups ran on one real day of homelab and Auto Kaizen data, replayed with fresh timestamps, each in its own 2.5 GiB container on a desktop. OpenObserve and GreptimeDB + Grafana tied on memory at the real rate (724-751 and 723-755 MiB over 3 rounds), so simplicity picked OpenObserve. Its flaws, each fixed in the tests below:
+
+| Flaw | Fix |
+|---|---|
+| The Grafana stack ran untuned and with Tempo, which used 617-783 MiB alone; without Tempo it was estimated at 684 MiB (one round, the box's peak minus Tempo's), lighter than both finalists | Every store runs with settings checked against its maker's small single-node advice; each layer is picked on its own |
+| OpenObserve's collector had the wrong login in every scored round, so it never carried the homelab load | Every source's arrival is counted before a run starts |
+| Disk only had to fit 30 days in 100 GB: OpenObserve's 24 GB passed against GreptimeDB's 10 GB, and a later run found 12.4 B per metric reading against Prometheus's 2.4 B | Bytes per reading are compared as numbers |
+| The question was Auto Kaizen's traces and transcripts, not the homelab | The live feed and the homelab's own questions |
+
+## Side-by-side test of six stacks
 
 Run on the Beelink on 10 November 2026 for about 50 minutes, beside the live stack and without touching it.
 
-## Method
+### Method
 
 - One throwaway Alloy ran the live `config.alloy` at a 15 s scrape with no drop rules and wrote to every store at once, each on its own queue: remote write for metrics, OTLP for logs and traces. About 587 readings a second reached each store.
 - Every store ran with its maker's small single-node settings, under one memory cap, with no host ports.
@@ -10,7 +25,7 @@ Run on the Beelink on 10 November 2026 for about 50 minutes, beside the live sta
 - Readers' writes were probed through Grafana with a Viewer token, or through the gateway for OpenObserve.
 - Three fresh agents per stack answered a metric, a log and an alert question with only the reader login; the answers were checked against `/proc/meminfo`, `docker logs` and each Alertmanager's own state.
 
-## Must-haves
+### Must-haves
 
 | Must | OpenObserve today | OpenObserve + vmalert + Grafana | Prom + Loki | Prom + VictoriaLogs | VictoriaMetrics + VL + VT | GreptimeDB |
 |---|---|---|---|---|---|---|
@@ -24,7 +39,7 @@ Run on the Beelink on 10 November 2026 for about 50 minutes, beside the live sta
 
 A front service that passes only read paths turns each "Reader writes refused" fail into a pass, at 3 workaround points.
 
-## Numbers
+### Numbers
 
 | | OpenObserve today | OpenObserve + vmalert + Grafana | Prom + Loki | Prom + VictoriaLogs | VictoriaMetrics + VL + VT | GreptimeDB |
 |---|---|---|---|---|---|---|
@@ -64,6 +79,8 @@ The trace stores ran again at 03:28-04:23 UTC at ten times the estimated real sp
 | Viewer through Grafana, with `http_api_prefix: /tempo` | only the query API answered | |
 | Finished release | yes | no |
 
+SigNoz and ClickStack, each one product on ClickHouse, ran the same replay and live feed at 02:02-03:25 UTC. Both stored every replay line, and both failed two must-haves: no alert held back another, every live rule had to be rewritten, and a reader could write (a SigNoz Viewer key created and dropped a ClickHouse table; ClickStack's free edition has no read-only role). Workaround points: about 21 and 32, against 5.
+
 ## On the live feed
 
 Run on 11 November 2026, 04:34-08:36 UTC: one test Alloy with the live scrapes and log pipeline, fanned out to two stores per layer, each alone under its own cap; traces at the estimated real rate of 15 spans a second; searches in 5 rounds, store order alternating.
@@ -75,7 +92,7 @@ Run on 11 November 2026, 04:34-08:36 UTC: one test Alloy with the live scrapes a
 | Disk per span | 85 B in its compacted blocks, plus a rolling 43-72 MB of replaced ones | 79 B |
 | Viewer held to the query API | yes, with `http_api_prefix: /tempo` | yes |
 
-Prometheus stored every sample Alloy sent at 2.83 B a reading in its first 2-hour block, at most 93 MiB; VictoriaMetrics took 1.90 B and 74 MiB, gaps the pick rule does not reach. Loki's earlier shortfall was its own deduplication of identical lines, so both log stores pass; the live feed carried too few lines to re-measure disk per line. Grafana under a 320 MiB cap hit it often at 311 MiB, so it runs under 512 MiB.
+Prometheus stored every sample Alloy sent at 2.83 B a reading in its first 2-hour block, at most 93 MiB; VictoriaMetrics took 1.90 B and 74 MiB, gaps the pick rule does not reach. Loki was 3 lines short here, all identical lines it keeps once by design, so both log stores pass; the replay's 2,740 is likely the same, not re-tested; the live feed carried too few lines to re-measure disk per line. Grafana under a 320 MiB cap hit it often at 311 MiB, so it runs under 512 MiB.
 
 ## Beside the live stack
 
@@ -89,10 +106,10 @@ Run on 11 November 2026, 11:15-13:45 UTC, then stopped early: the four stores si
 | Memory peak in the burst, of its cap (MiB) | 282 of 1,024 | 582 of 1,024, 1,868 cap hits | 476 of 512, 1,741 cap hits | 378 of 512 |
 | Disk per item in the burst, before compaction | 7 B a line | 105 B a line, unflushed | 630 B a span | 72 B a span |
 
-Tempo also hit its cap every 5 minutes on the normal feed, grew its disk about 11 GB a day against about 1.7 GB for VictoriaTraces (a feed the trial's own stores inflated), and refuses a search over more than 7 days. The VictoriaLogs gaps at each kill were 4.9 to 6.8 s of lines, about their 5 s default for saving what they hold in memory; both now save each second, not yet re-measured. No set of stores stayed under 1 GiB in the burst (VictoriaLogs and VictoriaTraces 1,102 MiB, the lowest).
+Tempo also hit its cap every 5 minutes on the normal feed, grew its disk about 11 GB a day against about 1.7 GB for VictoriaTraces (a feed the trial's own stores inflated), and refuses a search over more than 7 days. The VictoriaLogs gaps at each kill were 4.9 to 6.8 s of lines, about their 5 s default for saving what they hold in memory; both now save each second, not yet re-measured. No whole stack (stores, Grafana, rule runner, gateway and Alertmanager, page cache left out) stayed under 1 GiB in the burst; the lowest, with VictoriaLogs and VictoriaTraces, held 1,102 MiB.
 
 OBI's `containers_only` failed with OBI on its own network: it compares network namespaces, so it traced host programs, the Docker daemon and the CI VMs until they were excluded by path.
 
 ## Not yet tested
 
-Memory over 7 days, expiry, the alert timers on a real alert beside the live Alertmanager, and a real Discord post seen in the channel (Discord accepted the trial's two).
+Memory over 7 days, expiry, the 1 s save interval after a kill, a browser click from a log line to its trace (it works through Grafana's API), the alert timers on a real alert beside the live Alertmanager, and a real Discord post seen in the channel (Discord accepted the trial's two).
