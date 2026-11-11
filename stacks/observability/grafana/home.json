@@ -4448,6 +4448,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "upkeep-failed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "high-disk"
                 },
                 "properties": [

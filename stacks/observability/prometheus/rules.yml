@@ -202,7 +202,7 @@ groups:
             backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
           dashboard: *home
           value: '{{ $value }}'
-      # A failed run, a run missed for 35 days, or no result yet; `for` gives the first deploy an hour to run it.
+      # A failed run, a run missed for 35 days, or no result at all: start it by hand once on a new host.
       - alert: upkeep-failed
         expr: |
           (

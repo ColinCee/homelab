@@ -145,6 +145,7 @@ once)
 restore-test)
   # restic exits non-zero because the container cannot chown restored files, so the restored file is the test.
   file=/data/home-assistant/configuration.yaml
+  rm -r /tmp/restore-test 2>/dev/null || true
   restic restore latest --target /tmp/restore-test --include "$file" >/dev/null 2>&1 || true
   if test -s "/tmp/restore-test$file"; then
     echo "restore test ok: $file"

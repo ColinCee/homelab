@@ -22,12 +22,9 @@ and verifies the repository. On Sundays the verification is a deep check that
 downloads and verifies every stored byte (`restic check --read-data`); a
 failure fails the run and so raises **Nightly backup didn't run**. Force one with
 `docker exec -e DEEP_CHECK=1 backup sh -c '/bin/sh /backup.sh once >/proc/1/fd/1 2>&1'`.
-A passing deep check also writes
-`/var/lib/homelab-metrics/backup-deep-check.prom`, which the weekly server
-health report reads; the container log does not survive a redeploy.
-
 The **Backups** row of Grafana's Home shows recent successes, failures, stored
-size against the cap, deep checks and the run log.
+size against the cap, deep checks (from `/var/lib/homelab-metrics/backup-deep-check.prom`,
+since the container log does not survive a redeploy) and the run log.
 
 ## From the PC
 
