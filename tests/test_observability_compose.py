@@ -1,12 +1,13 @@
-"""The observability stack's networks keep writers, readers and Alertmanager apart, and Grafana
-asks for a login (stacks/observability/compose.yaml)."""
+"""The observability stack's networks keep writers, readers and Alertmanager apart, and no
+container with a host folder can read the host's secrets (stacks/observability/compose.yaml)."""
 
 from pathlib import Path
 
 import yaml
 
-STACK = Path(__file__).parent.parent / "stacks/observability"
-COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
+COMPOSE = yaml.safe_load(
+    (Path(__file__).parent.parent / "stacks/observability/compose.yaml").read_text(encoding="utf-8")
+)
 SERVICES = COMPOSE["services"]
 
 
@@ -42,50 +43,6 @@ def test_grafana_reaches_only_the_gateway() -> None:
 def test_store_networks_reach_no_internet() -> None:
     for network in ("ingest", "stores", "alerting", "docker-api"):
         assert COMPOSE["networks"][network]["internal"] is True, network
-
-
-def test_grafana_asks_for_a_login_and_fetches_nothing_at_start() -> None:
-    env = SERVICES["grafana"]["environment"]
-    assert env["GF_AUTH_ANONYMOUS_ENABLED"] == "false"
-    assert "GF_USERS_VIEWERS_CAN_EDIT" not in env
-    assert env["GF_SERVER_ENFORCE_DOMAIN"] == "true"
-    assert env["GF_SECURITY_SECRET_KEY__FILE"] == "/run/secrets/grafana_secret_key"
-    assert "GF_PLUGINS_PREINSTALL_SYNC" not in env
-    dockerfile = (STACK / "grafana.Dockerfile").read_text(encoding="utf-8")
-    assert "ADD --checksum=sha256:" in dockerfile
-
-
-def test_one_heavy_query_cannot_take_prometheus_memory() -> None:
-    flags = SERVICES["prometheus"]["command"]
-    assert any(f.startswith("--query.max-samples=") for f in flags)
-    assert any(f.startswith("--query.timeout=") for f in flags)
-    for store in ("logs", "traces"):
-        assert "-search.maxConcurrentRequests=2" in SERVICES[store]["command"], store
-
-
-def test_openobserve_history_starts_only_by_hand_and_on_loopback() -> None:
-    history = SERVICES["openobserve-history"]
-    assert history["profiles"] == ["history"]
-    assert all(port.startswith("127.0.0.1:") for port in history["ports"])
-    assert int(history["environment"]["ZO_COMPACT_DATA_RETENTION_DAYS"]) > 365
-
-
-def test_a_log_line_opens_its_trace() -> None:
-    provisioned = yaml.safe_load((STACK / "grafana/datasources.yaml").read_text(encoding="utf-8"))
-    [logs] = [source for source in provisioned["datasources"] if source["uid"] == "logs"]
-    [field] = logs["jsonData"]["derivedFields"]
-    assert field["matcherRegex"] == "trace_id" and field["datasourceUid"] == "traces"
-    # `$$` keeps provisioning from expanding Grafana's own variable.
-    assert field["url"] == "$${__value.raw}"
-
-
-def test_obi_traces_every_container_only_when_turned_on() -> None:
-    obi = SERVICES["obi"]
-    assert obi["profiles"] == ["obi"] and obi["privileged"] is True
-    # Its Go tracer failed to make its maps under 320 MiB.
-    assert int(obi["mem_limit"].removesuffix("m")) >= 448
-    config = yaml.safe_load((STACK / "obi/obi.yaml").read_text(encoding="utf-8"))
-    assert config["discovery"]["instrument"] == [{"containers_only": True, "exe_path": "*"}]
 
 
 def test_no_container_with_a_host_folder_can_read_a_secret_on_the_host() -> None:

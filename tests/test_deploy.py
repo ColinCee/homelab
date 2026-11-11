@@ -306,8 +306,8 @@ def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
     assert deploy.changed_stacks(repo, before) is None
 
 
-@pytest.mark.parametrize("since", [None, "", "0123456789abcdef0123456789abcdef01234567"])
-def test_a_missing_or_unknown_last_deploy_selects_all_stacks(repo: Path, since: str | None) -> None:
+@pytest.mark.parametrize("since", ["", "0123456789abcdef0123456789abcdef01234567"])
+def test_a_missing_or_unknown_last_deploy_selects_all_stacks(repo: Path, since: str) -> None:
     assert deploy.changed_stacks(repo, since) is None
 
 

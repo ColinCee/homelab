@@ -702,7 +702,7 @@ def remember(path: Path, text: str) -> None:
 
 
 def recalled_last_job() -> Want:
-    """The last build job's repo and cache label ("" for none, as from an older file)."""
+    """The last build job's repo and cache label ("" for none)."""
     try:
         lines = LAST_REPO_FILE.read_text().split()
     except OSError:

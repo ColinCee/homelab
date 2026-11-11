@@ -1,7 +1,6 @@
 """Makes Grafana's `agents` login a Viewer with the agents password, then exits. Grafana has no
 file provisioning for users, and its admin login is set by compose.yaml (grafana_admin_password).
-Reads GRAFANA_URL, GRAFANA_ADMIN_USER and the secret files grafana_admin_password and
-agents_password."""
+Reads GRAFANA_ADMIN_USER and the secret files grafana_admin_password and agents_password."""
 
 import base64
 import json
@@ -12,9 +11,9 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-URL = os.environ.get("GRAFANA_URL", "http://grafana:3000")
+URL = "http://grafana:3000"
 # Grafana redirects any other name to its own (compose.yaml, GF_SERVER_ENFORCE_DOMAIN).
-HOST = os.environ.get("GRAFANA_DOMAIN", "beelink.tail4f465e.ts.net")
+HOST = "beelink.tail4f465e.ts.net"
 LOGIN = "agents"
 SECRETS = Path("/run/secrets")
 
