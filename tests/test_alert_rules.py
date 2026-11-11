@@ -531,8 +531,16 @@ def rule_runs(
         n, case = numbered
         series, checks, *rest = CASES[case]
         step = rest[0] if rest else "1m"
+        # Only the rules the case checks: promtool evaluates every rule loaded at every step, and
+        # no rule reads another's result (no recording rules, no ALERTS).
+        names = {check["alertname"] for check in checks}
+        groups = [g | {"rules": [r for r in g["rules"] if r["alert"] in names]} for g in GROUPS]
+        rules = folder / f"{n}.rules.yml"
+        rules.write_text(
+            json.dumps({"groups": [g for g in groups if g["rules"]]}), encoding="utf-8"
+        )
         tests = {
-            "rule_files": [str(STACK / "prometheus/rules.yml")],
+            "rule_files": [str(rules)],
             "evaluation_interval": step,
             "tests": [
                 {
