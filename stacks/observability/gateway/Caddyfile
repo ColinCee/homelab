@@ -1,7 +1,7 @@
-# The one way to read the stores (compose.yaml, gateway): Grafana's data sources, agents and the heartbeat log in
-# as `agents`, public stats as `stats`. None of the stores has logins or read-only users, and each serves writes and
-# admin calls beside its reads, so each reader may reach only the read paths listed here. Anything else is refused.
-# Logins: start.sh. Tests: tests/test_gateway.py.
+# The one way to read the stores (compose.yaml, gateway): Grafana's data sources and agents log in as `agents`,
+# public stats as `stats`. None of the stores has logins or read-only users, and each serves writes and admin calls
+# beside its reads, so each reader may reach only the read paths listed here. Anything else is refused. Logins:
+# start.sh. Tests: tests/test_gateway.py.
 {
 	admin off
 	auto_https off

@@ -193,7 +193,7 @@ Why it is built this way; how is in the code each line names.
 |-------|-------|
 | Versions, release hashes | [`ci-runner/versions.env`](../../ci-runner/versions.env) |
 | Host setup | [`ci-runner/install-host.sh`](../../ci-runner/install-host.sh) |
-| Network rules | [`ci-runner/net/`](../../ci-runner/net/), tables `inet homelab_ci` (VMs) and `inet homelab_wall` (Docker bridge containers, [ADR 0005](../adr/0005-container-network-wall.md)), `homelab-ci-net.service` |
+| Network rules | [`ci-runner/net/`](../../ci-runner/net/), tables `inet homelab_ci` (VMs) and `inet homelab_wall` (Docker bridge containers), `homelab-ci-net.service` |
 | VM image | [`ci-runner/rootfs/`](../../ci-runner/rootfs/), built by [`build-rootfs.sh`](../../ci-runner/build-rootfs.sh) |
 | Boot one VM | [`ci-runner/run-vm.sh`](../../ci-runner/run-vm.sh) |
 | Supervisor | [`scripts/ci_supervisor.py`](../../scripts/ci_supervisor.py), `homelab-ci-supervisor.service` |

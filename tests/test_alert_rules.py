@@ -38,7 +38,7 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     rule = RULES[name]
     notes = rule["annotations"]
     assert rule["labels"] == {"level": rule["labels"]["level"]}
-    assert rule["labels"]["level"] in ("now", "week", "notice")
+    assert rule["labels"]["level"] in ("now", "week", "watchdog")
     assert len(notes["title"].split()) <= 8, "say the symptom in a few words"
     assert notes["measure"] and "unit" in notes
     # A sentence each, not a placeholder.
@@ -54,6 +54,7 @@ def test_the_14_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> 
     assert set(RULES) - set(HOMELAB) == {
         "PrometheusRuleFailures",
         "PrometheusBadConfig",
+        "watchdog",
         "store-down",
         "store-stopped",
         "deploy-ran",
@@ -70,21 +71,24 @@ def test_the_14_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> 
 def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() -> None:
     route = ALERTMANAGER["route"]
     assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
-    assert route["routes"] == [
-        {"matchers": ['level="now"'], "repeat_interval": "4h"},
-        {"matchers": ['level="notice"'], "receiver": "discord-notice"},
-    ]
+    assert route["routes"][1:] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
 
 
-def test_a_notice_posts_once_with_no_mention_and_no_cleared() -> None:
-    [notice] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord-notice")[
-        "discord_configs"
-    ]
-    assert notice["send_resolved"] is False and "content" not in notice
-    assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "notice"} == {
-        "deploy-ran",
-        "ci-host-updated",
+def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord() -> None:
+    assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "watchdog"} == {
+        "watchdog"
     }
+    assert ALERTMANAGER["route"]["routes"][0] == {
+        "matchers": ['alertname="watchdog"'],
+        "receiver": "healthchecks",
+        "group_wait": "0s",
+        "group_interval": "1m",
+        "repeat_interval": "30s",
+    }
+    [ping] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "healthchecks")[
+        "webhook_configs"
+    ]
+    assert ping == {"url_file": "/run/secrets/healthchecks_ping", "send_resolved": False}
 
 
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
@@ -98,7 +102,7 @@ def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metric
         {
             "source_matchers": ['alertname="beelink-metrics-stopped"'],
             "target_matchers": [
-                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down"'
+                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|watchdog"'
             ],
         }
     ]
@@ -130,7 +134,8 @@ def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
     # The post's title prints every label but alertname and level, so a rule aggregates.
     for name, rule in RULES.items():
         expr = flat(rule["expr"])
-        assert re.match(r"\(* ?(max|min|sum|count|round\(\(time\(\) - max|round\(max)", expr), name
+        aggregated = r"\(* ?(max|min|sum|count|vector|round\(\(time\(\) - max|round\(max)"
+        assert re.match(aggregated, expr), name
 
 
 def test_prometheus_keeps_30_days_and_takes_alloys_writes() -> None:
@@ -259,29 +264,48 @@ CASES = {
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
         ],
     ),
-    "a deploy and a CI-host install each post who and what, then clear": (
+    # Colin's and Renovate's never post.
+    "another's deploy and CI-host install post who and what, then clear": (
         [
             (
-                'homelab_deploy_timestamp_seconds{actor="ColinCee",commit="0123456789ab"}',
+                'homelab_deploy_timestamp_seconds{actor="mallory",commit="0123456789ab"}',
+                "_x5 300x55",
+            ),
+            ('homelab_deploy_timestamp_seconds{actor="ColinCee",commit="1"}', "_x5 300x55"),
+            ('homelab_deploy_timestamp_seconds{actor="renovate[bot]",commit="2"}', "_x5 300x55"),
+            (
+                'homelab_ci_host_install_timestamp_seconds{author="mallory",commit="ba9876543210"}',
                 "_x5 300x55",
             ),
             (
-                "homelab_ci_host_install_timestamp_seconds"
-                '{author="Colin Cheung",commit="ba9876543210"}',
+                'homelab_ci_host_install_timestamp_seconds{author="Colin Cheung",commit="3"}',
+                "_x5 300x55",
+            ),
+            (
+                'homelab_ci_host_install_timestamp_seconds{author="renovate[bot]",commit="4"}',
                 "_x5 300x55",
             ),
         ],
         [
             at(4, "deploy-ran"),
-            at(6, "deploy-ran", posts("deploy-ran", "1", actor="ColinCee", commit="0123456789ab")),
+            at(6, "deploy-ran", posts("deploy-ran", "1", actor="mallory", commit="0123456789ab")),
             at(
                 6,
                 "ci-host-updated",
-                posts("ci-host-updated", "1", author="Colin Cheung", commit="ba9876543210"),
+                posts("ci-host-updated", "1", author="mallory", commit="ba9876543210"),
             ),
-            at(13, "deploy-ran", posts("deploy-ran", "8", actor="ColinCee", commit="0123456789ab")),
+            at(13, "deploy-ran", posts("deploy-ran", "8", actor="mallory", commit="0123456789ab")),
             # Not under 10 minutes from 15, then the 10-minute hold.
             at(30, "deploy-ran"),
+        ],
+    ),
+    "the watchdog fires while Discord takes posts and stops for an hour after one fails": (
+        [('alertmanager_notifications_failed_total{integration="discord"}', "0x10 1x80")],
+        [
+            at(5, "watchdog", posts("watchdog", "1")),
+            # The failure at 11 min is in the last hour until 71, then the 10-minute hold.
+            at(25, "watchdog"),
+            at(82, "watchdog", posts("watchdog", "1")),
         ],
     ),
     "a re-added Tailscale device fires for its first hour, a listed one never": (

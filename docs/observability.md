@@ -8,13 +8,10 @@ Monitoring on the Beelink cannot see its own outage, so what watches what:
 
 | Problem | Who warns |
 |---|---|
-| Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
-| Alerting stopped: a rule not run or failing, Alertmanager down, or posts not reaching Discord | [`heartbeat.yaml`](../.github/workflows/heartbeat.yaml) on the Beelink fails its run, which GitHub emails; GitHub runs its 15-minute schedule only every few hours |
+| The Beelink off, or alerting stopped: Prometheus or Alertmanager down, or Discord refusing a post in the last hour | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io posts to #uptime when it stops |
+| A rule failing | "An alert rule is failing" |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
-| Someone else on the Beelink: each deploy and CI-host install, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
-
-GitHub turns off a public repository's scheduled workflows after 60 days with no commits, which would stop the
-heartbeat without a post; Renovate's merges keep the repository active.
+| Someone else on the Beelink: a deploy or CI-host install not by Colin or Renovate, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 
 ## What's deployed
 
@@ -59,7 +56,7 @@ Dashboards and their queries: the building-dashboards skill.
 Prometheus runs the rules in [`rules.yml`](../stacks/observability/prometheus/rules.yml) each minute. Rules it cannot
 load stop it, which fails the deploy; a rule whose query fails at run time fires "An alert rule is failing". A firing
 rule goes to [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0001](adr/0001-observability-stack.md)), which
-posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Alertmanager publishes no port, since its API takes
+posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook, and pings Healthchecks.io through `HEALTHCHECKS_PING_URL`. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
 
@@ -76,7 +73,6 @@ read. An alert exists only if all three hold; anything else is a dashboard numbe
 |---|---|---|
 | Act now (`now`) | A user-facing service is down, data is being lost, or something is full within 24 h | Mentions Colin, and again every 4 h while it fires |
 | This week (`week`) | Something is running out or slipping | No mention, again daily |
-| Notice (`notice`) | A deploy or CI-host install, so Colin sees each change he did not make | No mention, once, no "Cleared" |
 
 - An alert fires once its condition has held for the rule's `for`, and clears once it has stayed clear for 10
   minutes; a return within those 10 minutes is the same alert, with no new post: the rule's `for` and
@@ -86,7 +82,8 @@ read. An alert exists only if all three hold; anything else is a dashboard numbe
   textfiles) carry a no-data arm.
 - `tests/test_alert_rules.py` checks each rule against this, and runs them with `promtool` over made-up series.
 
-Noise budget: at most one post a day across all rules but notices, over 14 days. Replay before adding or loosening a rule:
+Noise budget: at most one post a day across all rules, over 14 days. Test a rule with promtool, never by writing fake
+events on the Beelink: those post to #uptime as real ones. Replay before adding or loosening a rule:
 
 ```bash
 GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14

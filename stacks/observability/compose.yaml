@@ -202,6 +202,7 @@ services:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
     secrets:
       - discord_webhook
+      - healthchecks_ping
     volumes:
       - ./alertmanager:/etc/alertmanager:ro
       # What it has posted and its silences, so a restart does not post firing alerts again.
@@ -211,8 +212,8 @@ services:
       - alertmanager-out
 
   # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
-  # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, the heartbeat and
-  # agents on Tailscale.
+  # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, agents on
+  # Tailscale.
   gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
@@ -489,6 +490,8 @@ networks:
 secrets:
   discord_webhook:
     file: ../../secrets/discord_private_webhook_url
+  healthchecks_ping:
+    file: ../../secrets/healthchecks_ping_url
   grafana_admin_password:
     file: ../../secrets/openobserve_root_password
   # OpenObserve's ingest password, which nothing else uses, so Grafana's key shares no value.

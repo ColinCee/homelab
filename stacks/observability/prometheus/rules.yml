@@ -318,6 +318,26 @@ groups:
   - name: prometheus
     interval: 1m
     rules:
+      # Always firing while rules run and posts reach Discord. Alertmanager pings Healthchecks.io with it each minute
+      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts to #uptime when the pings stop: the Beelink,
+      # Prometheus or Alertmanager is down, or Discord refused a post in the last hour. Not a GitHub cron: GitHub ran
+      # 15-minute schedules hours late.
+      - alert: watchdog
+        expr: |
+          vector(1)
+          unless on() sum(increase(alertmanager_notifications_failed_total{integration="discord"}[1h])) > 0.5
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: watchdog
+        annotations:
+          title: 'Alerting works'
+          measure: 'Working'
+          unit: ''
+          harm: 'None: it never posts to Discord. It pings Healthchecks.io, which posts once the pings stop.'
+          action: 'Nothing while it fires. When Healthchecks.io posts, check the Beelink, then Prometheus and Alertmanager.'
+          dashboard: *home
+          value: '{{ $value }}'
       - alert: PrometheusRuleFailures
         expr: sum(increase(prometheus_rule_evaluation_failures_total{job="prometheus"}[5m])) > 0
         for: 15m
@@ -405,45 +425,51 @@ groups:
 
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
   # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
-  # minutes. Deploys and CI-host installs are notices, posted once with no mention; the rest act now.
+  # minutes. A deploy or CI-host install by Colin or Renovate is every merge, so only another's posts. The deploy's
+  # actor is GitHub's; the install's author is the commit's own text, so a forged one is caught only by main's ruleset.
   - name: intrusion
     interval: 1m
     rules:
       - alert: deploy-ran
-        expr: max by (actor, commit) (round((time() - homelab_deploy_timestamp_seconds) / 60)) < 10
+        expr: |
+          max by (actor, commit) (
+            round((time() - homelab_deploy_timestamp_seconds{actor!~`ColinCee|renovate\[bot\]`}) / 60)
+          ) < 10
         for: 0m
         keep_firing_for: 10m
         labels:
-          level: notice
+          level: now
         annotations:
-          title: 'Deploy started'
+          title: 'Deploy by someone else'
           measure: 'Started'
           unit: ' min ago'
           harm: >-
             A deploy runs main's code on the Beelink as colin, so one you did not start means someone else can change
             what runs there.
           action: >-
-            Expected after a merge to main. Otherwise open the run in
-            https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml and remove that actor's access.
+            Open the run in https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml; if you did not let
+            this actor merge, remove its access to the repository.
           dashboard: *home
           value: '{{ $value }}'
       - alert: ci-host-updated
-        expr: max by (author, commit) (round((time() - homelab_ci_host_install_timestamp_seconds) / 60)) < 10
+        expr: |
+          max by (author, commit) (
+            round((time() - homelab_ci_host_install_timestamp_seconds{author!~`Colin Cheung|renovate\[bot\]`}) / 60)
+          ) < 10
         for: 0m
         keep_firing_for: 10m
         labels:
-          level: notice
+          level: now
         annotations:
-          title: 'CI host installed a commit'
+          title: 'CI host installed another''s commit'
           measure: 'Installed'
           unit: ' min ago'
           harm: >-
             update.sh installs ci-runner/ and scripts/ from main as root, so a commit you did not merge runs with full
             control of the Beelink.
           action: >-
-            Expected after a merge that changed ci-runner/ or scripts/. Otherwise read `journalctl -u
-            homelab-ci-update` and that commit on main, and stop the timer with `sudo systemctl stop
-            homelab-ci-update.timer`.
+            Read that commit on main and `journalctl -u homelab-ci-update`; if you did not merge it, stop the timer
+            with `sudo systemctl stop homelab-ci-update.timer`.
           dashboard: *home
           value: '{{ $value }}'
       - alert: tailscale-device-added

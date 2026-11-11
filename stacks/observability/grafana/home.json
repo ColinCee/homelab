@@ -314,7 +314,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "count(count by (alertname) (ALERTS{alertstate=\"firing\"})) or vector(0)",
+          "expr": "count(count by (alertname) (ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"})) or vector(0)",
           "legendFormat": ""
         }
       ],
@@ -4105,7 +4105,7 @@
                 "uid": "prometheus"
               },
               "refId": "A",
-              "expr": "max by (alertname) (max_over_time(timestamp(ALERTS{alertstate=\"firing\"})[$__range:1m])) * 1000",
+              "expr": "max by (alertname) (max_over_time(timestamp(ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"})[$__range:1m])) * 1000",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -4117,7 +4117,7 @@
                 "uid": "prometheus"
               },
               "refId": "B",
-              "expr": "min by (alertname) (min_over_time(timestamp(ALERTS{alertstate=\"firing\"})[$__range:1m])) * 1000",
+              "expr": "min by (alertname) (min_over_time(timestamp(ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"})[$__range:1m])) * 1000",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -4129,7 +4129,7 @@
                 "uid": "prometheus"
               },
               "refId": "C",
-              "expr": "sum by (alertname) (count_over_time(ALERTS{alertstate=\"firing\"}[$__range]))",
+              "expr": "sum by (alertname) (count_over_time(ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"}[$__range]))",
               "legendFormat": "",
               "instant": true,
               "range": false,
@@ -4224,7 +4224,7 @@
                 "uid": "prometheus"
               },
               "refId": "A",
-              "expr": "sum by (alertname) (count_over_time(ALERTS{alertstate=\"firing\"}[1h]))",
+              "expr": "sum by (alertname) (count_over_time(ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"}[1h]))",
               "legendFormat": "{{alertname}}",
               "interval": "1h"
             }
@@ -4530,7 +4530,7 @@
                     "id": "color",
                     "value": {
                       "mode": "fixed",
-                      "fixedColor": "#fab219"
+                      "fixedColor": "#d03b3b"
                     }
                   }
                 ]
@@ -4545,7 +4545,7 @@
                     "id": "color",
                     "value": {
                       "mode": "fixed",
-                      "fixedColor": "#fab219"
+                      "fixedColor": "#d03b3b"
                     }
                   }
                 ]
