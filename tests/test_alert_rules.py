@@ -49,8 +49,8 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
-def test_the_14_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
-    assert len(HOMELAB) == 14
+def test_the_18_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
+    assert len(HOMELAB) == 18
     assert set(RULES) - set(HOMELAB) == {
         "PrometheusRuleFailures",
         "PrometheusBadConfig",
@@ -92,7 +92,7 @@ def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord(
 
 
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
-    # The rules on Prometheus itself and the flight tracker's probe read its own scrape, not
+    # The rules on Prometheus itself and the public probes read its own scrape, not
     # Alloy's; the store rules read Alloy's.
     assert {n for n in RULES if n.startswith("Prometheus")} == {
         "PrometheusRuleFailures",
@@ -102,7 +102,7 @@ def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metric
         {
             "source_matchers": ['alertname="beelink-metrics-stopped"'],
             "target_matchers": [
-                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|watchdog"'
+                'alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|site-down|watchdog"'
             ],
         }
     ]
@@ -398,6 +398,54 @@ CASES = {
         [
             at(64, "upkeep-failed"),
             at(66, "upkeep-failed", posts("upkeep-failed", "-1")),
+        ],
+    ),
+    "a site failing its probe, or its probe not answering, fires after `for`": (
+        [
+            ('probe_success{job="integrations/blackbox/sites",site="a"}', "1x5 0x20"),
+            ('up{job="integrations/blackbox/sites",site="a"}', "1x25"),
+            ('probe_success{job="integrations/blackbox/sites",site="b"}', "1x25"),
+            ('up{job="integrations/blackbox/sites",site="b"}', "1x25"),
+            ('up{job="integrations/blackbox/sites",site="c"}', "1x5 0x20"),
+        ],
+        [
+            at(15, "site-down"),
+            at(
+                17,
+                "site-down",
+                posts("site-down", "0", site="a"),
+                posts("site-down", "0", site="c"),
+            ),
+        ],
+    ),
+    "an unhealthy container fires after `for`, one without a check never": (
+        [
+            ('container_health_state{job="docker",name="web",id="/a"}', "0x30"),
+            ('container_health_state{job="docker",name="db",id="/b"}', "-1x30"),
+            ('container_health_state{job="docker",name="api",id="/c"}', "1x30"),
+        ],
+        [
+            at(9, "container-unhealthy"),
+            at(11, "container-unhealthy", posts("container-unhealthy", "0", name="web")),
+        ],
+    ),
+    "the CI supervisor stopping fires after 10 minutes and `for`": (
+        [
+            (
+                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-waits.prom"}',
+                "0+60x10 600x30",
+            )
+        ],
+        [
+            at(25, "ci-supervisor-stopped"),
+            at(27, "ci-supervisor-stopped", posts("ci-supervisor-stopped", "17")),
+        ],
+    ),
+    "a deep check over 8 days old fires after `for`": (
+        [("homelab_backup_last_deep_check_timestamp_seconds", "-734400x40")],
+        [
+            at(29, "deep-check-missed"),
+            at(31, "deep-check-missed", posts("deep-check-missed", "9")),
         ],
     ),
     "metrics stopping is one alert with no labels": (

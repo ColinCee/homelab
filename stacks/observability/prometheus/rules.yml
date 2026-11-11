@@ -59,6 +59,28 @@ groups:
             --tail 50 flight-tracker-cloudflared-1`.
           dashboard: *home
           value: '{{ $value }}'
+      # `up` too, so a stopped blackbox reads as down rather than as nothing.
+      - alert: site-down
+        expr: |
+          (
+            min by (site) (
+              probe_success{job="integrations/blackbox/sites"} or up{job="integrations/blackbox/sites"}
+            )
+          ) < 1
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Public site down'
+          measure: 'Answering with 200 (1 yes, 0 no)'
+          unit: ''
+          harm: 'Visitors to this public site get an error or nothing at all.'
+          action: >-
+            Open the site, then its latest deployment in the Cloudflare dashboard, which serves it. If it opens,
+            the check itself failed: `docker logs --tail 50 observability-blackbox-1`.
+          dashboard: *home
+          value: '{{ $value }}'
       - alert: home-assistant-down
         expr: |
           (
@@ -142,6 +164,47 @@ groups:
           action: 'Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack.'
           dashboard: *home
           value: '{{ $value }}'
+      # 0 is unhealthy or still starting, which no stack's start period keeps up for 10 minutes; -1 has no check.
+      - alert: container-unhealthy
+        expr: |
+          (
+            max by (name) (container_health_state{job="docker",name!=""})
+          ) == 0
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A container is unhealthy'
+          measure: 'Health check passing (1 yes, 0 no)'
+          unit: ''
+          harm: 'Its own health check fails, so the service in this container is likely not working.'
+          action: >-
+            Read the failing check's output under State.Health in `docker inspect <name>`, and `docker logs --tail
+            100 <name>`; fix the cause and redeploy its stack.
+          dashboard: *home
+          value: '{{ $value }}'
+      # The supervisor rewrites ci-waits.prom every 15 seconds while its loop runs, polls failing or not.
+      - alert: ci-supervisor-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m]))) / 60)
+          ) > 10
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'CI supervisor stopped'
+          measure: 'Last update'
+          unit: ' min ago'
+          harm: 'No CI machine starts, so private repositories'' checks wait and nothing of theirs merges.'
+          action: >-
+            Read `sudo journalctl -u homelab-ci-supervisor -n 100` on the Beelink, fix the cause, then `sudo
+            systemctl restart homelab-ci-supervisor`; see docs/runbooks/ci-runner.md.
+          dashboard: *home
+          value: '{{ $value }}'
       - alert: new-container
         expr: |
           (
@@ -181,6 +244,28 @@ groups:
           unit: ' h ago'
           harm: 'Without a nightly copy in R2, a lost disk loses everything since the last good backup.'
           action: 'Check `docker logs --tail 100 backup`; see docs/runbooks/backups.md.'
+          dashboard: *home
+          value: '{{ $value }}'
+      # Sundays' backup reads every pack back (backup.sh, DEEP_CHECK_DAY), so over 8.5 days is a missed week. Its
+      # file stays on the host between checks, so no data is a lost file, not a check yet to run.
+      - alert: deep-check-missed
+        expr: |
+          (
+            round((time() - max(homelab_backup_last_deep_check_timestamp_seconds)) / 86400)
+          ) > 8
+          or on() max(absent_over_time(homelab_backup_last_deep_check_timestamp_seconds[15m])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Weekly backup check didn''t pass'
+          measure: 'Last full check'
+          unit: ' days ago'
+          harm: 'Damaged data in R2 goes unseen until a restore needs it.'
+          action: >-
+            Run the check now with DEEP_CHECK=1 as docs/runbooks/backups.md says, and read why it fails in its
+            output; a deploy since Sunday has wiped that run's log.
           dashboard: *home
           value: '{{ $value }}'
       - alert: pc-backup-stale

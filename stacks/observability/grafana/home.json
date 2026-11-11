@@ -4283,6 +4283,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "site-down"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "home-assistant-down"
                 },
                 "properties": [
@@ -4329,6 +4344,36 @@
                 "matcher": {
                   "id": "byName",
                   "options": "restart-loop"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "container-unhealthy"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "ci-supervisor-stopped"
                 },
                 "properties": [
                   {
@@ -4419,6 +4464,21 @@
                 "matcher": {
                   "id": "byName",
                   "options": "backup-missed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "deep-check-missed"
                 },
                 "properties": [
                   {

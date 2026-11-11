@@ -20,10 +20,10 @@ route:
       repeat_interval: 4h
 
 # Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
-# rules on Prometheus's own health and the flight tracker's probe read its own scrape, so they still post.
+# rules on Prometheus's own health and the public probes read its own scrape, so they still post.
 inhibit_rules:
   - source_matchers: ['alertname="beelink-metrics-stopped"']
-    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|watchdog"']
+    target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|site-down|watchdog"']
 
 receivers:
   - name: discord

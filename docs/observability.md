@@ -46,7 +46,8 @@ Dashboards and their queries: the building-dashboards skill.
 - Home Assistant, CoreDNS and Caddy run on the host's network, which the firewall keeps Alloy from reaching, so their
   metrics are not collected; [`probes.py`](../stacks/observability/probes.py) checks them from the host's network.
 - The flight tracker's `probe_success` is 1 only when its public API says `"apiHealth":"live"`, so tunnel, backend
-  and upstream failures all show as 0. Prometheus scrapes `blackbox` itself, since Alloy must not reach the internet.
+  and upstream failures all show as 0; the public sites' (`job="integrations/blackbox/sites"`) only on a 200.
+  Prometheus scrapes `blackbox` itself, since Alloy must not reach the internet.
 - Health of Grafana from the tailnet: `curl -sf http://beelink.tail4f465e.ts.net:5080/healthz`.
 - Textfile metrics (`/var/lib/homelab-metrics/*.prom`) come from the CI supervisor, the SSD, the backups, the probes
   and the intrusion facts.
@@ -79,7 +80,7 @@ read. An alert exists only if all three hold; anything else is a dashboard numbe
   `keep_firing_for`. The clear post says "Cleared": the number recovered, not that anything was fixed.
 - Each post says what broke (title and value), why it matters (`harm`), what to do (`action`), and links a dashboard.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics while it fires. Only metrics written outside Alloy (the
-  textfiles) carry a no-data arm.
+  textfiles) carry a no-data arm, and not those of a job that may not have run yet.
 - `tests/test_alert_rules.py` checks each rule against this, and runs them with `promtool` over made-up series.
 
 Noise budget: at most one post a day across all rules, over 14 days. Test a rule with promtool, never by writing fake
