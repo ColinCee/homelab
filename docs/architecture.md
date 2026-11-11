@@ -28,7 +28,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
   - another stack's network is joined as `external: true`.
 - **Removing a stack:** deleting its folder removes nothing from the host. Stop its timers and containers by hand,
-  keep volumes until their data is backed up or retired, then delete the folder.
+  keep volumes until their data is backed up or retired, then delete the folder and
+  `/var/lib/homelab-metrics/deploy-<stack>.prom`.
 
 ## Network and access
 
@@ -124,7 +125,7 @@ encrypted: Home Assistant's config and a consistent copy of its history, the fli
 ([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
 6 monthly snapshots, reads back every byte on Sundays, and uploads nothing past 8 GB, since R2 bills past 10 GB.
 `RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Alerts
-cover a missed night, a stale PC backup, a full store and a failed upkeep. Restoring: [recovery](recovery.md).
+cover a missed night, a stale PC backup, a full store and an upkeep failed or missed. Restoring: [recovery](recovery.md).
 
 ## Public stats
 

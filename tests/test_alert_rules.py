@@ -413,6 +413,92 @@ CASES = {
             at(31, "deep-check-missed", posts("deep-check-missed", "9")),
         ],
     ),
+    "a service the deploy keeps running fires once no container of it runs, a one-shot never": (
+        [
+            ('homelab_container_expected{project="app",service="web"}', "1x30"),
+            ('homelab_container_expected{project="app",service="db"}', "1x30"),
+            (
+                'container_last_seen{job="docker",name="app-web-1",container_label_com_docker_compose_oneoff="False",'
+                'container_label_com_docker_compose_project="app",container_label_com_docker_compose_service="web"}',
+                "1x5",
+            ),
+            (
+                'container_last_seen{job="docker",name="app-db-1",container_label_com_docker_compose_oneoff="False",'
+                'container_label_com_docker_compose_project="app",container_label_com_docker_compose_service="db"}',
+                "1x30",
+            ),
+            # A one-shot, not on the deploy's list, that has exited.
+            (
+                'container_last_seen{job="docker",name="app-once-1",container_label_com_docker_compose_oneoff="False",'
+                'container_label_com_docker_compose_project="app",container_label_com_docker_compose_service="once"}',
+                "1x2",
+            ),
+        ],
+        [
+            # Gone from 6 min, stale after 5 more, then 10 min of `for`.
+            at(18, "container-stopped"),
+            at(
+                22,
+                "container-stopped",
+                posts("container-stopped", "0", project="app", service="web"),
+            ),
+        ],
+    ),
+    # promtool starts at 1 January 1970, 00:00 UTC, so the first due time is 05:00 that day.
+    "upkeep enabled before a due time and never run fires 3 days after it, and `for`": (
+        [('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700")],
+        [
+            at(4675, "upkeep-missed"),
+            at(4685, "upkeep-missed", posts("upkeep-missed", "3")),
+        ],
+    ),
+    "upkeep enabled after the due time, or run since it, stays quiet": (
+        [
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "21600x4700"),
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="other"}', "0x4700"),
+        ],
+        [at(4690, "upkeep-missed")],
+    ),
+    "a good run since the due time stays quiet": (
+        [
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700"),
+            ("homelab_upkeep_last_success_timestamp_seconds", "_x300 18060x4400"),
+        ],
+        [at(4690, "upkeep-missed")],
+    ),
+    "a failed run counts as a run, so only upkeep-failed posts": (
+        [
+            ('homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}', "0x4700"),
+            ("homelab_upkeep_last_failure_timestamp_seconds", "_x300 18060x4400"),
+        ],
+        [
+            at(4690, "upkeep-missed"),
+            at(4690, "upkeep-failed", posts("upkeep-failed", "-1")),
+        ],
+    ),
+    "security updates waiting at every check for 3 days fire, a series younger than that never": (
+        [("homelab_security_updates_pending", "2x4400")],
+        [
+            # The window reaches back to the first sample at 4320 min, then 1 h of `for`.
+            at(4370, "security-updates-waiting"),
+            at(4381, "security-updates-waiting", posts("security-updates-waiting", "2")),
+        ],
+    ),
+    "security updates installed once in 3 days stay quiet": (
+        [("homelab_security_updates_pending", "2x2000 0 2x2400")],
+        [at(4390, "security-updates-waiting")],
+    ),
+    "a reboot waiting 2 days fires, one done in time never": (
+        [("homelab_reboot_required", "1x2950")],
+        [
+            at(2930, "reboot-waiting"),
+            at(2941, "reboot-waiting", posts("reboot-waiting", "1")),
+        ],
+    ),
+    "a reboot done within 2 days stays quiet": (
+        [("homelab_reboot_required", "1x1300 0 1x1640")],
+        [at(2941, "reboot-waiting")],
+    ),
     "metrics stopping is one alert with no labels": (
         [('up{job="integrations/unix"}', "1x5"), ('up{job="docker"}', "1x5")],
         [

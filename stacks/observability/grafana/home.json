@@ -4373,6 +4373,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "container-stopped"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#d03b3b"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "ci-supervisor-stopped"
                 },
                 "properties": [
@@ -4523,6 +4538,21 @@
               {
                 "matcher": {
                   "id": "byName",
+                  "options": "upkeep-missed"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
                   "options": "high-disk"
                 },
                 "properties": [
@@ -4569,6 +4599,36 @@
                 "matcher": {
                   "id": "byName",
                   "options": "ssd-wear-stale"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "security-updates-waiting"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "fixed",
+                      "fixedColor": "#fab219"
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "reboot-waiting"
                 },
                 "properties": [
                   {

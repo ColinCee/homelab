@@ -2,6 +2,8 @@
 """Write what the intrusion alerts read (prometheus/rules.yml, group intrusion) to security.prom:
 the last hour's deploys, CI-host installs, runner guard refusals and SSH logins from the journal,
 every tailnet device and when it was added, and whether the installed runner guard is main's.
+Also two host facts for group homelab: whether a reboot waits, and how many security updates
+wait; unattended-upgrades should clear both within a day.
 A device, or an SSH login's device, is known="true" only if it was on the tailnet at the first run
 (STATE), so the repository names none.
 
@@ -29,6 +31,12 @@ GUARD = Path("/usr/local/lib/homelab/runner_job_guard.py")
 MAIN_GUARD = Path("/var/lib/homelab-ci/src/scripts/runner_job_guard.py")
 # The unit's StateDirectory. Delete it to learn the tailnet as it is now.
 STATE = Path("/var/lib/homelab-security-facts/known-devices.json")
+# Written by packages that need a reboot; gone after one, as /run is in memory.
+REBOOT = Path("/run/reboot-required")
+# apt-check's summary, rewritten after each `apt update` and dpkg run (update-notifier's hook).
+UPDATES = Path("/var/lib/update-notifier/updates-available")
+# ESM's updates are counted on lines of their own, and those not enabled cannot be installed.
+SECURITY = re.compile(r"(\d+) of these updates (?:is a|are) standard security update")
 # deploy.yaml's first step, update.sh after an install, the runner guard, sshd, and Tailscale SSH.
 IDENTIFIERS = (
     "homelab-deploy",
@@ -168,6 +176,28 @@ def render(
     return "\n".join(lines) + "\n"
 
 
+def host_facts(reboot: Path = REBOOT, updates: Path = UPDATES) -> str:
+    """No security metric when apt's summary is missing, unreadable or worded otherwise, so its
+    rule fires as no data rather than reading 0; the intrusion facts are written either way."""
+    lines = [
+        "# HELP homelab_reboot_required Whether an update waits on a reboot (1 yes, 0 no).",
+        "# TYPE homelab_reboot_required gauge",
+        f"homelab_reboot_required {int(reboot.exists())}",
+    ]
+    try:
+        summary = updates.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        summary = ""
+    if "can be applied immediately" in summary:
+        found = SECURITY.search(summary)
+        lines += [
+            "# HELP homelab_security_updates_pending Security updates apt can install now.",
+            "# TYPE homelab_security_updates_pending gauge",
+            f"homelab_security_updates_pending {int(found[1]) if found else 0}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
 def write(text: str, out: Path = OUT) -> None:
     _replace(out, text, 0o644)
 
@@ -182,7 +212,9 @@ def _replace(path: Path, text: str, mode: int) -> None:
 def main() -> None:
     added, names = tailnet(tailscale_status())
     known = known_devices(added)
-    write(render(events(journal(), names), added, same_file(GUARD, MAIN_GUARD), known))
+    write(
+        render(events(journal(), names), added, same_file(GUARD, MAIN_GUARD), known) + host_facts()
+    )
 
 
 if __name__ == "__main__":

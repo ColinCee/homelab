@@ -184,6 +184,36 @@ groups:
             100 <name>`; fix the cause and redeploy its stack.
           dashboard: *home
           value: '{{ $value }}'
+      # A service the last deploy started to keep running (scripts/deploy.py, record_running) with no running
+      # container, which cAdvisor stops reporting once it exits, cleanly or not. One-shots are not on the list.
+      - alert: container-stopped
+        expr: |
+          (
+            max by (project, service) (homelab_container_expected) * 0
+            unless on (project, service)
+              label_replace(
+                label_replace(
+                  container_last_seen{job="docker",container_label_com_docker_compose_oneoff="False"},
+                  "project", "$1", "container_label_com_docker_compose_project", "(.+)"
+                ),
+                "service", "$1", "container_label_com_docker_compose_service", "(.+)"
+              )
+          )
+        for: 10m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'A service stopped'
+          measure: 'Running (1 yes, 0 no)'
+          unit: ''
+          harm: 'Its container has exited and is not coming back, so whatever it serves is down.'
+          action: >-
+            Read why it stopped with `docker ps -a --filter label=com.docker.compose.service=<service>` and `docker
+            logs --tail 100` on it, then `docker compose up -d` in its stack. If you removed the stack for good,
+            delete /var/lib/homelab-metrics/deploy-<stack>.prom.
+          dashboard: *home
+          value: '{{ $value }}'
       # The supervisor rewrites ci-waits.prom every 15 seconds while its loop runs, polls failing or not.
       - alert: ci-supervisor-stopped
         expr: |
@@ -288,13 +318,10 @@ groups:
             backup-pc-receive` on the Beelink; see docs/architecture.md, "Backups".
           dashboard: *home
           value: '{{ $value }}'
-      # A failed run, or a good run 35 days old. A failure with no good run before it shows as no data.
+      # The last run failed. A failure with no good run before it shows as no data; no run at all is upkeep-missed.
       - alert: upkeep-failed
         expr: |
           (
-            round((time() - max(homelab_upkeep_last_success_timestamp_seconds)) / 86400)
-          ) > 35
-          or on() (
             round((time() - max(homelab_upkeep_last_success_timestamp_seconds)) / 86400)
             and on() max(homelab_upkeep_last_failure_timestamp_seconds)
               > on() max(homelab_upkeep_last_success_timestamp_seconds)
@@ -317,6 +344,40 @@ groups:
           action: >-
             Read `journalctl --user -u backup-upkeep` on the Beelink, fix the failing step, then `systemctl --user
             start backup-upkeep`; see docs/architecture.md, "Backups".
+          dashboard: *home
+          value: '{{ $value }}'
+      # Due on the 1st at 05:00 (backup-upkeep.timer), so no run, good or not, in the 3 days since the last due time.
+      # The timer's systemd stamp (scripts/deploy.py, record_running) is when it was first enabled if it never fired,
+      # so a timer installed after a due time waits for the next one, and one that never fires still alerts. The due
+      # time is 05:00 on the 1st of the month of 3 days and 5 hours ago (277200 s), so it moves on 3 days after each.
+      - alert: upkeep-missed
+        expr: |
+          (
+            round((time() - max({
+              __name__=~"homelab_upkeep_last_(success|failure)_timestamp_seconds|homelab_timer_last_trigger_timestamp_seconds",
+              timer=~"|backup-upkeep"
+            })
+              > on() time() - (
+                time() - 277200 - (time() - 277200) % 86400 - (day_of_month(vector(time() - 277200)) - 1) * 86400
+                + 18000
+              )
+            ) / 86400)
+          )
+          or on() max(absent_over_time(homelab_timer_last_trigger_timestamp_seconds{timer="backup-upkeep"}[1h])) * -1
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Monthly upkeep didn''t run'
+          measure: 'Last run, or install if none'
+          unit: ' days ago'
+          harm: >-
+            Without it no restore is tested, so a backup that cannot be restored goes unseen, and unused Docker
+            images fill the disk.
+          action: >-
+            Check `systemctl --user list-timers backup-upkeep.timer` on the Beelink and enable it if missing, then
+            `systemctl --user start backup-upkeep`; see docs/architecture.md, "Backups".
           dashboard: *home
           value: '{{ $value }}'
       - alert: high-disk
@@ -398,6 +459,53 @@ groups:
           action: >-
             Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
             on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'
+      # unattended-upgrades installs security updates each morning (apt/52unattended-upgrades-local), so some waiting
+      # at every check for 3 days means it is failing. Written each minute (scripts/security_facts.py, host); the
+      # offset keeps a series younger than the window quiet.
+      - alert: security-updates-waiting
+        expr: |
+          (
+            min(min_over_time(homelab_security_updates_pending[3d]))
+            and on() max(homelab_security_updates_pending offset 3d)
+          ) > 0
+          or on() max(absent_over_time(homelab_security_updates_pending[15m])) * -1
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Security updates not installing'
+          measure: 'Waiting for 3 days or more'
+          unit: ' updates'
+          harm: 'Known holes in the Beelink''s software stay open to anything that reaches it.'
+          action: >-
+            Read `sudo tail -50 /var/log/unattended-upgrades/unattended-upgrades.log` on the Beelink and `apt list
+            --upgradable`, fix what stops it, then `sudo unattended-upgrade -v`.
+          dashboard: *home
+          value: '{{ $value }}'
+      # It reboots at 04:00 the day after an update needs it (apt/52unattended-upgrades-local), so 2 days is a missed
+      # reboot. The flag lives in memory, so a reboot clears it.
+      - alert: reboot-waiting
+        expr: |
+          (
+            min(min_over_time(homelab_reboot_required[2d]))
+            and on() max(homelab_reboot_required offset 2d)
+          ) > 0
+          or on() max(absent_over_time(homelab_reboot_required[15m])) * -1
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Beelink waiting on a reboot'
+          measure: 'Reboot needed for 2 days or more (1 yes)'
+          unit: ''
+          harm: 'Installed fixes, such as a new kernel, do not take effect until it reboots.'
+          action: >-
+            See what needs it in /run/reboot-required.pkgs and why the 04:00 reboot did not happen in `journalctl -u
+            unattended-upgrades`, then `sudo reboot` at a quiet time.
           dashboard: *home
           value: '{{ $value }}'
 

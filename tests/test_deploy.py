@@ -209,6 +209,60 @@ def test_installs_and_enables_discovered_timer_pairs(tmp_path: Path) -> None:
     )
 
 
+def test_records_the_services_to_keep_running_and_each_timers_stamp(tmp_path: Path) -> None:
+    stack_dir = _make_stack(tmp_path, "alpha")
+    systemd_dir = stack_dir / "systemd"
+    systemd_dir.mkdir()
+    for name in ("alpha-upkeep", "alpha-fresh"):
+        (systemd_dir / f"{name}.service").write_text("[Service]\n", encoding="utf-8")
+        (systemd_dir / f"{name}.timer").write_text("[Timer]\n", encoding="utf-8")
+    stamps = tmp_path / "stamps"
+    stamps.mkdir()
+    (stamps / "stamp-alpha-upkeep.timer").touch()
+    os.utime(stamps / "stamp-alpha-upkeep.timer", (1794000000, 1794000000))
+    metrics = tmp_path / "metrics"
+    metrics.mkdir()
+    config = {
+        "name": "alpha",
+        "services": {
+            "web": {"restart": "unless-stopped"},
+            "db": {"restart": "always"},
+            "once": {"restart": "no"},
+            "migrate": {},
+        },
+    }
+    calls: list[list[str]] = []
+
+    def runner(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        calls.append(command)
+        out = json.dumps(config).encode() if "json" in command else b""
+        return subprocess.CompletedProcess(command, 0, stdout=out)
+
+    report = deploy.deploy(
+        tmp_path,
+        deploy.discover_stack_plans(tmp_path),
+        unit_dir=tmp_path / "units",
+        metrics_dir=metrics,
+        stamp_dir=stamps,
+        runner=runner,
+    )
+
+    assert report.completed == ("alpha",)
+    # Read with the stack's own profiles, as `up` started them.
+    assert "--profile" not in next(c for c in calls if "json" in c)
+    samples = [
+        line
+        for line in (metrics / "deploy-alpha.prom").read_text().splitlines()
+        if not line.startswith("#")
+    ]
+    assert samples == [
+        'homelab_container_expected{project="alpha",service="db"} 1',
+        'homelab_container_expected{project="alpha",service="web"} 1',
+        'homelab_timer_last_trigger_timestamp_seconds{timer="alpha-upkeep"} 1794000000',
+    ]
+    assert [p.name for p in metrics.iterdir()] == ["deploy-alpha.prom"]
+
+
 def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> None:
     def git(*args: str) -> None:
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
