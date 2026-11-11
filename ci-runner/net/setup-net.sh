@@ -11,11 +11,6 @@ set -euo pipefail
 SLOTS=${SLOTS:-$(cat /etc/homelab-ci/slots 2>/dev/null || true)}
 SLOTS=${SLOTS//[[:space:]]/}
 if [[ $SLOTS =~ ^[0-9]+$ ]]; then SLOTS=$((10#$SLOTS > 0 ? 10#$SLOTS : 1)); else SLOTS=5; fi
-# Light slots (small VMs for light jobs, numbered after the build slots): LIGHT_SLOTS if
-# given, else /etc/homelab-ci/light-slots, else 5, as in ci_supervisor.py; 0 is none.
-LIGHT_SLOTS=${LIGHT_SLOTS:-$(cat /etc/homelab-ci/light-slots 2>/dev/null || true)}
-LIGHT_SLOTS=${LIGHT_SLOTS//[[:space:]]/}
-if [[ $LIGHT_SLOTS =~ ^[0-9]+$ ]]; then LIGHT_SLOTS=$((10#$LIGHT_SLOTS)); else LIGHT_SLOTS=5; fi
 dir=$(cd "$(dirname "$0")" && pwd)
 # The accept is limited to the uplink, so it opens nothing private even if the
 # nftables table were missing.
@@ -68,7 +63,7 @@ else
   nft -f "$dir/homelab-ci.nft"
 fi
 
-for ((n = 0; n < SLOTS + LIGHT_SLOTS; n++)); do
+for ((n = 0; n < SLOTS; n++)); do
   tap=fc-tap$n
   if ! ip link show "$tap" >/dev/null 2>&1; then
     ip tuntap add dev "$tap" mode tap user "fc-slot$n" group "fc-slot$n"
