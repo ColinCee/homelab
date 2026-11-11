@@ -19,6 +19,11 @@ import yaml
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 
+# Alloy's textfile folder (prometheus/rules.yml reads what the deploy writes there).
+METRICS_DIR = Path("/var/lib/homelab-metrics")
+# Restart policies of services that should always be running; any other is a one-shot.
+LONG_RUNNING = {"always", "unless-stopped"}
+
 
 class DeploymentInputError(ValueError):
     """Raised when deployment inputs are invalid before any mutation."""
@@ -274,9 +279,12 @@ def deploy(
     *,
     readiness_timeout: int = 120,
     unit_dir: Path | None = None,
+    metrics_dir: Path | None = None,
+    stamp_dir: Path | None = None,
     runner: CommandRunner = subprocess.run,
 ) -> DeploymentReport:
-    """Build, start, wait for readiness, and install each selected stack."""
+    """Build, start, wait for readiness, and install each selected stack, then record what it
+    runs in ``metrics_dir`` when given."""
     if readiness_timeout < 1:
         raise DeploymentInputError("readiness timeout must be a positive integer")
 
@@ -311,7 +319,9 @@ def deploy(
             )
             ready = datetime.now(UTC).isoformat()
             install_systemd_units(plan.timers, unit_dir=unit_dir, runner=runner)
-        except (OSError, subprocess.CalledProcessError) as exc:
+            if metrics_dir is not None:
+                record_running(repo_root, plan, metrics_dir, stamp_dir=stamp_dir, runner=runner)
+        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             reason = _failure_reason(exc)
             failed[plan.name] = reason
             print(f"Deployment failed for {plan.name}: {reason}", file=sys.stderr)
@@ -333,6 +343,55 @@ def deploy(
     elif report.failed:
         print("Deployment failed for all selected stacks", file=sys.stderr)
     return report
+
+
+def record_running(
+    repo_root: Path,
+    plan: StackPlan,
+    metrics_dir: Path,
+    *,
+    stamp_dir: Path | None = None,
+    runner: CommandRunner = subprocess.run,
+) -> None:
+    """Write deploy-<stack>.prom: the services that should be running, for "A service stopped",
+    and when systemd last started each timer, for "Monthly upkeep didn't run".
+
+    A timer's time is its Persistent= stamp, which systemd creates when the timer is first
+    enabled and touches each time it fires, so a timer that never fires still has one.
+    """
+    described = runner(
+        compose_command(plan, "config", "--format", "json"),
+        cwd=repo_root,
+        env=_compose_environment(),
+        check=True,
+        capture_output=True,
+    )
+    config = json.loads(described.stdout)
+    project = config.get("name") or plan.name
+    lines = [
+        "# HELP homelab_container_expected A service the last deploy started to keep running.",
+        "# TYPE homelab_container_expected gauge",
+    ]
+    lines += [
+        f'homelab_container_expected{{project="{project}",service="{name}"}} 1'
+        for name, service in sorted((config.get("services") or {}).items())
+        if (service or {}).get("restart") in LONG_RUNNING
+    ]
+    metric = "homelab_timer_last_trigger_timestamp_seconds"
+    lines += [
+        f"# HELP {metric} When systemd last started the timer's service, or first enabled it.",
+        f"# TYPE {metric} gauge",
+    ]
+    stamps = stamp_dir or _default_stamp_dir()
+    for timer in plan.timers:
+        stamp = stamps / f"stamp-{timer.name}"
+        if stamp.is_file():
+            lines.append(f'{metric}{{timer="{timer.stem}"}} {stamp.stat().st_mtime:.0f}')
+    out = metrics_dir / f"deploy-{plan.name}.prom"
+    temporary = out.with_name(f".{out.name}.{os.getpid()}.tmp")
+    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    temporary.chmod(0o644)
+    os.replace(temporary, out)
 
 
 def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
@@ -427,6 +486,11 @@ def _default_unit_dir() -> Path:
     return Path(config_home) / "systemd" / "user"
 
 
+def _default_stamp_dir() -> Path:
+    data_home = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
+    return Path(data_home) / "systemd" / "timers"
+
+
 def _systemctl_environment() -> dict[str, str]:
     allowed = {
         "HOME",
@@ -518,12 +582,16 @@ def main() -> int:
     parser.add_argument("stacks", nargs="*", help="stack names (default: all discovered stacks)")
     args = parser.parse_args()
     repo_root = Path(__file__).resolve().parents[1]
+    metrics_dir = METRICS_DIR if METRICS_DIR.is_dir() else None
+    if metrics_dir is None:
+        print(f"No {METRICS_DIR}: the alerts will not know what runs", file=sys.stderr)
     return run(
         repo_root,
         tuple(args.stacks),
         readiness_timeout=args.readiness_timeout,
         last_deployed=args.last_deployed,
         first_changed_since=args.first_changed_since,
+        metrics_dir=metrics_dir,
     )
 
 
@@ -534,6 +602,7 @@ def run(
     readiness_timeout: int = 120,
     last_deployed: Path | None = None,
     first_changed_since: str | None = None,
+    metrics_dir: Path | None = None,
     runner: CommandRunner = subprocess.run,
 ) -> int:
     """Deploy the given, changed or all stacks; exit code 0 ok, 1 failed, 2 bad input."""
@@ -553,7 +622,13 @@ def run(
             plans = changed_first(repo_root, plans, first_changed_since, runner=runner)
             print("In order: " + ", ".join(plan.name for plan in plans), flush=True)
         report = (
-            deploy(repo_root, plans, readiness_timeout=readiness_timeout, runner=runner)
+            deploy(
+                repo_root,
+                plans,
+                readiness_timeout=readiness_timeout,
+                metrics_dir=metrics_dir,
+                runner=runner,
+            )
             if plans
             else DeploymentReport((), {})
         )

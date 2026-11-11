@@ -137,3 +137,34 @@ def test_the_first_run_learns_the_tailnet_and_a_later_device_stays_unknown(tmp_p
         "phone",
     }
     assert state.stat().st_mode & 0o777 == 0o600
+
+
+def test_host_facts_count_only_security_updates_apt_can_install(tmp_path: Path) -> None:
+    updates = tmp_path / "updates-available"
+    updates.write_text(
+        "3 updates can be applied immediately.\n"
+        "2 of these updates are standard security updates.\n"
+        "1 additional security update can be applied with ESM Apps.\n"
+    )
+    reboot = tmp_path / "reboot-required"
+    reboot.write_text("*** System restart required ***\n")
+
+    def samples(text: str) -> list[str]:
+        return [line for line in text.splitlines() if not line.startswith("#")]
+
+    assert samples(security_facts.host_facts(reboot, updates)) == [
+        "homelab_reboot_required 1",
+        "homelab_security_updates_pending 2",
+    ]
+    updates.write_text("0 updates can be applied immediately.\n")
+    reboot.unlink()
+    assert samples(security_facts.host_facts(reboot, updates)) == [
+        "homelab_reboot_required 0",
+        "homelab_security_updates_pending 0",
+    ]
+    # No summary, or one worded otherwise, is no data, so the rule says so rather than reading 0.
+    assert samples(security_facts.host_facts(reboot, tmp_path / "gone")) == [
+        "homelab_reboot_required 0"
+    ]
+    updates.write_text("Il y a 2 mises a jour.")
+    assert samples(security_facts.host_facts(reboot, updates)) == ["homelab_reboot_required 0"]

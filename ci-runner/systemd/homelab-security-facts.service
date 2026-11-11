@@ -5,8 +5,8 @@ Description=Write the intrusion alerts' facts to the metrics folder (security.pr
 Type=oneshot
 ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/security_facts.py
 User=homelab-facts
-# Reads the journal, `tailscale status` over its socket, and two copies of the runner guard; writes one file and
-# keeps one.
+# Reads the journal, `tailscale status` over its socket, two copies of the runner guard and two of apt's files;
+# writes one file and keeps one.
 SupplementaryGroups=systemd-journal
 CapabilityBoundingSet=
 NoNewPrivileges=yes
