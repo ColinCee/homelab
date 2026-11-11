@@ -6,7 +6,7 @@ findings and accepted risks are kept privately; compare against those.
 
 ## Checklist
 
-On the server, with `sudo` where needed.
+On the server.
 
 ```bash
 # Accounts, keys, logins
@@ -53,6 +53,7 @@ ls -d ~/actions-runner*
 cat /sys/kernel/mm/ksm/run                      # 0
 pgrep -a firecracker                            # only while a job runs
 sudo nft list table inet homelab_ci | head -3   # present
+sudo bash ci-runner/tests/test-wall.sh
 sudo ci-runner/tests/audit.sh                   # passes
 ```
 
@@ -80,6 +81,6 @@ repo has the same power over the host without the
   its runner, credentials and network grants; see
   [Remove a service](deploying-services.md#remove-a-service).
 - **Verify a control with a real attempt.** A failing runner hook did not stop
-  later `if: always()` steps, which only a real refused run showed.
+  later `if: always()` steps; only a real refused run showed it.
 - **Record answers.** Write down what each odd finding turned out to be, so
   the next audit starts from it.

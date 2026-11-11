@@ -32,9 +32,10 @@
       "matchDepNames": ["python"]
     },
     {
-      "description": "Our own image: no wait needed. ghcr.io gives Renovate no release time, so the 3-day wait would hold it forever.",
+      "description": "Our own image: no wait, since ghcr.io gives Renovate no release time and the 3-day wait would hold it forever. Not auto-merged: the flight tracker's collaborators can publish to it, so a new image waits for Colin.",
       "matchPackageNames": ["ghcr.io/colincee/**"],
-      "minimumReleaseAge": "0 days"
+      "minimumReleaseAge": "0 days",
+      "automerge": false
     },
     {
       "description": "Lock file refreshes, pins and digests carry no release time either, so the 3-day wait would hold them forever.",
