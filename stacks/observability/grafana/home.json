@@ -3674,7 +3674,7 @@
                 "uid": "prometheus"
               },
               "refId": "A",
-              "expr": "sum by (host) (rate(caddy_http_requests_total{job=\"caddy\",host=~\".+\\.internal\"}[5m]))",
+              "expr": "sum by (host) (rate(caddy_http_requests_total{job=\"caddy\",host=~\".+\\\\.internal\"}[5m]))",
               "legendFormat": "{{host}}"
             },
             {
