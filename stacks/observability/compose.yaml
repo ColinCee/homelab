@@ -75,6 +75,9 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # A snapshot would publish a panel's data to the maker's public server.
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_LOG_LEVEL: warn
       # VictoriaLogs' data source, signed by its maker; unused while LOG_STORE is loki.
       GF_PLUGINS_PREINSTALL_SYNC: victoriametrics-logs-datasource@0.34.0
       # Go grows its heap to twice what is live by default.
