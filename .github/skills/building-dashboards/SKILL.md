@@ -59,8 +59,8 @@ starts.
   are `job="ci-vms"`.
 - A tile shows the last value; `graphMode: area` adds the trend.
 - A top 10 is an instant query, `sort_desc(topk(10, ...))`, in a horizontal bar gauge.
-- Alert history is Prometheus's own `ALERTS{alertstate="firing",alertname!="watchdog"}`, one sample per rule
-  evaluation (a minute); the watchdog always fires. A table over the time range uses `[$__range]` in instant queries, merged.
+- Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (the watchdog always fires), a
+  sample a minute. A table over the time range uses `[$__range]` in instant queries, merged.
 - Logs: Loki's stream label is `container_name`; `level` and the rest are structured metadata, and
   the line is the body. VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends
   a container's recent lines when it restarts: Loki drops an exact repeat, VictoriaLogs needs
