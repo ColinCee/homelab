@@ -1,7 +1,8 @@
 #!/bin/sh
 # Back up /data to the restic repository, nightly or once.
-#   backup.sh loop   wait for BACKUP_TIME (UTC) each day, then back up
-#   backup.sh once   back up now
+#   backup.sh loop           wait for BACKUP_TIME (UTC) each day, then back up
+#   backup.sh once           back up now
+#   backup.sh restore-test   restore one file from the latest snapshot (systemd/backup-upkeep.service)
 set -eu
 
 # R2 bills past 10 GB and has no server-side quota, so the cap is enforced
@@ -78,7 +79,7 @@ run_backup() {
     record_size
 }
 
-# The Backup storage nearly full alert reads the metric; server-health.sh the log line.
+# The Backup storage nearly full alert reads the metric.
 record_size() {
   bytes=$(repo_bytes) && [ -n "$bytes" ] || return 0
   echo "repository size: $bytes bytes of $MAX_REPO_BYTES allowed"
@@ -106,7 +107,7 @@ report() {
 METRICS_FILE=/metrics/backup.prom
 # The last run's failing step, for the alert to name; removed by the next good run.
 FAILURE_FILE=/metrics/backup-failure.prom
-# The weekly report reads this, not the log, for the same reason.
+# Home's Backups row reads this, not the log, for the same reason.
 DEEP_CHECK_FILE=/metrics/backup-deep-check.prom
 SIZE_FILE=/metrics/backup-size.prom
 
@@ -141,6 +142,19 @@ case "${1:-loop}" in
 once)
   report
   ;;
+restore-test)
+  # restic exits non-zero because the container cannot chown restored files, so the restored file is the test.
+  file=/data/home-assistant/configuration.yaml
+  restic restore latest --target /tmp/restore-test --include "$file" >/dev/null 2>&1 || true
+  if test -s "/tmp/restore-test$file"; then
+    echo "restore test ok: $file"
+  else
+    echo "restore test FAILED: could not restore $file" >&2
+    status=1
+  fi
+  rm -r /tmp/restore-test 2>/dev/null || true
+  exit "${status:-0}"
+  ;;
 loop)
   seed_metric || echo "could not seed $METRICS_FILE" >&2
   touch /tmp/ready
@@ -151,7 +165,7 @@ loop)
   done
   ;;
 *)
-  echo "usage: backup.sh [loop|once]" >&2
+  echo "usage: backup.sh [loop|once|restore-test]" >&2
   exit 2
   ;;
 esac

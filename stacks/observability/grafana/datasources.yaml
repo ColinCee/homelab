@@ -1,6 +1,5 @@
 # Grafana reads every store through the gateway (../gateway/Caddyfile), never directly: its data source proxy lets a
-# Viewer's GET through to any path of a store, and Prometheus and Alertmanager serve admin calls and silences. The
-# log and trace stores' data sources are beside them (../logs/*/datasource.yaml, ../traces/*/datasource.yaml).
+# Viewer's GET through to any path of a store, and every store serves writes or admin calls beside its reads.
 apiVersion: 1
 datasources:
   - name: Prometheus
@@ -33,3 +32,35 @@ datasources:
     jsonData:
       implementation: prometheus
       handleGrafanaManagedAlerts: false
+  # VictoriaLogs' plugin is in Grafana's image (../grafana.Dockerfile).
+  - name: Logs
+    uid: logs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://gateway:5080/logs
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $__file{/run/secrets/agents_password}
+    editable: false
+    jsonData:
+      # A line's trace opens in the trace store. `$$` keeps provisioning from expanding Grafana's own variable.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: $${__value.raw}
+          datasourceUid: traces
+          urlDisplayLabel: View trace
+  # VictoriaTraces with Jaeger's data source, as its maker recommends:
+  # https://docs.victoriametrics.com/victoriatraces/querying/grafana/
+  - name: Traces
+    uid: traces
+    type: jaeger
+    access: proxy
+    url: http://gateway:5080/traces/select/jaeger
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $__file{/run/secrets/agents_password}
+    editable: false

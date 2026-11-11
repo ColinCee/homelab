@@ -74,8 +74,8 @@ docker exec backup restic ls latest /data/home-assistant
 The redirect sends a manual run's output to the container log. A manual run
 also updates the metric, so it clears **Nightly backup didn't run** like a scheduled run.
 
-Without SSH, run the **Server health** workflow with `backup_now` ticked: it
-runs the same command, then reports, printing the backup log if it failed.
+Monthly, `backup-upkeep` (`stacks/backup/systemd/`) restores a file from the latest snapshot;
+failing fires **Monthly upkeep failed**. Now: `systemctl --user start backup-upkeep`.
 
 ## Restoring
 

@@ -35,36 +35,58 @@ services:
       - alerting
       - probe
 
-  # The log store and the trace store, each one of two picked in settings.env (LOG_STORE, TRACE_STORE; ADR 0001). Each
-  # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
-  # the Home dashboard written in its query language; the services below mount the picked store's files.
+  # Logs, VictoriaLogs (ADR 0001). Flags: https://docs.victoriametrics.com/victorialogs/#list-of-command-line-flags
   logs:
-    extends:
-      file: logs/${LOG_STORE:?}/compose.yaml
-      service: logs
+    image: victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d
     restart: unless-stopped
+    command:
+      - -storageDataPath=/vlogs
+      - -retentionPeriod=30d
+      # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
+      - -inmemoryDataFlushInterval=1s
+      # One heavy query must not take its memory: two at a time, a minute each, at most a month back. A 30-day count
+      # took 8 s.
+      - -search.maxConcurrentRequests=2
+      - -search.maxQueryDuration=60s
+      - -search.maxQueryTimeRange=31d
     security_opt:
       - no-new-privileges:true
+    # It held a median 363 and at most 650 MiB through a 30-day backfill and heavy queries.
+    mem_limit: 1g
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - victorialogs-data:/vlogs
     networks:
       - ingest
       - stores
 
+  # Traces, VictoriaTraces (ADR 0001). Flags: https://docs.victoriametrics.com/victoriatraces/#list-of-command-line-flags
   traces:
-    extends:
-      file: traces/${TRACE_STORE:?}/compose.yaml
-      service: traces
+    image: victoriametrics/victoria-traces:v0.13.0@sha256:3018df8f99429d7d3029167ab9f70848bf0a778c31c49dff16c86c7e34759fbd
     restart: unless-stopped
+    command:
+      - -storageDataPath=/vtraces
+      # The default is 7 days.
+      - -retentionPeriod=30d
+      - -inmemoryDataFlushInterval=1s
+      # As the log store's.
+      - -search.maxConcurrentRequests=2
+      - -search.maxQueryDuration=60s
+      - -search.maxQueryTimeRange=31d
     security_opt:
       - no-new-privileges:true
+    # It held at most 106 MiB at ten times the real span rate.
+    mem_limit: 512m
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - victoriatraces-data:/vtraces
     networks:
       - ingest
       - stores
 
-  # Dashboards and Explore over every store, from Git (grafana/, logs/*/home.json), behind a login: Colin's admin
+  # Dashboards and Explore over every store, from Git (grafana/), behind a login: Colin's admin
   # login, and the agents' read-only one (grafana-users). Provisioned dashboards and data sources refuse edits.
   grafana:
     build:
@@ -115,10 +137,8 @@ services:
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
-      - ./logs/${LOG_STORE:?}/datasource.yaml:/etc/grafana/provisioning/datasources/logs.yaml:ro
-      - ./traces/${TRACE_STORE:?}/datasource.yaml:/etc/grafana/provisioning/datasources/traces.yaml:ro
       - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./logs/${LOG_STORE:?}/home.json:/var/lib/grafana/dashboards/home.json:ro
+      - ./grafana/home.json:/var/lib/grafana/dashboards/home.json:ro
     # Shared with the gateway and grafana-users only, so no data source can reach a store directly.
     networks:
       - grafana
@@ -191,8 +211,8 @@ services:
       - alertmanager-out
 
   # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
-  # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, server-health and agents
-  # on Tailscale.
+  # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, the heartbeat and
+  # agents on Tailscale.
   gateway:
     image: caddy:2.11.9@sha256:0c2243efcf437ab7f7a978f1027fcf0d4f9be8a75df27b1b3fbc5dbe0ffa8cf0
     restart: unless-stopped
@@ -217,8 +237,6 @@ services:
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./gateway/start.sh:/etc/caddy/start.sh:ro
-      - ./logs/${LOG_STORE:?}/gateway.caddy:/etc/caddy/logs.caddy:ro
-      - ./traces/${TRACE_STORE:?}/gateway.caddy:/etc/caddy/traces.caddy:ro
     # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks.
     networks:
       - stores
@@ -239,9 +257,9 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # The folder: config.alloy and the picked stores' exporters load as one configuration.
     command: >-
-      run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data --disable-reporting /etc/alloy
+      run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data --disable-reporting
+      /etc/alloy/config.alloy
     # The `instance` label on every series; a container ID would change on each recreate.
     hostname: beelink
     environment:
@@ -254,8 +272,6 @@ services:
       - /tmp
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
-      - ./logs/${LOG_STORE:?}/alloy.alloy:/etc/alloy/logs.alloy:ro
-      - ./traces/${TRACE_STORE:?}/alloy.alloy:/etc/alloy/traces.alloy:ro
       - alloy-state:/var/lib/alloy/data
       # Under /rootfs, where cAdvisor looks for the host's: its processes, for each container's network counters,
       # and which layer is each container's own (layer IDs only, open to all), without which it tracks none.
@@ -494,8 +510,5 @@ volumes:
   alertmanager-data:
   # OpenObserve's history, until it is deleted by hand.
   openobserve-data:
-  # The stores' own, declared here for their folders' compose.yaml; only the picked ones are made.
-  loki-data:
   victorialogs-data:
-  tempo-data:
   victoriatraces-data:

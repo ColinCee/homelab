@@ -248,7 +248,7 @@ loki.secretfilter "logs" {
   forward_to     = [otelcol.receiver.loki.logs.receiver]
 }
 
-// Over OTLP, to the picked store's exporter `logs` (logs/<store>/alloy.alloy).
+// Over OTLP, to VictoriaLogs.
 otelcol.receiver.loki "logs" {
   output {
     logs = [otelcol.processor.batch.logs.input]
@@ -262,13 +262,39 @@ otelcol.processor.batch "logs" {
   }
 }
 
+otelcol.exporter.otlphttp "logs" {
+  client {
+    endpoint = "http://logs:9428/insert/opentelemetry"
+    // Alloy's OTLP sends each line's labels as attributes of the line, and VictoriaLogs makes streams only of
+    // resource attributes unless told.
+    headers = {
+      "VL-Stream-Fields" = "container_name",
+    }
+  }
+  // A store down for an outage or a deploy loses nothing while Alloy runs: it keeps trying for an hour, holding up to
+  // 10,000 batches.
+  retry_on_failure {
+    max_elapsed_time = "1h"
+  }
+  sending_queue {
+    queue_size = 10000
+  }
+}
+
+// Its own metrics, for the rules that notice it down or no longer taking data (prometheus/rules.yml, group stores).
+prometheus.scrape "logs" {
+  targets         = [{ __address__ = "logs:9428" }]
+  job_name        = "logs"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
 // ================================
 // OTLP from programs (traces and their logs)
 // ================================
 
-// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to the
-// picked trace store's exporter `traces` (traces/<store>/alloy.alloy), logs to the log store with their trace and
-// span IDs, which Grafana links to the trace.
+// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to
+// VictoriaTraces, logs to the log store with their trace and span IDs, which Grafana links to the trace.
 otelcol.receiver.otlp "programs" {
   http {
     endpoint = "0.0.0.0:4318"
@@ -313,6 +339,26 @@ otelcol.processor.batch "traces" {
   output {
     traces = [otelcol.exporter.otlphttp.traces.input]
   }
+}
+
+otelcol.exporter.otlphttp "traces" {
+  client {
+    endpoint = "http://traces:10428/insert/opentelemetry"
+  }
+  // As the log store's.
+  retry_on_failure {
+    max_elapsed_time = "1h"
+  }
+  sending_queue {
+    queue_size = 10000
+  }
+}
+
+prometheus.scrape "traces" {
+  targets         = [{ __address__ = "traces:10428" }]
+  job_name        = "traces"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.default.receiver]
 }
 
 // ================================

@@ -202,6 +202,34 @@ groups:
             backup-pc-receive` on the Beelink; see docs/runbooks/backups.md.
           dashboard: *home
           value: '{{ $value }}'
+      # A failed run, a run missed for 35 days, or no result yet; `for` gives the first deploy an hour to run it.
+      - alert: upkeep-failed
+        expr: |
+          (
+            round((time() - max(homelab_upkeep_last_success_timestamp_seconds)) / 86400)
+          ) > 35
+          or on() (
+            round((time() - max(homelab_upkeep_last_success_timestamp_seconds)) / 86400)
+            and on() max(homelab_upkeep_last_failure_timestamp_seconds)
+              > on() max(homelab_upkeep_last_success_timestamp_seconds)
+          )
+          or on() max(absent_over_time(homelab_upkeep_last_success_timestamp_seconds[15m])) * -1
+        for: 1h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Monthly upkeep failed'
+          measure: 'Last good upkeep'
+          unit: ' days ago'
+          harm: >-
+            Either a file could not be restored from the latest backup, so a restore may fail when needed, or unused
+            Docker images are filling the disk.
+          action: >-
+            Read `journalctl --user -u backup-upkeep` on the Beelink, fix the failing step, then `systemctl --user
+            start backup-upkeep`; see docs/runbooks/backups.md.
+          dashboard: *home
+          value: '{{ $value }}'
       - alert: high-disk
         expr: |
           (
@@ -324,8 +352,7 @@ groups:
           value: '{{ $value }}'
 
   # The stores themselves: a store down, or up and no longer taking what Alloy sends, loses data. The log and trace
-  # stores' own metrics come from Alloy's scrape of them (logs/*/alloy.alloy, traces/*/alloy.alloy); Alloy stopping is
-  # "Beelink metrics stopped".
+  # stores' own metrics come from Alloy's scrape of them (config.alloy); Alloy stopping is "Beelink metrics stopped".
   - name: stores
     interval: 1m
     rules:
@@ -351,16 +378,12 @@ groups:
         expr: |
           sum by (job) (
             rate(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[15m])
-            or rate(loki_distributor_lines_received_total{job="logs"}[15m])
             or rate(vl_rows_ingested_total{job="logs"}[15m])
-            or rate(tempo_distributor_spans_received_total{job="traces"}[15m])
             or rate(vt_rows_ingested_total{job="traces"}[15m])
           ) == 0
           and on (job) sum by (job) (
             increase(prometheus_tsdb_head_samples_appended_total{job="prometheus"}[1d])
-            or increase(loki_distributor_lines_received_total{job="logs"}[1d])
             or increase(vl_rows_ingested_total{job="logs"}[1d])
-            or increase(tempo_distributor_spans_received_total{job="traces"}[1d])
             or increase(vt_rows_ingested_total{job="traces"}[1d])
           ) > 0
         for: 15m

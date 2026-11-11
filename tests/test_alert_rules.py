@@ -49,8 +49,8 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
-def test_the_13_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
-    assert len(HOMELAB) == 13
+def test_the_14_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> None:
+    assert len(HOMELAB) == 14
     assert set(RULES) - set(HOMELAB) == {
         "PrometheusRuleFailures",
         "PrometheusBadConfig",
@@ -250,7 +250,7 @@ CASES = {
     "a store taking nothing is named, one still taking data is not": (
         [
             ('vl_rows_ingested_total{job="logs",type="opentelemetry"}', "0+60x10 600x30"),
-            ('tempo_distributor_spans_received_total{job="traces"}', "0+60x50"),
+            ('vt_rows_ingested_total{job="traces"}', "0+60x50"),
             ('prometheus_tsdb_head_samples_appended_total{job="prometheus"}', "0+600x50"),
         ],
         [
@@ -352,6 +352,17 @@ CASES = {
         [
             at(25, "security-checks-stopped"),
             at(27, "security-checks-stopped", posts("security-checks-stopped", "17")),
+        ],
+    ),
+    "a failed upkeep fires after `for`, a good one after it clears": (
+        [
+            ("homelab_upkeep_last_success_timestamp_seconds", "0x80 5000x60"),
+            ("homelab_upkeep_last_failure_timestamp_seconds", "_x5 60x135"),
+        ],
+        [
+            at(4, "upkeep-failed"),
+            at(66, "upkeep-failed", posts("upkeep-failed", "0")),
+            at(95, "upkeep-failed"),
         ],
     ),
     "metrics stopping is one alert with no labels": (

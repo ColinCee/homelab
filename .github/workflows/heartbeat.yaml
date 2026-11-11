@@ -1,7 +1,6 @@
 name: Heartbeat
 
-# Passes only while alerting works. heartbeat-watch.yaml, on GitHub's machines, posts to Discord when this
-# has not passed for 2 hours (docs/observability.md).
+# Passes only while alerting works; GitHub emails a failed run (docs/observability.md).
 on:
   schedule:
     - cron: "*/15 * * * *"

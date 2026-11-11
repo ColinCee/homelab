@@ -26,9 +26,8 @@ access; Cloudflare Tunnel exposes the flight tracker.
 | `stacks/backup/` | Nightly encrypted restic backup to Cloudflare R2 |
 | `stacks/internal-names/` | Short `.internal` names for the desktop and MacBook, listed in the [reaching-homelab-devices skill](.github/skills/reaching-homelab-devices/SKILL.md): a DNS server Tailscale sends `.internal` to, and a proxy |
 
-The **Server health** workflow posts a weekly report (backups, disk, containers, site uptime, pending updates) to its
-job summary; on the first Monday of each month it also prunes unused Docker images and test-restores a file from
-backup.
+Each month `backup-upkeep` ([`stacks/backup/systemd/`](stacks/backup/systemd)) prunes unused Docker images and
+build cache and test-restores a file from backup; a failure alerts.
 
 ## Run locally
 
