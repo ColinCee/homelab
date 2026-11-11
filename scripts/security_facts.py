@@ -18,7 +18,7 @@ import hashlib
 import json
 import re
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Iterable, Set
 from datetime import datetime
 from pathlib import Path
 
@@ -143,7 +143,7 @@ def label(value: str) -> str:
 
 
 def render(
-    found: Events, added: dict[str, float], guard_matches: bool, known: set[str] = frozenset()
+    found: Events, added: dict[str, float], guard_matches: bool, known: Set[str] = frozenset()
 ) -> str:
     lines = []
     for kind, names in LABELS.items():
