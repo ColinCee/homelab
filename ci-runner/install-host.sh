@@ -93,6 +93,15 @@ for unit in homelab-ssd-wear.service homelab-ssd-wear.timer; do
 done
 systemctl daemon-reload
 systemctl enable --now homelab-ssd-wear.timer
+# What the intrusion alerts read (scripts/security_facts.py), as a user of its own in the journal's group.
+id homelab-facts >/dev/null 2>&1 ||
+  useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin homelab-facts
+install -o root -g root -m 0644 "$here/../scripts/security_facts.py" "$dest/security_facts.py"
+for unit in homelab-security-facts.service homelab-security-facts.timer; do
+  install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now homelab-security-facts.timer
 
 # The supervisor, the network rules and the slot count take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the

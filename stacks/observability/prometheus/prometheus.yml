@@ -1,6 +1,7 @@
-# Alloy scrapes every source and writes here (../config.alloy). Prometheus scrapes only what Alloy cannot reach:
-# itself, for the rules on its own health (rules.yml, group "prometheus"), and Alertmanager, whose API only it and
-# the gateway may reach (../compose.yaml, alerting).
+# Alloy scrapes every source and writes here (../config.alloy). Prometheus scrapes only what Alloy may not reach:
+# itself, for the rules on its own health (rules.yml, group "prometheus"); Alertmanager, whose API only it and
+# the gateway may reach (../compose.yaml, alerting); and the flight tracker's probe, which probes any address its
+# caller names and reaches the internet.
 global:
   scrape_interval: 15s
   evaluation_interval: 1m
@@ -27,3 +28,16 @@ scrape_configs:
   - job_name: alertmanager
     static_configs:
       - targets: ["alertmanager:9093"]
+  # Probes the public API through Cloudflare and the tunnel each minute, as every probe is a request to it
+  # (scripts/server-health.sh counts 1440 a day). Passes only when the backend serves live upstream aircraft data,
+  # not stale cache (../blackbox/blackbox.yml).
+  - job_name: integrations/blackbox/flight-tracker
+    scrape_interval: 60s
+    metrics_path: /probe
+    params:
+      module: [aircraft_live]
+      target: ["https://api.colincheung.dev/aircraft"]
+    static_configs:
+      - targets: ["blackbox:9115"]
+        labels:
+          instance: beelink

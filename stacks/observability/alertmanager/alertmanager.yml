@@ -11,6 +11,9 @@ route:
   routes:
     - matchers: ['level="now"']
       repeat_interval: 4h
+    # A deploy or an install is an event, not a state: one post, and no "Cleared".
+    - matchers: ['level="notice"']
+      receiver: discord-notice
 
 # Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
 # rules on Prometheus's own health read its own scrape, so they still post.
@@ -26,6 +29,12 @@ receivers:
         title: '{{ template "homelab.title" . }}'
         message: '{{ template "homelab.message" . }}'
         content: '{{ template "homelab.mention" . }}'
+  - name: discord-notice
+    discord_configs:
+      - webhook_url_file: /run/secrets/discord_webhook
+        send_resolved: false
+        title: '{{ template "homelab.title" . }}'
+        message: '{{ template "homelab.message" . }}'
 
 templates:
   - /etc/alertmanager/discord.tmpl

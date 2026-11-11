@@ -33,6 +33,7 @@ services:
       - ingest
       - stores
       - alerting
+      - probe
 
   # The log store and the trace store, each one of two picked in .env (LOG_STORE, TRACE_STORE; ADR 0004). Each
   # store's folder holds its service, its Alloy exporter, its gateway paths, its Grafana data source and, for logs,
@@ -224,16 +225,19 @@ services:
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     restart: unless-stopped
+    # Its image's own user, with no capabilities and no host folder but what it reads, so it can read no host file
+    # that is not open to every user; in the journal's group on the Beelink (systemd-journal, 999).
+    user: "473:473"
+    group_add:
+      - "999"
+    read_only: true
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    cap_add:
-      - DAC_READ_SEARCH
-      - DAC_OVERRIDE
-      - FOWNER
     # The folder: config.alloy and the picked stores' exporters load as one configuration.
-    command: run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data /etc/alloy
+    command: >-
+      run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data --disable-reporting /etc/alloy
     # The `instance` label on every series; a container ID would change on each recreate.
     hostname: beelink
     environment:
@@ -242,32 +246,53 @@ services:
       GOMEMLIMIT: 192MiB
     labels:
       homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    tmpfs:
+      - /tmp
     volumes:
       - ./config.alloy:/etc/alloy/config.alloy:ro
       - ./logs/${LOG_STORE:?}/alloy.alloy:/etc/alloy/logs.alloy:ro
       - ./traces/${TRACE_STORE:?}/alloy.alloy:/etc/alloy/traces.alloy:ro
-      - alloy-data:/var/lib/alloy/data
-      - /proc:/rootproc:ro
+      - alloy-state:/var/lib/alloy/data
+      # Under /rootfs, where cAdvisor looks for the host's: its processes, for each container's network counters,
+      # and which layer is each container's own (layer IDs only, open to all), without which it tracks none.
+      - /proc:/rootfs/proc:ro
+      - /var/lib/docker/image/overlay2/layerdb/mounts:/rootfs/var/lib/docker/image/overlay2/layerdb/mounts:ro
       - /sys:/sys:ro
-      - /:/rootfs:ro
-      - /dev/disk:/dev/disk:ro
-      - /var/lib/docker:/var/lib/docker:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    devices:
-      - /dev/kmsg
+      - /var/log/journal:/var/log/journal:ro
+      - /var/lib/homelab-metrics:/var/lib/homelab-metrics:ro
     depends_on:
       - prometheus
       - logs
       - traces
       - docker-socket-proxy
-    # The only writer to the stores (ingest). Out to the internet for the flight tracker's probe (default). Programs
-    # send it traces on observability-otlp, which reaches no store.
+    # Every network internal: the only writer to the stores (ingest), the Docker API, and programs' traces on
+    # observability-otlp, which reaches no store.
     networks:
-      - default
       - docker-api
       - ingest
       - otlp
+
+  # Probes the flight tracker's public API (blackbox/blackbox.yml) for Prometheus, not Alloy: it probes any address
+  # its caller names, so Alloy, which reads the journal, must not reach it.
+  blackbox:
+    image: prom/blackbox-exporter:v0.29.1-distroless@sha256:4d6d2d50ecabf3a0b10e8f6f5c4b14fc0c2326dcc2f7fe161668de722d5bf61e
+    restart: unless-stopped
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    mem_limit: 32m
+    labels:
+      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    # Out to the internet (default); Prometheus scrapes it on probe.
+    networks:
+      - default
+      - probe
 
   # Traces and request rate, errors and duration for every program in a container, with no change to them, by eBPF
   # (OpenTelemetry's OBI; obi/obi.yaml). It needs the host's processes and the kernel's tracing, so it runs
@@ -298,11 +323,15 @@ services:
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
+    # Not root: the socket's group (docker, 1001 on the Beelink) is all it needs.
+    user: "65534:1001"
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
     read_only: true
     tmpfs:
-      - /run
+      - /run:uid=65534,gid=65534
     environment:
       ALLOW_LOGS: 1
       CONTAINERS: 1
@@ -421,6 +450,9 @@ networks:
   alerting:
     internal: true
   alertmanager-out:
+  # Prometheus's scrape of the probe.
+  probe:
+    internal: true
   # Not internal: Grafana's port is published from it.
   grafana:
   public-stats:
@@ -435,7 +467,9 @@ secrets:
     environment: DISCORD_PRIVATE_WEBHOOK_URL
 
 volumes:
-  alloy-data:
+  # Alloy's own name for it: OpenObserve's stack left an alloy-data whose files root owns, which Alloy's user cannot
+  # write.
+  alloy-state:
   prometheus-data:
   grafana-data:
   alertmanager-data:

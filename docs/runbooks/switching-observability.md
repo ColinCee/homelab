@@ -32,8 +32,15 @@ How the observability stack moves from OpenObserve to Prometheus, Grafana and th
 3. Check, from a minute after the deploy ends:
    - `http://grafana.internal` asks for a login; as `colin` (the `OPENOBSERVE_ROOT_PASSWORD` secret) Home shows a
      number in every tile and lines in the error panels.
-   - `gh workflow run heartbeat.yaml --repo ColinCee/homelab`, then `gh run watch`: it passes and counts 15 rules.
-   - `gh workflow run server-health.yaml --repo ColinCee/homelab`: "Firing alerts" is none.
+   - `gh workflow run heartbeat.yaml --repo ColinCee/homelab`, then `gh run watch`: it passes and counts 24 rules.
+   - `gh workflow run server-health.yaml --repo ColinCee/homelab`: "Firing alerts" is none but the switch's own
+     "Deploy started" and "CI host installed a commit".
+   - Alloy starts on a new volume, so it resends up to 7 hours of the journal and Docker's kept lines.
+   - Each intrusion rule posts once to #uptime; after each trigger run `sudo systemctl start homelab-security-facts`:
+     `logger -t sshd "Accepted publickey for test from 203.0.113.9 port 1 ssh2"`; `logger -t homelab-runner-guard
+     "verdict=refuse GITHUB_REPOSITORY=test/x GITHUB_ACTOR=test"`; re-add the iPhone to the tailnet; and `sudo sh -c
+     'echo "#" >> /usr/local/lib/homelab/runner_job_guard.py'` (after 15 minutes; then `sudo
+     scripts/install-runner-guard.sh enforce` from the server checkout).
    - `docker ps --filter name=observability-public-stats` shows it healthy within 15 minutes.
    - On the Beelink, since the tailnet policy opens 5081 to no device:
      `curl -su agents@homelab.internal:<password> http://100.100.146.119:5081/prometheus/api/v1/query?query=up`
@@ -70,7 +77,7 @@ Rollback works until OpenObserve's volume is deleted.
 Colin's step, when nothing has needed a rollback and nothing from before the switch is still wanted:
 
 ```bash
-docker volume rm observability_openobserve-data
+docker volume rm observability_openobserve-data observability_alloy-data
 docker image rm openobserve/openobserve:v1.1.2
 ```
 

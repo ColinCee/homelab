@@ -25,6 +25,7 @@ services:
     ports: !reset []
   alloy: *trial
   docker-socket-proxy: *trial
+  blackbox: *trial
   obi: *trial
   probes:
     profiles: [never]

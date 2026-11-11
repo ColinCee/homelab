@@ -16,6 +16,7 @@ What watches what:
 | Beelink fully down | Healthchecks.io, posting to Discord's #uptime |
 | Alerting stopped: a rule not run or failing, Alertmanager down, posts not reaching Discord, or the Beelink off | [`heartbeat.yaml`](../.github/workflows/heartbeat.yaml) checks every 15 minutes on the Beelink; [`heartbeat-watch.yaml`](../.github/workflows/heartbeat-watch.yaml), on GitHub's machines, posts to #uptime with a mention when it has not passed for 2 hours |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
+| Someone else on the Beelink: each deploy and CI-host install, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from the PC or MacBook | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 
 GitHub turns off a public repository's scheduled workflows after 60 days with no commits, which would stop both
 heartbeat workflows without a post; Renovate's merges keep the repository active.
@@ -66,7 +67,10 @@ Prometheus receives metrics by remote write from the sources below, each scraped
 each minute). Alloy sends every metric they expose, so what a later fix needs is
 already kept; it drops none by name.
 
-- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`)
+- **Host:** Alloy's Unix exporter (`job="integrations/unix"` — Alloy overrides the configured `job_name`), of the
+  root disk only: Alloy runs as its own user with no capabilities and mounts no host folder but what it reads, so it
+  can read no host file closed to other users. cAdvisor cannot read containers' own layers, so `container_fs_*` is
+  missing.
 - **Containers:** Alloy's cAdvisor exporter (`job="docker"`)
 - **CI VMs:** a second cAdvisor exporter limited to the Firecracker slot
   cgroups, `/firecracker/ci-slotN` (`job="ci-vms"`). A slot's cgroup exists
@@ -76,15 +80,16 @@ already kept; it drops none by name.
 - **Textfiles:** Alloy's textfile collector reads `/var/lib/homelab-metrics/*.prom`: the CI
   supervisor's `homelab_ci_*` (the ci-runner runbook's "Status files"), the SSD's
   `homelab_ssd_*{device="nvme0"}` from `ssd.prom`, the backups' `homelab_backup_*` and
-  `homelab_pc_backup_*`, and `homelab_probe_*` from `probes.py`.
+  `homelab_pc_backup_*`, `homelab_probe_*` from `probes.py`, and the intrusion rules' facts from `security.prom`.
 - **Alertmanager:** its own metrics (`job="alertmanager"`), such as posts that failed to reach Discord.
 - **The stores and cloudflared:** their own metrics (`job="logs"`, `"traces"`, `"cloudflared"`), for "A store is
   down" and "A store stopped taking data". Home Assistant, CoreDNS and Caddy run on the host's network, which the
   firewall keeps Alloy from reaching, so their metrics are not collected.
 - **Programs over OTLP:** metrics sent to `alloy:4318`; with the `obi` profile on, OBI's request rate, errors and
   duration for every program in a container, named after its executable.
-- **Flight tracker:** Alloy's blackbox exporter probes the public
-  `https://api.colincheung.dev/aircraft` every minute
+- **Flight tracker:** the `blackbox` container probes the public
+  `https://api.colincheung.dev/aircraft` every minute for Prometheus, which scrapes it itself, since it probes any
+  address its caller names and Alloy must not reach the internet
   (`job="integrations/blackbox/flight-tracker"`). `probe_success` is 1 only
   when the response says `"apiHealth":"live"`, so tunnel, backend and
   upstream data source failures all show as 0.
@@ -122,6 +127,7 @@ An alert exists only if all three hold; anything else is a dashboard number:
 |---|---|---|
 | Act now (`now`) | A user-facing service is down, data is being lost, or something is full within 24 h | Mentions Colin, and again every 4 h while it fires |
 | This week (`week`) | Something is running out or slipping | No mention, again daily |
+| Notice (`notice`) | A deploy or CI-host install, so Colin sees each change he did not make | No mention, once, no "Cleared" |
 
 - An alert fires once its condition has held for the rule's `for`, and clears once it has stayed clear for 10
   minutes; a return within those 10 minutes is the same alert, with no new post: the rule's `for` and
@@ -131,7 +137,7 @@ An alert exists only if all three hold; anything else is a dashboard number:
   textfiles) carry a no-data arm.
 - `tests/test_alert_rules.py` checks each rule against this, and runs them with `promtool` over made-up series.
 
-Noise budget: at most one post a day across all rules, over 14 days. Replay before adding or loosening a rule:
+Noise budget: at most one post a day across all rules but notices, over 14 days. Replay before adding or loosening a rule:
 
 ```bash
 GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14

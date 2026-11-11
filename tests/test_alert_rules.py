@@ -38,7 +38,7 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     rule = RULES[name]
     notes = rule["annotations"]
     assert rule["labels"] == {"level": rule["labels"]["level"]}
-    assert rule["labels"]["level"] in ("now", "week")
+    assert rule["labels"]["level"] in ("now", "week", "notice")
     assert len(notes["title"].split()) <= 8, "say the symptom in a few words"
     assert notes["measure"] and "unit" in notes
     # A sentence each, not a placeholder.
@@ -56,6 +56,13 @@ def test_the_13_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> 
         "PrometheusBadConfig",
         "store-down",
         "store-stopped",
+        "deploy-ran",
+        "ci-host-updated",
+        "tailscale-device-added",
+        "runner-guard-changed",
+        "runner-guard-refused",
+        "ssh-login-elsewhere",
+        "security-checks-stopped",
     }
     assert all(g["interval"] == "1m" for g in GROUPS)
 
@@ -63,7 +70,21 @@ def test_the_13_rules_and_those_on_alerting_and_the_stores_run_each_minute() -> 
 def test_levels_repeat_as_the_standard_says_and_each_series_is_its_own_post() -> None:
     route = ALERTMANAGER["route"]
     assert route["group_by"] == ["..."] and route["repeat_interval"] == "24h"
-    assert route["routes"] == [{"matchers": ['level="now"'], "repeat_interval": "4h"}]
+    assert route["routes"] == [
+        {"matchers": ['level="now"'], "repeat_interval": "4h"},
+        {"matchers": ['level="notice"'], "receiver": "discord-notice"},
+    ]
+
+
+def test_a_notice_posts_once_with_no_mention_and_no_cleared() -> None:
+    [notice] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord-notice")[
+        "discord_configs"
+    ]
+    assert notice["send_resolved"] is False and "content" not in notice
+    assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "notice"} == {
+        "deploy-ran",
+        "ci-host-updated",
+    }
 
 
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
@@ -228,6 +249,92 @@ CASES = {
             # Flat from 10 min, so the 15-minute rate is 0 from 24, then 15 min of `for`.
             at(38, "store-stopped"),
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
+        ],
+    ),
+    "a deploy and a CI-host install each post who and what, then clear": (
+        [
+            (
+                'homelab_deploy_timestamp_seconds{actor="ColinCee",commit="0123456789ab"}',
+                "_x5 300x55",
+            ),
+            (
+                "homelab_ci_host_install_timestamp_seconds"
+                '{author="Colin Cheung",commit="ba9876543210"}',
+                "_x5 300x55",
+            ),
+        ],
+        [
+            at(4, "deploy-ran"),
+            at(6, "deploy-ran", posts("deploy-ran", "1", actor="ColinCee", commit="0123456789ab")),
+            at(
+                6,
+                "ci-host-updated",
+                posts("ci-host-updated", "1", author="Colin Cheung", commit="ba9876543210"),
+            ),
+            at(13, "deploy-ran", posts("deploy-ran", "8", actor="ColinCee", commit="0123456789ab")),
+            # Not under 10 minutes from 15, then the 10-minute hold.
+            at(30, "deploy-ran"),
+        ],
+    ),
+    "a re-added Tailscale device fires for its first hour, a listed one never": (
+        [
+            # Added a day before the series start.
+            ('homelab_tailscale_device_created_timestamp_seconds{name="beelink"}', "-86400x100"),
+            ('homelab_tailscale_device_created_timestamp_seconds{name="macbook"}', "_x10 600x90"),
+        ],
+        [
+            at(9, "tailscale-device-added"),
+            at(11, "tailscale-device-added", posts("tailscale-device-added", "0", name="macbook")),
+            # An hour after it was added, then the hold.
+            at(85, "tailscale-device-added"),
+        ],
+    ),
+    "a device not on the list fires while it is there": (
+        [('homelab_tailscale_device_created_timestamp_seconds{name="stranger"}', "0x100")],
+        [at(95, "tailscale-device-added", posts("tailscale-device-added", "2", name="stranger"))],
+    ),
+    "a runner guard that is not main's fires after 15 minutes": (
+        [("homelab_runner_guard_matches_main", "1x10 0x30")],
+        [
+            at(25, "runner-guard-changed"),
+            at(26, "runner-guard-changed", posts("runner-guard-changed", "0")),
+        ],
+    ),
+    "a refused job and an SSH login from elsewhere fire, the PC's login does not": (
+        [
+            (
+                'homelab_runner_guard_refusal_timestamp_seconds{repository="someone/fork",actor="someone"}',
+                "_x5 300x30",
+            ),
+            (
+                'homelab_ssh_login_timestamp_seconds{user="colin",from="100.124.190.63",device="biggus-chongus"}',
+                "_x5 300x30",
+            ),
+            ('homelab_ssh_login_timestamp_seconds{user="root",from="203.0.113.9"}', "_x5 300x30"),
+        ],
+        [
+            at(
+                6,
+                "runner-guard-refused",
+                posts("runner-guard-refused", "1", repository="someone/fork", actor="someone"),
+            ),
+            at(
+                6,
+                "ssh-login-elsewhere",
+                posts("ssh-login-elsewhere", "1", user="root", **{"from": "203.0.113.9"}),
+            ),
+        ],
+    ),
+    "security checks stopping fires after 10 minutes and `for`": (
+        [
+            (
+                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/security.prom"}',
+                "0+60x10 600x30",
+            )
+        ],
+        [
+            at(25, "security-checks-stopped"),
+            at(27, "security-checks-stopped", posts("security-checks-stopped", "17")),
         ],
     ),
     "metrics stopping is one alert with no labels": (

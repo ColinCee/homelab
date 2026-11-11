@@ -3,13 +3,19 @@
 // ================================
 
 prometheus.exporter.unix "host" {
-  procfs_path = "/rootproc"
+  procfs_path = "/rootfs/proc"
   sysfs_path  = "/sys"
-  rootfs_path = "/rootfs"
+  // No host folder for the disk's free space: Alloy's own root is on the host's root disk with Docker's data, so it
+  // reports the same. Every other mount would need its folder mounted, so only the root disk is read.
+  rootfs_path = "/"
+
+  filesystem {
+    mount_points_exclude = "^/.+"
+  }
 
   // *.prom files written by other stacks, e.g. the backup success timestamp.
   textfile {
-    directory = "/rootfs/var/lib/homelab-metrics"
+    directory = "/var/lib/homelab-metrics"
   }
 }
 
@@ -208,7 +214,7 @@ loki.relabel "journal" {
 }
 
 loki.source.journal "host" {
-  path          = "/rootfs/var/log/journal"
+  path          = "/var/log/journal"
   relabel_rules = loki.relabel.journal.rules
   labels        = {
     container_name = "journal",
@@ -274,28 +280,5 @@ prometheus.scrape "cloudflared" {
   job_name        = "cloudflared"
   scrape_interval = "15s"
   forward_to      = [prometheus.remote_write.default.receiver]
-}
-
-// ================================
-// Flight Tracker (end-to-end probe)
-// ================================
-
-// Probes the public API through Cloudflare and the tunnel. Succeeds only when
-// the backend is serving live upstream aircraft data, not stale cache.
-prometheus.exporter.blackbox "flight_tracker" {
-  config = "{ modules: { aircraft_live: { prober: http, timeout: 15s, http: { preferred_ip_protocol: ip4, ip_protocol_fallback: false, valid_status_codes: [200], fail_if_body_not_matches_regexp: ['\"apiHealth\":\\s*\"live\"'] } } } }"
-
-  target {
-    name    = "flight-tracker"
-    address = "https://api.colincheung.dev/aircraft"
-    module  = "aircraft_live"
-  }
-}
-
-prometheus.scrape "flight_tracker" {
-  targets         = prometheus.exporter.blackbox.flight_tracker.targets
-  forward_to      = [prometheus.remote_write.default.receiver]
-  // Each minute, not 15 s: every probe is a request to the public API (scripts/server-health.sh counts 1440 a day).
-  scrape_interval = "60s"
 }
 

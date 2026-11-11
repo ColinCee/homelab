@@ -23,6 +23,13 @@ jobs:
       contents: read
       packages: read # Pull private GHCR images
     steps:
+      # For the intrusion alerts (scripts/security_facts.py): every deploy posts who and what.
+      - name: Record the deploy
+        env:
+          ACTOR: ${{ github.actor }}
+          COMMIT: ${{ github.sha }}
+        run: logger -t homelab-deploy "commit=$COMMIT actor=$ACTOR"
+
       # Every step runs from the server checkout, so the job makes no checkout of its own.
       - name: Select exact revision
         env:

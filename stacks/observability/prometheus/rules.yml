@@ -371,3 +371,146 @@ groups:
             store's own container (`observability-<job>-1`).
           dashboard: *home
           value: '{{ $value }}'
+
+  # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
+  # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
+  # minutes. Deploys and CI-host installs are notices, posted once with no mention; the rest act now.
+  - name: intrusion
+    interval: 1m
+    rules:
+      - alert: deploy-ran
+        expr: max by (actor, commit) (round((time() - homelab_deploy_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: notice
+        annotations:
+          title: 'Deploy started'
+          measure: 'Started'
+          unit: ' min ago'
+          harm: >-
+            A deploy runs main's code on the Beelink as colin, so one you did not start means someone else can change
+            what runs there.
+          action: >-
+            Expected after a merge to main. Otherwise open the run in
+            https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml and remove that actor's access.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ci-host-updated
+        expr: max by (author, commit) (round((time() - homelab_ci_host_install_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: notice
+        annotations:
+          title: 'CI host installed a commit'
+          measure: 'Installed'
+          unit: ' min ago'
+          harm: >-
+            update.sh installs ci-runner/ and scripts/ from main as root, so a commit you did not merge runs with full
+            control of the Beelink.
+          action: >-
+            Expected after a merge that changed ci-runner/ or scripts/. Otherwise read `journalctl -u
+            homelab-ci-update` and that commit on main, and stop the timer with `sudo systemctl stop
+            homelab-ci-update.timer`.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: tailscale-device-added
+        expr: |
+          max by (name) (round((time() - homelab_tailscale_device_created_timestamp_seconds) / 3600))
+          and on (name) (
+            max by (name) (homelab_tailscale_device_created_timestamp_seconds{name!~"beelink|biggus-chongus|iphone182|macbook"})
+            or max by (name) (time() - homelab_tailscale_device_created_timestamp_seconds) < 3600
+          )
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'New or unknown Tailscale device'
+          measure: 'Added'
+          unit: ' h ago'
+          harm: >-
+            A device on the tailnet reaches the Beelink's ports, Grafana and SSH as the tailnet's rules allow; one you
+            did not add means someone else holds a login or a key.
+          action: >-
+            If you added or re-added it, add its name to this rule's list in stacks/observability/prometheus/rules.yml.
+            Otherwise remove it at https://login.tailscale.com/admin/machines and rotate your Tailscale login.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: runner-guard-changed
+        expr: min(homelab_runner_guard_matches_main) < 1
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Runner guard differs from main'
+          measure: 'Installed guard is main''s (1 yes, 0 no)'
+          unit: ''
+          harm: >-
+            The guard is what stops a fork's workflow running on the deploy runner, and only root can change it, so a
+            copy that is not main's is either not yet installed or someone with root changed it.
+          action: >-
+            Run `diff /usr/local/lib/homelab/runner_job_guard.py scripts/runner_job_guard.py` in a main checkout on
+            the Beelink. If main changed it, install it with `sudo scripts/install-runner-guard.sh enforce`;
+            otherwise treat the Beelink as taken over.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: runner-guard-refused
+        expr: max by (repository, actor) (round((time() - homelab_runner_guard_refusal_timestamp_seconds) / 60)) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Runner guard refused a job'
+          measure: 'Refused'
+          unit: ' min ago'
+          harm: >-
+            Something asked the deploy runner to run a workflow that is not allowed there, such as a fork's pull
+            request aiming at it.
+          action: >-
+            Read why with `journalctl -t homelab-runner-guard -n 5` on the Beelink, then the run on GitHub; block
+            the actor if it was not you.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ssh-login-elsewhere
+        expr: |
+          max by (user, from, device) (
+            round((time() - homelab_ssh_login_timestamp_seconds{device!~"biggus-chongus|macbook"}) / 60)
+          ) < 10
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'SSH login not from the PC or MacBook'
+          measure: 'Logged in'
+          unit: ' min ago'
+          harm: 'A shell on the Beelink from another device can read every secret on it.'
+          action: >-
+            Read `journalctl -t sshd -t tailscaled -g "Accepted|ssh-session" --since -1h` on the Beelink. If it was
+            not you, remove the device on the tailnet and the key from ~/.ssh/authorized_keys.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: security-checks-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m]))) / 60)
+          ) > 10
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Security checks stopped'
+          measure: 'Last check'
+          unit: ' min ago'
+          harm: 'Deploys, new Tailscale devices, guard changes and SSH logins go unseen while it is stopped.'
+          action: >-
+            Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
+            ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'

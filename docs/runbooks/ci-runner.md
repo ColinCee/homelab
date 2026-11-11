@@ -78,7 +78,8 @@ journalctl -u homelab-ci-supervisor -f   # and each VM's own lines: journalctl -
 
 `install-host.sh` also trims the SSD hourly, since the VMs' throwaway disks churn about 0.5 TB a day and untrimmed
 they slow every write, and on the Beelink installs `homelab-ssd-wear.timer`, which writes the SSD's wear to
-`ssd.prom` for Prometheus every 15 minutes (`systemctl status homelab-ssd-wear.service`).
+`ssd.prom` for Prometheus every 15 minutes (`systemctl status homelab-ssd-wear.service`), and
+`homelab-security-facts.timer`, which writes the intrusion alerts' facts to `security.prom` each minute.
 
 The GitHub token is fine-grained, with Administration read and write (for one-job registrations) and Actions
 read. Store it without it reaching the screen or shell history:
