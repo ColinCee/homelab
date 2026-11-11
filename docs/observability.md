@@ -8,7 +8,7 @@ Monitoring on the Beelink cannot see its own outage, so what watches what:
 
 | Problem | Who warns |
 |---|---|
-| The Beelink off, or alerting stopped: Prometheus or Alertmanager down, or a post refused by Discord | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io posts to #uptime when it stops ([ADR 0006](adr/0006-watchdog-not-github-cron.md)) |
+| The Beelink off, or alerting stopped: Prometheus or Alertmanager down, or Discord refusing a post in the last hour | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io posts to #uptime when it stops ([ADR 0006](adr/0006-watchdog-not-github-cron.md)) |
 | A rule failing | "An alert rule is failing" |
 | Deploy failed | GitHub's email for a failed run; nothing for a deploy stuck in the queue |
 | Someone else on the Beelink: a deploy or CI-host install not by Colin or Renovate, a new or unknown Tailscale device, a runner guard that is not main's, a refused job, an SSH login not from a device the checks found on the tailnet at their first run | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
@@ -56,7 +56,7 @@ Dashboards and their queries: the building-dashboards skill.
 Prometheus runs the rules in [`rules.yml`](../stacks/observability/prometheus/rules.yml) each minute. Rules it cannot
 load stop it, which fails the deploy; a rule whose query fails at run time fires "An alert rule is failing". A firing
 rule goes to [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) ([ADR 0001](adr/0001-observability-stack.md)), which
-posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook. Alertmanager publishes no port, since its API takes
+posts to Discord's #uptime through the `DISCORD_PRIVATE_WEBHOOK_URL` webhook, and pings Healthchecks.io through `HEALTHCHECKS_PING_URL`. Alertmanager publishes no port, since its API takes
 silences without a login; list its alerts with
 `docker exec observability-alertmanager-1 amtool alert query --alertmanager.url=http://localhost:9093`.
 

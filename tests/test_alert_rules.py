@@ -83,7 +83,7 @@ def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord(
         "receiver": "healthchecks",
         "group_wait": "0s",
         "group_interval": "1m",
-        "repeat_interval": "1m",
+        "repeat_interval": "30s",
     }
     [ping] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "healthchecks")[
         "webhook_configs"

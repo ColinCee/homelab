@@ -401,14 +401,15 @@ groups:
 
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
   # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
-  # minutes. A deploy or CI-host install by Colin or Renovate is every merge, so only another's posts.
+  # minutes. A deploy or CI-host install by Colin or Renovate is every merge, so only another's posts. The deploy's
+  # actor is GitHub's; the install's author is the commit's own text, so a forged one is caught only by main's ruleset.
   - name: intrusion
     interval: 1m
     rules:
       - alert: deploy-ran
         expr: |
           max by (actor, commit) (
-            round((time() - homelab_deploy_timestamp_seconds{actor!~"ColinCee|renovate\[bot\]"}) / 60)
+            round((time() - homelab_deploy_timestamp_seconds{actor!~`ColinCee|renovate\[bot\]`}) / 60)
           ) < 10
         for: 0m
         keep_firing_for: 10m
@@ -429,7 +430,7 @@ groups:
       - alert: ci-host-updated
         expr: |
           max by (author, commit) (
-            round((time() - homelab_ci_host_install_timestamp_seconds{author!~"Colin Cheung|renovate\[bot\]"}) / 60)
+            round((time() - homelab_ci_host_install_timestamp_seconds{author!~`Colin Cheung|renovate\[bot\]`}) / 60)
           ) < 10
         for: 0m
         keep_firing_for: 10m

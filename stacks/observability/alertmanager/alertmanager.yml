@@ -14,7 +14,8 @@ route:
       receiver: healthchecks
       group_wait: 0s
       group_interval: 1m
-      repeat_interval: 1m
+      # Under group_interval, so every flush pings: an equal one skips every other.
+      repeat_interval: 30s
     - matchers: ['level="now"']
       repeat_interval: 4h
 
