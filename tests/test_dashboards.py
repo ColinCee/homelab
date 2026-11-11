@@ -85,6 +85,8 @@ def levels() -> dict[str, str]:
     """Each alert rule, in its level's colour."""
     groups = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
     found = {r["alert"]: r["labels"]["level"] for g in groups for r in g["rules"]}
+    # Always firing, so the dashboards leave it out.
+    found.pop("watchdog")
     return {name: NOW if level == "now" else WEEK for name, level in found.items()}
 
 
