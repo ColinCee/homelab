@@ -389,6 +389,17 @@ CASES = {
             at(95, "upkeep-failed"),
         ],
     ),
+    "upkeep that has never run is not due yet, so it never fires": (
+        [('up{job="integrations/unix"}', "1x120")],
+        [at(70, "upkeep-failed"), at(119, "upkeep-failed")],
+    ),
+    "a first upkeep that failed fires as no data": (
+        [("homelab_upkeep_last_failure_timestamp_seconds", "_x5 60x80")],
+        [
+            at(64, "upkeep-failed"),
+            at(66, "upkeep-failed", posts("upkeep-failed", "-1")),
+        ],
+    ),
     "metrics stopping is one alert with no labels": (
         [('up{job="integrations/unix"}', "1x5"), ('up{job="docker"}', "1x5")],
         [
