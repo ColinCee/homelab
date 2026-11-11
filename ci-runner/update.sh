@@ -62,7 +62,7 @@ if [[ $want != "$have" ]]; then
   if [[ -z $have ]] || ! git -C "$src" diff --quiet "$have" "$want" -- "${paths[@]}"; then
     change=$(git -C "$src" log -1 --format=%H "$want" -- "${paths[@]}")
     if gave_up "$change"; then echo "$change failed twice; tried again an hour after"; exit 0; fi
-    # The pull requests it ships, for the Control room's restart line. It reaches a shell: plain characters only.
+    # The pull requests it ships, for install-host.sh's restart reason. It reaches a shell: plain characters only.
     reason=${2:-${REASON:-homelab $(git -C "$src" log --format=%s "${have:+$have..}$want" -- "${paths[@]}" |
       grep -o '(#[0-9]*)' | tr -d '()' | paste -sd ' ' - | cut -d ' ' -f 1-5 || true)}}
     reason=${reason//[^[:alnum:] #:._,()\/-]/}

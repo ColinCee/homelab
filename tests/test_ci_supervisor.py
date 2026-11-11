@@ -3,7 +3,6 @@ import http.client
 import io
 import json
 import os
-import queue
 import subprocess
 import tarfile
 import threading
@@ -429,7 +428,7 @@ def test_judges_only_the_outboxes_of_vms_that_ended(outbox_dir) -> None:
     state.launches[0] = sup.Launch(0, "o/r", 1, "fc-0-1", 0.0, Path("m"))
     state.cache_checked["fc-2-3"] = 100.0  # tried 30 s ago
 
-    assert sup.ended_outboxes(state, 130.0) == ([], [outbox_dir / "fc-1-2.tar"])
+    assert sup.ended_outboxes(state, 130.0) == [outbox_dir / "fc-1-2.tar"]
 
 
 class Failing:
@@ -735,64 +734,6 @@ def test_the_status_file_counts_busy_and_standby_vms_and_cache_disks(caches) -> 
     }
 
 
-def asks_of(*asks) -> queue.Queue:
-    """A VM's ask queue holding these asks, then the end."""
-    q: queue.Queue = queue.Queue()
-    for ask in (*asks, None):
-        q.put(ask)
-    return q
-
-
-def test_a_vm_asking_for_capacity_gets_the_build_counts_and_no_repo_names(
-    caches, tmp_path, monkeypatch
-) -> None:
-    (caches / "octo__agent.ext4").touch()
-    state = sup.State(
-        slots=5, launches={0: _launch(0, False), 1: _launch(1, False), 2: _launch(2, True)}
-    )
-    state.waits = {9: sup.Wait("octo/other", 0.0)}
-    state.launches[1].repo = "octo/product"  # product CI holds one build VM
-    machines = tmp_path / "machines.json"
-    sup.write_status(machines, sup.status(state, 100.0, github_ok=True, mem_available=9000))
-    monkeypatch.setattr(sup, "STATUS_FILE", machines)
-    inbox = tmp_path / "fc-0.inbox"
-    inbox.write_bytes(sup.INBOX_EMPTY.ljust(512, b"\0"))
-    asks: list = []
-    sup.read_console(io.BytesIO(b"HOMELAB-CAPACITY 1 0123456789abcdef\n"), None, ask=asks.append)
-
-    sup.answer_asks(None, "Octo/Agent", "fc-0", inbox, asks_of(*asks))  # type: ignore[arg-type]
-
-    header = inbox.read_bytes().partition(b"\0")[0]
-    size = int(header.split()[-1])
-    assert header.split()[:4] == [b"homelab-ci-inbox", b"v1", b"0123456789abcdef", b"ok"]
-    answer = inbox.read_bytes()[512 : 512 + size]
-    assert json.loads(answer) == {
-        "updated": 100,
-        "slots": 5,
-        "in_use": 2,
-        "standby": 1,
-        "queued": 1,
-        "held_for_memory": 0,
-        "in_use_other_repos": 1,
-    }
-    assert b"octo" not in answer.lower()
-
-
-@pytest.mark.parametrize("text", [None, "{}", '{"slots": 5}', "[1]", "not json"])
-def test_a_capacity_ask_with_no_good_status_file_is_answered_none(
-    tmp_path, monkeypatch, text
-) -> None:
-    machines = tmp_path / "machines.json"
-    if text is not None:
-        machines.write_text(text)
-    monkeypatch.setattr(sup, "STATUS_FILE", machines)
-    inbox = tmp_path / "fc-0.inbox"
-    inbox.write_bytes(sup.INBOX_EMPTY.ljust(512, b"\0"))
-    ask = sup.CAPACITY_ASK.fullmatch(b"HOMELAB-CAPACITY 1 0123456789abcdef\n")
-    sup.answer_asks(None, "o/r", "fc-0", inbox, asks_of(ask))  # type: ignore[arg-type]
-    assert inbox.read_bytes().startswith(b"homelab-ci-inbox v1 0123456789abcdef none 0\n")
-
-
 @pytest.mark.parametrize(
     ("text", "slots"),
     [(None, 5), ("", 5), ("four\n", 5), ("-2\n", 5), ("0\n", 1), ("3\n", 3), (" 2 ", 2)],
@@ -849,120 +790,22 @@ def test_a_failed_status_write_leaves_the_old_file_and_no_temp_file(tmp_path) ->
     assert [p.name for p in tmp_path.iterdir()] == ["machines.json"]
 
 
-LIVE = b"KAIZEN-LIVE 1 105 builder 1792999990 runs the tests (uv run pytest -q)\r\n"
-
-
-def test_only_lines_in_the_exact_live_format_are_kept() -> None:
-    assert sup.live_line(LIVE, 1792999998.7) == {
-        "task": 105,
-        "who": "builder",
-        "at": 1792999990,
-        "heard": 1792999998,
-        "text": "runs the tests (uv run pytest -q)",
-    }
-    for noise in [
-        b"[    0.412] EXT4-fs (vda): mounted filesystem\n",
-        b"KAIZEN-LIVE 2 105 builder 1792999990 a later format\n",
-        b"KAIZEN-LIVE 1 105 judge 1792999990 not an agent with a line\n",
-        b"KAIZEN-LIVE 1 105 builder 179299999 a nine-digit time\n",
-        b"KAIZEN-LIVE 1 105 builder 1792999990 \n",
-        b"KAIZEN-LIVE 1 105 builder 1792999990 " + b"x" * 121 + b"\n",
-        b"KAIZEN-LIVE 1 105 builder 1792999990 tab\there\n",
-        b"KAIZEN-LIVE 1 105 builder 1792999990 \xff not text\n",
-        b"boot KAIZEN-LIVE 1 105 builder 1792999990 not at the start\n",
-    ]:
-        assert sup.live_line(noise, 0) is None, noise
-
-
-def test_the_console_reader_keeps_the_last_valid_line_and_drops_over_long_ones() -> None:
-    later = b"KAIZEN-LIVE 1 105 builder 1793000005 edits src/kaizen/live.py\n"
-    over_long = b"KAIZEN-LIVE 1 105 builder 1793000009 " + b"x" * 5000 + b"\n"
-    console = io.BytesIO(b"Linux version 6.1\n" + LIVE + later + over_long + b"login:")
+def test_the_console_reader_drops_over_long_lines_and_reads_to_the_end() -> None:
+    first = b"HOMELAB-MEM 1 812 1985 0\n"
+    over_long = b"HOMELAB-MEM 1 990 1985 0" + b" " * 5000 + b"\n"
+    console = io.BytesIO(b"Linux version 6.1\n" + first + over_long + b"login:")
     kept: list[dict] = []
     sup.read_console(console, kept.append)
-    assert [line["at"] for line in kept] == [1792999990, 1793000005]
+    assert [line["peak"] for line in kept] == [812]
     assert console.closed
 
 
-EVENT = b'{"kind":"text","at":1792999990,"text":"Running the tests"}'
-
-
-def test_session_events_are_saved_in_order_beside_live_lines(tmp_path) -> None:
-    session = tmp_path / "sessions" / "fc-0-1.jsonl"
-    console = io.BytesIO(
-        b"KAIZEN-SESSION 1 "
-        + EVENT
-        + b"\r\n"
-        + LIVE
-        + b"KAIZEN-SESSION 1 not json\n"
-        + b'KAIZEN-SESSION 1 {"text":"caf\xc3\xa9"}\n'  # not ASCII
-        + b'KAIZEN-SESSION 1 {"a":1}\n'
-    )
-    kept: list[dict] = []
-    sup.read_console(console, kept.append, session)
-
-    assert session.read_bytes() == EVENT + b'\n{"a":1}\n'
-    assert len(kept) == 1
-
-
-def test_a_session_file_stops_growing_at_its_cap(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(sup, "SESSION_MAX_BYTES", len(EVENT) * 2)
-    session = tmp_path / "s.jsonl"
-    sup.read_console(io.BytesIO((b"KAIZEN-SESSION 1 " + EVENT + b"\n") * 3), None, session)
-    assert session.read_bytes() == EVENT + b"\n"
-
-
-def test_a_failed_save_never_stops_the_console_reader(tmp_path) -> None:
-    blocked = tmp_path / "file"
-    blocked.write_text("")
-    console = io.BytesIO(b"KAIZEN-SESSION 1 " + EVENT + b"\n" + LIVE)
-    kept: list[dict] = []
-    sup.read_console(console, kept.append, blocked / "s.jsonl")  # its folder is a file
-    assert len(kept) == 1
-    assert console.closed
-
-
-def test_a_deeply_nested_line_is_dropped_and_reading_goes_on(tmp_path) -> None:
-    # Deep enough for Python 3.12's JSON parser, the Beelink's, to give up with RecursionError.
-    deep = b"KAIZEN-SESSION 1 {" + b'"a":' + b"[" * 2000 + b"]" * 2000 + b"}" + bytes([10])
-    session = tmp_path / "s.jsonl"
-    kept: list[dict] = []
-    sup.read_console(io.BytesIO(deep + LIVE), kept.append, session)
-    assert len(kept) == 1
-
-
-def test_session_files_go_after_thirty_days(tmp_path) -> None:
-    old, new = tmp_path / "old.jsonl", tmp_path / "new.jsonl"
-    for path in (old, new):
-        path.write_text("{}\n")
-    os.utime(old, (0, 1_000_000))
-    sup.prune_sessions(tmp_path, 1_000_000 + sup.SESSION_KEEP_SECONDS + 1)
-    assert [p.name for p in tmp_path.iterdir()] == ["new.jsonl"]
-
-
-def test_only_auto_kaizen_vms_get_a_live_line_but_every_vm_reports_memory(monkeypatch) -> None:
+def test_every_vm_reports_its_memory(monkeypatch) -> None:
     started: list[list[str]] = []
     monkeypatch.setattr(sup.subprocess, "run", lambda cmd, **k: started.append(cmd))
-    ours = sup.Launch(0, "ColinCee/auto-kaizen", 1, "fc-0", 0.0, Path("m0"))
-    product = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, Path("m1"))
-    for run in (ours, product):
-        START_VM(run, 60, {})
-    assert "--live" in started[0] and "--live" not in started[1]
-    assert all("--memory" in cmd for cmd in started)
-
-    # Its console reader keeps the latest line in its live file; the supervisor reads it.
-    line = sup.live_line(LIVE, 1793000000.0)
-    sup.write_status(ours.live_file, line)
-    state = sup.State(launches={1: product, 0: ours})
-    assert sup.live(state, 1793000000.2) == {"updated": 1793000000, "lines": [line]}
-
-
-def test_the_live_file_is_written_beside_the_status_file(tmp_path) -> None:
-    path = tmp_path / "live.json"
-    sup.write_status(path, sup.live(sup.State(), 5.0))
-    assert json.loads(path.read_text()) == {"updated": 5, "lines": []}
-    assert path.stat().st_mode & 0o777 == 0o644
-    assert sup.LIVE_FILE.parent == sup.STATUS_FILE.parent
+    run = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, Path("m1"))
+    START_VM(run, 60, {})
+    assert started[0][-2:] == ["--memory", str(run.memory_file)]
 
 
 def test_reads_available_memory_and_the_reserve_from_the_host(tmp_path, monkeypatch) -> None:
@@ -2580,7 +2423,7 @@ def test_the_console_reader_keeps_only_exact_memory_lines() -> None:
         b"HOMELAB-MEM 1 -5 1985 0\n"
         b"\nHOMELAB-MEM 1 990 1985 2\r\n"
     )
-    sup.read_console(console, None, memory=seen.append)
+    sup.read_console(console, seen.append)
     assert seen == [
         {"peak": 812, "total": 1985, "kills": 0},
         {"peak": 990, "total": 1985, "kills": 2},

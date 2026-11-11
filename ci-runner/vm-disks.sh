@@ -53,7 +53,7 @@ detach_disks() {
 
 # written_bytes SLOT [FILE...]: print how many bytes the slot's VM wrote: the sectors
 # written to each of its snapshots, plus the blocks each FILE that exists takes on disk
-# (the outbox and inbox, which are sparse). Fails, printing nothing, when a counter
+# (the outbox, which is sparse). Fails, printing nothing, when a counter
 # cannot be read. Run before detach_disks: the counters go with the snapshots.
 written_bytes() {
   local prefix="ci-slot$1-" dm blk sectors bytes f total=0 found=0
