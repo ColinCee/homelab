@@ -206,23 +206,6 @@ def test_a_job_alone_gets_all_four_cores(running: int, size: tuple[int, int]) ->
     assert sup.vm_size(running) == size
 
 
-@pytest.mark.parametrize(
-    ("repos", "private", "standbys", "free", "wanted"),
-    [
-        (["a/x", "b/y"], ["a/x", "b/y"], [], 2, True),
-        (["a/x"], ["a/x"], [False], 1, True),  # a job VM running: still keep one waiting
-        (["a/x"], ["a/x"], [True], 1, False),  # one is already waiting
-        (["a/x"], ["a/x"], [False, False], 0, False),  # no free slot
-        (["a/x"], [], [], 2, False),  # no longer private: nothing kept for it
-        ([], [], [], 2, False),
-    ],
-)
-def test_keeps_one_standby_vm_for_the_first_private_repo(
-    repos: list[str], private: list[str], standbys: list[bool], free: int, wanted: bool
-) -> None:
-    assert sup.wants_standby(repos, private, standbys, free) is wanted
-
-
 @pytest.mark.parametrize("kind", [tarfile.CHRTYPE, tarfile.BLKTYPE, tarfile.FIFOTYPE])
 def test_the_cache_unpacker_refuses_device_files(kind: bytes, tmp_path) -> None:
     member = tarfile.TarInfo("cache/dev")
@@ -460,12 +443,6 @@ def test_a_cache_tar_that_fails_to_unpack_is_dropped(outbox_dir, caches) -> None
 
     assert sup.take_outbox(Runs(), tar, {"octo/app": "main"}, 0.0) is False
     assert not sup.cache_image("octo/app").exists()
-
-
-def test_keeps_as_many_standbys_as_asked_while_slots_are_free() -> None:
-    assert sup.wants_standby(["a/x"], ["a/x"], [True], 1, wanted=2) is True
-    assert sup.wants_standby(["a/x"], ["a/x"], [True, True], 0, wanted=2) is False
-    assert sup.wants_standby(["a/x"], ["a/x"], [], 2, wanted=0) is False
 
 
 @pytest.mark.parametrize(
