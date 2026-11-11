@@ -482,7 +482,7 @@ groups:
             `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
           dashboard: *home
           value: '{{ $value }}'
-      # Only a store that took data in the last day: nothing sends spans while OBI is off.
+      # Only a store that took data in the last day: with OBI off, nothing sends spans.
       - alert: store-stopped
         expr: |
           sum by (job) (

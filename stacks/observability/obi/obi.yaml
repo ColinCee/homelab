@@ -16,7 +16,7 @@ ebpf:
     global_scale_factor: -1
   # The flight tracker's request lines get the request's `trace_id=`, which Alloy reads out (config.alloy, loki.process
   # "docker") and Grafana opens as the trace. OBI zeroes each line the program writes and writes it again with the IDs,
-  # so the log keeps a line of NULs in its place, which Alloy drops.
+  # so the log keeps a line of NULs in its place, which Alloy drops. A line OBI takes as it stops is lost.
   log_enricher:
     services:
       - service:

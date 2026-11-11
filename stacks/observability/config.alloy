@@ -182,7 +182,7 @@ loki.process "docker" {
     }
   }
 
-  // The same, at the end of a plain line, where OBI writes it (obi/obi.yaml, log_enricher).
+  // The same, as `trace_id=` in a plain line, where OBI writes it (obi/obi.yaml, log_enricher).
   stage.regex {
     expression = "(?:^|\\s)trace_id=(?P<trace_id>[0-9a-f]{32})(?:\\s+span_id=(?P<span_id>[0-9a-f]{16}))?"
   }

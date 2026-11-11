@@ -325,8 +325,8 @@ services:
     restart: unless-stopped
     privileged: true
     pid: host
-    # It holds about 270 MiB, two thirds of it its maps' kernel memory, but needs more while it reads every program at
-    # start: 384 MiB killed it there.
+    # It holds about 270 MiB, two thirds of it its maps' kernel memory, and more while it reads every program at start,
+    # which 384 MiB did not hold.
     mem_limit: 512m
     environment:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
@@ -344,6 +344,9 @@ services:
     networks:
       - otlp
       - docker-api
+    # With no Docker API at start it matches nothing.
+    depends_on:
+      - docker-socket-proxy
 
   # Read-only Docker API for Alloy and OBI; a raw socket mount would be root-equivalent.
   docker-socket-proxy:
@@ -359,8 +362,8 @@ services:
     tmpfs:
       - /run:uid=65534,gid=65534
     # What they ask for: container lists, inspects and events (cAdvisor, the log tailer and OBI need them), logs,
-    # networks for discovery, info and version. An inspect shows every container's environment and labels, so no secret goes in
-    # either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
+    # networks for discovery, info and version. An inspect shows every container's environment and labels, so no secret
+    # goes in either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
     environment:
       ALLOW_LOGS: 1
       CONTAINERS: 1
