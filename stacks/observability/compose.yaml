@@ -68,6 +68,8 @@ services:
       GF_SERVER_ROOT_URL: http://beelink.tail4f465e.ts.net:5080
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      # Viewers get Explore and may change a dashboard in the browser; saving still needs an Editor.
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/home.json
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"

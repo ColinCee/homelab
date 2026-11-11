@@ -13,3 +13,11 @@ datasources:
     editable: false
     jsonData:
       manageAlerts: false
+      # A line's trace opens in the trace store. `$$` keeps provisioning from expanding Grafana's own variable.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: $${__value.raw}
+          datasourceUid: traces
+          urlDisplayLabel: View trace
