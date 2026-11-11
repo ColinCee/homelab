@@ -1,5 +1,5 @@
 ---
-name: dashboards
+name: building-dashboards
 description: Edit homelab dashboards: OpenObserve's Home, from Git. Use when changing dashboard JSON or a panel's query.
 ---
 
