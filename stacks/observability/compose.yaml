@@ -107,11 +107,16 @@ services:
     ports:
       - "100.100.146.119:5080:3000"
     mem_limit: 512m
+    # Grafana applies its admin password only when it makes its database, so each start sets it from the secret.
+    entrypoint:
+      - sh
+      - -c
+      - grafana cli admin reset-admin-password --password-from-stdin < /run/secrets/grafana_admin_password && exec /run.sh
     environment:
       GF_SECURITY_ADMIN_USER: colin
-      # Set when its volume is first made; a later change of the secret needs `grafana cli admin reset-admin-password`.
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
-      # Encrypts the data sources' passwords in its volume; the default key is published.
+      # Encrypts the data sources' passwords in its volume, which provisioning writes again at each start, so a new key
+      # needs nothing else; the default key is published.
       GF_SECURITY_SECRET_KEY__FILE: /run/secrets/grafana_secret_key
       GF_SERVER_DOMAIN: beelink.tail4f465e.ts.net
       GF_SERVER_ROOT_URL: http://beelink.tail4f465e.ts.net:5080
@@ -512,21 +517,20 @@ networks:
       config:
         - subnet: 10.201.0.0/29
 
-# Written from GitHub secrets by scripts/render-secrets.sh; the logins' secrets kept their OpenObserve names.
+# Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:
   discord_webhook:
     file: ../../secrets/discord_private_webhook_url
   healthchecks_ping:
     file: ../../secrets/healthchecks_ping_url
   grafana_admin_password:
-    file: ../../secrets/openobserve_root_password
-  # OpenObserve's ingest password, which nothing else uses, so Grafana's key shares no value.
+    file: ../../secrets/grafana_admin_password
   grafana_secret_key:
-    file: ../../secrets/openobserve_ingest_password
+    file: ../../secrets/grafana_secret_key
   agents_password:
-    file: ../../secrets/openobserve_agents_password
+    file: ../../secrets/agents_password
   stats_password:
-    file: ../../secrets/openobserve_stats_password
+    file: ../../secrets/stats_password
   public_stats_key:
     file: ../../secrets/public_stats_key
   # Empty until it is made in Home Assistant: its scrape fails until then.
