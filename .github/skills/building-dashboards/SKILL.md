@@ -51,9 +51,7 @@ starts.
 ## Queries
 
 - Metric names are as Alloy sends them, mixed case included (`node_memory_MemAvailable_bytes`).
-- Legends are `{{label}}`.
-- A regex in a double-quoted PromQL string doubles its backslash, so `\.` is `\\\\.` in the JSON.
-- Use `max by (name)` for container metrics and `max()` for a single host value, which removes
+- Legends are `{{label}}`.- Use `max by (name)` for container metrics and `max()` for a single host value, which removes
   duplicate series; `name!=""` selects containers. The CI VMs are not containers: their series
   are `job="ci-vms"`.
 - A tile shows the last value; `graphMode: area` adds the trend.
