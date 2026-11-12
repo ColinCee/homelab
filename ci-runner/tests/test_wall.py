@@ -15,6 +15,7 @@ import io
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -175,6 +176,9 @@ def wall_test(host: Host) -> int:
     if not wan:
         print("FAIL the wall holds no public address")
         return 1
+    if not router:
+        print("FAIL there is no default route to test against")
+        return 1
     run(["docker", "pull", "-q", IMAGE])
     run(["docker", "network", "create", NET])
     listen = ["nc", "-lk", "-p", "8080", "-e", "cat"]
@@ -233,6 +237,9 @@ def main(host: Host | None = None) -> int:
 
 
 if __name__ == "__main__":
+    # As bash's EXIT trap did, so a dropped ssh session still runs cleanup.
+    for number in (signal.SIGTERM, signal.SIGHUP):
+        signal.signal(number, lambda received, _: sys.exit(128 + received))
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(line_buffering=True)
     sys.exit(main())

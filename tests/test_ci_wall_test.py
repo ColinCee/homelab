@@ -33,14 +33,18 @@ def chain(packets: int) -> str:
 
 
 class FakeHost:
-    """Every probe fails, and each one the wall should stop counts a drop unless the
-    chain is in COUNTERLESS; a target in REACHED connects."""
+    """Every probe fails, and each one the wall should stop counts a drop, unless nft
+    cannot list the COUNTERLESS chain or the SILENT chain never counts; a target in
+    REACHED connects."""
 
-    def __init__(self, reached: frozenset[str] = frozenset(), counterless: str = "") -> None:
+    def __init__(
+        self, reached: frozenset[str] = frozenset(), counterless: str = "", silent: str = ""
+    ) -> None:
         self.ran: list[list[str]] = []
         self.drops = {"from_container": 0, "forward": 0}
         self.reached = reached
         self.counterless = counterless
+        self.silent = silent
         self.ports = PORTS
 
     def run(
@@ -71,14 +75,20 @@ class FakeHost:
         allowed = ("1.1.1.1:443", "homelab-wall-peer:8080")
         if target in self.reached or target in allowed:
             return 0
-        self.drops[chain_name] += 1
+        if chain_name != self.silent:
+            self.drops[chain_name] += 1
         return 1
 
     def host(self) -> object:
         return wall.Host(run=self.run, sleep=lambda _: None, is_root=lambda: True)
 
-    def cleaned_up_last(self) -> bool:
-        return self.ran[-1] == ["ip", "link", "del", "homelab-wall0"]
+    def cleaned_up_first_and_last(self) -> bool:
+        return self.ran[0] == ["docker", "rm", "-f", "homelab-wall-peer"] and self.ran[-1] == [
+            "ip",
+            "link",
+            "del",
+            "homelab-wall0",
+        ]
 
 
 def test_a_wall_that_drops_every_private_route_passes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -91,7 +101,7 @@ def test_a_wall_that_drops_every_private_route_passes(capsys: pytest.CaptureFixt
     assert f"PASS LAN route to {TAILNET}:8123: dropped by the wall" in out
     assert "0.0.0.0:80" not in out
     assert out.endswith("WALL TEST PASSED\n")
-    assert fake.cleaned_up_last()
+    assert fake.cleaned_up_first_and_last()
 
 
 def test_a_reached_route_fails(capsys: pytest.CaptureFixture[str]) -> None:
@@ -102,8 +112,11 @@ def test_a_reached_route_fails(capsys: pytest.CaptureFixture[str]) -> None:
     assert out.endswith("WALL TEST FAILED (1)\n")
 
 
-def test_a_probe_failing_without_a_counted_drop_fails(capsys: pytest.CaptureFixture[str]) -> None:
-    fake = FakeHost(counterless="forward")
+@pytest.mark.parametrize("fault", ["counterless", "silent"])
+def test_a_probe_failing_without_a_counted_drop_fails(
+    fault: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = FakeHost(counterless="forward") if fault == "counterless" else FakeHost(silent="forward")
     assert wall.main(fake.host()) == 1
     out = capsys.readouterr().out
     assert f"FAIL LAN route to {TAILNET}:8123: failed, but not by the wall" in out
@@ -115,9 +128,13 @@ def test_nothing_published_fails_and_still_cleans_up(capsys: pytest.CaptureFixtu
     fake.ports = "0.0.0.0:80->80/tcp\n"
     assert wall.main(fake.host()) == 1
     assert f"FAIL nothing is published on {TAILNET} to test against" in capsys.readouterr().out
-    assert fake.cleaned_up_last()
+    assert fake.cleaned_up_first_and_last()
 
 
 def test_drops_sums_every_counter_in_the_chain() -> None:
     assert wall.counted(json.loads(chain(4))) == 5
     assert wall.counted({"nftables": [{"metainfo": {"version": "1.0"}}]}) == 0
+
+
+def test_a_missing_program_fails_like_a_shell() -> None:
+    assert wall.run_command(["/nonexistent/nc"], quiet=True).returncode == 127

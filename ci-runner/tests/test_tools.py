@@ -92,12 +92,14 @@ def main(host: Host | None = None) -> int:
         metadata.write_text(json.dumps({"task": "probe", "probe": PROBE}))
         console = tmp / "console.log"
         host.boot([run_vm, "0", str(metadata), "180"], console, host.env)
-        log = console.read_text(errors="replace")
+        # Raw, as grep and tail saw it: read_text would turn a lone CR into a line break.
+        log = console.read_bytes().decode(errors="replace")
     results, passes, failed = verdict(log)
     print("\n".join(results))
     if failed:
         print(failed)
-        print(last_lines(log, 30))
+        if tail := last_lines(log, 30):
+            print(tail)
         return 1
     print(f"tools test passed ({passes} tools)")
     return 0

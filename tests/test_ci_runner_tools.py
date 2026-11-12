@@ -45,6 +45,8 @@ def test_every_counted_tool_passing_passes(capsys: pytest.CaptureFixture[str]) -
     [
         ("PASS a: 1\nFAIL b: missing\nTOTAL 2\n", "TOOLS TEST FAILED (1 of 2 passed)"),
         ("PASS a: 1\n", "TOOLS TEST FAILED (1 of ? passed)"),
+        # A progress meter's carriage return stays inside its line, as the shell's grep saw it.
+        ("PASS a: 50%\r100%\nFAIL b\nTOTAL 2\n", "PASS a: 50%100%\nFAIL b\n"),
     ],
 )
 def test_a_failed_or_uncounted_tool_fails(
