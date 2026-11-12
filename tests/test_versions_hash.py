@@ -79,3 +79,19 @@ def test_every_pinned_tool_here_has_a_url(monkeypatch: pytest.MonkeyPatch) -> No
     empty = _git(repo, "hash-object", "-t", "tree", "/dev/null")
     found = problems(empty, head, lambda url: "")
     assert found and all("wrong hash" in line for line in found), found
+
+
+def test_the_python_build_standalone_asset_is_named_by_python_version_and_tag(base: str) -> None:
+    pbs = "PBS_VERSION=20261110\nPBS_SHA256=" + "b" * 64 + "\nPBS_PYTHON=3.15.2\n"
+    head = _commit(Path.cwd(), OLD + pbs)
+    urls: list[str] = []
+
+    def fetch(url: str) -> str:
+        urls.append(url)
+        return "b" * 64
+
+    assert problems(base, head, fetch) == []
+    assert urls == [
+        "https://github.com/astral-sh/python-build-standalone/releases/download/20261110"
+        "/cpython-3.15.2%2B20261110-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
+    ]
