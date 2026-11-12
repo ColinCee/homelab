@@ -23,6 +23,8 @@ def commands(env: Mapping[str, str]) -> list[list[str]]:
     depth = "2" if env.get("GITHUB_EVENT_NAME") == "pull_request" else "1"
     return [
         ["git", "-c", "init.defaultBranch=main", "init", "-q"],
+        # As actions/checkout leaves it, for a later step that fetches more.
+        ["git", "remote", "add", "origin", url],
         [
             "git",
             "-c",
@@ -31,7 +33,7 @@ def commands(env: Mapping[str, str]) -> list[list[str]]:
             "-q",
             "--no-tags",
             f"--depth={depth}",
-            url,
+            "origin",
             f"+{sha}:refs/remotes/origin/checkout",
         ],
         ["git", "-c", "advice.detachedHead=false", "checkout", "-q", "--detach", sha],

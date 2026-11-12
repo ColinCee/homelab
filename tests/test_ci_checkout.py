@@ -58,6 +58,7 @@ def test_the_job_commit_is_checked_out_with_a_pull_request_s_base(
     assert git(workspace, "rev-parse", "HEAD") == merge
     assert (workspace / "a.txt").read_text() == "merge\n"
     assert not (workspace / "left over").exists()
+    assert git(workspace, "remote", "get-url", "origin") == f"{root.as_uri()}/owner/repo"
     assert len(git(workspace, "log", "--format=%H").split()) == depth
     if depth == 2:
         assert git(workspace, "rev-parse", "HEAD^1") == base
