@@ -9,7 +9,7 @@
     "homelab"
   ],
   "time": {
-    "from": "now-30d",
+    "from": "now-7d",
     "to": "now"
   },
   "timepicker": {},
@@ -100,7 +100,7 @@
       "id": 1,
       "type": "stat",
       "title": "CI on main",
-      "description": "The CI workflow's slowest job in the latest run on main, and how that has moved over the time range. CI on main got slower fires when a day's median is half again its 14 days'.",
+      "description": "The CI workflow's slowest job in the latest run on main.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -113,7 +113,9 @@
           },
           "refId": "A",
           "expr": "max(homelab_ci_job_seconds{kind=\"main\",workflow=\"CI\"})",
-          "legendFormat": ""
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
@@ -145,7 +147,7 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "value",
         "wideLayout": true,
