@@ -46,7 +46,7 @@ section "Containers (each should be a stacks/*/compose.yaml service)"
 docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}'
 
 section "Runners on the host (should be none), Firecracker (only while a job runs), KSM (should be 0)"
-ls -d ~/actions-runner*
+ls -d ~/actions-runner* 2>/dev/null
 pgrep -a firecracker
 cat /sys/kernel/mm/ksm/run
 sudo nft list table inet homelab_ci | head -3

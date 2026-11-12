@@ -36,9 +36,9 @@ snapshots with `restic forget --prune <id>`.
    sudo systemctl daemon-reload
    ```
 
-3. Copy each `name: value` line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (`chmod 444`), then
-   `scripts/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty, and
-   `deploy-main` takes over. Deploy `backup` last and restore as above.
+3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (folder 700, files 444), then
+   `scripts/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty; `deploy-main`
+   follows. Deploy `backup` last and restore as above.
 4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/tests/test-tools.sh`, `sudo ci-runner/tests/audit.sh`
    (must pass), store the GitHub token as the supervisor's `TOKEN_FILE` says, then
    `sudo systemctl enable --now homelab-ci-supervisor.service`.

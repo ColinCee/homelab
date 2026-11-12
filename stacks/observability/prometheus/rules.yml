@@ -800,7 +800,7 @@ groups:
           title: 'Security checks stopped'
           measure: 'Last check'
           unit: ' min ago'
-          harm: 'Deploys, new Tailscale devices, guard changes and SSH logins go unseen while it is stopped.'
+          harm: 'CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.'
           action: >-
             Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
             ci-runner/install-host.sh`.
