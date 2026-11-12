@@ -1,9 +1,10 @@
 {
  ".github/skills/building-dashboards/SKILL.md": 670,
+ ".github/skills/homelab-oncall/SKILL.md": 395,
  ".github/skills/reaching-homelab-devices/SKILL.md": 221,
- "AGENTS.md": 233,
+ "AGENTS.md": 235,
  "docs/adr/0001-observability-stack/results.md": 1680,
- "docs/architecture.md": 1297,
- "docs/recovery.md": 383,
+ "docs/architecture.md": 1307,
+ "docs/recovery.md": 381,
  "README.md": 119
 }

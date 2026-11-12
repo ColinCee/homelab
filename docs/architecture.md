@@ -97,6 +97,9 @@ its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post throug
 | `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h |
 | `week` | Something is running out or slipping | No mention, again daily |
 
+When Colin's PC is on, a Claude Desktop task works what fired since its last run: the
+[`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md) skill.
+
 - A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
   means the number recovered.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
