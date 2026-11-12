@@ -45,22 +45,9 @@ def test_devices_are_named_by_dns_name_with_when_they_were_added() -> None:
 def test_each_event_keeps_its_newest_time_and_who() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     entries = [
-        entry("homelab-deploy", f"commit={sha} actor=ColinCee", 100),
-        entry("homelab-deploy", f"commit={sha} actor=ColinCee", 160),
         entry("homelab-ci-update", f"installed commit={sha} author=Colin Cheung", 120),
         # update.sh's other lines are not installs.
         entry("homelab-ci-update", f"on {sha}, image built at {sha}", 130),
-        entry(
-            "homelab-runner-guard",
-            "mode=enforce verdict=allow GITHUB_REPOSITORY=ColinCee/homelab",
-            140,
-        ),
-        entry(
-            "homelab-runner-guard",
-            "mode=enforce verdict=refuse reason='workflow x is not allowed' "
-            "GITHUB_REPOSITORY=someone/fork GITHUB_EVENT_NAME=pull_request GITHUB_ACTOR=someone",
-            150,
-        ),
         entry(
             "sshd",
             "Accepted publickey for ci-peer from 100.64.0.10 port 58736 ssh2: ED25519 SHA256:x",
@@ -82,9 +69,7 @@ def test_each_event_keeps_its_newest_time_and_who() -> None:
     found = security_facts.events(entries, names)
 
     assert found == {
-        "deploy": {("ColinCee", "0123456789ab"): 160},
         "ci_host_install": {("Colin Cheung", "0123456789ab"): 120},
-        "runner_guard_refusal": {("someone/fork", "someone"): 150},
         "ssh_login": {
             ("ci-peer", "100.64.0.10", "desktop"): 170,
             ("colin", "203.0.113.9", ""): 180,
@@ -101,7 +86,7 @@ def test_the_file_holds_each_fact_with_its_labels(tmp_path: Path) -> None:
         ("colin", "100.64.0.10", "desktop"): 130.0,
         ("root", "203.0.113.9", ""): 140.0,
     }
-    rendered = security_facts.render(found, {"laptop": 1794080335.1}, False, {"desktop"})
+    rendered = security_facts.render(found, {"laptop": 1794080335.1}, {"desktop"})
     security_facts.write(rendered, out)
 
     samples = [line for line in out.read_text().splitlines() if not line.startswith("#")]
@@ -114,19 +99,8 @@ def test_the_file_holds_each_fact_with_its_labels(tmp_path: Path) -> None:
         'known="false"} 140',
         'homelab_tailscale_device_created_timestamp_seconds{name="laptop",known="false"} '
         "1794080335",
-        "homelab_runner_guard_matches_main 0",
     ]
     assert [p.name for p in tmp_path.iterdir()] == ["security.prom"]
-
-
-def test_the_guard_matches_main_only_byte_for_byte(tmp_path: Path) -> None:
-    installed, main = tmp_path / "installed.py", tmp_path / "main.py"
-    installed.write_text("ALLOW = 1\n")
-    main.write_text("ALLOW = 1\n")
-    assert security_facts.same_file(installed, main)
-    main.write_text("ALLOW = 2\n")
-    assert not security_facts.same_file(installed, main)
-    assert not security_facts.same_file(tmp_path / "gone.py", main)
 
 
 def test_the_first_run_learns_the_tailnet_and_a_later_device_stays_unknown(tmp_path: Path) -> None:

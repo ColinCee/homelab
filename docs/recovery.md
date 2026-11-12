@@ -36,26 +36,15 @@ snapshots with `restic forget --prune <id>`.
    sudo systemctl daemon-reload
    ```
 
-3. Register the deploy runner, install the [runner guard](#runner-guard), then re-run the latest deploy: every stack
-   comes up empty. Deploy `backup` last and restore as above.
+3. Copy each `name: value` line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (`chmod 444`), then
+   `scripts/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty, and
+   `deploy-main` takes over. Deploy `backup` last and restore as above.
 4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/tests/test-tools.sh`, `sudo ci-runner/tests/audit.sh`
    (must pass), store the GitHub token as the supervisor's `TOKEN_FILE` says, then
    `sudo systemctl enable --now homelab-ci-supervisor.service`.
 
 If the Tailscale address changes, update the Docker drop-in, the Compose port bindings, `stacks/internal-names` and
 the `.internal` nameserver in Tailscale's DNS settings.
-
-## Runner guard
-
-After a change to [`runner_job_guard.py`](../scripts/runner_job_guard.py) merges, from a checkout of `main` on the
-host, with no deploy running:
-
-```bash
-sudo scripts/install-runner-guard.sh enforce
-sudo systemctl restart actions.runner.ColinCee-homelab.beelink.service
-```
-
-"Runner guard differs from main" fires until then.
 
 ## CI runner rollback
 

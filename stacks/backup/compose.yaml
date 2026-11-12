@@ -56,7 +56,7 @@ services:
       # What other machines sent with Taildrop (systemd/backup-pc-receive.*; docs/architecture.md, "Backups").
       - /home/colin/pc-backups:/data/pc-backups:ro
 
-# Written from GitHub secrets by scripts/render-secrets.sh.
+# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
   restic_password:
     file: ../../secrets/restic_password

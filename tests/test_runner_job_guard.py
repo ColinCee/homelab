@@ -5,12 +5,10 @@ import pytest
 
 from scripts import runner_job_guard as guard
 
-DEPLOY = "ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/main"
-
 
 @pytest.fixture(autouse=True)
 def _no_journal(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep test runs out of the host journal the guard writes to."""
+    """Keep test runs out of the journal the guard writes to."""
     monkeypatch.setattr(guard, "_journal", lambda line: None)
 
 
@@ -19,7 +17,6 @@ def _env(**overrides: str) -> dict[str, str]:
         "GITHUB_REPOSITORY": "ColinCee/homelab",
         "GITHUB_EVENT_NAME": "push",
         "GITHUB_REF": "refs/heads/main",
-        "GITHUB_WORKFLOW_REF": DEPLOY,
         "GITHUB_ACTOR": "ColinCee",
         "GITHUB_ACTOR_ID": "11246116",
         "GITHUB_TRIGGERING_ACTOR": "ColinCee",
@@ -28,104 +25,33 @@ def _env(**overrides: str) -> dict[str, str]:
     return env
 
 
-@pytest.mark.parametrize(
-    "env",
-    [
-        _env(),
-        _env(GITHUB_EVENT_NAME="workflow_dispatch"),
-        _env(
-            GITHUB_ACTOR="renovate[bot]",
-            GITHUB_ACTOR_ID="29139614",
-            GITHUB_TRIGGERING_ACTOR="renovate[bot]",
-        ),
-        # A Renovate deploy that Colin re-runs.
-        _env(
-            GITHUB_ACTOR="renovate[bot]",
-            GITHUB_ACTOR_ID="29139614",
-            GITHUB_TRIGGERING_ACTOR="ColinCee",
-        ),
-    ],
-)
-def test_allows_the_deploy_workflow_on_main(env: dict[str, str]) -> None:
-    assert guard.decide(env).allowed
+@pytest.fixture
+def serves(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    path = tmp_path / "serves.json"
+    path.write_text('{"repo": "ColinCee/homelab", "public": true}')
+    monkeypatch.setattr(guard, "SERVES", str(path))
+    return path
 
 
-@pytest.mark.parametrize(
-    ("env", "reason"),
-    [
-        (_env(GITHUB_EVENT_NAME="pull_request_target"), "event"),
-        (_env(GITHUB_EVENT_NAME="schedule"), "event"),
-        (_env(GITHUB_REF="refs/heads/feature"), "ref"),
-        (
-            _env(GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/deploy.yaml@refs/heads/x"),
-            "workflow",
-        ),
-        (
-            _env(
-                GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/evil.yaml@refs/heads/main"
-            ),
-            "workflow",
-        ),
-        (
-            _env(
-                GITHUB_WORKFLOW_REF="ColinCee/homelab/.github/workflows/server-health.yaml@refs/heads/main"
-            ),
-            "workflow",
-        ),
-        (_env(GITHUB_REPOSITORY="someone/homelab"), "repository"),
-        (_env(GITHUB_ACTOR="mallory", GITHUB_ACTOR_ID="999"), "actor mallory"),
-        (_env(GITHUB_ACTOR="ColinCee", GITHUB_ACTOR_ID="999"), "actor ColinCee (999)"),
-        (_env(GITHUB_TRIGGERING_ACTOR="mallory"), "triggering actor"),
-        (_env(BASH_ENV="/tmp/x"), "BASH_ENV"),
-    ],
-)
-def test_refuses_everything_else(env: dict[str, str], reason: str) -> None:
-    decision = guard.decide(env)
-
-    assert not decision.allowed
-    assert reason in decision.reason
-
-
-@pytest.mark.parametrize(
-    "missing",
-    [
-        "GITHUB_REPOSITORY",
-        "GITHUB_EVENT_NAME",
-        "GITHUB_REF",
-        "GITHUB_WORKFLOW_REF",
-        "GITHUB_ACTOR_ID",
-        "GITHUB_TRIGGERING_ACTOR",
-    ],
-)
-def test_a_missing_variable_is_a_refusal(missing: str) -> None:
-    env = _env()
-    del env[missing]
-
-    assert not guard.decide(env).allowed
-
-
-def test_enforce_stops_the_job_and_observe_lets_it_run(capsys: pytest.CaptureFixture[str]) -> None:
-    bad = _env(GITHUB_EVENT_NAME="pull_request")
-
+def test_a_refused_job_is_stopped_and_an_allowed_one_is_not(
+    serves: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     stopped: list[int] = []
 
     def stop(pid: int) -> str:
         stopped.append(pid)
         return "killed Runner.Worker 42"
 
-    assert guard.main(["--mode", "enforce"], bad, stop) == 1
+    assert guard.main(_env(GITHUB_ACTOR="mallory", GITHUB_ACTOR_ID="999"), stop) == 1
     assert "::error::Runner guard refused" in capsys.readouterr().out
+    assert guard.main(_env(), stop) == 0
     assert len(stopped) == 1
-    assert guard.main(["--mode", "observe"], bad, stop) == 0
-    assert "::warning::" in capsys.readouterr().out
-    assert guard.main([], _env(), stop) == 0
-    assert len(stopped) == 1  # neither observe mode nor an allowed job stops anything
 
 
 def test_audit_line_logs_other_variables_by_name_only() -> None:
     env = _env(ACTIONS_RUNTIME_TOKEN="secret-value")
 
-    line = guard.audit_line(env, guard.decide(env), "observe")
+    line = guard.audit_line(env, guard.decide_vm(env, PUBLIC, {}))
 
     assert "ACTIONS_RUNTIME_TOKEN" in line
     assert "secret-value" not in line
@@ -169,13 +95,12 @@ def test_stop_job_reports_a_failed_kill() -> None:
     assert "could not kill" in guard.stop_job(300, TREE.__getitem__, refuse)
 
 
-def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
-    capsys: pytest.CaptureFixture[str],
+def test_a_crafted_repository_name_cannot_inject_a_workflow_command(
+    serves: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     nl = chr(10)
-    crafted = f"ColinCee/homelab/.github/workflows/x{nl}::add-mask::y%.yaml@refs/heads/main"
 
-    guard.main(["--mode", "enforce"], _env(GITHUB_WORKFLOW_REF=crafted), lambda pid: "stub")
+    guard.main(_env(GITHUB_REPOSITORY=f"x{nl}::add-mask::y%"), lambda pid: "stub")
 
     out = capsys.readouterr().out
     assert f"{nl}::add-mask::" not in out
@@ -236,14 +161,10 @@ def test_a_private_repos_vm_takes_any_job_of_its_repo_only() -> None:
     assert not guard.decide_vm(_env(), private, {}).allowed
 
 
-def test_the_vm_policy_reads_what_the_vm_serves_and_the_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    serves, event = tmp_path / "serves.json", tmp_path / "event.json"
-    serves.write_text('{"repo": "ColinCee/homelab", "public": true}')
+def test_the_guard_reads_what_the_vm_serves_and_the_event(serves: Path, tmp_path: Path) -> None:
+    event = tmp_path / "event.json"
     event.write_text('{"pull_request": {"head": {"repo": {"full_name": "someone/homelab"}}}}')
-    monkeypatch.setattr(guard, "SERVES", str(serves))
     env = _env(GITHUB_EVENT_NAME="pull_request", GITHUB_EVENT_PATH=str(event))
-    assert guard.main(["--policy", "vm"], env, lambda pid: "stub") == 1
+    assert guard.main(env, lambda pid: "stub") == 1
     event.write_text('{"pull_request": {"head": {"repo": {"full_name": "ColinCee/homelab"}}}}')
-    assert guard.main(["--policy", "vm"], env, lambda pid: "stub") == 0
+    assert guard.main(env, lambda pid: "stub") == 0

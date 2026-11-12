@@ -337,12 +337,12 @@ def test_each_service_reading_files_or_secrets_has_a_label_with_its_own_hash() -
                 assert label == "${" + deploy.hash_variable(name) + ":-}", (compose_file, name)
 
 
-def test_a_secret_listed_but_not_rendered_stops_the_deploy(tmp_path: Path) -> None:
+def test_a_secret_mounted_but_missing_stops_the_deploy(tmp_path: Path) -> None:
     stack_dir = _make_stack(tmp_path, "sample")
     (stack_dir / "compose.yaml").write_text(
         "services: {}\nsecrets:\n  token:\n    file: ../../secrets/token\n", encoding="utf-8"
     )
-    with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
+    with pytest.raises(deploy.DeploymentInputError, match="token; copy it from Bitwarden"):
         deploy.discover_stack_plans(tmp_path)
 
 

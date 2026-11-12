@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Write what the intrusion alerts read (prometheus/rules.yml, group intrusion) to security.prom:
-the last hour's deploys, CI-host installs, runner guard refusals and SSH logins from the journal,
-every tailnet device and when it was added, and whether the installed runner guard is main's.
+the last hour's CI-host installs and SSH logins from the journal, and every tailnet device and when
+it was added.
 Also two host facts for group homelab: whether a reboot waits, and how many security updates
 wait; unattended-upgrades should clear both within a day.
 A device, or an SSH login's device, is known="true" only if it was on the tailnet at the first run
@@ -16,7 +16,6 @@ checks stopped" fires.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import subprocess
@@ -26,10 +25,6 @@ from pathlib import Path
 from typing import Any
 
 OUT = Path("/var/lib/homelab-metrics/security.prom")
-# Installed by hand (scripts/install-runner-guard.sh); main's copy is the CI host's checkout, which
-# update.sh moves within a minute of each merge.
-GUARD = Path("/usr/local/lib/homelab/runner_job_guard.py")
-MAIN_GUARD = Path("/var/lib/homelab-ci/src/scripts/runner_job_guard.py")
 # The unit's StateDirectory. Delete it to learn the tailnet as it is now.
 STATE = Path("/var/lib/homelab-security-facts/known-devices.json")
 # Written by packages that need a reboot; gone after one, as /run is in memory.
@@ -38,11 +33,9 @@ REBOOT = Path("/run/reboot-required")
 UPDATES = Path("/var/lib/update-notifier/updates-available")
 # ESM's updates are counted on lines of their own, and those not enabled cannot be installed.
 SECURITY = re.compile(r"(\d+) of these updates (?:is a|are) standard security update")
-# deploy.yaml's first step, update.sh after an install, the runner guard, sshd, and Tailscale SSH.
+# update.sh after an install, sshd, and Tailscale SSH.
 IDENTIFIERS = (
-    "homelab-deploy",
     "homelab-ci-update",
-    "homelab-runner-guard",
     "sshd",
     "sshd-session",
     "tailscaled",
@@ -54,15 +47,11 @@ TAILSCALE_SSH = re.compile(
     r"^ssh-session\(\S+\): starting .* --local-user=(\S+) .* --remote-ip=(\S+) "
 )
 LABELS = {
-    "deploy": ("actor", "commit"),
     "ci_host_install": ("author", "commit"),
-    "runner_guard_refusal": ("repository", "actor"),
     "ssh_login": ("user", "from", "device"),
 }
 HELP = {
-    "deploy": "When deploy.yaml last wrote secrets for this actor and commit, in the last hour.",
     "ci_host_install": "When update.sh last installed this commit as root, in the last hour.",
-    "runner_guard_refusal": "When the runner guard last refused a job, in the last hour.",
     "ssh_login": "When this user last logged in over SSH from this address, in the last hour.",
 }
 
@@ -86,18 +75,11 @@ def events(entries: Iterable[dict[str, Any]], devices: dict[str, str]) -> Events
             continue
         name = entry.get("SYSLOG_IDENTIFIER")
         fields = dict(FIELDS.findall(message))
-        if name == "homelab-deploy":
-            kind, values = "deploy", (fields.get("actor", ""), fields.get("commit", "")[:12])
-        elif name == "homelab-ci-update" and message.startswith("installed "):
+        if name == "homelab-ci-update" and message.startswith("installed "):
             # The author's name may hold spaces, so it is the rest of the line.
             kind, values = (
                 "ci_host_install",
                 (message.partition(" author=")[2], fields.get("commit", "")[:12]),
-            )
-        elif name == "homelab-runner-guard" and fields.get("verdict") == "refuse":
-            kind, values = (
-                "runner_guard_refusal",
-                (fields.get("GITHUB_REPOSITORY", ""), fields.get("GITHUB_ACTOR", "")),
             )
         elif (name in ("sshd", "sshd-session") and (login := SSH_LOGIN.match(message))) or (
             name == "tailscaled" and (login := TAILSCALE_SSH.match(message))
@@ -139,21 +121,11 @@ def tailscale_status() -> dict[str, Any]:
     return json.loads(run.stdout)
 
 
-def same_file(a: Path, b: Path) -> bool:
-    """False when either is missing: a guard gone is not main's either."""
-    try:
-        return hashlib.sha256(a.read_bytes()).digest() == hashlib.sha256(b.read_bytes()).digest()
-    except FileNotFoundError:
-        return False
-
-
 def label(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
 
 
-def render(
-    found: Events, added: dict[str, float], guard_matches: bool, known: Set[str] = frozenset()
-) -> str:
+def render(found: Events, added: dict[str, float], known: Set[str] = frozenset()) -> str:
     lines: list[str] = []
     for kind, names in LABELS.items():
         metric = f"homelab_{kind}_timestamp_seconds"
@@ -168,11 +140,6 @@ def render(
     lines += [
         f'{metric}{{name="{label(name)}",known="{str(name in known).lower()}"}} {when:.0f}'
         for name, when in sorted(added.items())
-    ]
-    lines += [
-        "# HELP homelab_runner_guard_matches_main Whether the guard is main's (1 yes, 0 no).",
-        "# TYPE homelab_runner_guard_matches_main gauge",
-        f"homelab_runner_guard_matches_main {int(guard_matches)}",
     ]
     return "\n".join(lines) + "\n"
 
@@ -213,9 +180,7 @@ def _replace(path: Path, text: str, mode: int) -> None:
 def main() -> None:
     added, names = tailnet(tailscale_status())
     known = known_devices(added)
-    write(
-        render(events(journal(), names), added, same_file(GUARD, MAIN_GUARD), known) + host_facts()
-    )
+    write(render(events(journal(), names), added, known) + host_facts())
 
 
 if __name__ == "__main__":

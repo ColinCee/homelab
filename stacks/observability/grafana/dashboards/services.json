@@ -1580,21 +1580,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "deploy-ran"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d03b3b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "ci-host-updated"
             },
             "properties": [
@@ -1611,36 +1596,6 @@
             "matcher": {
               "id": "byName",
               "options": "tailscale-device-added"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d03b3b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runner-guard-changed"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#d03b3b"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "runner-guard-refused"
             },
             "properties": [
               {

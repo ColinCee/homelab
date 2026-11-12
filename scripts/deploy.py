@@ -97,7 +97,7 @@ def discover_stack_plans(
             for secret in secret_files(stack_dir):
                 if not secret.is_file():
                     raise DeploymentInputError(
-                        f"{name}: missing {secret}; render it with scripts/render-secrets.sh"
+                        f"{name}: missing {secret}; copy it from Bitwarden (docs/recovery.md)"
                     )
 
             plans.append(
@@ -121,9 +121,6 @@ def discover_stack_plans(
 SHARED_PATHS = (
     "scripts/deploy.sh",
     "scripts/deploy.py",
-    "scripts/render-secrets.sh",
-    "scripts/render_secrets.py",
-    ".github/workflows/deploy.yaml",
 )
 
 
@@ -489,7 +486,7 @@ def stacks_with_secrets_since(repo_root: Path, since_ns: int) -> tuple[str, ...]
 
 
 def secret_files(stack_dir: Path) -> tuple[Path, ...]:
-    """The files a stack's compose.yaml mounts as secrets (render_secrets.py writes them)."""
+    """The files a stack's compose.yaml mounts as secrets (docs/recovery.md)."""
     compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
     secrets = compose.get("secrets") or {}
     return tuple(

@@ -1,6 +1,6 @@
 """No secret goes in a container's environment, command or labels: anything allowed to inspect
 containers reads them, Alloy's Docker API proxy included (stacks/observability/compose.yaml,
-docker-socket-proxy). A secret is a file under /run/secrets (scripts/render_secrets.py)."""
+docker-socket-proxy). A secret is a file under /run/secrets, from ../../secrets/ on the host."""
 
 import re
 from pathlib import Path
@@ -8,8 +8,6 @@ from typing import Any
 
 import pytest
 import yaml
-
-from scripts import render_secrets
 
 ROOT = Path(__file__).parent.parent
 STACKS = ROOT / "stacks"
@@ -100,22 +98,22 @@ def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict[str, 
     assert problems({"services": {"s": service}})
 
 
-def test_each_secret_file_a_stack_mounts_is_one_the_deploy_writes_and_each_is_used() -> None:
-    written = {name.lower() for name in render_secrets.secret_names(ROOT)}
-    assert "restic_password" in written
-    mounted = set()
+def mounted_secrets() -> set[str]:
+    """Each secret file a stack mounts, all from the host's one secrets folder."""
+    mounted: set[str] = set()
     for compose in STACKS.glob("*/compose.yaml"):
         spec = load_compose(compose)
         for secret in (spec.get("secrets") or {}).values():
             folder, _, name = secret["file"].rpartition("/")
             assert folder == "../../secrets", compose
             mounted.add(name)
-    assert mounted == written
+    return mounted
 
 
 def test_no_secret_reaches_a_stacks_settings() -> None:
     """Compose interpolates only what a stack's settings.env holds."""
-    names = render_secrets.secret_names(ROOT)
+    names = [name.upper() for name in mounted_secrets()]
+    assert "RESTIC_PASSWORD" in names
     for settings in STACKS.glob("*/settings.env"):
         text = settings.read_text(encoding="utf-8")
         assert not [name for name in names if name in text], settings
