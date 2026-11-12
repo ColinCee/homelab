@@ -1002,7 +1002,7 @@
     {
       "id": 11,
       "type": "gauge",
-      "title": "CI against usual",
+      "title": "CI vs usual",
       "description": "The latest run on main of the job furthest over its 14-day median, as a share of that median. CI on main got slower fires when a day's median is past 150% and 20 s more.",
       "datasource": {
         "type": "prometheus",

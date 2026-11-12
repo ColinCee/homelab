@@ -40,11 +40,11 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 | Blue, aqua, orange | Monitoring, System, Apps, and each container in its group's colour |
 | Red | A service down or stopped, any alert firing, or a tile past a `level: now` rule's threshold |
 | Amber | A tile past a `week` rule's threshold, or a warning with no rule |
-| Green | Fine, on Home's board and dials |
+| Green | Fine: a filled tile, a dial, a history line |
 | Gray | One measure, a running service, or a series no override names |
 | Blue, orange, aqua, yellow | Any other series (Network, CI's runners), in that order |
 
-- A tile's colour is its thresholds: base `text` (green on Home), then a step at the rule's
+- A tile's colour is its thresholds: base `text` (green when filled), then a step at the rule's
   threshold (or base red or amber and a `text` step, for "under").
 - A series' colour is a field override with a fixed colour: `byName`, or for containers the two
   `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray. A line per
