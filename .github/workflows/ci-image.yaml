@@ -9,6 +9,7 @@ on:
       - ci-runner/rootfs/**
       - ci-runner/versions.env
       - scripts/runner_job_guard.py
+      - scripts/ci.py
       - .github/workflows/ci-image.yaml
 
 permissions:
@@ -21,10 +22,4 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build the CI job image
-        run: |
-          set -a && source ci-runner/versions.env && set +a
-          args=()
-          while IFS='=' read -r name _; do
-            if [[ $name =~ ^[A-Z0-9_]+$ ]]; then args+=(--build-arg "$name"); fi
-          done < ci-runner/versions.env
-          docker build -q "${args[@]}" --build-context scripts=scripts ci-runner/rootfs > /dev/null
+        run: python3 scripts/ci.py build-image

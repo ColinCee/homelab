@@ -25,7 +25,7 @@ services:
     secrets:
       - tunnel_token
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_CLOUDFLARED:-}
     depends_on:
       - backend
     networks:

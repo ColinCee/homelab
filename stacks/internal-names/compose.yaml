@@ -11,7 +11,7 @@ services:
       - "100.100.146.119:53:53/tcp"
       - "127.0.0.1:9153:9153"
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_DNS:-}
     volumes:
       - ./Corefile:/etc/coredns/Corefile:ro
 
@@ -29,6 +29,6 @@ services:
     # Host networking, so the proxy can reach Home Assistant on loopback (see Caddyfile).
     network_mode: host
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_PROXY:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro

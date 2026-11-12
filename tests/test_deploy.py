@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import deploy
 
@@ -263,55 +264,64 @@ def test_records_the_services_to_keep_running_and_each_timers_stamp(tmp_path: Pa
     assert [p.name for p in metrics.iterdir()] == ["deploy-alpha.prom"]
 
 
-def test_config_hash_tracks_committed_config_and_reaches_up(tmp_path: Path) -> None:
+TWO_SERVICES = """services:
+  app: {volumes: [./app.conf:/etc/app.conf:ro, ./data:/data], secrets: [token]}
+  web: {volumes: [./web:/etc/web:ro]}
+secrets:
+  token: {file: ../../secrets/token}
+"""
+
+
+def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
+    tmp_path: Path,
+) -> None:
     def git(*args: str) -> None:
         subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
 
     stack_dir = _make_stack(tmp_path, "sample")
+    (stack_dir / "compose.yaml").write_text(TWO_SERVICES, encoding="utf-8")
     (stack_dir / "app.conf").write_text("a\n", encoding="utf-8")
-    git("init", "-q")
-    git("add", ".")
-    before = deploy.stack_config_hash(tmp_path, stack_dir)
-
-    (stack_dir / "data").mkdir()
-    (stack_dir / "data" / "state.db").write_text("runtime\n", encoding="utf-8")
-    (stack_dir / "compose.yaml").write_text("services: {x: {}}\n", encoding="utf-8")
-    assert deploy.stack_config_hash(tmp_path, stack_dir) == before
-
-    (stack_dir / "app.conf").write_text("b\n", encoding="utf-8")
-    after = deploy.stack_config_hash(tmp_path, stack_dir)
-    assert after != before
-
-    runner, calls = _recording_runner()
-    deploy.deploy(tmp_path, deploy.discover_stack_plans(tmp_path), runner=runner)
-
-    up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
-    assert isinstance(up_env, dict)
-    assert up_env["STACK_CONFIG_HASH"] == after
-
-
-def test_a_changed_secret_changes_the_hash_but_its_value_does_not_reach_it(
-    tmp_path: Path,
-) -> None:
-    stack_dir = _make_stack(tmp_path, "sample")
-    (stack_dir / "compose.yaml").write_text(
-        "services: {}\nsecrets:\n  token:\n    file: ../../secrets/token\n", encoding="utf-8"
-    )
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
-    with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
-        deploy.discover_stack_plans(tmp_path)
-
+    (stack_dir / "web").mkdir()
+    (stack_dir / "web" / "site.conf").write_text("a\n", encoding="utf-8")
     secret = tmp_path / "secrets" / "token"
     secret.parent.mkdir()
     secret.write_text("a", encoding="utf-8")
     os.utime(secret, (1, 1))
-    first = deploy.stack_config_hash(tmp_path, stack_dir)
+    git("init", "-q")
+    git("add", "stacks")
+    before = deploy.config_hashes(tmp_path, stack_dir)
+    assert set(before) == {"CONFIG_HASH_APP", "CONFIG_HASH_WEB"}
+
+    # Runtime data (untracked) and a secret's value change nothing.
+    (stack_dir / "data").mkdir()
+    (stack_dir / "data" / "state.db").write_text("runtime\n", encoding="utf-8")
     secret.write_text("b", encoding="utf-8")
     os.utime(secret, (1, 1))
-    assert deploy.stack_config_hash(tmp_path, stack_dir) == first
+    assert deploy.config_hashes(tmp_path, stack_dir) == before
+
+    # A file in web's folder changes web's hash alone; a newer secret, app's alone.
+    (stack_dir / "web" / "site.conf").write_text("b\n", encoding="utf-8")
+    after = deploy.config_hashes(tmp_path, stack_dir)
+    assert after["CONFIG_HASH_WEB"] != before["CONFIG_HASH_WEB"]
+    assert after["CONFIG_HASH_APP"] == before["CONFIG_HASH_APP"]
     os.utime(secret, (2, 2))
-    assert deploy.stack_config_hash(tmp_path, stack_dir) != first
+    assert deploy.config_hashes(tmp_path, stack_dir)["CONFIG_HASH_APP"] != after["CONFIG_HASH_APP"]
+
+    runner, calls = _recording_runner()
+    deploy.deploy(tmp_path, deploy.discover_stack_plans(tmp_path), runner=runner)
+    up_env = next(kwargs["env"] for command, kwargs in calls if "up" in command)
+    assert isinstance(up_env, dict)
+    assert up_env["CONFIG_HASH_WEB"] == after["CONFIG_HASH_WEB"]
+
+
+def test_each_service_s_label_reads_its_own_hash() -> None:
+    # A label naming another service's hash would restart it on the wrong files, or never.
+    for compose_file in (Path(__file__).parent.parent / "stacks").glob("*/compose.yaml"):
+        services = yaml.safe_load(compose_file.read_text(encoding="utf-8"))["services"]
+        for name, spec in services.items():
+            label = (spec.get("labels") or {}).get("homelab.config-hash")
+            if label is not None:
+                assert label == "${" + deploy.hash_variable(name) + ":-}", (compose_file, name)
 
 
 def _git(repo_root: Path, *arguments: str) -> str:

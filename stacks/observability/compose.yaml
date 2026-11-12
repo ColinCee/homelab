@@ -19,7 +19,7 @@ services:
     mem_limit: 1g
     # No published port: readers go through the gateway, since it serves admin calls beside its reads.
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_PROMETHEUS:-}
     # Refused rules stop it at start, which fails the deploy's wait.
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
@@ -57,7 +57,7 @@ services:
     # It held a median 363 and at most 650 MiB through a 30-day backfill and heavy queries.
     mem_limit: 1g
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_LOGS:-}
     volumes:
       - victorialogs-data:/vlogs
     networks:
@@ -82,7 +82,7 @@ services:
     # It held at most 106 MiB at ten times the real span rate.
     mem_limit: 512m
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_TRACES:-}
     volumes:
       - victoriatraces-data:/vtraces
     networks:
@@ -142,7 +142,7 @@ services:
       - grafana_secret_key
       - agents_password
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_GRAFANA:-}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
@@ -175,7 +175,7 @@ services:
       - grafana_admin_password
       - agents_password
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_GRAFANA_USERS:-}
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/done"]
       interval: 60s
@@ -208,7 +208,7 @@ services:
     # No published port: its API takes silences and alerts without a login, so only Prometheus and the gateway reach
     # it (alerting); its other network is its way out to Discord.
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_ALERTMANAGER:-}
     secrets:
       - discord_webhook
       - healthchecks_ping
@@ -240,7 +240,7 @@ services:
       - stats_password
       - agents_password
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_GATEWAY:-}
     tmpfs:
       - /data:uid=65534,gid=65534
       - /config:uid=65534,gid=65534
@@ -277,7 +277,7 @@ services:
       # Go grows its heap to twice what is live by default; this keeps it a little above what is live.
       GOMEMLIMIT: 192MiB
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_ALLOY:-}
     tmpfs:
       - /tmp
     volumes:
@@ -320,7 +320,7 @@ services:
     user: "65534:65534"
     mem_limit: 32m
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_BLACKBOX:-}
     volumes:
       - ./blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
     # Out to the internet (default); Prometheus scrapes it on probe.
@@ -351,7 +351,7 @@ services:
       # Which container each program is in, and its Compose service.
       DOCKER_HOST: tcp://docker-socket-proxy:2375
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_OBI:-}
     volumes:
       - ./obi/obi.yaml:/etc/obi/obi.yaml:ro
     networks:
@@ -405,7 +405,7 @@ services:
     mem_limit: 32m
     network_mode: host
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_PROBES:-}
     volumes:
       - ./probes.py:/probes.py:ro
       # Read by Alloy's textfile collector.
@@ -433,7 +433,7 @@ services:
     mem_limit: 128m
     network_mode: host
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_HOST_METRICS:-}
     secrets:
       - homeassistant_metrics_token
     tmpfs:
@@ -474,7 +474,7 @@ services:
       - public_stats_key
       - stats_password
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_PUBLIC_STATS:-}
     healthcheck:
       # Healthy while pushes succeed: the heartbeat is under 15 minutes old.
       test: ["CMD-SHELL", "find /tmp/ready -mmin -15 | grep -q ."]

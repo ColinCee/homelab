@@ -19,7 +19,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
     the service needs it;
-  - `labels: {homelab.config-hash: ${STACK_CONFIG_HASH:-}}` on a service that reads a mounted file without reloading,
+  - `labels: {homelab.config-hash: ${CONFIG_HASH_<SERVICE>:-}}` on a service that reads a mounted file without reloading,
     and `init: true` when its main process ignores SIGTERM as PID 1;
   - each secret a Compose `secrets:` file from `../../secrets/`, listed in `deploy.yaml`'s render step, never in
     `environment:`, which `docker inspect` shows;
