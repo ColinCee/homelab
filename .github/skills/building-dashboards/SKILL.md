@@ -11,7 +11,7 @@ Grafana reloads them every 30 s and refuses a save from the UI: edit the file. A
 
 ## Pages
 
-A panel goes on the page whose question it answers; a new page needs a question none covers.
+A panel goes on the page whose question it answers.
 
 | Page | Question |
 |---|---|
@@ -24,27 +24,28 @@ A panel goes on the page whose question it answers; a new page needs a question 
 - A Home tile opens the page that explains it: `fieldConfig.defaults.links`, `oneClick`, `/d/<uid>`.
 - Home's service tiles are `instant` queries named Up and Down: over a range the state it left
   would still show.
-- A heading is a row. A collapsed row keeps its panels in its own `panels`, placed from the line
-  under it; an open row's follow it at the top level.
+- A collapsed row keeps its panels in its own `panels`, below its line; an open row's follow it at
+  the top level.
 
-The grid is 24 columns: at 1200 px a tile 6 wide holds a title of about fifteen letters. No panel
-has its own time range; write a window into the query (`[7d]`, `_time:1h`).
+The grid is 24 columns and stretches with the screen, so look at a page at 1920 and 3840 px wide: at
+1920 a tile 4 wide holds a title of about fifteen letters. No panel has its own time range; write a
+window into the query (`[7d]`, `_time:1h`).
 
 ## Colour and order
 
-Each colour means one thing on every panel; hexes are in `tests/test_dashboards.py`, which checks
-every page.
+Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 
 | Colour | Means |
 |---|---|
 | Blue, aqua, orange | Monitoring, System, Apps, and each container in its group's colour |
 | Red | A service down or stopped, any alert firing, or a tile past a `level: now` rule's threshold |
-| Amber | A tile past a `week` rule's threshold, or a warning with no rule. None means fine |
+| Amber | A tile past a `week` rule's threshold, or a warning with no rule |
+| Green | Fine, on Home's board and dials |
 | Gray | One measure, a running service, or a series no override names |
-| Blue, orange, aqua, yellow | Series of any other kind (Network, CI's runners), in that order |
+| Blue, orange, aqua, yellow | Any other series (Network, CI's runners), in that order |
 
-- A tile's colour is its thresholds: base `text`, then a step at the rule's threshold (or base red
-  or amber and a `text` step, for "under").
+- A tile's colour is its thresholds: base `text` (green on Home), then a step at the rule's
+  threshold (or base red or amber and a `text` step, for "under").
 - A series' colour is a field override with a fixed colour: `byName`, or for containers the two
   `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray.
 - Stacks keep a fixed order with the largest at the bottom: queries in that order, as refIds A, B, C.
