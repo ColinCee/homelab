@@ -359,9 +359,11 @@ LOG_ERRORS = (OSError, ValueError, http.client.HTTPException)
 
 def github_logs(token: str) -> Logs:
     """A job's log: GitHub answers with a signed link to it, fetched without the token. "" when the
-    log is gone (404, 410); any other failure, after one retry, stops the pass as GitHub's other
-    failures do, so the run is traced next pass with its log."""
+    log is gone (404, 410) at either step: a skipped job gets a link to a log never written. Any
+    other failure, after one retry, stops the pass as GitHub's other failures do, so the run is
+    traced next pass with its log."""
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+    gone = (404, 410)
 
     def fetch(job_id: int) -> str:
         url = f"{API}/repos/{REPO}/actions/jobs/{job_id}/logs"
@@ -370,14 +372,20 @@ def github_logs(token: str) -> Logs:
             urllib.request.build_opener(_NoRedirect).open(request, timeout=30).close()
             return ""
         except urllib.error.HTTPError as e:
-            if e.code in (404, 410):
+            if e.code in gone:
                 return ""
             if e.code != 302:
                 raise
             link = e.headers.get("Location") or ""
         if not link.startswith(SIGNED):
             return ""
-        with urllib.request.urlopen(link, timeout=30) as response:
+        try:
+            response = urllib.request.urlopen(link, timeout=30)
+        except urllib.error.HTTPError as e:
+            if e.code in gone:
+                return ""
+            raise
+        with response:
             body = response.read(LOG_MAX)
         assert isinstance(body, bytes)
         return body.decode("utf-8", "replace")
