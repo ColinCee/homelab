@@ -15,6 +15,7 @@ See docs/architecture.md, "CI runner".
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -28,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 REPO = "ColinCee/homelab"
+API = "https://api.github.com"
 OWNER_ID = 11246116
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 OUT = Path("/var/lib/homelab-metrics/ci-times.prom")
@@ -133,10 +135,13 @@ def log_spans(trace: str, job: str, log: str) -> list[Json]:
     """The job's phases from its log, to the millisecond: setup, each step (by its first line), the
     post-job steps, and inside them each mise task, its commands and pytest's start-up (until
     "bringing up nodes")."""
-    lines = []
-    for raw in log.splitlines():
-        if m := LOG_LINE.match(raw):
-            lines.append((log_time(m.group(1)), COLOUR.sub("", m.group(2))))
+    lines: list[tuple[float, str]] = []
+    for raw in log.split("\n"):
+        if m := LOG_LINE.match(raw.rstrip("\r")):
+            try:
+                lines.append((log_time(m.group(1)), COLOUR.sub("", m.group(2))))
+            except ValueError:
+                continue
     if not lines:
         return []
     end = lines[-1][0]
@@ -181,6 +186,10 @@ def log_spans(trace: str, job: str, log: str) -> list[Json]:
         else:
             spans.append(span(trace, tid, phase(start), f"task: {task}", start, at, source="log"))
             del tasks[task]
+    for task, (cid, began, said) in commands.items():
+        spans.append(span(trace, cid, tasks[task][0], said, began, end, source="log", ended="no"))
+    for task, (tid, start) in tasks.items():
+        spans.append(span(trace, tid, phase(start), f"task: {task}", start, end, ended="no"))
     return spans
 
 
@@ -220,7 +229,6 @@ def trace(
         spans.append(
             span(tid, jid, root, name, job_start, job_end, runner=runner, conclusion=conclusion)
         )
-        spans += log_spans(tid, jid, (logs or {}).get(int(job["id"]), ""))
         for step in job.get("steps", []):
             if not (w := window(step)):
                 continue
@@ -242,6 +250,9 @@ def trace(
             {"key": "repository", "value": {"stringValue": REPO}},
         ]
     }
+    for job, _ in timed:
+        jid = span_id(run["id"], attempt, job["id"])
+        spans += log_spans(tid, jid, (logs or {}).get(int(job["id"]), ""))
     scope = {"spans": spans[:SPANS_MAX]}
     return {"resourceSpans": [{"resource": resource, "scopeSpans": [scope]}]}
 
@@ -329,7 +340,7 @@ def poll(
 def github(token: str) -> Get:
     def get(path: str) -> Any:  # noqa: ANN401 - GitHub's JSON, read as each endpoint documents it
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        request = urllib.request.Request(f"https://api.github.com{path}", headers=headers)
+        request = urllib.request.Request(f"{API}{path}", headers=headers)
         for tries_left in (1, 0):
             try:
                 with urllib.request.urlopen(request, timeout=30) as response:
@@ -347,29 +358,45 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def github_logs(token: str) -> Logs:
-    """A job's log: GitHub answers with a signed link to it, fetched without the token."""
+# Where GitHub's signed log links point; a test points it at its own server.
+SIGNED = "https://"
+LOG_ERRORS = (OSError, ValueError, http.client.HTTPException)
 
-    def logs(job_id: int) -> str:
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        url = f"https://api.github.com/repos/{REPO}/actions/jobs/{job_id}/logs"
-        opener = urllib.request.build_opener(_NoRedirect)
+
+def github_logs(token: str) -> Logs:
+    """A job's log: GitHub answers with a signed link to it, fetched without the token. "" when the
+    log is gone (404, 410); any other failure, after one retry, stops the pass as GitHub's other
+    failures do, so the run is traced next pass with its log."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+
+    def fetch(job_id: int) -> str:
+        url = f"{API}/repos/{REPO}/actions/jobs/{job_id}/logs"
+        request = urllib.request.Request(url, headers=headers)
         try:
-            opener.open(urllib.request.Request(url, headers=headers), timeout=30)
+            urllib.request.build_opener(_NoRedirect).open(request, timeout=30).close()
             return ""
         except urllib.error.HTTPError as e:
-            link = e.headers.get("Location") if e.code == 302 else None
-        except OSError:
+            if e.code in (404, 410):
+                return ""
+            if e.code != 302:
+                raise
+            link = e.headers.get("Location") or ""
+        if not link.startswith(SIGNED):
             return ""
-        if not link:
-            return ""
+        with urllib.request.urlopen(link, timeout=30) as response:
+            body = response.read(LOG_MAX)
+        assert isinstance(body, bytes)
+        return body.decode("utf-8", "replace")
+
+    def logs(job_id: int) -> str:
         try:
-            with urllib.request.urlopen(link, timeout=30) as response:
-                body = response.read(LOG_MAX)
-                assert isinstance(body, bytes)
-            return body.decode("utf-8", "replace")
-        except OSError:
-            return ""
+            return fetch(job_id)
+        except LOG_ERRORS:
+            time.sleep(2)
+        try:
+            return fetch(job_id)
+        except LOG_ERRORS as e:
+            raise OSError(f"log of job {job_id}: {e}") from e
 
     return logs
 
