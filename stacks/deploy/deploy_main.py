@@ -22,7 +22,8 @@ MARKER = HOME / ".local/state/homelab/last-deployed"
 METRICS = Path("/var/lib/homelab-metrics/main-deploy.prom")
 # A flood of rings costs one fetch per window.
 FETCH_EVERY_SECONDS = 10
-# Merges landing during a deploy are deployed in the same run, as GitHub sends no ring twice.
+# Merges landing during a deploy are deployed in the same run: their ring arrives while this service
+# is still active, and systemd does not start it again for it.
 MAX_ROUNDS = 5
 
 Run = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -103,8 +104,10 @@ def deploy_main(host: Host) -> int:
             print(f"deploy of {target} failed with {code}", flush=True)
             return code
         print(f"deployed {target}", flush=True)
+        # deploy.yaml resets the checkout outside deploy.py's lock while both deploy.
+        reset_meanwhile = host.git("rev-parse", "HEAD") != target
         latest = host.fetch_main()
-        if latest == target:
+        if latest == target and not reset_meanwhile:
             return 0
         target = latest
     host.record(behind=True)

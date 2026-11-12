@@ -526,8 +526,9 @@ groups:
           unit: ''
           harm: 'A merged fix or update is not running on the Beelink, and later merges wait behind it.'
           action: >-
-            Run `journalctl --user -u deploy-main -n 50` on the Beelink: a failed stack names itself, and "refused"
-            means main no longer contains the deployed commit. Retry with `systemctl --user start deploy-main`.
+            Run `journalctl --user -u deploy-main -n 50` on the Beelink: a failed stack names itself. "refused" means
+            main no longer contains the deployed commit; if you rewrote main, write its commit to
+            `~/.local/state/homelab/last-deployed`. Retry with `systemctl --user start deploy-main`.
           dashboard: *home
           value: '{{ $value }}'
       # unattended-upgrades installs security updates each morning (apt/52unattended-upgrades-local), so some waiting

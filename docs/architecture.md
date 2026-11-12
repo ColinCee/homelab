@@ -7,16 +7,16 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## Deploys
 
-- **Merging is deploying.** GitHub's push webhook rings the [doorbell](../stacks/deploy/doorbell.py) through the
-  tunnel. [`deploy-main`](../stacks/deploy/deploy_main.py), run by the ring and every 15 minutes, fetches `main`,
-  refuses one that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for the stacks changed
-  since the last full deploy ([`deploy.py`](../scripts/deploy.py)) and those reading a changed secret, until `main`
-  stops moving. A forged ring deploys nothing new. Until it goes,
-  [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy runner also writes `secrets/` and deploys; `deploy.py`
-  runs one deploy at a time.
-- **Who may deploy.** Whoever lands a commit on `main`. Until the deploy runner goes, the root-owned
-  [runner guard](../scripts/runner_job_guard.py) refuses its every job but `deploy.yaml` from `main` by `ColinCee` or
-  `renovate[bot]`; a change to it takes a reinstall ([recovery](recovery.md#runner-guard)).
+- **Merging is deploying.** GitHub's push webhook (no secret) rings the [doorbell](../stacks/deploy/doorbell.py)
+  through the tunnel's `/ring` route to `http://doorbell:8080`, both set by hand.
+  [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
+  that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
+  full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. A forged
+  ring deploys nothing new. Until it goes, [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy runner
+  also renders `secrets/` and deploys, one at a time.
+- **Who may deploy.** Whoever lands a commit on `main`. The root-owned [runner guard](../scripts/runner_job_guard.py)
+  refuses every deploy-runner job but `deploy.yaml` from `main` by `ColinCee` or `renovate[bot]`; changing it takes a
+  reinstall ([recovery](recovery.md#runner-guard)).
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
     the service needs it;
@@ -86,7 +86,7 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 | The Beelink off, or alerting stopped | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io emails and posts when it stops |
 | A rule failing | "An alert rule is failing" |
 | Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
-| A deploy failed | GitHub's email |
+| A deploy failed | "Main not deployed" |
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and

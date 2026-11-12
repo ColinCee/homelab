@@ -13,6 +13,8 @@ from pathlib import Path
 
 RING = Path(os.environ.get("RING_FILE", "/ring/rung"))
 PORT = 8080
+# GitHub's push payloads; read only so closing the socket does not reset the reply away.
+BODY_MAX = 1 << 20
 
 
 class Doorbell(BaseHTTPRequestHandler):
@@ -20,11 +22,18 @@ class Doorbell(BaseHTTPRequestHandler):
     timeout = 5
 
     def do_POST(self) -> None:
+        length = min(int(self.headers.get("Content-Length") or 0), BODY_MAX)
+        self.rfile.read(length)
         if self.path != "/ring":
             self._answer(404)
             return
-        # Its content changes, so PathModified fires even on a bind mount.
-        RING.write_text(f"{time.time()}\n", encoding="utf-8")
+        try:
+            # Its content changes, so PathModified fires even on a bind mount.
+            RING.write_text(f"{time.time()}\n", encoding="utf-8")
+        except OSError as e:
+            print(f"cannot ring: {e}", flush=True)
+            self._answer(500)
+            return
         self._answer(202)
 
     def do_GET(self) -> None:

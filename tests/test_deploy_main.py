@@ -89,6 +89,21 @@ def test_a_merge_landing_mid_deploy_is_deployed_in_the_same_run(lab: Lab) -> Non
     assert lab.deploys == [(second, None), (third, second)]
 
 
+def test_a_checkout_reset_to_an_older_commit_mid_deploy_is_deployed_again(lab: Lab) -> None:
+    first = git(lab.dev, "rev-parse", "HEAD")
+    second = lab.merge("second")
+    resets = [first]
+
+    def reset_once() -> None:
+        if resets:
+            git(lab.checkout, "reset", "-q", "--hard", resets.pop())
+
+    lab.on_deploy = reset_once
+
+    assert deploy_main.deploy_main(lab.host()) == 0
+    assert [head for head, _ in lab.deploys] == [second, second]
+
+
 def test_a_ring_with_nothing_new_still_runs_the_deploy_for_changed_secrets(lab: Lab) -> None:
     head = git(lab.dev, "rev-parse", "HEAD")
     lab.marker.write_text(head + "\n")
@@ -136,7 +151,8 @@ def bell(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[int,
 
 def ask(port: int, method: str, path: str) -> int:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-    connection.request(method, path, body=b'{"ref": "anything"}')
+    # As big as a real push payload: an unread body would reset the reply.
+    connection.request(method, path, body=b"x" * 25_000)
     return connection.getresponse().status
 
 

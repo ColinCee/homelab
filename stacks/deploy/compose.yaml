@@ -6,11 +6,15 @@ services:
     restart: unless-stopped
     command: ["python3", "-I", "/doorbell.py"]
     # Root in the container, with no capabilities: Docker creates the ring folder root-owned on first deploy,
-    # before deploy-main's units exist, and only root may write to it.
+    # before deploy-main's units exist, and only root may write to it. Do not create it by hand: owned by colin,
+    # root without capabilities cannot write there, and every ring answers 500.
     read_only: true
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    # A public endpoint: a flood of slow clients cannot take the host's memory or processes.
+    mem_limit: 64m
+    pids_limit: 32
     volumes:
       - ./doorbell.py:/doorbell.py:ro
       - /home/colin/.local/state/homelab/ring:/ring
@@ -23,3 +27,5 @@ networks:
   # cloudflared (stacks/flight-tracker) joins it; nothing else reaches the doorbell.
   doorbell:
     name: deploy-doorbell
+    # The doorbell needs no way out.
+    internal: true
