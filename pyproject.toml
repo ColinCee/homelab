@@ -29,6 +29,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 # Code that runs on the host's /usr/bin/python3 (3.12): the installer, updater and guard, which must not
 # depend on homelab-python3, and the deploy scripts, which need that python's apt python3-yaml.
 [tool.ruff.per-file-target-version]
+"scripts/ci.py" = "py312" # its ghcr-login step runs on the deploy runner's system Python
 "scripts/deploy.py" = "py312"
 "scripts/render_secrets.py" = "py312"
 "scripts/runner_job_guard.py" = "py312"

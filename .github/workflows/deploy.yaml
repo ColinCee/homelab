@@ -65,7 +65,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
-        run: /usr/local/bin/homelab-python3 scripts/ci.py ghcr-login
+        run: python3 scripts/ci.py ghcr-login
 
       # Only stacks changed since the last full deploy (all when shared deploy files changed);
       # the marker lives outside the checkout, which each deploy resets. This push's own stacks
