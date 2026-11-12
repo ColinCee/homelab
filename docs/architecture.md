@@ -88,10 +88,10 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 | A deploy failed | GitHub's email |
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
-says what to do; anything else is a dashboard number. Rules are in
-[`rules.yml`](../stacks/observability/prometheus/rules.yml), posted by
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #uptime. Alertmanager publishes no
-port, since its API takes silences without a login: `docker exec observability-alertmanager-1 amtool alert query
+says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
+its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #uptime. Alertmanager has no port
+(its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
 
 | Level | When | Post |
@@ -100,12 +100,12 @@ port, since its API takes silences without a login: `docker exec observability-a
 | `week` | Something is running out or slipping | No mention, again daily |
 
 - A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
-  means the number recovered, not that anything was fixed.
+  means the number recovered.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
-  arm, and not those of a job that may not have run yet.
+  arm, except a job's that may not have run yet.
 - Noise budget: at most one post a day over 14 days. Before adding or loosening a rule, replay it:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
-  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink: those post as real.
+  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink.
 
 Traps:
 
