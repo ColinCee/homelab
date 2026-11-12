@@ -11,6 +11,11 @@ on:
 permissions:
   contents: read
 
+# A pull request's newer push or label change cancels its older run, freeing a CI VM; each main push runs to the end.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   check:
     # Colin's own pushes and pull requests from this repo run in the homelab-fc VMs, everyone else's (forks, Renovate)
@@ -23,24 +28,31 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           # The pull request's merge commit and its base, to diff them.
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
+
       # Each step's logic is in scripts/ci.py, which says why. A rule judging a pull request comes from its base commit.
       - name: Check for an image-pin-only change
         id: pins
         if: github.event_name == 'pull_request'
         run: python3 scripts/ci.py pins-only
+
       - name: Check versions.env hashes
         if: github.event_name == 'pull_request'
         run: python3 scripts/ci.py versions-hash
+
       - name: Check the test time limits
         if: github.event_name == 'pull_request'
         run: python3 scripts/ci.py time-limits
+
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: python3 scripts/ci.py validate-changed-compose
+
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5
         if: steps.pins.outputs.only != 'true' && runner.environment == 'github-hosted'
+
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
       # so each run reuses them instead of compiling for ~10 seconds.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -48,6 +60,7 @@ jobs:
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', 'mise.toml') }}
+
       # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
       - name: Install tools from the cache disk
         if: steps.pins.outputs.only != 'true' && runner.environment == 'self-hosted'
@@ -55,18 +68,22 @@ jobs:
           # Downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address shares.
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci.py vm-tools
+
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'
         env:
           TEST_TIMES: ${{ runner.temp }}/test-times.json
         run: mise run check
+
       # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
         if: always()
         run: python3 scripts/ci.py slowest-tests
+
       - name: Check whether the cache disk would change
         id: cache
         if: runner.environment == 'self-hosted'
         run: python3 scripts/ci.py cache-changed
+
       - uses: ./.github/actions/fc-cache
         if: steps.cache.outputs.changed == 'true'

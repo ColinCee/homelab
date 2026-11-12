@@ -1,0 +1,4 @@
+rules:
+  # The `$/...` syntax it asks for is one actionlint does not read yet.
+  self-repository:
+    disable: true
