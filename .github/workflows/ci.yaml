@@ -65,7 +65,8 @@ jobs:
         run: |
           du -sh /cache/* /cache/mise/installs/* 2>/dev/null | sort -h | tail -15
           s=$(date +%s%N)
-          find /cache/venv /cache/mise/installs /usr/libexec/docker /usr/bin/docker /usr/bin/git -type f -print0 2>/dev/null | xargs -0 -P4 cat > /dev/null
+          find /cache/venv /cache/uv /cache/mise/installs /usr/libexec/docker /usr/bin/docker -type f -print0 2>/dev/null \
+            | xargs -0 -P4 cat > /dev/null
           echo "prewarm read: $(( ($(date +%s%N)-s)/1000000 )) ms"
           free -m | head -2
 
