@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -33,8 +34,12 @@ def _make_stack(repo_root: Path, name: str, *, with_env: bool = False) -> Path:
     return stack_dir
 
 
-def _recording_runner(fail_when: str | None = None):
-    calls: list[tuple[list[str], dict[str, object]]] = []
+# Each command and the keyword arguments it was run with, as subprocess.run takes them.
+type Calls = list[tuple[list[str], dict[str, Any]]]
+
+
+def _recording_runner(fail_when: str | None = None) -> tuple[deploy.CommandRunner, Calls]:
+    calls: Calls = []
 
     def runner(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         calls.append((command, kwargs))
@@ -473,13 +478,15 @@ _COMPOSE_CONFIG = {
 }
 
 
-def _describing_runner():
+def _describing_runner() -> tuple[deploy.CommandRunner, Calls]:
     runner, calls = _recording_runner()
 
     def describe(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
         if "--format" in command:
             stack = Path(command[command.index("-f") + 1]).parent.name
-            return subprocess.CompletedProcess(command, 0, json.dumps(_COMPOSE_CONFIG[stack]))
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps(_COMPOSE_CONFIG[stack]).encode()
+            )
         return runner(command, **kwargs)
 
     return describe, calls
@@ -501,7 +508,7 @@ def _change(repo_root: Path, *names: str) -> str:
     return before
 
 
-def _up_order(calls) -> list[str]:
+def _up_order(calls: Calls) -> list[str]:
     return [Path(c[c.index("-f") + 1]).parent.name for c, _ in calls if "up" in c]
 
 

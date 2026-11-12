@@ -167,7 +167,7 @@ def update(host: Host, args: Sequence[str], env: Mapping[str, str], now: float) 
     want = args[0] if args else ""
     if not want:
         say(USAGE, error=True)
-        return 127
+        return 1
     follow = want == "--follow"
     fd = lock(host, follow)
     if fd is None:

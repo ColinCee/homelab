@@ -14,6 +14,7 @@ from __future__ import annotations
 import fcntl
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -24,9 +25,6 @@ from pathlib import Path
 from typing import Protocol
 
 HERE = Path(__file__).resolve().parent
-# The checkout's scripts/, for versions.env read as the shell reads it.
-sys.path.insert(0, str(HERE.parent))
-from scripts.ci import versions  # noqa: E402
 
 SERVICE = "homelab-ci-supervisor.service"
 DEST = "/usr/local/lib/homelab-ci"
@@ -83,6 +81,17 @@ class Host:
 
     def path(self, absolute: str) -> Path:
         return self.root / absolute.lstrip("/")
+
+
+def versions(text: str) -> dict[str, str]:
+    """versions.env's NAME=value lines, as the shell reads them (as scripts/ci.py's `versions`,
+    kept here so the installer imports nothing from the checkout)."""
+    found: dict[str, str] = {}
+    for token in shlex.split(text, comments=True):
+        name, _, value = token.partition("=")
+        if re.fullmatch(r"[A-Z0-9_]+", name):
+            found[name] = value
+    return found
 
 
 def slot_count(env: Mapping[str, str], host: Host) -> int:

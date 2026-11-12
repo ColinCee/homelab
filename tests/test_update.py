@@ -2,9 +2,12 @@
 root: what is installed and rebuilt when, giving up, and the commit marker written last."""
 
 import importlib.util
+import os
+import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -84,7 +87,7 @@ class Host:
         check: bool = True,
         capture: bool = False,
         quiet: bool = False,
-        env=None,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         if command[0] == "git":
             return subprocess.run(
@@ -99,7 +102,7 @@ class Host:
         if name in ("install-host.sh", "build-rootfs.sh"):
             self.seen.append(self.installed)
         if name == "install-host.sh":
-            self.calls[-1] = [*command, f"REASON={env['REASON']}"]
+            self.calls[-1] = [*command, f"REASON={(env or {}).get('REASON')}"]
         out = git(self.origin, "rev-parse", "HEAD").strip() + "\trefs/heads/main\n"
         code = self.codes.get(name, 0)
         if check and code:
@@ -196,7 +199,9 @@ def test_a_failed_install_keeps_the_old_commit_and_gives_up_after_two(host: Host
     assert (host.root / "var/lib/homelab-ci/update-failed").read_text().split()[:2] == [want, "2"]
 
 
-def test_a_failed_image_gives_up_after_two_and_jobs_keep_the_old_one(host: Host, capsys) -> None:
+def test_a_failed_image_gives_up_after_two_and_jobs_keep_the_old_one(
+    host: Host, capsys: pytest.CaptureFixture[str]
+) -> None:
     want = commit(host.origin, "ci-runner/rootfs/Dockerfile", "Image (#30)")
     host.at(want, built=host.first)
     host.codes["build-rootfs.sh"] = 1
@@ -237,7 +242,9 @@ def test_the_commit_marker_is_written_last(host: Host) -> None:
     assert host.installed == want
 
 
-def test_a_load_test_that_will_not_start_waits_for_the_next_pass(host: Host, capsys) -> None:
+def test_a_load_test_that_will_not_start_waits_for_the_next_pass(
+    host: Host, capsys: pytest.CaptureFixture[str]
+) -> None:
     host.at(host.first)
     host.codes["start-load-test-if-due"] = 1
 
@@ -255,7 +262,7 @@ def test_follow_takes_main(host: Host) -> None:
     assert host.installed == want
 
 
-def test_follow_stays_on_a_pinned_commit(host: Host, capsys) -> None:
+def test_follow_stays_on_a_pinned_commit(host: Host, capsys: pytest.CaptureFixture[str]) -> None:
     (host.root / "etc/homelab-ci/pinned").write_text(f"{host.first}\n")
 
     assert host.update("--follow") == 0
@@ -289,7 +296,9 @@ def test_an_older_commit_needs_rollback(host: Host) -> None:
     assert (host.root / "etc/homelab-ci/pinned").read_text() == f"{host.first}\n"
 
 
-def test_follow_gives_way_to_a_running_update(host: Host, capsys) -> None:
+def test_follow_gives_way_to_a_running_update(
+    host: Host, capsys: pytest.CaptureFixture[str]
+) -> None:
     import fcntl
 
     with (host.root / "run/homelab-ci-update.lock").open("w") as lock:
@@ -301,4 +310,21 @@ def test_follow_gives_way_to_a_running_update(host: Host, capsys) -> None:
 
 
 def test_no_argument_is_a_usage_error(host: Host) -> None:
-    assert host.update() == 127
+    assert host.update() == 1
+
+
+@pytest.mark.skipif(
+    not Path("/usr/bin/python3").exists(), reason="the wrapper runs /usr/bin/python3"
+)
+def test_the_installed_copy_runs_alone(tmp_path: Path) -> None:
+    # Installed alone in /usr/local/lib/homelab-ci: an import from the checkout would fail there.
+    for name in ("update.py", "update.sh"):
+        shutil.copy(CI_RUNNER / name, tmp_path / name)
+
+    result = subprocess.run(
+        ["sh", str(tmp_path / "update.sh")], cwd=tmp_path, capture_output=True, text=True
+    )
+
+    assert result.returncode == 1
+    message = "update.sh: usage:" if os.geteuid() == 0 else "run with sudo"
+    assert result.stderr.startswith(message), result.stderr

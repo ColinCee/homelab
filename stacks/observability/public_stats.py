@@ -54,7 +54,7 @@ class StatsError(Exception):
     pass
 
 
-def get_json(url: str, login: str | None = None) -> Any:
+def get_json(url: str, login: str | None = None) -> Any:  # noqa: ANN401 - the server's JSON
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     if login:
         # Never passed on by a redirect, which could lead off the stack's network.

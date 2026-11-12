@@ -24,7 +24,7 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 
 [tool.ruff.per-file-target-version]
 "scripts/tailscale_policy.py" = "py312"

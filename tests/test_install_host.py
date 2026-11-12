@@ -1,6 +1,7 @@
 """Installing the CI host (ci-runner/install_host.py): what restarts when, and what goes where."""
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
@@ -101,7 +102,9 @@ def restarted(recorder: Recorder) -> bool:
     return recorder.ran("systemctl", "stop", SERVICE)
 
 
-def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(root: Path, capsys) -> None:
+def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
+    root: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     recorder = Recorder(active=False)
 
     install(root, recorder)
@@ -124,7 +127,7 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(root: Path
 
 
 def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
-    root: Path, capsys
+    root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     recorder = installed_host(root)
     capsys.readouterr()
@@ -248,3 +251,22 @@ def test_a_bad_firecracker_download_stops_before_installing_it(root: Path) -> No
 
     assert not recorder.installed(root / "usr/local/bin/firecracker")
     assert not any(c[0] == "useradd" for c in recorder.calls)
+
+
+def test_the_installer_imports_nothing_from_the_checkout(tmp_path: Path) -> None:
+    # A break in scripts/ must not stop the installer that would install its fix.
+    shutil.copy(CI_RUNNER / "install_host.py", tmp_path / "install_host.py")
+    load = f"import sys; sys.path.insert(0, {str(tmp_path)!r}); import install_host"
+
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", load], cwd=tmp_path, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    if os.geteuid() != 0:
+        result = subprocess.run(
+            [sys.executable, "-I", str(tmp_path / "install_host.py")],
+            capture_output=True,
+            text=True,
+        )
+        assert (result.returncode, result.stderr) == (1, "run with sudo\n")
