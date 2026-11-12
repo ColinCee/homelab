@@ -12,6 +12,11 @@
   "vulnerabilityAlerts": {
     "minimumReleaseAge": "0 days"
   },
+  "lockFileMaintenance": {
+    "description": "pyproject.toml asks for ranges (ruff>=…), so only a weekly lock refresh moves uv.lock to the latest releases: without it ty sat 7 months behind.",
+    "enabled": true,
+    "schedule": ["before 6am on monday"]
+  },
   "packageRules": [
     {
       "matchCategories": ["docker"],

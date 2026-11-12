@@ -1,6 +1,7 @@
 """The CI workflows' steps (scripts/ci.py): the rules they apply and what they tell later steps."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -95,7 +96,7 @@ def test_only_a_pin_only_change_tells_the_next_steps(
 def test_the_registry_login_stays_in_the_job_s_temp_folder_and_takes_the_token_on_stdin(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[tuple[list[str], dict]] = []
+    calls: list[tuple[list[str], dict[str, Any]]] = []
     monkeypatch.setattr(
         ci.subprocess,
         "run",

@@ -4,6 +4,7 @@ docker-socket-proxy). A secret is a file under /run/secrets (scripts/render_secr
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -23,7 +24,7 @@ def _plain(loader: yaml.SafeLoader, _tag: str, node: yaml.Node) -> object:
         return loader.construct_mapping(node, deep=True)
     if isinstance(node, yaml.SequenceNode):
         return loader.construct_sequence(node, deep=True)
-    return loader.construct_scalar(node)  # ty: ignore[invalid-argument-type]
+    return loader.construct_scalar(node)
 
 
 ComposeLoader.add_multi_constructor("!", _plain)
@@ -31,6 +32,12 @@ ComposeLoader.add_multi_constructor("!", _plain)
 
 def load(path: Path) -> object:
     return yaml.load(path.read_text(encoding="utf-8"), ComposeLoader)
+
+
+def load_compose(path: Path) -> dict[str, Any]:
+    spec = yaml.load(path.read_text(encoding="utf-8"), ComposeLoader)
+    assert isinstance(spec, dict), path
+    return spec
 
 
 COMPOSE_FILES = sorted(
@@ -49,14 +56,14 @@ def secret_like(name: str) -> bool:
     return bool(SECRET_NAME.search(name)) and not FILE_OPTION.search(name)
 
 
-def environment(service: dict) -> dict[str, str]:
+def environment(service: dict[str, Any]) -> dict[str, str]:
     env = service.get("environment") or {}
     if isinstance(env, list):
         env = dict(item.split("=", 1) if "=" in item else (item, "") for item in env)
     return {name: str(value) for name, value in env.items()}
 
 
-def problems(compose: dict) -> list[str]:
+def problems(compose: dict[str, Any]) -> list[str]:
     found = []
     for name, service in compose.get("services", {}).items():
         if "env_file" in service:
@@ -74,7 +81,7 @@ def problems(compose: dict) -> list[str]:
 
 @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: str(p.relative_to(STACKS)))
 def test_no_secret_in_a_containers_environment(path: Path) -> None:
-    assert problems(load(path)) == []
+    assert problems(load_compose(path)) == []
 
 
 @pytest.mark.parametrize(
@@ -89,7 +96,7 @@ def test_no_secret_in_a_containers_environment(path: Path) -> None:
         {"env_file": [".env"]},
     ],
 )
-def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict) -> None:
+def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict[str, Any]) -> None:
     assert problems({"services": {"s": service}})
 
 
@@ -98,8 +105,7 @@ def test_each_secret_file_a_stack_mounts_is_one_the_deploy_writes_and_each_is_us
     assert "restic_password" in written
     mounted = set()
     for compose in STACKS.glob("*/compose.yaml"):
-        spec = load(compose)
-        assert isinstance(spec, dict)
+        spec = load_compose(compose)
         for secret in (spec.get("secrets") or {}).values():
             folder, _, name = secret["file"].rpartition("/")
             assert folder == "../../secrets", compose

@@ -24,7 +24,7 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 
 [tool.ruff.per-file-target-version]
 "scripts/tailscale_policy.py" = "py312"
@@ -37,6 +37,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ".github/actions/fc-cache/fc_cache.py" = "py312"
 "scripts/pin_only.py" = "py312"
 "scripts/versions_hash.py" = "py312"
+"ci-runner/install_host.py" = "py312"
+"ci-runner/update.py" = "py312"
 "ci-runner/vm_disks.py" = "py312"
 "ci-runner/run_vm.py" = "py312"
 "ci-runner/stop_vms.py" = "py312"
@@ -52,3 +54,13 @@ pythonpath = [".", "ci-runner"]
 [tool.ty.environment]
 # run_vm.py and stop_vms.py import vm_disks.py from their own folder.
 extra-paths = ["ci-runner"]
+
+# Kaizen's standard (standards.md, Types): no untyped value gets through, and a warning fails the check.
+[tool.ty.rules]
+missing-type-argument = "error"
+unsound-assignment = "error"
+unsound-return-statement = "error"
+unsound-yield = "error"
+
+[tool.ty.terminal]
+error-on-warning = true

@@ -1,3 +1,6 @@
+from pathlib import Path
+from typing import Any
+
 import pytest
 
 from scripts import runner_job_guard as guard
@@ -182,7 +185,7 @@ def test_a_crafted_workflow_name_cannot_inject_a_workflow_command(
 PUBLIC = {"repo": "ColinCee/homelab", "public": True}
 
 
-def _pr(source: str) -> dict:
+def _pr(source: str) -> dict[str, Any]:
     return {"pull_request": {"head": {"repo": {"full_name": source}}}}
 
 
@@ -194,7 +197,9 @@ def _pr(source: str) -> dict:
         (_env(GITHUB_EVENT_NAME="pull_request"), _pr("ColinCee/homelab")),
     ],
 )
-def test_a_public_repos_vm_takes_colins_own_jobs(env: dict[str, str], event: dict) -> None:
+def test_a_public_repos_vm_takes_colins_own_jobs(
+    env: dict[str, str], event: dict[str, Any]
+) -> None:
     assert guard.decide_vm(env, PUBLIC, event).allowed
 
 
@@ -218,7 +223,7 @@ def test_a_public_repos_vm_takes_colins_own_jobs(env: dict[str, str], event: dic
     ],
 )
 def test_a_public_repos_vm_refuses_every_other_job(
-    env: dict[str, str], serves: dict, event: dict
+    env: dict[str, str], serves: dict[str, Any], event: dict[str, Any]
 ) -> None:
     assert not guard.decide_vm(env, serves, event).allowed
 
@@ -232,7 +237,7 @@ def test_a_private_repos_vm_takes_any_job_of_its_repo_only() -> None:
 
 
 def test_the_vm_policy_reads_what_the_vm_serves_and_the_event(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     serves, event = tmp_path / "serves.json", tmp_path / "event.json"
     serves.write_text('{"repo": "ColinCee/homelab", "public": true}')

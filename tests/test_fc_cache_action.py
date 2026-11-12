@@ -28,7 +28,7 @@ def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path) -> None:
+def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path: Path) -> None:
     (tmp_path / "cache" / "uv").mkdir(parents=True)
     (tmp_path / "cache" / "uv" / "wheel").write_text("w")
     (tmp_path / "work").mkdir()
@@ -48,7 +48,7 @@ def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path) -> None:
             assert [m.name for m in tar] == ["uv", "uv/wheel"]
 
 
-def test_fails_without_an_outbox_disk(tmp_path) -> None:
+def test_fails_without_an_outbox_disk(tmp_path: Path) -> None:
     (tmp_path / "cache.tar").write_bytes(b"")
     (tmp_path / "vdb").write_bytes(b"\0" * 4096)
 
@@ -68,7 +68,7 @@ def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProce
     )
 
 
-def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_path) -> None:
+def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_path: Path) -> None:
     cache, workspace = tmp_path / "cache", tmp_path / "work"
     (cache / "uv").mkdir(parents=True)
     (cache / "uv" / "wheel").write_text("w")
@@ -96,7 +96,7 @@ def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_
     assert not (root / "lost+found").exists()
 
 
-def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_path) -> None:
+def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_path: Path) -> None:
     # The cache disk unpacks web/node_modules to /cache/web; packing /cache/web as well
     # put it in every later cache twice.
     cache, workspace = tmp_path / "cache", tmp_path / "work"
@@ -115,7 +115,7 @@ def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_pa
 
 
 @pytest.mark.skipif(os.geteuid() == 0, reason="root reads everything")
-def test_leaves_out_what_it_cannot_read(tmp_path) -> None:
+def test_leaves_out_what_it_cannot_read(tmp_path: Path) -> None:
     cache, workspace = tmp_path / "cache", tmp_path / "work"
     (cache / "npm").mkdir(parents=True)
     (cache / "npm" / "secret").write_text("x")
@@ -133,7 +133,7 @@ def test_leaves_out_what_it_cannot_read(tmp_path) -> None:
         assert tar.getnames() == ["npm"]
 
 
-def test_packs_an_empty_cache(tmp_path) -> None:
+def test_packs_an_empty_cache(tmp_path: Path) -> None:
     (tmp_path / "cache").mkdir()
     (tmp_path / "work").mkdir()
 
@@ -142,7 +142,7 @@ def test_packs_an_empty_cache(tmp_path) -> None:
         assert tar.getnames() == []
 
 
-def test_fails_when_a_named_workspace_path_is_missing(tmp_path) -> None:
+def test_fails_when_a_named_workspace_path_is_missing(tmp_path: Path) -> None:
     (tmp_path / "cache").mkdir()
     (tmp_path / "work").mkdir()
 
@@ -153,7 +153,7 @@ def test_fails_when_a_named_workspace_path_is_missing(tmp_path) -> None:
 
 
 def test_a_missing_cache_folder_is_an_empty_one_and_the_workspace_paths_still_pack(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     (tmp_path / "work" / "web").mkdir(parents=True)
     (tmp_path / "work" / "web" / "lock.json").write_text("{}")
@@ -162,7 +162,7 @@ def test_a_missing_cache_folder_is_an_empty_one_and_the_workspace_paths_still_pa
         assert tar.getnames() == ["web/lock.json"]
 
 
-def test_a_hidden_cache_folder_is_left_out(tmp_path) -> None:
+def test_a_hidden_cache_folder_is_left_out(tmp_path: Path) -> None:
     (tmp_path / "cache" / ".hidden").mkdir(parents=True)
     (tmp_path / "cache" / "uv").mkdir()
     (tmp_path / "work").mkdir()
@@ -171,7 +171,7 @@ def test_a_hidden_cache_folder_is_left_out(tmp_path) -> None:
         assert tar.getnames() == ["uv"]
 
 
-def test_the_action_never_fails_the_job_and_leaves_no_tar(tmp_path) -> None:
+def test_the_action_never_fails_the_job_and_leaves_no_tar(tmp_path: Path) -> None:
     # The pack works, the save finds no outbox disk: a warning, never a failed check.
     (tmp_path / "cache" / "uv").mkdir(parents=True)
     env = {

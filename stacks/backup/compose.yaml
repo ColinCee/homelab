@@ -4,9 +4,14 @@ services:
   backup:
     container_name: backup
     hostname: beelink
-    image: restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510
+    build:
+      context: .
+      dockerfile: backup.Dockerfile
+    image: homelab/backup
+    # Built here only: never pulled, so no registry image of that name can stand in.
+    pull_policy: build
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/backup.sh"]
+    entrypoint: ["python3", "-I", "/backup.py"]
     # Passes SIGTERM on (docs/architecture.md, "Deploys").
     init: true
     command: ["loop"]
@@ -21,7 +26,7 @@ services:
       TZ: Etc/UTC
       BACKUP_TIME: "02:30"
       RESTIC_PASSWORD_FILE: /run/secrets/restic_password
-      # Written by backup.sh at start from the R2 secrets, so a `docker exec backup restic ...` finds them too.
+      # Written by backup.py at start from the R2 secrets, so a `docker exec backup restic ...` finds them too.
       RESTIC_REPOSITORY_FILE: /tmp/restic_repository
       AWS_SHARED_CREDENTIALS_FILE: /tmp/r2_credentials
       RESTIC_CACHE_DIR: /cache
@@ -42,7 +47,7 @@ services:
     tmpfs:
       - /tmp
     volumes:
-      - ./backup.sh:/backup.sh:ro
+      - ./backup.py:/backup.py:ro
       - restic-cache:/cache
       # Read by Alloy's textfile collector (observability stack).
       - /var/lib/homelab-metrics:/metrics

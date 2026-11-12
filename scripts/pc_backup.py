@@ -31,6 +31,7 @@ import time
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 DEFAULT_ROOT = Path(r"D:\Claude Projects")
 DEFAULT_TO = "beelink"
@@ -131,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="pack, but send nothing")
     args = parser.parse_args(argv)
-    report: dict = {"started": time.time(), "to": args.to, "projects": {}}
+    report: dict[str, Any] = {"started": time.time(), "to": args.to, "projects": {}}
     failed = False
     with tempfile.TemporaryDirectory(prefix="pc-backup-") as scratch:
         for project in manifests(args.root):

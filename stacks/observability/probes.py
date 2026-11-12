@@ -20,7 +20,7 @@ def http_status(url: str, host: str | None = None) -> int:
     request = urllib.request.Request(url, headers={"Host": host} if host else {})
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status
+            return int(response.status)
     except urllib.error.HTTPError as error:
         return error.code
     except OSError:

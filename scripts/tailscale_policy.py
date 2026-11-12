@@ -4,6 +4,7 @@
 import argparse
 import difflib
 import getpass
+import http.client
 import json
 import os
 import ssl
@@ -14,6 +15,7 @@ import urllib.parse
 import urllib.request
 import warnings
 from pathlib import Path
+from typing import IO
 
 # The policy lives in the private notes checkout beside this one; its folder was renamed once.
 NOTES = Path(__file__).resolve().parents[2] / "notes"
@@ -29,7 +31,7 @@ class PolicyError(Exception):
     pass
 
 
-def default_policy():
+def default_policy() -> Path:
     for path in POLICY_FILES:
         if path.exists():
             return path
@@ -37,11 +39,19 @@ def default_policy():
 
 
 class NoRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
         return None
 
 
-def tls_context():
+def tls_context() -> ssl.SSLContext:
     """Certificate checking that also works on Windows.
 
     Python's default there loads the Windows intermediate store too, and OpenSSL then prefers a
@@ -63,7 +73,14 @@ def tls_context():
     return ssl.create_default_context()
 
 
-def request(path, *, data=None, token=None, etag=None, content_type="application/json"):
+def request(
+    path: str,
+    *,
+    data: bytes | None = None,
+    token: str | None = None,
+    etag: str | None = None,
+    content_type: str = "application/json",
+) -> tuple[bytes, str]:
     headers = {"Accept": "application/json", "Content-Type": content_type}
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -78,7 +95,8 @@ def request(path, *, data=None, token=None, etag=None, content_type="application
     )
     try:
         with opener.open(req, timeout=20) as response:
-            return response.read(), response.headers.get("ETag", "")
+            body = bytes(response.read())
+            return body, str(response.headers.get("ETag", ""))
     except urllib.error.HTTPError as exc:
         detail = ""
         if token:
@@ -97,14 +115,14 @@ def request(path, *, data=None, token=None, etag=None, content_type="application
         raise PolicyError(f"Tailscale request failed: {reason}") from None
 
 
-def policy_bytes(raw):
+def policy_bytes(raw: bytes) -> bytes:
     policy = json.loads(raw)
     if not isinstance(policy, dict):
         raise PolicyError("The policy must be a JSON object, not a list of tests.")
     return (json.dumps(policy, indent=2, sort_keys=True) + "\n").encode()
 
 
-def backup_policy(current, directory):
+def backup_policy(current: bytes, directory: Path) -> Path:
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     directory.chmod(0o700)
     fd, name = tempfile.mkstemp(prefix="policy-", suffix=".json", dir=directory)
@@ -113,7 +131,9 @@ def backup_policy(current, directory):
     return Path(name)
 
 
-def apply_policy(candidate, token, tailnet, backup_dir, check_only):
+def apply_policy(
+    candidate: bytes, token: str, tailnet: str, backup_dir: Path, check_only: bool
+) -> None:
     path = f"tailnet/{urllib.parse.quote(tailnet, safe='')}/acl"
     raw, etag = request(path, token=token)
     current = policy_bytes(raw)
@@ -163,7 +183,7 @@ def apply_policy(candidate, token, tailnet, backup_dir, check_only):
     print("Applied and confirmed. Check SSH and service access from your devices.")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "policy",
