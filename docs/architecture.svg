@@ -1,126 +1,202 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 610" width="960" height="610" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 712" width="960" height="712" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <!-- Grid: everything outside the Beelink in the left column (x 16-176), each level with the part it talks to;
+       edge labels in the gap (x 176-300); the Beelink on the right (x 300-944).
+       Icons: Simple Icons 15.0.0 (simpleicons.org, CC0). -->
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#24292f"/>
     </marker>
+    <marker id="d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8250df"/>
+    </marker>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></symbol>
+    <symbol id="i-githubactions" viewBox="0 0 24 24"><path d="M10.984 13.836a.5.5 0 0 1-.353-.146l-.745-.743a.5.5 0 1 1 .706-.708l.392.391 1.181-1.18a.5.5 0 0 1 .708.707l-1.535 1.533a.504.504 0 0 1-.354.146zm9.353-.147l1.534-1.532a.5.5 0 0 0-.707-.707l-1.181 1.18-.392-.391a.5.5 0 1 0-.706.708l.746.743a.497.497 0 0 0 .706-.001zM4.527 7.452l2.557-1.585A1 1 0 0 0 7.09 4.17L4.533 2.56A1 1 0 0 0 3 3.406v3.196a1.001 1.001 0 0 0 1.527.85zm2.03-2.436L4 6.602V3.406l2.557 1.61zM24 12.5c0 1.93-1.57 3.5-3.5 3.5a3.503 3.503 0 0 1-3.46-3h-2.08a3.503 3.503 0 0 1-3.46 3 3.502 3.502 0 0 1-3.46-3h-.558c-.972 0-1.85-.399-2.482-1.042V17c0 1.654 1.346 3 3 3h.04c.244-1.693 1.7-3 3.46-3 1.93 0 3.5 1.57 3.5 3.5S13.43 24 11.5 24a3.502 3.502 0 0 1-3.46-3H8c-2.206 0-4-1.794-4-4V9.899A5.008 5.008 0 0 1 0 5c0-2.757 2.243-5 5-5s5 2.243 5 5a5.005 5.005 0 0 1-4.952 4.998A2.482 2.482 0 0 0 7.482 12h.558c.244-1.693 1.7-3 3.46-3a3.502 3.502 0 0 1 3.46 3h2.08a3.503 3.503 0 0 1 3.46-3c1.93 0 3.5 1.57 3.5 3.5zm-15 8c0 1.378 1.122 2.5 2.5 2.5s2.5-1.122 2.5-2.5-1.122-2.5-2.5-2.5S9 19.122 9 20.5zM5 9c2.206 0 4-1.794 4-4S7.206 1 5 1 1 2.794 1 5s1.794 4 4 4zm9 3.5c0-1.378-1.122-2.5-2.5-2.5S9 11.122 9 12.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5zm9 0c0-1.378-1.122-2.5-2.5-2.5S18 11.122 18 12.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5zm-13 8a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0zm2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0zm12 0c0 1.93-1.57 3.5-3.5 3.5a3.503 3.503 0 0 1-3.46-3.002c-.007.001-.013.005-.021.005l-.506.017h-.017a.5.5 0 0 1-.016-.999l.506-.017c.018-.002.035.006.052.007A3.503 3.503 0 0 1 20.5 17c1.93 0 3.5 1.57 3.5 3.5zm-1 0c0-1.378-1.122-2.5-2.5-2.5S18 19.122 18 20.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5z"/></symbol>
+    <symbol id="i-cloudflare" viewBox="0 0 24 24"><path d="M16.5088 16.8447c.1475-.5068.0908-.9707-.1553-1.3154-.2246-.3164-.6045-.499-1.0615-.5205l-8.6592-.1123a.1559.1559 0 0 1-.1333-.0713c-.0283-.042-.0351-.0986-.021-.1553.0278-.084.1123-.1484.2036-.1562l8.7359-.1123c1.0351-.0489 2.1601-.8868 2.5537-1.9136l.499-1.3013c.0215-.0561.0293-.1128.0147-.168-.5625-2.5463-2.835-4.4453-5.5499-4.4453-2.5039 0-4.6284 1.6177-5.3876 3.8614-.4927-.3658-1.1187-.5625-1.794-.499-1.2026.119-2.1665 1.083-2.2861 2.2856-.0283.31-.0069.6128.0635.894C1.5683 13.171 0 14.7754 0 16.752c0 .1748.0142.3515.0352.5273.0141.083.0844.1475.1689.1475h15.9814c.0909 0 .1758-.0645.2032-.1553l.12-.4268zm2.7568-5.5634c-.0771 0-.1611 0-.2383.0112-.0566 0-.1054.0415-.127.0976l-.3378 1.1744c-.1475.5068-.0918.9707.1543 1.3164.2256.3164.6055.498 1.0625.5195l1.8437.1133c.0557 0 .1055.0263.1329.0703.0283.043.0351.1074.0214.1562-.0283.084-.1132.1485-.204.1553l-1.921.1123c-1.041.0488-2.1582.8867-2.5527 1.914l-.1406.3585c-.0283.0713.0215.1416.0986.1416h6.5977c.0771 0 .1474-.0489.169-.126.1122-.4082.1757-.837.1757-1.2803 0-2.6025-2.125-4.727-4.7344-4.727"/></symbol>
+    <symbol id="i-discord" viewBox="0 0 24 24"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></symbol>
+    <symbol id="i-tailscale" viewBox="0 0 24 24"><path d="M24 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-9 9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm0-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm6-6a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM3 24a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zm18 .5a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0-.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm9-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm-3 2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0zM3 5.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"/></symbol>
+    <symbol id="i-docker" viewBox="0 0 24 24"><path d="M13.983 11.078h2.119a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.119a.185.185 0 00-.185.185v1.888c0 .102.083.185.185.185m-2.954-5.43h2.118a.186.186 0 00.186-.186V3.574a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m0 2.716h2.118a.187.187 0 00.186-.186V6.29a.186.186 0 00-.186-.185h-2.118a.185.185 0 00-.185.185v1.887c0 .102.082.185.185.186m-2.93 0h2.12a.186.186 0 00.184-.186V6.29a.185.185 0 00-.185-.185H8.1a.185.185 0 00-.185.185v1.887c0 .102.083.185.185.186m-2.964 0h2.119a.186.186 0 00.185-.186V6.29a.185.185 0 00-.185-.185H5.136a.186.186 0 00-.186.185v1.887c0 .102.084.185.186.186m5.893 2.715h2.118a.186.186 0 00.186-.185V9.006a.186.186 0 00-.186-.186h-2.118a.185.185 0 00-.185.185v1.888c0 .102.082.185.185.185m-2.93 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.083.185.185.185m-2.964 0h2.119a.185.185 0 00.185-.185V9.006a.185.185 0 00-.184-.186h-2.12a.186.186 0 00-.186.186v1.887c0 .102.084.185.186.185m-2.92 0h2.12a.185.185 0 00.184-.185V9.006a.185.185 0 00-.184-.186h-2.12a.185.185 0 00-.184.185v1.888c0 .102.082.185.185.185M23.763 9.89c-.065-.051-.672-.51-1.954-.51-.338.001-.676.03-1.01.087-.248-1.7-1.653-2.53-1.716-2.566l-.344-.199-.226.327c-.284.438-.49.922-.612 1.43-.23.97-.09 1.882.403 2.661-.595.332-1.55.413-1.744.42H.751a.751.751 0 00-.75.748 11.376 11.376 0 00.692 4.062c.545 1.428 1.355 2.48 2.41 3.124 1.18.723 3.1 1.137 5.275 1.137.983.003 1.963-.086 2.93-.266a12.248 12.248 0 003.823-1.389c.98-.567 1.86-1.288 2.61-2.136 1.252-1.418 1.998-2.997 2.553-4.4h.221c1.372 0 2.215-.549 2.68-1.009.309-.293.55-.65.707-1.046l.098-.288Z"/></symbol>
+    <symbol id="i-prometheus" viewBox="0 0 24 24"><path d="M12 0C5.373 0 0 5.372 0 12c0 6.627 5.373 12 12 12s12-5.373 12-12c0-6.628-5.373-12-12-12zm0 22.46c-1.885 0-3.414-1.26-3.414-2.814h6.828c0 1.553-1.528 2.813-3.414 2.813zm5.64-3.745H6.36v-2.046h11.28v2.046zm-.04-3.098H6.391c-.037-.043-.075-.086-.111-.13-1.155-1.401-1.427-2.133-1.69-2.879-.005-.025 1.4.287 2.395.511 0 0 .513.119 1.262.255-.72-.843-1.147-1.915-1.147-3.01 0-2.406 1.845-4.508 1.18-6.207.648.053 1.34 1.367 1.387 3.422.689-.951.977-2.69.977-3.755 0-1.103.727-2.385 1.454-2.429-.648 1.069.168 1.984.894 4.256.272.854.237 2.29.447 3.201.07-1.892.395-4.652 1.595-5.605-.529 1.2.079 2.702.494 3.424.671 1.164 1.078 2.047 1.078 3.716a4.642 4.642 0 01-1.11 2.996c.792-.149 1.34-.283 1.34-.283l2.573-.502s-.374 1.538-1.81 3.019z"/></symbol>
+    <symbol id="i-grafana" viewBox="0 0 24 24"><path d="M23.02 10.59a8.578 8.578 0 0 0-.862-3.034 8.911 8.911 0 0 0-1.789-2.445c.337-1.342-.413-2.505-.413-2.505-1.292-.08-2.113.4-2.416.62-.052-.02-.102-.044-.154-.064-.22-.089-.446-.172-.677-.247-.231-.073-.47-.14-.711-.197a9.867 9.867 0 0 0-.875-.161C14.557.753 12.94 0 12.94 0c-1.804 1.145-2.147 2.744-2.147 2.744l-.018.093c-.098.029-.2.057-.298.088-.138.042-.275.094-.413.143-.138.055-.275.107-.41.166a8.869 8.869 0 0 0-1.557.87l-.063-.029c-2.497-.955-4.716.195-4.716.195-.203 2.658.996 4.33 1.235 4.636a11.608 11.608 0 0 0-.607 2.635C1.636 12.677.953 15.014.953 15.014c1.926 2.214 4.171 2.351 4.171 2.351.003-.002.006-.002.006-.005.285.509.615.994.986 1.446.156.19.32.371.488.548-.704 2.009.099 3.68.099 3.68 2.144.08 3.553-.937 3.849-1.173a9.784 9.784 0 0 0 3.164.501h.08l.055-.003.107-.002.103-.005.003.002c1.01 1.44 2.788 1.646 2.788 1.646 1.264-1.332 1.337-2.653 1.337-2.94v-.058c0-.02-.003-.039-.003-.06.265-.187.52-.387.758-.6a7.875 7.875 0 0 0 1.415-1.7c1.43.083 2.437-.885 2.437-.885-.236-1.49-1.085-2.216-1.264-2.354l-.018-.013-.016-.013a.217.217 0 0 1-.031-.02c.008-.092.016-.18.02-.27.011-.162.016-.323.016-.48v-.253l-.005-.098-.008-.135a1.891 1.891 0 0 0-.01-.13c-.003-.042-.008-.083-.013-.125l-.016-.124-.018-.122a6.215 6.215 0 0 0-2.032-3.73 6.015 6.015 0 0 0-3.222-1.46 6.292 6.292 0 0 0-.85-.048l-.107.002h-.063l-.044.003-.104.008a4.777 4.777 0 0 0-3.335 1.695c-.332.4-.592.84-.768 1.297a4.594 4.594 0 0 0-.312 1.817l.003.091c.005.055.007.11.013.164a3.615 3.615 0 0 0 .698 1.82 3.53 3.53 0 0 0 1.827 1.282c.33.098.66.14.971.137.039 0 .078 0 .114-.002l.063-.003c.02 0 .041-.003.062-.003.034-.002.065-.007.099-.01.007 0 .018-.003.028-.003l.031-.005.06-.008a1.18 1.18 0 0 0 .112-.02c.036-.008.072-.013.109-.024a2.634 2.634 0 0 0 .914-.415c.028-.02.056-.041.085-.065a.248.248 0 0 0 .039-.35.244.244 0 0 0-.309-.06l-.078.042c-.09.044-.184.083-.283.116a2.476 2.476 0 0 1-.475.096c-.028.003-.054.006-.083.006l-.083.002c-.026 0-.054 0-.08-.002l-.102-.006h-.012l-.024.006c-.016-.003-.031-.003-.044-.006-.031-.002-.06-.007-.091-.01a2.59 2.59 0 0 1-.724-.213 2.557 2.557 0 0 1-.667-.438 2.52 2.52 0 0 1-.805-1.475 2.306 2.306 0 0 1-.029-.444l.006-.122v-.023l.002-.031c.003-.021.003-.04.005-.06a3.163 3.163 0 0 1 1.352-2.29 3.12 3.12 0 0 1 .937-.43 2.946 2.946 0 0 1 .776-.101h.06l.07.002.045.003h.026l.07.005a4.041 4.041 0 0 1 1.635.49 3.94 3.94 0 0 1 1.602 1.662 3.77 3.77 0 0 1 .397 1.414l.005.076.003.075c.002.026.002.05.002.075 0 .024.003.052 0 .07v.065l-.002.073-.008.174a6.195 6.195 0 0 1-.08.639 5.1 5.1 0 0 1-.267.927 5.31 5.31 0 0 1-.624 1.13 5.052 5.052 0 0 1-3.237 2.014 4.82 4.82 0 0 1-.649.066l-.039.003h-.287a6.607 6.607 0 0 1-1.716-.265 6.776 6.776 0 0 1-3.4-2.274 6.75 6.75 0 0 1-.746-1.15 6.616 6.616 0 0 1-.714-2.596l-.005-.083-.002-.02v-.056l-.003-.073v-.096l-.003-.104v-.07l.003-.163c.008-.22.026-.45.054-.678a8.707 8.707 0 0 1 .28-1.355c.128-.444.286-.872.473-1.277a7.04 7.04 0 0 1 1.456-2.1 5.925 5.925 0 0 1 .953-.763c.169-.111.343-.213.524-.306.089-.05.182-.091.273-.135.047-.02.093-.042.138-.062a7.177 7.177 0 0 1 .714-.267l.145-.045c.049-.015.098-.026.148-.041.098-.029.197-.052.296-.076.049-.013.1-.02.15-.033l.15-.032.151-.028.076-.013.075-.01.153-.024c.057-.01.114-.013.171-.023l.169-.021c.036-.003.073-.008.106-.01l.073-.008.036-.003.042-.002c.057-.003.114-.008.171-.01l.086-.006h.023l.037-.003.145-.007a7.999 7.999 0 0 1 1.708.125 7.917 7.917 0 0 1 2.048.68 8.253 8.253 0 0 1 1.672 1.09l.09.077.089.078c.06.052.114.107.171.159.057.052.112.106.166.16.052.055.107.107.159.164a8.671 8.671 0 0 1 1.41 1.978c.012.026.028.052.04.078l.04.078.075.156c.023.051.05.1.07.153l.065.15a8.848 8.848 0 0 1 .45 1.34.19.19 0 0 0 .201.142.186.186 0 0 0 .172-.184c.01-.246.002-.532-.024-.856z"/></symbol>
+    <symbol id="i-victoriametrics" viewBox="0 0 24 24"><path d="M1.893 3.078C.239 1.537 4.846.009 11.963 0h.076c7.116.009 11.723 1.537 10.067 3.078 0 0-6.168 5.655-8.301 7.473-.404.346-1.084.607-1.766.616h-.076c-.682-.009-1.362-.271-1.767-.616-2.132-1.818-8.301-7.473-8.303-7.473Zm20.549 2.771V8.58c0 .3-.115.698-.319.885-1.332 1.222-6.47 5.925-8.319 7.502-.405.345-1.085.606-1.767.615h-.072c-.683-.009-1.362-.27-1.767-.615-1.849-1.577-6.987-6.28-8.32-7.502-.204-.187-.318-.585-.318-.885V5.849c1.96 1.788 7.163 6.505 8.638 7.764.404.346 1.084.607 1.767.616h.072c.682-.009 1.362-.271 1.767-.616 1.474-1.258 6.678-5.973 8.638-7.764Zm0 6.418v2.73c0 .301-.115.698-.319.885-1.332 1.222-6.47 5.926-8.319 7.502-.405.346-1.085.607-1.767.616h-.072c-.683-.009-1.362-.271-1.767-.616-1.849-1.576-6.987-6.28-8.32-7.502-.204-.187-.318-.585-.318-.885v-2.73c1.96 1.788 7.163 6.505 8.638 7.764.404.346 1.084.606 1.767.615h.072c.682-.009 1.362-.27 1.767-.615 1.474-1.258 6.678-5.976 8.638-7.764Z"/></symbol>
+    <symbol id="i-homeassistant" viewBox="0 0 24 24"><path d="M22.939 10.627 13.061.749a1.505 1.505 0 0 0-2.121 0l-9.879 9.878C.478 11.21 0 12.363 0 13.187v9c0 .826.675 1.5 1.5 1.5h9.227l-4.063-4.062a2.034 2.034 0 0 1-.664.113c-1.13 0-2.05-.92-2.05-2.05s.92-2.05 2.05-2.05 2.05.92 2.05 2.05c0 .233-.041.456-.113.665l3.163 3.163V9.928a2.05 2.05 0 0 1-1.15-1.84c0-1.13.92-2.05 2.05-2.05s2.05.92 2.05 2.05a2.05 2.05 0 0 1-1.15 1.84v8.127l3.146-3.146A2.051 2.051 0 0 1 18 12.239c1.13 0 2.05.92 2.05 2.05s-.92 2.05-2.05 2.05c-.25 0-.488-.047-.709-.13L12.9 20.602v3.088h9.6c.825 0 1.5-.675 1.5-1.5v-9c0-.825-.477-1.977-1.061-2.561z"/></symbol>
     <style>
       .box{fill:#fff;stroke:#57606a;stroke-width:1.2}
-      .ext{fill:#ddf4ff;stroke:#0969da;stroke-width:1.2}
-      .out{fill:#fff8c5;stroke:#9a6700;stroke-width:1.2}
+      .net{fill:#ddf4ff;stroke:#0969da;stroke-width:1.2}
+      .tail{fill:#dafbe1;stroke:#1a7f37;stroke-width:1.2}
+      .wall{fill:#fff8f0;stroke:#bc4c00;stroke-width:2}
       .t{font-size:14px;font-weight:600;fill:#1f2328;text-anchor:middle}
-      .s{font-size:12px;fill:#57606a;text-anchor:middle}
-      .l{font-size:12px;fill:#1f2328}
+      .s{font-size:12.5px;font-weight:400;fill:#57606a;text-anchor:middle}
+      .n{font-size:13px;fill:#1f2328;text-anchor:middle}
+      .l{font-size:12.5px;fill:#1f2328;text-anchor:middle}
+      .g{font-size:12.5px;fill:#57606a}
       .arrow{fill:none;stroke:#24292f;stroke-width:1.4;marker-end:url(#a)}
+      .deploy{fill:none;stroke:#8250df;stroke-width:2;marker-end:url(#d)}
+      .step circle{fill:#8250df}
+      .step text{font-size:12px;font-weight:700;fill:#fff;text-anchor:middle}
     </style>
   </defs>
-  <rect width="960" height="610" fill="#ffffff"/>
+  <rect width="960" height="712" fill="#ffffff"/>
 
-  <!-- Who and what comes in -->
-  <rect class="ext" x="20" y="20" width="260" height="70" rx="8"/>
-  <text class="t" x="150" y="46">GitHub</text>
-  <text class="s" x="150" y="64">PR, CI (Colin's in the VMs), merge</text>
-  <text class="s" x="150" y="80">a merge rings the Beelink</text>
+  <!-- Key -->
+  <path class="deploy" d="M16,28 H56"/>
+  <g class="step"><circle cx="32" cy="28" r="9"/><text x="32" y="32">1</text></g>
+  <text class="g" x="64" y="32">to 5: merge to deploy</text>
+  <path class="arrow" d="M16,50 H56"/>
+  <text class="g" x="64" y="54">who calls whom</text>
 
-  <rect class="ext" x="350" y="20" width="260" height="70" rx="8"/>
-  <text class="t" x="480" y="46">Colin's devices</text>
-  <text class="s" x="480" y="64">over Tailscale only</text>
+  <!-- The Beelink: the host is its plain background -->
+  <rect x="300" y="14" width="644" height="684" rx="10" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
+  <text x="316" y="38" font-size="13" fill="#1f2328"><tspan font-weight="600" font-size="15">Beelink</tspan><tspan dx="8">accepts no connection from the internet</tspan></text>
+  <text class="g" x="316" y="59">On the host</text>
 
-  <rect class="ext" x="680" y="20" width="260" height="70" rx="8"/>
-  <text class="t" x="810" y="46">Public internet</text>
-  <text class="s" x="810" y="64">no inbound connections</text>
+  <rect class="box" x="316" y="68" width="170" height="48" rx="6"/>
+  <use href="#i-githubactions" x="348.6" y="84" width="16" height="16" fill="#1f2328"/>
+  <text class="t" x="370.6" y="97" style="text-anchor:start">CI supervisor</text>
 
-  <!-- The Beelink -->
-  <rect x="20" y="120" width="920" height="360" rx="10" fill="#f6f8fa" stroke="#57606a" stroke-width="1.5"/>
-  <text class="l" x="924" y="140" text-anchor="end" font-weight="600">Beelink: Ubuntu, Docker</text>
+  <rect class="wall" x="600" y="68" width="190" height="48" rx="6"/>
+  <text class="t" x="695" y="88">Firecracker VM</text>
+  <text class="s" x="695" y="105">one job, then thrown away</text>
 
-  <rect class="box" x="40" y="160" width="200" height="70" rx="6"/>
-  <text class="t" x="140" y="184">deploy</text>
-  <text class="s" x="140" y="202">on a ring, fetches main and</text>
-  <text class="s" x="140" y="218">applies the changed stacks</text>
+  <rect class="box" x="470" y="126" width="180" height="40" rx="6"/>
+  <text class="t" x="560" y="151">deploy-main</text>
 
-  <rect class="box" x="40" y="260" width="200" height="90" rx="6"/>
-  <text class="t" x="140" y="284">CI runner</text>
-  <text class="s" x="140" y="302">private repos' jobs</text>
-  <text class="s" x="140" y="318">one Firecracker VM per job</text>
-  <text class="s" x="140" y="334">internet only, no home network</text>
+  <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
+  <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
+  <use href="#i-docker" x="660" y="257" width="16" height="16" fill="#2496ED"/>
+  <text x="682" y="270" font-size="13" font-weight="600" fill="#953800">Behind the wall</text>
+  <text class="g" x="660" y="288">containers and CI VMs reach the</text>
+  <text class="g" x="660" y="305">internet at most, never the host,</text>
+  <text class="g" x="660" y="322">home network or Tailscale</text>
 
-  <text class="l" x="40" y="392">Bridge containers reach the</text>
-  <text class="l" x="40" y="408">internet and each other, not the</text>
-  <text class="l" x="40" y="424">host, LAN or tailnet</text>
+  <rect class="box" x="332" y="232" width="110" height="88" rx="6"/>
+  <use href="#i-cloudflare" x="355.6" y="268" width="16" height="16" fill="#F38020"/>
+  <text class="t" x="377.6" y="281" style="text-anchor:start">tunnel</text>
 
-  <rect x="270" y="160" width="650" height="300" rx="8" fill="none" stroke="#8c959f" stroke-dasharray="5 4"/>
-  <text class="l" x="904" y="452" text-anchor="end" fill="#57606a">Compose stacks, stacks/&lt;name&gt;/</text>
+  <rect class="box" x="480" y="232" width="150" height="36" rx="6"/>
+  <text class="t" x="555" y="255">doorbell</text>
 
-  <rect class="box" x="290" y="190" width="140" height="50" rx="6"/>
-  <text class="t" x="360" y="211">home-assistant</text>
-  <text class="s" x="360" y="228">host network</text>
+  <rect class="box" x="480" y="276" width="150" height="44" rx="6"/>
+  <text class="t" x="555" y="295">flight-tracker</text>
+  <text class="s" x="555" y="311">public API</text>
 
-  <rect class="box" x="445" y="190" width="150" height="50" rx="6"/>
-  <text class="t" x="520" y="211">internal-names</text>
-  <text class="s" x="520" y="228">.internal DNS and proxy</text>
+  <rect class="box" x="332" y="334" width="140" height="36" rx="6"/>
+  <text class="t" x="402" y="357">backup</text>
 
-  <rect class="box" x="610" y="190" width="135" height="50" rx="6"/>
-  <text class="t" x="677" y="211">tunnel</text>
-  <text class="s" x="677" y="228">cloudflared</text>
+  <rect class="box" x="332" y="384" width="580" height="216" rx="6"/>
+  <text x="346" y="404" font-size="14" font-weight="600" fill="#1f2328">observability</text>
 
-  <rect class="box" x="760" y="190" width="145" height="50" rx="6"/>
-  <text class="t" x="832" y="211">flight-tracker</text>
-  <text class="s" x="832" y="228">public API</text>
+  <rect class="box" x="346" y="414" width="130" height="32" rx="5"/>
+  <text class="n" x="411" y="435">public-stats</text>
 
-  <rect class="box" x="290" y="270" width="140" height="50" rx="6"/>
-  <text class="t" x="360" y="291">backup</text>
-  <text class="s" x="360" y="308">restic, nightly</text>
+  <rect class="box" x="346" y="456" width="130" height="88" rx="5"/>
+  <use href="#i-prometheus" x="356.3" y="492" width="16" height="16" fill="#E6522C"/>
+  <text class="t" x="378.3" y="505" style="text-anchor:start">Alertmanager</text>
 
-  <rect x="450" y="260" width="455" height="165" rx="6" fill="#fff" stroke="#57606a" stroke-width="1.2"/>
-  <text class="l" x="465" y="280" font-weight="600">observability</text>
-  <rect class="box" x="465" y="300" width="80" height="44" rx="5"/>
-  <text class="t" x="505" y="327">Alloy</text>
-  <rect class="box" x="565" y="290" width="150" height="28" rx="5"/>
-  <text class="s" x="640" y="309" fill="#1f2328">Prometheus and rules</text>
-  <rect class="box" x="565" y="326" width="150" height="28" rx="5"/>
-  <text class="s" x="640" y="345" fill="#1f2328">VictoriaLogs, Traces</text>
-  <rect class="box" x="735" y="290" width="70" height="28" rx="5"/>
-  <text class="s" x="770" y="309" fill="#1f2328">Grafana</text>
-  <rect class="box" x="815" y="290" width="75" height="28" rx="5"/>
-  <text class="s" x="852" y="309" fill="#1f2328">gateway</text>
-  <rect class="box" x="735" y="326" width="155" height="28" rx="5"/>
-  <text class="s" x="812" y="345" fill="#1f2328">Alertmanager</text>
-  <rect class="box" x="505" y="380" width="110" height="28" rx="5"/>
-  <text class="s" x="560" y="399" fill="#1f2328">public-stats</text>
+  <rect class="box" x="346" y="552" width="130" height="36" rx="5"/>
+  <use href="#i-grafana" x="375.1" y="562" width="16" height="16" fill="#F46800"/>
+  <text class="t" x="397.1" y="575" style="text-anchor:start">Grafana</text>
 
-  <!-- Where things go -->
-  <rect class="out" x="270" y="520" width="180" height="70" rx="8"/>
-  <text class="t" x="360" y="548">Cloudflare R2</text>
-  <text class="s" x="360" y="566">encrypted backups</text>
+  <rect x="554" y="408" width="200" height="136" rx="5" fill="#f6f8fa" stroke="#57606a" stroke-width="1.2"/>
+  <rect class="box" x="560" y="414" width="188" height="32" rx="4"/>
+  <use href="#i-victoriametrics" x="607.8" y="422" width="16" height="16" fill="#621773"/>
+  <text class="n" x="629.8" y="435" style="text-anchor:start">VictoriaLogs</text>
+  <rect class="box" x="560" y="460" width="188" height="32" rx="4"/>
+  <use href="#i-prometheus" x="608.6" y="468" width="16" height="16" fill="#E6522C"/>
+  <text class="n" x="630.6" y="481" style="text-anchor:start">Prometheus</text>
+  <rect class="box" x="560" y="506" width="188" height="32" rx="4"/>
+  <use href="#i-victoriametrics" x="603.6" y="514" width="16" height="16" fill="#621773"/>
+  <text class="n" x="625.6" y="527" style="text-anchor:start">VictoriaTraces</text>
+  <rect class="box" x="554" y="544" width="200" height="44" rx="5"/>
+  <text class="n" x="654" y="571">read-only gateway</text>
 
-  <rect class="out" x="470" y="520" width="180" height="70" rx="8"/>
-  <text class="t" x="560" y="548">colincheung.dev</text>
-  <text class="s" x="560" y="566">signed public stats</text>
+  <rect class="box" x="826" y="456" width="72" height="40" rx="5"/>
+  <text class="t" x="862" y="481">Alloy</text>
 
-  <rect class="out" x="690" y="520" width="110" height="70" rx="8"/>
-  <text class="t" x="745" y="548">Discord</text>
-  <text class="s" x="745" y="566">#uptime</text>
+  <!-- Stacks on the host network, outside the wall -->
+  <rect class="box" x="332" y="640" width="150" height="36" rx="6"/>
+  <text class="t" x="407" y="663">internal-names</text>
 
-  <rect class="out" x="810" y="520" width="130" height="70" rx="8"/>
-  <text class="t" x="875" y="548">Healthchecks.io</text>
-  <text class="s" x="875" y="566">emails if pings stop</text>
+  <rect class="box" x="560" y="640" width="170" height="36" rx="6"/>
+  <use href="#i-homeassistant" x="585.7" y="650" width="16" height="16" fill="#18BCF2"/>
+  <text class="t" x="607.7" y="663" style="text-anchor:start">home-assistant</text>
 
-  <!-- Arrows -->
-  <path class="arrow" d="M140,158 V92"/>
-  <text class="l" x="148" y="110">fetches main</text>
-  <path class="arrow" d="M640,188 V150 H200 V158"/>
-  <text class="l" x="400" y="144">ring</text>
-  <path class="arrow" d="M30,90 V305 H38"/>
-  <path class="arrow" d="M240,215 H288"/>
-  <path class="arrow" d="M520,90 V188"/>
-  <text class="l" x="528" y="110">admin pages</text>
-  <path class="arrow" d="M710,90 V188"/>
-  <text class="l" x="718" y="110">Cloudflare Tunnel</text>
-  <path class="arrow" d="M745,215 H758"/>
-  <path class="arrow" d="M545,305 H563"/>
-  <path class="arrow" d="M545,340 H563"/>
-  <path class="arrow" d="M360,320 V518"/>
-  <path class="arrow" d="M560,408 V518"/>
-  <path class="arrow" d="M745,354 V518"/>
-  <path class="arrow" d="M875,354 V518"/>
+  <use href="#i-docker" x="746" y="638" width="16" height="16" fill="#2496ED"/>
+  <text x="768" y="651" font-size="13" font-weight="600" fill="#1f2328">Stacks on the host network</text>
+  <text class="g" x="746" y="668">reach the home network</text>
+  <text class="g" x="746" y="685">and Tailscale</text>
+
+  <!-- Outside the Beelink, each level with the part it talks to -->
+  <rect class="net" x="16" y="68" width="160" height="98" rx="8"/>
+  <use href="#i-github" x="62.3" y="109" width="16" height="16" fill="#181717"/>
+  <text class="t" x="84.3" y="122" style="text-anchor:start">GitHub</text>
+
+  <rect class="net" x="16" y="254" width="160" height="44" rx="8"/>
+  <use href="#i-cloudflare" x="52.2" y="268" width="16" height="16" fill="#F38020"/>
+  <text class="t" x="74.2" y="281" style="text-anchor:start">Cloudflare</text>
+
+  <rect class="net" x="16" y="334" width="160" height="36" rx="8"/>
+  <use href="#i-cloudflare" x="42.0" y="344" width="16" height="16" fill="#F38020"/>
+  <text class="t" x="64.0" y="357" style="text-anchor:start">Cloudflare R2</text>
+
+  <rect class="net" x="16" y="412" width="160" height="36" rx="8"/>
+  <text class="t" x="96" y="435">colincheung.dev</text>
+
+  <rect class="net" x="16" y="458" width="160" height="36" rx="8"/>
+  <use href="#i-discord" x="35.2" y="468" width="16" height="16" fill="#5865F2"/>
+  <text class="t" x="57.2" y="481" style="text-anchor:start">Discord<tspan class="s" dx="5" style="text-anchor:start">#uptime</tspan></text>
+
+  <rect class="net" x="16" y="524" width="160" height="36" rx="8"/>
+  <text class="t" x="96" y="547">Healthchecks.io</text>
+
+  <rect class="tail" x="16" y="634" width="160" height="48" rx="8"/>
+  <use href="#i-tailscale" x="59.0" y="641" width="16" height="16" fill="#242424"/>
+  <text class="t" x="81.0" y="654" style="text-anchor:start">Tailscale</text>
+  <text class="s" x="96" y="671">Colin's devices</text>
+
+  <!-- How a merge becomes a deploy: a loop from GitHub and back. Dashed: the tunnel the Beelink opens outward. -->
+  <path class="deploy" d="M60,166 V252"/>
+  <text class="l" x="76" y="210" style="text-anchor:start">on push to main</text>
+  <path class="deploy" d="M176,276 H330" stroke-dasharray="6 4"/>
+  <text class="l" x="238" y="261">tunnel (outbound)</text>
+  <path class="deploy" d="M442,250 H478"/>
+  <path class="deploy" d="M510,232 V168"/>
+  <text class="l" x="494" y="196" style="text-anchor:end">on ring</text>
+  <path class="deploy" d="M470,146 H178"/>
+  <text class="l" x="238" y="132">fetches main</text>
+  <path class="deploy" d="M610,166 V206"/>
+  <text class="l" x="626" y="184" style="text-anchor:start">applies changed stacks</text>
+  <g class="step"><circle cx="60" cy="206" r="9"/><text x="60" y="210">1</text></g>
+  <g class="step"><circle cx="238" cy="276" r="9"/><text x="238" y="280">2</text></g>
+  <g class="step"><circle cx="510" cy="192" r="9"/><text x="510" y="196">3</text></g>
+  <g class="step"><circle cx="238" cy="146" r="9"/><text x="238" y="150">4</text></g>
+  <g class="step"><circle cx="610" cy="180" r="9"/><text x="610" y="184">5</text></g>
+
+  <!-- Everything else -->
+  <path class="arrow" d="M316,92 H178"/>
+  <text class="l" x="238" y="84">asks for jobs</text>
+  <path class="arrow" d="M486,92 H598"/>
+  <text class="l" x="542" y="84">boots</text>
+  <path class="arrow" d="M442,298 H478"/>
+  <path class="arrow" d="M332,352 H178"/>
+  <text class="l" x="238" y="344">nightly</text>
+  <path class="arrow" d="M346,430 H178"/>
+  <text class="l" x="238" y="422">every 5 min</text>
+  <path class="arrow" d="M826,476 H756"/>
+  <text class="l" x="791" y="468">writes</text>
+  <path class="arrow" d="M554,476 H478"/>
+  <text class="l" x="516" y="468">on alert</text>
+  <path class="arrow" d="M346,476 H178"/>
+  <text class="l" x="238" y="468">alerts</text>
+  <path class="arrow" d="M346,536 H178"/>
+  <text class="l" x="238" y="528">every minute</text>
+  <path class="arrow" d="M48,524 V496"/>
+  <text class="l" x="58" y="514" style="text-anchor:start">on missed ping</text>
+  <path class="arrow" d="M476,570 H552"/>
+  <text class="l" x="514" y="562">reads</text>
+  <path class="arrow" d="M176,658 H330"/>
+  <text class="l" x="238" y="650">opens admin pages</text>
+  <path class="arrow" d="M411,640 V590"/>
+  <text class="l" x="421" y="630" style="text-anchor:start">proxies</text>
+  <path class="arrow" d="M482,658 H558"/>
+  <text class="l" x="520" y="650">proxies</text>
 </svg>
