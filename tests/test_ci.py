@@ -56,21 +56,27 @@ def test_an_annotation_is_one_line_with_percent_escaped() -> None:
 def test_the_cache_disk_is_saved_only_when_its_inputs_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    for name in ci.CACHE_INPUTS:
-        (tmp_path / name).write_text(name, encoding="utf-8")
+    mise = tmp_path / "mise.toml"
+    mise.write_text('[tools]\nuv = "1"\n\n[tasks.lint]\nrun = "a"\n', encoding="utf-8")
+    (tmp_path / "uv.lock").write_text("lock", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(ci, "CACHE_KEY", tmp_path / "cache" / "mise" / ".ci-key")
     out = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(out))
 
-    ci.cache_changed()
-    assert out.read_text() == "changed=true\n"
-    out.write_text("")
-    ci.cache_changed()
-    assert out.read_text() == ""
+    def saves() -> bool:
+        out.write_text("")
+        ci.cache_changed()
+        return out.read_text() == "changed=true\n"
+
+    assert saves() and not saves()
+    # A task changes nothing the cache holds; a tool or a locked package does.
+    mise.write_text('[tools]\nuv = "1"\n\n[tasks.lint]\nrun = "b"\n', encoding="utf-8")
+    assert not saves()
+    mise.write_text('[tools]\nuv = "2"\n\n[tasks.lint]\nrun = "b"\n', encoding="utf-8")
+    assert saves()
     (tmp_path / "uv.lock").write_text("new", encoding="utf-8")
-    ci.cache_changed()
-    assert out.read_text() == "changed=true\n"
+    assert saves()
 
 
 def test_only_a_pin_only_change_tells_the_next_steps(
