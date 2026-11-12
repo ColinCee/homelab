@@ -139,7 +139,7 @@ def failed_once(host: Host, change: str, now: float) -> None:
 
 def shipped(subjects: str) -> str:
     """The pull requests a change ships, for install-host.sh's restart reason: the first five."""
-    found: list[str] = re.findall(r"\(#[0-9]*\)", subjects)
+    found = [str(m) for m in re.findall(r"\(#[0-9]*\)", subjects)]
     return " ".join(m.strip("()") for m in found[:5])
 
 
