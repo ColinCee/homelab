@@ -181,17 +181,18 @@ def test_groups_containers_and_rules_wear_one_colour_on_every_panel() -> None:
 
 
 @every_page
-def test_tiles_wear_a_state_colour_and_unlisted_series_gray(page: dict[str, Any]) -> None:
+def test_state_colours_are_the_shared_ones_and_unlisted_series_gray(page: dict[str, Any]) -> None:
     for panel in charts(page):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
-        if panel["type"] in ("stat", "gauge"):
+        mode = defaults.get("color", {}).get("mode")
+        if panel["type"] in ("stat", "gauge") or mode == "thresholds":
             worn = {s["color"] for s in defaults["thresholds"]["steps"]}
+            # Only a tile that is not filled may wear the text colour: filled, it is a white block.
             filled = panel["options"].get("colorMode", "").startswith("background")
-            # A filled tile in the text colour is a white block.
-            plain = set() if filled or panel["type"] == "gauge" else {"text"}
+            plain = {"text"} if panel["type"] == "stat" and not filled else set()
             assert worn <= {NOW, WEEK, FINE, NEUTRAL} | plain, panel["title"]
             assert set(named_colours(panel).values()) <= {NOW, WEEK}, panel["title"]
-        elif defaults.get("color", {}).get("mode") != "palette-classic":
+        elif mode != "palette-classic":
             # Past a line per container, each its own colour, a series no list names is gray.
             assert defaults.get("color", GRAY) == GRAY, panel["title"]
 

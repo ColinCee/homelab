@@ -483,7 +483,7 @@
       "id": 5,
       "type": "stat",
       "title": "Alerts firing",
-      "description": "Alert rules firing now; a rule with several firing series counts once.",
+      "description": "Alert rules firing now: the urgent ones, and those to see to this week.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -495,8 +495,21 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "count(count by (alertname) (ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"})) or vector(0)",
-          "legendFormat": ""
+          "expr": "count(count by (alertname) (ALERTS{alertstate=\"firing\",alertname!=\"watchdog\",level=\"now\"})) or vector(0)",
+          "legendFormat": "Urgent",
+          "instant": true,
+          "range": false
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "count(count by (alertname) (ALERTS{alertstate=\"firing\",alertname!=\"watchdog\",level=\"week\"})) or vector(0)",
+          "legendFormat": "This week",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
@@ -512,10 +525,6 @@
               {
                 "color": "#2f8f46",
                 "value": null
-              },
-              {
-                "color": "#d03b3b",
-                "value": 1
               }
             ]
           },
@@ -528,7 +537,56 @@
             }
           ]
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Urgent"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#2f8f46",
+                      "value": null
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "This week"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#2f8f46",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "reduceOptions": {
@@ -541,8 +599,8 @@
         "colorMode": "background_solid",
         "graphMode": "none",
         "justifyMode": "center",
-        "textMode": "value",
-        "wideLayout": true,
+        "textMode": "value_and_name",
+        "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
@@ -943,9 +1001,9 @@
     },
     {
       "id": 11,
-      "type": "stat",
-      "title": "CI on main",
-      "description": "The CI workflow's slowest job in the latest run on main, and how that has moved over the time range. CI on main got slower fires when a day's median is half again its 14 days'.",
+      "type": "gauge",
+      "title": "CI against usual",
+      "description": "The latest run on main of the job furthest over its 14-day median, as a share of that median. CI on main got slower fires when a day's median is past 150% and 20 s more.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -957,14 +1015,14 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(homelab_ci_job_seconds{kind=\"main\",workflow=\"CI\"})",
+          "expr": "max(100 * max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])))",
           "legendFormat": ""
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "decimals": 1,
+          "unit": "percent",
+          "decimals": 0,
           "color": {
             "mode": "thresholds"
           },
@@ -972,12 +1030,18 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 150
               }
             ]
           },
           "mappings": [],
+          "min": 0,
+          "max": 200,
           "links": [
             {
               "title": "Open CI",
@@ -996,12 +1060,14 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
       },
       "gridPos": {
         "x": 12,

@@ -239,6 +239,76 @@
     {
       "id": 3,
       "type": "gauge",
+      "title": "Swap",
+      "description": "Share of swap holding pages; amber past half, when memory has been short.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "100 * (1 - max(node_memory_SwapFree_bytes{job=\"integrations/unix\"}) / max(node_memory_SwapTotal_bytes{job=\"integrations/unix\"}))",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 50
+              }
+            ]
+          },
+          "mappings": [],
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 3,
+        "h": 7
+      }
+    },
+    {
+      "id": 4,
+      "type": "gauge",
       "title": "Disk",
       "description": "Share of the root disk in use; the disk alert fires past 80%.",
       "datasource": {
@@ -300,14 +370,14 @@
         "sparkline": true
       },
       "gridPos": {
-        "x": 6,
+        "x": 9,
         "y": 0,
         "w": 3,
         "h": 7
       }
     },
     {
-      "id": 4,
+      "id": 5,
       "type": "gauge",
       "title": "SSD wear",
       "description": "Share of the SSD's rated writes used; Beelink SSD wearing out fires past 80%.",
@@ -370,14 +440,14 @@
         "sparkline": true
       },
       "gridPos": {
-        "x": 9,
+        "x": 12,
         "y": 0,
         "w": 3,
         "h": 7
       }
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "gauge",
       "title": "Backup size",
       "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
@@ -440,17 +510,17 @@
         "sparkline": true
       },
       "gridPos": {
-        "x": 12,
+        "x": 15,
         "y": 0,
         "w": 3,
         "h": 7
       }
     },
     {
-      "id": 6,
-      "type": "stat",
-      "title": "Swap",
-      "description": "Swap in use, holding pages.",
+      "id": 7,
+      "type": "gauge",
+      "title": "Temperature",
+      "description": "The hottest sensor the host reports; amber past 80 degrees.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -462,13 +532,83 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(node_memory_SwapTotal_bytes{job=\"integrations/unix\"} - node_memory_SwapFree_bytes{job=\"integrations/unix\"})",
+          "expr": "max(node_hwmon_temp_celsius{job=\"integrations/unix\"})",
           "legendFormat": ""
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "bytes",
+          "unit": "celsius",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": [],
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 3,
+        "h": 7
+      }
+    },
+    {
+      "id": 8,
+      "type": "stat",
+      "title": "Up for",
+      "description": "Time since the Beelink last started.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "time() - max(node_boot_time_seconds{job=\"integrations/unix\"})",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
           "decimals": 1,
           "color": {
             "mode": "thresholds"
@@ -495,151 +635,11 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "area",
+        "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "value",
         "wideLayout": true,
         "showPercentChange": false
-      },
-      "gridPos": {
-        "x": 15,
-        "y": 0,
-        "w": 3,
-        "h": 7
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Disk free",
-      "description": "Space free on the root disk; amber under 100 GB, where Beelink disk filling up fires (80% used).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / 1e9",
-          "legendFormat": ""
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "suffix: GB",
-          "decimals": 0,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#fab219",
-                "value": null
-              },
-              {
-                "color": "#2f8f46",
-                "value": 100
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background_solid",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 14,
-          "valueSize": 26
-        }
-      },
-      "gridPos": {
-        "x": 18,
-        "y": 0,
-        "w": 3,
-        "h": 7
-      }
-    },
-    {
-      "id": 8,
-      "type": "stat",
-      "title": "Last backup",
-      "description": "Time since the last good nightly backup; amber past 26 h, when the backup alert fires.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "time() - max(homelab_backup_last_success_timestamp_seconds)",
-          "legendFormat": ""
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "#2f8f46",
-                "value": null
-              },
-              {
-                "color": "#fab219",
-                "value": 93600
-              }
-            ]
-          },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background_solid",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 14,
-          "valueSize": 26
-        }
       },
       "gridPos": {
         "x": 21,
@@ -649,20 +649,248 @@
       }
     },
     {
+      "id": 9,
+      "type": "timeseries",
+      "title": "CPU in use",
+      "description": "Share of the CPU in use.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "100 * max(sum by (instance) (rate(node_cpu_seconds_total{mode!~\"idle|iowait|steal\",job=\"integrations/unix\"}[5m]))) / max(count by (instance) (node_cpu_seconds_total{mode=\"idle\",job=\"integrations/unix\"}))",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "gradientMode": "scheme",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Memory in use",
+      "description": "Share of memory in use; the memory alert fires past 90%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "100 * max(node_memory_MemTotal_bytes{job=\"integrations/unix\"} - node_memory_MemAvailable_bytes{job=\"integrations/unix\"}) / max(node_memory_MemTotal_bytes{job=\"integrations/unix\"})",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "gradientMode": "scheme",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Disk in use",
+      "description": "Share of the root disk in use; the disk alert fires past 80%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "100 * (1 - max(node_filesystem_avail_bytes{mountpoint=\"/\",job=\"integrations/unix\"}) / max(node_filesystem_size_bytes{mountpoint=\"/\",job=\"integrations/unix\"}))",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "gradientMode": "scheme",
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 7,
+        "w": 8,
+        "h": 8
+      }
+    },
+    {
       "type": "row",
       "title": "Network",
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 7,
+        "y": 15,
         "w": 24,
         "h": 1
       },
       "panels": [],
-      "id": 9
+      "id": 12
     },
     {
-      "id": 10,
+      "id": 13,
       "type": "timeseries",
       "title": "Traffic, bytes a second",
       "description": "The host's wired network and Tailscale, in and out.",
@@ -786,13 +1014,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 8,
+        "y": 16,
         "w": 12,
         "h": 8
       }
     },
     {
-      "id": 11,
+      "id": 14,
       "type": "timeseries",
       "title": "Received by container, bytes a second",
       "description": "What each container receives; Traffic shows the host's in and out.",
@@ -850,13 +1078,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 8,
+        "y": 16,
         "w": 12,
         "h": 8
       }
     },
     {
-      "id": 12,
+      "id": 15,
       "type": "timeseries",
       "title": "Network checks, a second",
       "description": "Retried connection attempts, resets sent and connections dropped while queued: each climbs when something cannot connect.",
@@ -974,13 +1202,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 16,
+        "y": 24,
         "w": 12,
         "h": 7
       }
     },
     {
-      "id": 13,
+      "id": 16,
       "type": "timeseries",
       "title": ".internal names, a second",
       "description": "Requests through the .internal proxy by name, and those it failed, with the names' DNS answers that failed: whether the names work for the devices using them.",
@@ -1113,7 +1341,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 16,
+        "y": 24,
         "w": 12,
         "h": 7
       }
@@ -1124,15 +1352,15 @@
       "collapsed": false,
       "gridPos": {
         "x": 0,
-        "y": 23,
+        "y": 31,
         "w": 24,
         "h": 1
       },
       "panels": [],
-      "id": 14
+      "id": 17
     },
     {
-      "id": 15,
+      "id": 18,
       "type": "stat",
       "title": "Last ok",
       "description": "Time since the last good nightly backup; amber past 26 h.",
@@ -1196,13 +1424,13 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 24,
+        "y": 32,
         "w": 3,
         "h": 4
       }
     },
     {
-      "id": 16,
+      "id": 19,
       "type": "stat",
       "title": "Verified",
       "description": "Time since restic last read back every byte (weekly); amber past 8 days.",
@@ -1266,13 +1494,13 @@
       },
       "gridPos": {
         "x": 3,
-        "y": 24,
+        "y": 32,
         "w": 3,
         "h": 4
       }
     },
     {
-      "id": 17,
+      "id": 20,
       "type": "stat",
       "title": "Failed",
       "description": "Time since a run last failed.",
@@ -1338,13 +1566,13 @@
       },
       "gridPos": {
         "x": 6,
-        "y": 24,
+        "y": 32,
         "w": 3,
         "h": 4
       }
     },
     {
-      "id": 18,
+      "id": 21,
       "type": "stat",
       "title": "Room left",
       "description": "Room left under the 8 GB at which backup uploads stop; amber under 3 GB, where Backup storage nearly full fires (5 GB used).",
@@ -1408,13 +1636,13 @@
       },
       "gridPos": {
         "x": 9,
-        "y": 24,
+        "y": 32,
         "w": 3,
         "h": 4
       }
     },
     {
-      "id": 19,
+      "id": 22,
       "type": "timeseries",
       "title": "Stored over time",
       "description": "The repository's size after each good run.",
@@ -1468,13 +1696,13 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 24,
+        "y": 32,
         "w": 12,
         "h": 8
       }
     },
     {
-      "id": 20,
+      "id": 23,
       "type": "table",
       "title": "Runs",
       "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, when it started and finished, and how many deep checks read every byte back.",
@@ -1545,7 +1773,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 28,
+        "y": 36,
         "w": 12,
         "h": 8
       }
