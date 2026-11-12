@@ -3,11 +3,10 @@
 One Beelink mini-PC running Docker Compose stacks: Home Assistant, the
 [flight tracker](https://github.com/ColinCee/flight-tracker-at-home) backend, monitoring with alerts to Discord,
 nightly encrypted backups to Cloudflare R2, and Colin's CI in Firecracker VMs. Nothing accepts a
-connection from the internet: admin access is over Tailscale, and the flight tracker's API leaves through Cloudflare
-Tunnel.
+connection from the internet: admin is over Tailscale, and the flight tracker's API and deploy doorbell use
+Cloudflare Tunnel.
 
 [![CI](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml/badge.svg?branch=main&event=push)](https://github.com/ColinCee/homelab/actions/workflows/ci.yaml?query=branch%3Amain)
-[![Deploy](https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml/badge.svg?branch=main&event=push)](https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml?query=branch%3Amain)
 
 ![Architecture](docs/architecture.svg)
 

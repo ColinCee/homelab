@@ -1,7 +1,6 @@
 """The CI workflows' steps (scripts/ci.py): the rules they apply and what they tell later steps."""
 
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -91,25 +90,6 @@ def test_only_a_pin_only_change_tells_the_next_steps(
         monkeypatch.setattr(ci, "run_base_rule", lambda script, v=verdict: v)
         ci.pins_only()
         assert out.read_text() == said
-
-
-def test_the_registry_login_stays_in_the_job_s_temp_folder_and_takes_the_token_on_stdin(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls: list[tuple[list[str], dict[str, Any]]] = []
-    monkeypatch.setattr(
-        ci.subprocess,
-        "run",
-        lambda command, **kw: calls.append((command, kw)) or type("R", (), {"returncode": 0})(),
-    )
-    for name, value in [("RUNNER_TEMP", str(tmp_path)), ("GITHUB_ENV", str(tmp_path / "env")),
-                        ("GHCR_USER", "ColinCee"), ("GHCR_TOKEN", "t0ken")]:  # fmt: skip
-        monkeypatch.setenv(name, value)
-    assert ci.ghcr_login() == 0
-    [(command, kw)] = calls
-    assert "t0ken" not in command and kw["input"] == "t0ken"
-    assert kw["env"]["DOCKER_CONFIG"] == str(tmp_path / "docker")
-    assert (tmp_path / "env").read_text() == f"DOCKER_CONFIG={tmp_path / 'docker'}\n"
 
 
 def test_the_pull_request_rules_all_run_and_any_failure_fails_the_step(

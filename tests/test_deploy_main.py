@@ -89,21 +89,6 @@ def test_a_merge_landing_mid_deploy_is_deployed_in_the_same_run(lab: Lab) -> Non
     assert lab.deploys == [(second, None), (third, second)]
 
 
-def test_a_checkout_reset_to_an_older_commit_mid_deploy_is_deployed_again(lab: Lab) -> None:
-    first = git(lab.dev, "rev-parse", "HEAD")
-    second = lab.merge("second")
-    resets = [first]
-
-    def reset_once() -> None:
-        if resets:
-            git(lab.checkout, "reset", "-q", "--hard", resets.pop())
-
-    lab.on_deploy = reset_once
-
-    assert deploy_main.deploy_main(lab.host()) == 0
-    assert [head for head, _ in lab.deploys] == [second, second]
-
-
 def test_a_ring_with_nothing_new_still_runs_the_deploy_for_changed_secrets(lab: Lab) -> None:
     head = git(lab.dev, "rev-parse", "HEAD")
     lab.marker.write_text(head + "\n")

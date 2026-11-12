@@ -60,7 +60,7 @@ LABELS = {
     "ssh_login": ("user", "from", "device"),
 }
 HELP = {
-    "deploy": "When deploy.yaml last started for this actor and commit, in the last hour.",
+    "deploy": "When deploy.yaml last wrote secrets for this actor and commit, in the last hour.",
     "ci_host_install": "When update.sh last installed this commit as root, in the last hour.",
     "runner_guard_refusal": "When the runner guard last refused a job, in the last hour.",
     "ssh_login": "When this user last logged in over SSH from this address, in the last hour.",

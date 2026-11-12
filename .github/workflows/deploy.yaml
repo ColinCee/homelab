@@ -1,13 +1,8 @@
 name: Deploy
 
+# Writes GitHub's secrets to the Beelink, run by hand after a secret changes; deploy-main deploys their readers
+# within 15 minutes (docs/architecture.md, "Deploys"). Merges deploy through the doorbell, not here.
 on:
-  push:
-    branches: [main]
-    paths:
-      - "stacks/**"
-      - "scripts/**"
-      - ".github/workflows/deploy.yaml"
-  # A new secret goes live without a change to deploy: the stacks reading it are deployed (deploy.py).
   workflow_dispatch:
 
 concurrency:
@@ -23,17 +18,16 @@ jobs:
     runs-on: beelink
     permissions:
       contents: read
-      packages: read # Pull private GHCR images
     steps:
-      # For the intrusion alerts (scripts/security_facts.py): every deploy posts who and what.
+      # For the intrusion alerts (scripts/security_facts.py): every run posts who and what.
       - name: Record the deploy
         env:
           ACTOR: ${{ github.actor }}
           COMMIT: ${{ github.sha }}
         run: logger -t homelab-deploy "commit=$COMMIT actor=$ACTOR"
 
-      # Every step runs from the server checkout, so the job makes no checkout of its own. This one stays plain git, not
-      # scripts/ci.py: it is what brings the commit's code in.
+      # The names render-secrets reads come from this file in the checkout, so it must be main's. Plain git, not
+      # scripts/ci.py: it is what brings main's code in.
       - name: Select exact revision
         working-directory: /home/colin/code/homelab
         env:
@@ -59,22 +53,3 @@ jobs:
           STATS_PASSWORD: ${{ secrets.STATS_PASSWORD }}
         working-directory: /home/colin/code/homelab
         run: scripts/render-secrets.sh
-
-      - name: Log in to GHCR
-        working-directory: /home/colin/code/homelab
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GHCR_USER: ${{ github.actor }}
-        run: python3 scripts/ci.py ghcr-login
-
-      # Only stacks changed since the last full deploy (all when shared deploy files changed);
-      # the marker lives outside the checkout, which each deploy resets. This push's own stacks
-      # go first, after any stack creating a network or volume they use.
-      - name: Deploy changed stacks
-        id: deploy
-        env:
-          BEFORE: ${{ github.event.before }}
-        working-directory: /home/colin/code/homelab
-        run: >-
-          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed"
-          --first-changed-since "$BEFORE"
