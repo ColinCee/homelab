@@ -1,9 +1,10 @@
 """CI run times (scripts/ci_times.py): one trace per run attempt, the latest of Colin's own runs as
 metrics, and others' runs' own words kept out."""
 
+import email.message
 import json
-import os
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path
 
 from scripts import ci_times
@@ -12,7 +13,15 @@ COLIN = {"id": ci_times.OWNER_ID, "login": "ColinCee"}
 OTHER = {"id": 1, "login": "someone"}
 
 
-def run(n: int, *, actor=COLIN, event="push", branch="main", head=ci_times.REPO, attempt=1) -> dict:
+def run(
+    n: int,
+    *,
+    actor: dict = COLIN,
+    event: str = "push",
+    branch: str = "main",
+    head: str = ci_times.REPO,
+    attempt: int = 1,
+) -> dict:
     return {
         "id": n,
         "run_attempt": attempt,
@@ -28,7 +37,7 @@ def run(n: int, *, actor=COLIN, event="push", branch="main", head=ci_times.REPO,
     }
 
 
-def job(n: int, labels=("self-hosted", "homelab-fc")) -> dict:
+def job(n: int, labels: Iterable[str] = ("self-hosted", "homelab-fc")) -> dict:
     return {
         "id": n,
         "name": "check",
@@ -48,10 +57,10 @@ def job(n: int, labels=("self-hosted", "homelab-fc")) -> dict:
     }
 
 
-def github(runs: list[dict], tests: list[list] | None = None):
+def github(runs: list[dict], tests: list[list] | None = None) -> tuple[ci_times.Get, list[str]]:
     asked: list[str] = []
 
-    def get(path: str):
+    def get(path: str) -> dict | list[dict]:
         asked.append(path)
         if "/annotations" in path:
             message = json.dumps(tests or [])
@@ -130,18 +139,10 @@ def test_the_tests_slowest_list_fits_github_s_annotation_limit() -> None:
     conftest.TIMES.clear()
     conftest.TIMES.update({f"tests/test_x.py::test_{'y' * 140}[{n}]": [0.0, n] for n in range(99)})
 
-    class Config:
-        pass
-
-    class Session:
-        config = Config()
-
     out = Path(tempfile.mkdtemp()) / "times.json"
-    os.environ["TEST_TIMES"] = str(out)
     try:
-        conftest.pytest_sessionfinish(Session())  # type: ignore[arg-type]
+        conftest.write_slowest(out)
     finally:
-        del os.environ["TEST_TIMES"]
         conftest.TIMES.clear()
     rows = json.loads(out.read_text())
     assert len(out.read_text()) <= 3500 and rows[0][2] == 98
@@ -150,7 +151,7 @@ def test_the_tests_slowest_list_fits_github_s_annotation_limit() -> None:
 
 
 def test_a_failed_request_keeps_what_was_sent_for_the_next_run() -> None:
-    def get(path: str):
+    def get(path: str) -> dict | list[dict]:
         if path.endswith("/runs/2/attempts/1/jobs?per_page=100"):
             raise ConnectionResetError("dropped")
         return github([run(1), run(2)])[0](path)
@@ -165,7 +166,9 @@ def test_a_run_alloy_refuses_is_skipped_and_a_whole_pass_says_done() -> None:
         if body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["spanId"] == ci_times.span_id(
             1, 1
         ):
-            raise ci_times.urllib.error.HTTPError("url", 413, "too big", {}, None)  # type: ignore[arg-type]
+            raise ci_times.urllib.error.HTTPError(
+                "url", 413, "too big", email.message.Message(), None
+            )
 
     get, _ = github([run(1), run(2)])
     state = ci_times.poll(get, refuse, {})

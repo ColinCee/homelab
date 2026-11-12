@@ -1,3 +1,4 @@
+import email.message
 import importlib.util
 import io
 import json
@@ -19,13 +20,17 @@ CURRENT = policy.policy_bytes(b'{"grants": []}')
 CANDIDATE = policy.policy_bytes(b'{"grants": [], "ssh": []}')
 
 
-def responses(monkeypatch, validation=b"{}", etag='"original"'):
+def responses(
+    monkeypatch: pytest.MonkeyPatch, validation: bytes = b"{}", etag: str = '"original"'
+) -> Mock:
     api = Mock(side_effect=[(CURRENT, etag), (validation, ""), (CANDIDATE, ""), (CANDIDATE, "")])
     monkeypatch.setattr(policy, "request", api)
     return api
 
 
-def test_apply_sends_exact_candidate_with_original_etag(monkeypatch, tmp_path):
+def test_apply_sends_exact_candidate_with_original_etag(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     api = responses(monkeypatch)
     monkeypatch.setattr("builtins.input", lambda _: "APPLY")
     policy.apply_policy(CANDIDATE, "token", "-", tmp_path, False)
@@ -41,14 +46,18 @@ def test_apply_sends_exact_candidate_with_original_etag(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("answer", ["", "yes", "apply"])
-def test_non_exact_confirmation_does_not_write(monkeypatch, tmp_path, answer):
+def test_non_exact_confirmation_does_not_write(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, answer: str
+) -> None:
     api = responses(monkeypatch)
     monkeypatch.setattr("builtins.input", lambda _: answer)
     policy.apply_policy(CANDIDATE, "token", "-", tmp_path, False)
     assert api.call_count == 2
 
 
-def test_check_mode_never_prompts_or_writes(monkeypatch, tmp_path):
+def test_check_mode_never_prompts_or_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     api = responses(monkeypatch)
     prompt = Mock(side_effect=AssertionError("unexpected prompt"))
     monkeypatch.setattr("builtins.input", prompt)
@@ -60,21 +69,25 @@ def test_check_mode_never_prompts_or_writes(monkeypatch, tmp_path):
 @pytest.mark.parametrize(
     "validation", [b'{"message":"test(s) failed"}', b'{"warnings":["unknown user"]}']
 )
-def test_http_200_validation_failure_stops_before_approval(monkeypatch, tmp_path, validation):
+def test_http_200_validation_failure_stops_before_approval(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, validation: bytes
+) -> None:
     api = responses(monkeypatch, validation=validation)
     with pytest.raises(policy.PolicyError, match="validation needs attention"):
         policy.apply_policy(CANDIDATE, "token", "-", tmp_path, False)
     assert api.call_count == 2
 
 
-def test_missing_etag_stops_before_validation(monkeypatch, tmp_path):
+def test_missing_etag_stops_before_validation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     api = responses(monkeypatch, etag="")
     with pytest.raises(policy.PolicyError, match="ETag"):
         policy.apply_policy(CANDIDATE, "token", "-", tmp_path, False)
     assert api.call_count == 1
 
 
-def test_conflict_is_not_retried(monkeypatch, tmp_path):
+def test_conflict_is_not_retried(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     api = responses(monkeypatch)
     api.side_effect = [(CURRENT, '"original"'), (b"{}", ""), policy.PolicyError("HTTP 412")]
     monkeypatch.setattr("builtins.input", lambda _: "APPLY")
@@ -83,7 +96,9 @@ def test_conflict_is_not_retried(monkeypatch, tmp_path):
     assert api.call_count == 3
 
 
-def test_readback_mismatch_is_not_reported_as_success(monkeypatch, tmp_path):
+def test_readback_mismatch_is_not_reported_as_success(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     api = responses(monkeypatch)
     api.side_effect = [(CURRENT, '"original"'), (b"{}", ""), (CANDIDATE, ""), (CURRENT, "")]
     monkeypatch.setattr("builtins.input", lambda _: "APPLY")
@@ -91,13 +106,15 @@ def test_readback_mismatch_is_not_reported_as_success(monkeypatch, tmp_path):
         policy.apply_policy(CANDIDATE, "token", "-", tmp_path, False)
 
 
-def test_noop_does_not_write(monkeypatch, tmp_path):
+def test_noop_does_not_write(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     api = responses(monkeypatch, validation=b"")
     policy.apply_policy(CURRENT, "token", "-", tmp_path, False)
     assert api.call_count == 2
 
 
-def test_with_no_argument_the_notes_policy_is_used(monkeypatch, tmp_path):
+def test_with_no_argument_the_notes_policy_is_used(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     missing, present = tmp_path / "missing.json", tmp_path / "present.json"
     present.write_bytes(CANDIDATE)
     monkeypatch.setattr(policy, "POLICY_FILES", (missing, present))
@@ -107,12 +124,12 @@ def test_with_no_argument_the_notes_policy_is_used(monkeypatch, tmp_path):
         policy.default_policy()
 
 
-def test_rejects_test_array_instead_of_policy():
+def test_rejects_test_array_instead_of_policy() -> None:
     with pytest.raises(policy.PolicyError, match="JSON object"):
         policy.policy_bytes(b"[]")
 
 
-def test_piped_invocation_fails_before_credentials(monkeypatch):
+def test_piped_invocation_fails_before_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.argv", ["tailscale_policy.py", "not-read.json"])
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
     prompt = Mock(side_effect=AssertionError("unexpected credential prompt"))
@@ -123,24 +140,24 @@ def test_piped_invocation_fails_before_credentials(monkeypatch):
     prompt.assert_not_called()
 
 
-def test_redirects_are_not_followed():
+def test_redirects_are_not_followed() -> None:
     assert (
         policy.NoRedirects().redirect_request(None, None, 302, "", {}, "https://elsewhere") is None
     )
 
 
-def test_json_output_escapes_terminal_controls():
+def test_json_output_escapes_terminal_controls() -> None:
     candidate = policy.policy_bytes(json.dumps({"hosts": {"\x1b[2J": "100.1.2.3"}}))
     assert b"\x1b" not in candidate
 
 
-def test_oauth_error_does_not_expose_secret(monkeypatch):
+def test_oauth_error_does_not_expose_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     opener = Mock()
     opener.open.side_effect = urllib.error.HTTPError(
         "https://api.tailscale.com/api/v2/oauth/token",
         400,
         "error",
-        {},
+        email.message.Message(),
         io.BytesIO(b"secret-in-response"),
     )
     monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
@@ -149,20 +166,24 @@ def test_oauth_error_does_not_expose_secret(monkeypatch):
     assert "secret-in-response" not in str(error.value)
 
 
-def test_rejected_credentials_say_what_to_check(monkeypatch):
+def test_rejected_credentials_say_what_to_check(monkeypatch: pytest.MonkeyPatch) -> None:
     opener = Mock()
-    opener.open.side_effect = urllib.error.HTTPError("https://x", 401, "error", {}, io.BytesIO())
+    opener.open.side_effect = urllib.error.HTTPError(
+        "https://x", 401, "error", email.message.Message(), io.BytesIO()
+    )
     monkeypatch.setattr(policy.urllib.request, "build_opener", lambda *_: opener)
     with pytest.raises(policy.PolicyError, match="rejected the client ID or secret"):
         policy.request("oauth/token", data=b"client_secret=wrong")
 
 
-def test_requests_verify_certificates_and_hostnames():
+def test_requests_verify_certificates_and_hostnames() -> None:
     context = policy.tls_context()
     assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
 
 
-def test_pasted_secret_is_sent_without_surrounding_whitespace(monkeypatch, tmp_path):
+def test_pasted_secret_is_sent_without_surrounding_whitespace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     candidate_file = tmp_path / "candidate.json"
     candidate_file.write_bytes(CANDIDATE)
     args = ["tailscale_policy.py", str(candidate_file), "--client-id", "id"]
@@ -178,7 +199,9 @@ def test_pasted_secret_is_sent_without_surrounding_whitespace(monkeypatch, tmp_p
     assert api.call_args.kwargs["data"].endswith(b"client_secret=tskey-client-id-abc")
 
 
-def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch, tmp_path):
+def test_file_changes_during_approval_do_not_change_uploaded_policy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     candidate_file = tmp_path / "candidate.json"
     candidate_file.write_bytes(CANDIDATE)
     api = Mock(
@@ -197,7 +220,7 @@ def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch,
     monkeypatch.setattr(policy.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(policy.getpass, "getpass", lambda _: "client-secret")
 
-    def answer(prompt):
+    def answer(prompt: str) -> str:
         if prompt == policy.ID_PROMPT:
             return "client-id"
         candidate_file.write_bytes(b'{"acls": []}')
@@ -212,7 +235,13 @@ def test_file_changes_during_approval_do_not_change_uploaded_policy(monkeypatch,
     ("saved", "override", "expected"),
     [(None, None, "entered-id"), ("saved-id", None, "saved-id"), ("saved-id", "new-id", "new-id")],
 )
-def test_remembers_only_authenticated_client_id(monkeypatch, tmp_path, saved, override, expected):
+def test_remembers_only_authenticated_client_id(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    saved: str | None,
+    override: str | None,
+    expected: str,
+) -> None:
     candidate_file = tmp_path / "candidate.json"
     candidate_file.write_bytes(CANDIDATE)
     client_id_file = tmp_path / ".config/tailscale-policy/client-id"

@@ -22,7 +22,7 @@ def secret(name: str) -> str:
     return (SECRETS / name).read_text(encoding="utf-8").strip()
 
 
-def call(method: str, path: str, body: object = None, auth: str = "") -> Any:
+def call(method: str, path: str, body: object = None, auth: str = "") -> Any:  # noqa: ANN401 - Grafana's JSON
     auth = auth or f"{os.environ['GRAFANA_ADMIN_USER']}:{secret('grafana_admin_password')}"
     request = urllib.request.Request(
         URL + path,

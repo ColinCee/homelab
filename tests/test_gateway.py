@@ -51,7 +51,7 @@ def store(name: str) -> http.server.ThreadingHTTPServer:
 
         do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = answer
 
-        def log_message(self, *args: object) -> None:
+        def log_message(self, format: str, *args: object) -> None:
             pass
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Store)
@@ -60,7 +60,7 @@ def store(name: str) -> http.server.ThreadingHTTPServer:
     return server
 
 
-def run_gateway(port: int, upstreams: dict[str, int], **passwords) -> subprocess.Popen[str]:
+def run_gateway(port: int, upstreams: dict[str, int], **passwords: str) -> subprocess.Popen[bytes]:
     """The gateway's own start script and Caddy, with the stores at local stand-ins; Caddy's log
     is `caddy.log` beside its secrets. The container's limits are compose.yaml's
     (tests/test_observability_compose.py)."""

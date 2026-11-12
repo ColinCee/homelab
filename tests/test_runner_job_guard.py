@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from scripts import runner_job_guard as guard
@@ -232,7 +234,7 @@ def test_a_private_repos_vm_takes_any_job_of_its_repo_only() -> None:
 
 
 def test_the_vm_policy_reads_what_the_vm_serves_and_the_event(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     serves, event = tmp_path / "serves.json", tmp_path / "event.json"
     serves.write_text('{"repo": "ColinCee/homelab", "public": true}')
