@@ -21,7 +21,7 @@ READERS = (
 def queries() -> list[str]:
     """Every alert and Home dashboard query, and the scripts that read metrics."""
     rules = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))
-    texts = [rule["expr"] for group in rules["groups"] for rule in group["rules"]]
+    texts = [str(rule["expr"]) for group in rules["groups"] for rule in group["rules"]]
     return texts + [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
 
 

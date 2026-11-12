@@ -56,14 +56,14 @@ def secret_like(name: str) -> bool:
     return bool(SECRET_NAME.search(name)) and not FILE_OPTION.search(name)
 
 
-def environment(service: dict) -> dict[str, str]:
+def environment(service: dict[str, Any]) -> dict[str, str]:
     env = service.get("environment") or {}
     if isinstance(env, list):
         env = dict(item.split("=", 1) if "=" in item else (item, "") for item in env)
     return {name: str(value) for name, value in env.items()}
 
 
-def problems(compose: dict) -> list[str]:
+def problems(compose: dict[str, Any]) -> list[str]:
     found = []
     for name, service in compose.get("services", {}).items():
         if "env_file" in service:
@@ -96,7 +96,7 @@ def test_no_secret_in_a_containers_environment(path: Path) -> None:
         {"env_file": [".env"]},
     ],
 )
-def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict) -> None:
+def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict[str, Any]) -> None:
     assert problems({"services": {"s": service}})
 
 

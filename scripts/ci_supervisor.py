@@ -35,7 +35,7 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -511,7 +511,8 @@ class GitHub:
         """One request on this thread's open connection. One GitHub closed while it sat
         idle fails at once and is tried again on a new one; a POST (a VM's registration)
         always gets a new one, so it is never sent twice."""
-        conn: http.client.HTTPSConnection | None = getattr(self._local, "conn", None)
+        held = getattr(self._local, "conn", None)
+        conn = held if isinstance(held, http.client.HTTPSConnection) else None
         if method == "POST" and conn is not None:
             conn.close()
             conn = None
@@ -619,7 +620,7 @@ def check_served(
 def colins(run: Mapping[str, Any]) -> bool:
     """A run Colin started and, if re-run, re-ran."""
     actor, triggering = run.get("actor") or {}, run.get("triggering_actor") or {}
-    return actor.get("id") == OWNER_ID and triggering.get("login") == OWNER
+    return bool(actor.get("id") == OWNER_ID and triggering.get("login") == OWNER)
 
 
 def find_queued(gh: GitHubApi, repo: str, *, colins_only: bool = False) -> list[Job]:
@@ -1132,7 +1133,7 @@ def reap(
 
 
 @contextlib.contextmanager
-def bookkeeping(run: Launch, what: str) -> Iterator[None]:
+def bookkeeping(run: Launch, what: str) -> Generator[None, None, None]:
     """Logs a failure of one VM's after-the-fact bookkeeping instead of failing the poll. A
     rate limit still ends the poll, leaving the VM to be tried again on the next."""
     try:
@@ -1646,9 +1647,9 @@ def note_waits(
     starts waiting and every WAIT_LOG_SECONDS, and at once if GitHub had queued it
     UNSEEN_LOG_SECONDS before the supervisor saw it. A job that was logged gets one more line
     when it stops waiting. Jobs of repos not polled this time are left as they are."""
-    queued_at = queued_at or {}
-    workflows = workflows or {}
-    unmatched = unmatched or {}
+    queued_at = queued_at or dict[int, float]()
+    workflows = workflows or dict[int, str]()
+    unmatched = unmatched or dict[int, tuple[str, ...]]()
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
@@ -1878,7 +1879,7 @@ def read_load_test() -> dict[str, object] | None:
         record = json.loads(LOAD_TEST_FILE.read_text())
     except (OSError, ValueError):
         return None
-    return record if isinstance(record, dict) else None
+    return {str(k): v for k, v in record.items()} if isinstance(record, dict) else None
 
 
 def file_hash(path: Path) -> str:
@@ -2003,7 +2004,7 @@ def replace_file(path: Path, text: str) -> None:
 def private_repos(gh: GitHubApi) -> dict[str, str]:
     """Colin's private repositories the token can see, the ones that signed up, each
     with its default branch. An archived one takes no jobs, so it gets no VM or standby."""
-    repos: list[dict] = []
+    repos: list[dict[str, Any]] = []
     for n in range(1, 11):
         page = gh.request(
             "GET", f"/user/repos?visibility=private&affiliation=owner&per_page=100&page={n}"

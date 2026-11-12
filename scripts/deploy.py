@@ -15,6 +15,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -454,11 +455,11 @@ def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
     return hashes
 
 
-def _bind_sources(spec: Mapping) -> list[str]:
+def _bind_sources(spec: Mapping[str, Any]) -> list[str]:
     """A service's bind-mounted host paths inside its stack folder (./name)."""
-    sources = []
+    sources: list[str] = []
     for volume in spec.get("volumes") or []:
-        source = volume.split(":")[0] if isinstance(volume, str) else volume.get("source", "")
+        source = volume.split(":")[0] if isinstance(volume, str) else str(volume.get("source", ""))
         if source.startswith("./"):
             sources.append(source)
     return sources

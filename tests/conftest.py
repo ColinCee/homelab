@@ -59,7 +59,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 def write_slowest(out: Path) -> None:
     """[[test, start, seconds], ...], slowest first, under the 4096 characters GitHub keeps of an
     annotation (with room for escaping)."""
-    rows: list[list] = []
+    rows: list[list[Any]] = []
     for test, (start, took) in sorted(TIMES.items(), key=lambda item: -item[1][1]):
         row = [test[-150:], round(start, 2), round(took, 2)]
         if len(json.dumps([*rows, row], separators=(",", ":"))) > 3500:

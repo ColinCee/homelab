@@ -2,6 +2,7 @@
 and the runner guard into security.prom."""
 
 from pathlib import Path
+from typing import Any
 
 from scripts import security_facts
 
@@ -23,7 +24,7 @@ STATUS = {
 }
 
 
-def entry(identifier: str, message: object, seconds: int) -> dict:
+def entry(identifier: str, message: object, seconds: int) -> dict[str, Any]:
     return {
         "SYSLOG_IDENTIFIER": identifier,
         "MESSAGE": message,
