@@ -23,7 +23,7 @@ A panel goes on the page whose question it answers.
 | `services` | What runs on it: is each running, and what does it use and complain about? |
 | `ci` | Is CI fast, and is it getting slower? |
 | `logs` | What are the services saying? Pick containers, search words |
-| `traces` | What did each service answer, and how long did it take? |
+| `traces` | What did each service answer, how long did it take, and who fills the store? |
 
 - Every page carries the same `links`, one to each page.
 - A Home tile opens the page that explains it: `fieldConfig.defaults.links`, `oneClick`, `/d/<uid>`.

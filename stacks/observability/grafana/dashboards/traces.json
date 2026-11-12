@@ -805,7 +805,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:1d \"resource_attr:service.name\":* | stats by (\"resource_attr:service.name\") count() as spans, count_uniq(trace_id) as traces | sort by (spans) desc | limit 15",
+          "expr": "_time:1d \"resource_attr:service.name\":* | stats by (\"resource_attr:service.name\") count() as spans | sort by (spans) desc | limit 15",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -825,18 +825,15 @@
           "options": {
             "includeByName": {
               "resource_attr:service.name": true,
-              "spans": true,
-              "traces": true
+              "spans": true
             },
             "indexByName": {
               "resource_attr:service.name": 0,
-              "spans": 1,
-              "traces": 2
+              "spans": 1
             },
             "renameByName": {
               "resource_attr:service.name": "Sender",
-              "spans": "Spans",
-              "traces": "Traces"
+              "spans": "Spans"
             }
           }
         },
@@ -846,10 +843,6 @@
             "conversions": [
               {
                 "targetField": "Spans",
-                "destinationType": "number"
-              },
-              {
-                "targetField": "Traces",
                 "destinationType": "number"
               }
             ]

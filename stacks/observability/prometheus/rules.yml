@@ -685,7 +685,7 @@ groups:
           measure: 'Taken in the last 15 min, a second'
           unit: ''
           harm: >-
-            The log or trace store is taking in hundreds of times its usual load, which fills its memory and disk and
+            The log or trace store is taking in far more than its usual load, which fills its memory and disk and
             buries what the services wrote.
           action: >-
             Find the sender on Grafana's Traces page (http://grafana.internal/d/traces) or Logs page
