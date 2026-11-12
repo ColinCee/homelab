@@ -252,7 +252,7 @@ if __name__ == "__main__":
     except (PolicyError, OSError, ValueError, getpass.GetPassWarning) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
-    except (KeyboardInterrupt, EOFError):
+    except KeyboardInterrupt, EOFError:
         print(
             "\nInterrupted. If applying had started, inspect live state before retrying.",
             file=sys.stderr,

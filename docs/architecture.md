@@ -32,14 +32,14 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## Network and access
 
-- Nothing accepts a connection from the internet. Admin pages bind to the Tailscale address, and Docker waits for it
+- Nothing accepts an internet connection. Admin pages bind to the Tailscale address, which Docker waits for
   at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
   ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
 - The flight tracker's API is public through Cloudflare Tunnel, an outbound connection, so filtering it belongs at
   Cloudflare.
 - Docker's bridge containers and the CI VMs reach the internet, not the host, LAN or tailnet: two nftables tables in
-  [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft), whose header lists what they leave open. A service that needs
+  [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft). A service that needs
   the host uses host networking, as Home Assistant, the probes and `internal-names` do.
 
 ## CI runner
@@ -61,15 +61,16 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py),
   vm policy) kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
-  VMs run at CPU weight 20 against the services' 100. Why a job waits: `journalctl -u homelab-ci-supervisor | grep
-  'has waited'`. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (service `ci`) and alerts
+  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (service `ci`) and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
   ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
   the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
   connection.
-- [`ci-runner/tests/audit.sh`](../ci-runner/tests/audit.sh) is the gate: run it after every Firecracker, kernel or
-  runner upgrade.
+- Host units run `homelab-python3`, the `mise.toml` Python, which `install_host.py` links after a hash check. It,
+  `update.py` and the [runner guard](../scripts/runner_job_guard.py) stay on the system's 3.12 to repair or guard it, as
+  do the deploy scripts, which need its `python3-yaml`.
+- [`audit.sh`](../ci-runner/tests/audit.sh) gates every Firecracker, kernel or runner upgrade.
 
 ## Monitoring and alerts
 
@@ -125,8 +126,7 @@ encrypted: Home Assistant's config and a consistent copy of its history, the fli
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
 ([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
 6 monthly snapshots, reads back every byte on Sundays, and uploads nothing past 8 GB, since R2 bills past 10 GB.
-`RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Alerts
-cover a missed night, a stale PC backup, a full store and an upkeep failed or missed. Restoring: [recovery](recovery.md).
+`RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Restoring: [recovery](recovery.md).
 
 ## Public stats
 

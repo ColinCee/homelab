@@ -90,7 +90,7 @@ def slowest_tests(get: Get, job_id: int) -> list[dict[str, Any]]:
                 {"test": str(t[0])[:NAME_MAX], "start": float(t[1]), "seconds": float(t[2])}
                 for t in json.loads(note.get("message", ""))[:TESTS_MAX]
             ]
-        except (ValueError, TypeError, IndexError):
+        except ValueError, TypeError, IndexError:
             return []
     return []
 

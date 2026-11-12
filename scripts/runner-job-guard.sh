@@ -4,4 +4,5 @@
 # Python from reading PYTHON* variables or the job's working directory.
 # Installed root-owned by scripts/install-runner-guard.sh; MODE is set at install time.
 MODE=enforce
+# /usr/bin/python3, not homelab-python3: the guard must run whatever the pinned Python does (runner_job_guard.py).
 exec /usr/bin/python3 -I /usr/local/lib/homelab/runner_job_guard.py --mode "$MODE"
