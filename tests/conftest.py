@@ -47,7 +47,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     for line in over:
         print()
         print(f"{line}. Make it faster, or raise the limit here in a pull request saying why.")
-    if over and os.environ.get("CI"):
+    if over and os.environ.get("CI") and session.exitstatus == pytest.ExitCode.OK:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     # The slowest tests for scripts/ci_times.py, which ci.yaml posts as an annotation.
     out = os.environ.get("TEST_TIMES")

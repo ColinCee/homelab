@@ -65,6 +65,14 @@ def test_no_container_with_a_host_folder_can_read_a_secret_on_the_host() -> None
         assert not [p for p in host if p in closed or p.startswith(("/home/", "/root/"))], name
 
 
+def test_the_gateway_runs_read_only_as_nobody_with_no_capabilities() -> None:
+    # The gateway faces every reader; tests/test_gateway.py runs its Caddy outside the container.
+    gateway = SERVICES["gateway"]
+    assert gateway["read_only"] is True and gateway["user"] == "65534:65534"
+    assert gateway["cap_drop"] == ["ALL"] and gateway["security_opt"] == ["no-new-privileges:true"]
+    assert [t.split(":")[0] for t in gateway["tmpfs"]] == ["/data", "/config"]
+
+
 def test_alloy_reaches_no_internet_host_or_tailnet() -> None:
     alloy = SERVICES["alloy"]
     assert all(COMPOSE["networks"][n]["internal"] is True for n in alloy["networks"])

@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # Labelled too: the slower-ci label lets a raised time limit pass.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   contents: read
@@ -45,6 +47,21 @@ jobs:
           script="$RUNNER_TEMP/versions_hash.py"
           git show HEAD^1:scripts/versions_hash.py > "$script" 2>/dev/null || exit 0
           python3 "$script" HEAD^1 HEAD
+      # A test time limit (tests/conftest.py) goes up, or away, only by a decision: the slower-ci label, with the
+      # reason in the pull request.
+      - name: Check the test time limits
+        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'slower-ci')
+        run: |
+          limits() { awk -F' = ' '/^RUN_LIMIT = /{r=$2} /^TEST_LIMIT = /{t=$2} END{print r, t}'; }
+          read -r base_run base_test < <(git show HEAD^1:tests/conftest.py | limits)
+          read -r run test < <(limits < tests/conftest.py)
+          [[ -n $base_run && -n $base_test ]] || exit 0
+          if [[ -z $run || -z $test ]] ||
+            awk -v a="$run" -v b="$base_run" -v c="$test" -v d="$base_test" 'BEGIN { exit !(a > b || c > d) }'; then
+            echo "::error::A test time limit went up (RUN_LIMIT $base_run to $run, TEST_LIMIT $base_test to $test)." \
+              "Make the tests faster, or add the slower-ci label and say why in the pull request."
+            exit 1
+          fi
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
         run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
@@ -82,13 +99,14 @@ jobs:
           # A workflow command's message escapes % (one line, as the JSON is).
           echo "::notice title=slowest tests::$(sed 's/%/%25/g' "$times")"
       # The cache disk holds what mise.toml and uv.lock install, so it is saved (about 14 s) only when they changed.
+      # The key goes in a folder: fc-cache packs only folders.
       - name: Check whether the cache disk would change
         id: cache
         if: runner.environment == 'self-hosted'
         run: |
           key=$(cat mise.toml uv.lock | sha256sum | cut -c1-16)
-          if [[ $(cat /cache/key 2>/dev/null) != "$key" ]]; then
-            echo "$key" > /cache/key
+          if [[ $(cat /cache/mise/.ci-key 2>/dev/null) != "$key" ]]; then
+            mkdir -p /cache/mise && echo "$key" > /cache/mise/.ci-key
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
       - uses: ./.github/actions/fc-cache

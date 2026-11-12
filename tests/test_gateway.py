@@ -23,6 +23,7 @@ from tests.test_alert_rules import STACK
 PASSWORDS = {"stats": "s", "agents": "a"}
 # Removed when the tests end.
 SECRETS = tempfile.TemporaryDirectory()
+LOGS: list[Path] = []
 STORES = ("prometheus", "alertmanager", "logs", "traces")
 QUERY = "/prometheus/api/v1/query?query=up"
 
@@ -60,9 +61,11 @@ def store(name: str) -> http.server.ThreadingHTTPServer:
 
 
 def run_gateway(port: int, upstreams: dict[str, int], **passwords) -> subprocess.Popen[str]:
-    """The gateway's own start script and Caddy, with the stores at local stand-ins. The
-    container's limits (read-only, no capabilities) are compose.yaml's, tested there."""
+    """The gateway's own start script and Caddy, with the stores at local stand-ins; Caddy's log
+    is `caddy.log` beside its secrets. The container's limits are compose.yaml's
+    (tests/test_observability_compose.py)."""
     secrets = Path(tempfile.mkdtemp(dir=SECRETS.name))
+    LOGS.append(secrets / "caddy.log")
     for name, password in passwords.items():
         (secrets / f"{name}_password").write_text(password, encoding="utf-8")
     env = {
@@ -75,9 +78,13 @@ def run_gateway(port: int, upstreams: dict[str, int], **passwords) -> subprocess
         "GATEWAY_PORT": str(port),
     } | {name.upper(): f"127.0.0.1:{p}" for name, p in upstreams.items()}
     script = str(STACK / "gateway/start.sh")
-    return subprocess.Popen(
-        ["sh", script], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
-    )
+    # A file, not a pipe nobody reads, which a chatty Caddy would fill and block on.
+    with LOGS[-1].open("w") as log:
+        return subprocess.Popen(["sh", script], env=env, stdout=log, stderr=log)
+
+
+def last_log() -> str:
+    return LOGS[-1].read_text(encoding="utf-8")[-2000:]
 
 
 def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict]:
@@ -106,8 +113,8 @@ def gateway() -> Iterator[int]:
             time.sleep(0.1)
         else:
             gateway.kill()
-            pytest.fail("the gateway did not answer in 10 s: " + gateway.communicate()[1][-2000:])
-        assert gateway.poll() is None, gateway.communicate()[1][-2000:]
+            pytest.fail("the gateway did not answer in 10 s: " + last_log())
+        assert gateway.poll() is None, last_log()
         yield port
     finally:
         gateway.kill()
@@ -202,5 +209,4 @@ def test_a_wrong_login_is_refused(gateway: int, auth: str | None) -> None:
 def test_a_missing_password_stops_the_gateway() -> None:
     # An empty password would make the login `stats@homelab.internal:` match.
     gateway = run_gateway(free_port(), {}, **(PASSWORDS | {"stats": ""}))
-    assert gateway.wait(timeout=30) != 0
-    gateway.communicate()
+    assert gateway.wait(timeout=30) != 0, last_log()
