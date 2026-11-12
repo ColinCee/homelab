@@ -3,7 +3,7 @@
 (homelab-ci.nft, which also holds the container wall), and the iptables accept Docker's
 FORWARD chain needs. Idempotent; run by homelab-ci-net.service after Docker.
   setup-net.sh [up|down|wan]
-"wan" refreshes the blocked public address; run-vm.sh calls it before each VM.
+"wan" refreshes the blocked public address; run_vm.py calls it before each VM.
 """
 
 from __future__ import annotations
@@ -86,7 +86,7 @@ class Network:
         ]
 
     def public_address(self) -> str | None:
-        # A few tries: one slow answer should not cost a VM (run-vm.sh refuses to start without it).
+        # A few tries: one slow answer should not cost a VM (run_vm.py refuses to start without it).
         try:
             trace = self.run(
                 [
@@ -138,7 +138,7 @@ class Network:
     def up(self) -> int:
         # The rules load first, with any public address already loaded, so running VMs never
         # see the blocked address set empty and the container wall is up before the slow
-        # address lookup. On a first start run-vm.sh refuses VMs until the address is set.
+        # address lookup. On a first start run_vm.py refuses VMs until the address is set.
         # Every fc-slot user that exists, not the slot count, so a user left from a larger
         # count stays walled off too.
         uids = ",".join(
@@ -169,7 +169,7 @@ class Network:
         self.nft(rules)
         if not self.refresh_wan():
             print(
-                f"public address not refreshed: {wan or 'none'} kept; run-vm.sh refreshes it"
+                f"public address not refreshed: {wan or 'none'} kept; run_vm.py refreshes it"
                 " before each VM",
                 file=sys.stderr,
             )

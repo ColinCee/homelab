@@ -43,14 +43,21 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 "ci-runner/tests/test_load.py" = "py312"
 "ci-runner/tests/test_network.py" = "py312"
 "ci-runner/tests/audit.py" = "py312"
+"ci-runner/vm_disks.py" = "py312"
+"ci-runner/run_vm.py" = "py312"
+"ci-runner/stop_vms.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Tests import scripts/ as a package, whichever way pytest is started.
-pythonpath = ["."]
+# Tests import scripts/ as a package and ci-runner/'s modules by name, whichever way pytest is started.
+pythonpath = [".", "ci-runner"]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
 [tool.ty]
+
+[tool.ty.environment]
+# run_vm.py and stop_vms.py import vm_disks.py from their own folder.
+extra-paths = ["ci-runner"]
 
 # Kaizen's standard (standards.md, Types): no untyped value gets through, and a warning fails the check.
 [tool.ty.rules]

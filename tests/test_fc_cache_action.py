@@ -1,7 +1,6 @@
 """The shared action that saves a repo's cache disk (.github/actions/fc-cache)."""
 
 import os
-import re
 import subprocess
 import sys
 import tarfile
@@ -17,14 +16,6 @@ ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
 def test_the_pack_checks_the_supervisors_size_limit() -> None:
     script = (ACTION / "fc_cache.py").read_text()
     assert f"MAX_UNPACKED = {sup.CACHE_MAX_UNPACKED_BYTES}\n" in script
-
-
-def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
-    script = (ACTION.parent.parent.parent / "ci-runner" / "run-vm.sh").read_text()
-    size = re.search(r"OUTBOX_BYTES=\$\(\((.+)\)\)", script)
-
-    assert size is not None
-    assert eval(size.group(1)) >= sup.CACHE_MAX_UNPACKED_BYTES + 512
 
 
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
@@ -44,7 +35,7 @@ def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path: Path) -> N
     assert pack(tmp_path / "cache", tmp_path / "work").returncode == 0
     other, outbox = tmp_path / "vdb", tmp_path / "vdc"
     other.write_bytes(b"\0" * 4096)  # the cache disk: an ext4 starts with zeros
-    outbox.write_bytes(b"homelab-ci-outbox\n".ljust(1 << 20, b"\0"))  # as run-vm.sh makes it
+    outbox.write_bytes(b"homelab-ci-outbox\n".ljust(1 << 20, b"\0"))  # as run_vm.py makes it
 
     result = save(tmp_path / "cache.tar", other, outbox)
 
