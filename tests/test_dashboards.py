@@ -1,5 +1,5 @@
-"""Grafana's Home (stacks/observability/grafana/home.json) keeps the layout, colours and queries in
-.github/skills/building-dashboards/SKILL.md."""
+"""Grafana's dashboards (stacks/observability/grafana/dashboards/) keep the layout, colours, links
+and queries in .github/skills/building-dashboards/SKILL.md."""
 
 import json
 import re
@@ -7,12 +7,16 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from tests.test_alert_rules import promtool
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
-HOME = json.loads((STACK / "grafana/home.json").read_text(encoding="utf-8"))
+PAGES: dict[str, dict[str, Any]] = {
+    path.stem: json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted((STACK / "grafana/dashboards").glob("*.json"))
+}
 SOURCES = {"prometheus", "alertmanager", "logs", "traces"}
 
 # These dataviz steps pass contrast checks on Grafana's light and dark themes.
@@ -33,25 +37,27 @@ MIXED_CASE = {
     )
 }
 
+every_page = pytest.mark.parametrize("page", PAGES.values(), ids=PAGES)
 
-def panels(home: dict[str, Any]) -> list[dict[str, Any]]:
+
+def panels(page: dict[str, Any]) -> list[dict[str, Any]]:
     """Every panel, those inside collapsed rows included."""
     found = []
-    for panel in home["panels"]:
+    for panel in page["panels"]:
         found.append(panel)
         found += panel.get("panels", [])
     return found
 
 
-def charts(home: dict[str, Any]) -> list[dict[str, Any]]:
-    return [p for p in panels(home) if p["type"] != "row"]
+def charts(page: dict[str, Any]) -> list[dict[str, Any]]:
+    return [p for p in panels(page) if p["type"] != "row"]
 
 
 def uid(panel: dict[str, Any]) -> str:
     return str((panel.get("datasource") or {}).get("uid", ""))
 
 
-def series_colours(panel: dict[str, Any]) -> dict[str, str]:
+def named_colours(panel: dict[str, Any]) -> dict[str, str]:
     return {
         o["matcher"]["options"]: prop["value"]["fixedColor"]
         for o in panel.get("fieldConfig", {}).get("overrides", [])
@@ -61,10 +67,22 @@ def series_colours(panel: dict[str, Any]) -> dict[str, str]:
     }
 
 
-def prometheus_queries(home: dict[str, Any]) -> list[str]:
+def colour(panel: dict[str, Any], series: str) -> str | None:
+    """The colour the panel's overrides give a series, by its name or by a pattern."""
+    for override in panel.get("fieldConfig", {}).get("overrides", []):
+        matcher = override["matcher"]
+        named = matcher["id"] == "byName" and matcher["options"] == series
+        matched = matcher["id"] == "byRegexp" and re.search(matcher["options"].strip("/"), series)
+        for prop in override["properties"]:
+            if (named or matched) and prop["id"] == "color":
+                return str(prop["value"]["fixedColor"])
+    return None
+
+
+def prometheus_queries(page: dict[str, Any]) -> list[str]:
     return [
         t["expr"]
-        for p in charts(home)
+        for p in charts(page)
         for t in p["targets"]
         if t.get("datasource", p.get("datasource", {})).get("uid") == "prometheus"
     ]
@@ -91,17 +109,29 @@ def levels() -> dict[str, str]:
     return {name: NOW if level == "now" else WEEK for name, level in found.items()}
 
 
-def test_home_is_read_only_and_its_log_panels_read_victorialogs() -> None:
-    # A dashboard exported from Grafana's editor comes back editable and with an id.
-    assert HOME["editable"] is False and "id" not in HOME
-    logs = [p for p in charts(HOME) if uid(p) == "logs"]
+def test_each_page_is_read_only_and_log_panels_read_victorialogs() -> None:
+    for name, page in PAGES.items():
+        # A dashboard exported from Grafana's editor comes back editable and with an id.
+        assert page["editable"] is False and "id" not in page, name
+        assert page["uid"] == name
+    logs = [p for page in PAGES.values() for p in charts(page) if uid(p) == "logs"]
     assert logs and all(p["datasource"]["type"] == "victoriametrics-logs-datasource" for p in logs)
 
 
-def test_every_panel_reads_a_provisioned_source() -> None:
-    ids = [p["id"] for p in panels(HOME)]
+def test_every_link_opens_a_page_and_every_page_has_the_same_link_bar() -> None:
+    bar = PAGES["home"]["links"]
+    assert {link["url"] for link in bar} >= {f"/d/{name}" for name in PAGES}
+    for name, page in PAGES.items():
+        assert page["links"] == bar, name
+        for opened in re.findall(r'"/d/([^"/?]*)', json.dumps(page)):
+            assert opened in PAGES, name
+
+
+@every_page
+def test_every_panel_reads_a_provisioned_source(page: dict[str, Any]) -> None:
+    ids = [p["id"] for p in panels(page)]
     assert len(ids) == len(set(ids))
-    for panel in charts(HOME):
+    for panel in charts(page):
         assert uid(panel) in SOURCES, panel["title"]
         assert panel["targets"], panel["title"]
         refs = [t["refId"] for t in panel["targets"]]
@@ -110,7 +140,8 @@ def test_every_panel_reads_a_provisioned_source() -> None:
             assert target["datasource"]["uid"] in SOURCES, panel["title"]
 
 
-def test_no_two_panels_overlap_and_all_fit_the_width() -> None:
+@every_page
+def test_no_two_panels_overlap_and_all_fit_the_width(page: dict[str, Any]) -> None:
 
     def place(group: list[dict[str, Any]]) -> None:
         cells: set[tuple[int, int]] = set()
@@ -126,8 +157,8 @@ def test_no_two_panels_overlap_and_all_fit_the_width() -> None:
             cells |= mine
 
     # What shows with every row closed, then each closed row's panels as it opens.
-    place(HOME["panels"])
-    for row in HOME["panels"]:
+    place(page["panels"])
+    for row in page["panels"]:
         if row["type"] == "row" and row["collapsed"]:
             assert all(p["gridPos"]["y"] > row["gridPos"]["y"] for p in row["panels"])
             place(row["panels"])
@@ -136,38 +167,41 @@ def test_no_two_panels_overlap_and_all_fit_the_width() -> None:
 
 
 def test_groups_containers_and_rules_wear_one_colour_on_every_panel() -> None:
-    every = charts(HOME)
-    by_container = [p for p in every if set(series_colours(p)) & set(containers())]
+    every = [p for page in PAGES.values() for p in charts(page)]
+    by_container = [p for p in every if any(colour(p, name) for name in containers())]
     assert by_container
     for panel in by_container:
-        assert series_colours(panel) == containers(), panel["title"]
+        assert {name: colour(panel, name) for name in containers()} == containers(), panel["title"]
     for panel in every:
-        for group in set(series_colours(panel)) & set(GROUPS):
-            assert series_colours(panel)[group] == GROUPS[group], panel["title"]
+        for group, its in GROUPS.items():
+            assert colour(panel, group) in (None, its), panel["title"]
     rules = next(p for p in every if p["title"] == "Rules firing, by hour")
-    assert series_colours(rules) == levels()
+    assert named_colours(rules) == levels()
 
 
-def test_tiles_are_red_or_amber_and_unlisted_series_gray() -> None:
-    for panel in charts(HOME):
+@every_page
+def test_tiles_are_red_or_amber_and_unlisted_series_gray(page: dict[str, Any]) -> None:
+    for panel in charts(page):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
         if panel["type"] == "stat":
             steps = defaults["thresholds"]["steps"]
             assert {s["color"] for s in steps} <= {"text", NOW, WEEK}, panel["title"]
+            assert set(named_colours(panel).values()) <= {NOW, WEEK}, panel["title"]
         elif "color" in defaults:
             # A series no list names, like a removed container, is drawn gray.
             assert defaults["color"] == {"mode": "fixed", "fixedColor": NEUTRAL}, panel["title"]
 
 
-def test_prometheus_queries_name_metrics_as_alloy_sends_them() -> None:
-    for query in prometheus_queries(HOME):
+@every_page
+def test_prometheus_queries_name_metrics_as_alloy_sends_them(page: dict[str, Any]) -> None:
+    for query in prometheus_queries(page):
         bare = re.sub(r'"[^"]*"', '""', query)
         for name in re.findall(r"\b[a-zA-Z_:][a-zA-Z0-9_:]*\b", bare):
             assert MIXED_CASE.get(name.lower(), name) == name, query
         for left, right in ("()", "[]", "{}"):
             assert bare.count(left) == bare.count(right), query
     # Grafana's legends are `{{label}}`; a single-braced `{label}` shows as text.
-    for panel in charts(HOME):
+    for panel in charts(page):
         for target in panel["targets"]:
             legend = target.get("legendFormat", "")
             assert not re.search(r"(?<!\{)\{\w+\}(?!\})", legend), panel["title"]
@@ -177,15 +211,16 @@ def test_prometheus_parses_every_query(tmp_path: Path) -> None:
     # Grafana shows a query Prometheus cannot parse only as an error on its panel. Grafana fills in
     # its duration macros before Prometheus sees the query.
     macros = re.compile(r"\$__(range|rate_interval|interval)\b")
-    queries = [macros.sub("1h", q) for q in prometheus_queries(HOME)]
-    rules = [{"record": f"home:{i}", "expr": q} for i, q in enumerate(queries)]
-    (tmp_path / "home.yml").write_text(json.dumps({"groups": [{"name": "home", "rules": rules}]}))
-    checked = promtool("check", "rules", str(tmp_path / "home.yml"))
+    queries = [macros.sub("1h", q) for page in PAGES.values() for q in prometheus_queries(page)]
+    rules = [{"record": f"page:{i}", "expr": q} for i, q in enumerate(queries)]
+    (tmp_path / "pages.yml").write_text(json.dumps({"groups": [{"name": "pages", "rules": rules}]}))
+    checked = promtool("check", "rules", str(tmp_path / "pages.yml"))
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
-def test_log_patterns_hold_no_control_characters() -> None:
+@every_page
+def test_log_patterns_hold_no_control_characters(page: dict[str, Any]) -> None:
     # A "\b" written through a non-raw string becomes a backspace and the pattern matches nothing.
-    for panel in charts(HOME):
+    for panel in charts(page):
         for target in panel["targets"]:
             assert target["expr"].isprintable(), panel["title"]

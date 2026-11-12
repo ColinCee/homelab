@@ -12,17 +12,14 @@ from tests.conftest import tool
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
 CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
-READERS = (
-    "stacks/observability/grafana/home.json",
-    "stacks/observability/public_stats.py",
-)
+READERS = (*sorted((STACK / "grafana/dashboards").glob("*.json")), STACK / "public_stats.py")
 
 
 def queries() -> list[str]:
-    """Every alert and Home dashboard query, and the scripts that read metrics."""
+    """Every alert and dashboard query, and the scripts that read metrics."""
     rules = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))
     texts = [str(rule["expr"]) for group in rules["groups"] for rule in group["rules"]]
-    return texts + [(ROOT / reader).read_text(encoding="utf-8") for reader in READERS]
+    return texts + [reader.read_text(encoding="utf-8") for reader in READERS]
 
 
 def test_no_metric_is_dropped_by_name() -> None:
