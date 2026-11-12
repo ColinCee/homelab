@@ -79,8 +79,9 @@ services:
     depends_on:
       - bot
 
-  # The Docker API for restart_container: restarts and starts only, so no reads of other
-  # containers' settings and no exec, create or delete.
+  # The Docker API for restart_container: restart, start, stop and kill only (the proxy's
+  # ALLOW_RESTARTS takes in stop and kill), so no reads of containers' settings and no exec, create
+  # or delete.
   docker-restarts:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
@@ -113,7 +114,7 @@ networks:
   docker-restarts:
     internal: true
 
-# Files on the Beelink, rendered by the deploy (deploy.yaml).
+# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
   anthropic_api_key:
     file: ../../secrets/anthropic_api_key

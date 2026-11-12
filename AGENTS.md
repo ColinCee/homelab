@@ -8,7 +8,7 @@ Checks: `mise run check` (CI's check job; Compose validation needs Docker), befo
 - Keep each service, operational command and scheduled unit under `stacks/<name>/`; shared deployment logic stays
   stack-name agnostic. No image polling or per-stack deploy branches: Git pins image revisions; Renovate moves
   them, auto-merging non-major ones after checks and its release-age gate.
-- Pin images and Actions.
+- Bind admin ports to Tailscale; host networking only when needed. Pin images, Actions.
 - Logic is typed, tested Python; shell only calls one program. A workflow step is one such command (`scripts/ci.py`),
   YAML only `runs-on` and `if:`.
 - Never print or expose secrets. Private operational records belong in the notes repository, not this public one.

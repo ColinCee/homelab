@@ -99,7 +99,7 @@
 
   <rect class="out" x="690" y="520" width="110" height="70" rx="8"/>
   <text class="t" x="745" y="548">Discord</text>
-  <text class="s" x="745" y="566">#uptime</text>
+  <text class="s" x="745" y="566">#alerts forum</text>
 
   <rect class="out" x="810" y="520" width="130" height="70" rx="8"/>
   <text class="t" x="875" y="548">Healthchecks.io</text>

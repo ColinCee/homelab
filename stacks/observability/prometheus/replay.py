@@ -1,12 +1,13 @@
-"""Replays rules.yml's rules over history and counts the Discord posts each would have made, for the
+"""Replays rules.yml's rules over history and counts the forum posts each would have made, for the
 noise budget in docs/architecture.md ("Monitoring and alerts"), which has the command.
 
     replay.py [days] [rule ...]
 
 Reads Prometheus through the read-only gateway (GATEWAY_URL, default the Beelink's; GATEWAY_LOGIN,
-user:password). Runs each rule's query a minute apart and follows Prometheus and Alertmanager: a
-post once the query has returned for `for`, a repeat every 4 h (now) or 24 h (week) while it fires,
-and a "Cleared" once it has stayed empty for `keep_firing_for`. Inhibits are not replayed."""
+user:password). Runs each rule's query a minute apart and follows Prometheus and the on-call bot
+(stacks/oncall/bot.py): a post once the query has returned for `for`, a reminder every 4 h while a
+`now` alert fires, and a "Cleared" once it has stayed empty for `keep_firing_for`. Inhibits are not
+replayed."""
 
 import base64
 import json
@@ -23,7 +24,7 @@ from typing import Any
 import yaml
 
 STEP = 60
-REPEAT = {"now": 4 * 3600, "week": 24 * 3600}
+REPEAT = {"now": 4 * 3600}
 RULES = Path(__file__).with_name("rules.yml")
 
 
@@ -71,7 +72,7 @@ def posts(returned: set[int], rule: dict[str, Any], start: int, end: int) -> lis
             if not firing and t - since >= wait:
                 firing, last_post = True, t
                 out.append((t, "firing"))
-            elif firing and t - last_post >= REPEAT[level]:
+            elif firing and level in REPEAT and t - last_post >= REPEAT[level]:
                 last_post = t
                 out.append((t, "repeat"))
         else:

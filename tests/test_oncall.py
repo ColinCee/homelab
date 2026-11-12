@@ -25,34 +25,46 @@ def alert(fingerprint: str, name: str = "high-disk", **labels: str) -> dict[str,
     }
 
 
-def test_a_new_alert_opens_one_incident_and_a_cleared_one_is_noticed_once() -> None:
+def test_an_alert_opens_one_incident_and_its_clear_and_return_are_each_noticed_once() -> None:
     state = bot.State()
-    new, cleared = bot.reconcile(state, [alert("a"), alert("w", "watchdog")])
-    assert [a["fingerprint"] for a in new] == ["a"] and cleared == []
+    new, again, cleared = bot.reconcile(state, [alert("a"), alert("w", "watchdog")])
+    assert [a["fingerprint"] for a in new] == ["a"] and again == cleared == []
 
     state.incidents["s1"] = bot.Incident(session_id="s1", fingerprint="a", firing=True)
-    assert bot.reconcile(state, [alert("a")]) == ([], [])
+    assert bot.reconcile(state, [alert("a")]) == ([], [], [])
 
-    new, cleared = bot.reconcile(state, [])
-    assert new == [] and [i.session_id for i in cleared] == ["s1"]
+    _, _, cleared = bot.reconcile(state, [])
+    assert [i.session_id for i in cleared] == ["s1"]
     cleared[0].firing = False
-    assert bot.reconcile(state, []) == ([], [])
+    assert bot.reconcile(state, []) == ([], [], [])
+
+    # Back before the incident closed (an Alertmanager restart, a flap): the same post.
+    new, again, _ = bot.reconcile(state, [alert("a")])
+    assert new == [] and [i.session_id for i in again] == ["s1"]
 
 
-def test_an_alert_that_fires_again_after_its_incident_closed_opens_a_new_one() -> None:
+def test_a_muted_alert_is_not_posted_again_while_it_fires() -> None:
+    state = bot.State()
+    state.incidents["s1"] = bot.Incident(session_id="s1", fingerprint="a", firing=True, muted=True)
+    assert bot.reconcile(state, [alert("a")]) == ([], [], [])
+
+
+def test_an_alert_that_fires_after_its_incident_closed_opens_a_new_one() -> None:
     state = bot.State()
     state.incidents["s1"] = bot.Incident(session_id="s1", fingerprint="a", closed=True)
-    new, _ = bot.reconcile(state, [alert("a")])
+    new, _, _ = bot.reconcile(state, [alert("a")])
     assert [a["fingerprint"] for a in new] == ["a"]
 
 
-def test_the_state_survives_a_restart(tmp_path: Path) -> None:
+def test_the_state_survives_a_restart_and_forgets_long_closed_incidents(tmp_path: Path) -> None:
     state = bot.State(last_sweep=5.0)
     state.incidents["s1"] = bot.Incident(session_id="s1", thread_id=9, seen=["e1"])
+    state.incidents["old"] = bot.Incident(session_id="old", closed=True, closed_at=1.0)
     path = tmp_path / "state.json"
-    state.save(path)
+    state.save(path, now=1.0 + bot.KEEP_CLOSED + 1)
     loaded = bot.State.load(path)
-    assert loaded == state and loaded.by_thread(9) == state.incidents["s1"]
+    assert loaded == state and list(loaded.incidents) == ["s1"]
+    assert loaded.by_thread(9) == state.incidents["s1"]
 
 
 def test_a_post_shows_the_rule_and_mentions_the_owner_only_for_an_act_now_alert() -> None:
@@ -64,10 +76,13 @@ def test_a_post_shows_the_rule_and_mentions_the_owner_only_for_an_act_now_alert(
     assert "<@42>" in bot.alert_post(alert("b", level="now"), 42)
 
 
-def test_a_metric_gone_shows_no_data() -> None:
+@pytest.mark.parametrize(
+    ("value", "shown"), [("-1", "no data"), ("-1.0", "no data"), ("-10", "-10%")]
+)
+def test_only_minus_one_means_the_metric_is_gone(value: str, shown: str) -> None:
     gone = alert("a")
-    gone["annotations"]["value"] = "-1"
-    assert "**no data**" in bot.alert_post(gone, 42)
+    gone["annotations"]["value"] = value
+    assert f"**{shown}**" in bot.alert_post(gone, 42)
 
 
 @pytest.mark.parametrize(
@@ -104,3 +119,12 @@ def test_a_long_message_splits_under_discords_limit_at_line_ends() -> None:
     parts = bot.chunks(text)
     assert all(len(p) <= bot.DISCORD_LIMIT for p in parts)
     assert "".join(parts).replace("\n", "") == text.replace("\n", "")
+
+
+def test_a_secret_never_reaches_discord_or_a_pull_request() -> None:
+    secrets = ["hunter2", "https://hc-ping.com/abc"]
+    assert bot.redact("password hunter2 and https://hc-ping.com/abc", secrets) == (
+        "password [redacted] and [redacted]"
+    )
+    assert bot.holds_secret("a log line: hunter2", secrets)
+    assert not bot.holds_secret("nothing here", secrets)

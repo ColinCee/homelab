@@ -95,8 +95,8 @@ each to Discord. Alertmanager has no port
 
 | Level | When | Post |
 |---|---|---|
-| `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h |
-| `week` | Something is running out or slipping | No mention, again daily |
+| `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h while it fires |
+| `week` | Something is running out or slipping | No mention |
 
 - A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
   means the number recovered.
@@ -125,12 +125,12 @@ Each firing alert, finding of the six-hourly sweep, or post of Colin's in the Di
 can undo and closes the post. Colin's replies in a post steer its session; "stop" interrupts it.
 
 - [`bot.py`](../stacks/oncall/bot.py) polls Alertmanager through the gateway, talks to Discord and runs the agent's
-  custom tools: restarting a container (through a proxy that allows only that), opening a pull request on a branch
+  custom tools: restarting a container (through a proxy that allows only restarts, starts and stops), opening a pull request on a branch
   under `oncall/` (never merging), and tagging, closing or deleting the post. It holds every credential.
 - [`worker.py`](../stacks/oncall/worker.py) runs the agent's bash and file tools, with only the environment key and the
   gateway's read-only login: whatever it can read, the agent can send to Anthropic.
-- The agent's prompt and tools are [`agent.md`](../stacks/oncall/agent/agent.md); a change goes live with
-  `ant apply --yes agent/agent.md agent/environment.yaml` from `stacks/oncall`, which updates `claude-lock.json`.
+- The agent's prompt and tools are [`agent.md`](../stacks/oncall/agent/agent.md); a change goes live when Colin runs
+  `ant apply` on it from `stacks/oncall`, which keeps the IDs in `claude-lock.json`.
 - If the bot stops, its Healthchecks.io check stops being pinged and Healthchecks.io posts.
 
 ## Backups

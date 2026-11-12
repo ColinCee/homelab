@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import aiohttp
+import anthropic
 import discord
 from anthropic import AsyncAnthropic
 
@@ -26,11 +27,25 @@ DISCORD_LIMIT = 2000
 REMIND_EVERY = 4 * 3600
 SWEEP_EVERY = 6 * 3600
 POLL_ALERTS_EVERY = 30
+# Closed incidents are forgotten after this; their sessions and posts stay where they are.
+KEEP_CLOSED = 14 * 86400
+# Hard spend caps per session, in US cents at list price: a looping session stops there.
+BUDGET_CENTS = {"alert": 500, "owner": 500, "sweep": 150}
 # Always firing: Alertmanager sends it to Healthchecks.io, never to a person.
 IGNORED_ALERTS = frozenset({"watchdog"})
 APPROVE_WORDS = frozenset({"yes", "y", "approve", "allow", "go", "go ahead", "ok"})
+NO_DATA = re.compile(r"-1(\.0*)?")
 BRANCH_CHARS = re.compile(r"[^a-z0-9-]+")
 CONTAINER_NAME = re.compile(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*")
+# A container ID or its prefix would get past the check on the on-call containers' own names.
+CONTAINER_ID = re.compile(r"[0-9a-f]{12,64}")
+SECRET_FILES = (
+    "anthropic_api_key",
+    "discord_bot_token",
+    "oncall_github_token",
+    "oncall_healthchecks_url",
+    "agents_password",
+)
 
 
 def log(event: str, **fields: object) -> None:
@@ -41,14 +56,26 @@ def secret(name: str) -> str:
     return Path(f"/run/secrets/{name}").read_text(encoding="utf-8").strip()
 
 
+def failure(error: Exception) -> str:
+    """An error for the logs, without its message: an HTTP error's carries its URL, and the ping
+    URL is a secret."""
+    status = getattr(error, "status", None)
+    return f"{type(error).__name__} {status}" if status else type(error).__name__
+
+
 @dataclass
 class Incident:
     session_id: str
     thread_id: int | None = None
     fingerprint: str | None = None
+    # The alert's labels, annotations and start, as Alertmanager gave them.
+    alert: dict[str, Any] = field(default_factory=dict)
     firing: bool = False
     reminded_at: float = 0.0
     closed: bool = False
+    closed_at: float = 0.0
+    # Deleted as noise: kept open with no post until its alert clears, so it is not posted again.
+    muted: bool = False
     answered: bool = False
     # Event IDs already handled: the event history is replayed after every reconnect and restart.
     seen: list[str] = field(default_factory=list)
@@ -69,7 +96,12 @@ class State:
         incidents = {sid: Incident(**inc) for sid, inc in raw.get("incidents", {}).items()}
         return cls(incidents=incidents, last_sweep=raw.get("last_sweep", 0.0))
 
-    def save(self, path: Path) -> None:
+    def save(self, path: Path, now: float) -> None:
+        self.incidents = {
+            sid: i
+            for sid, i in self.incidents.items()
+            if not (i.closed and i.closed_at and i.closed_at < now - KEEP_CLOSED)
+        }
         tmp = path.with_suffix(".tmp")
         tmp.write_text(json.dumps(asdict(self)), encoding="utf-8")
         tmp.replace(path)
@@ -86,18 +118,17 @@ class State:
 
 def reconcile(
     state: State, alerts: list[dict[str, Any]]
-) -> tuple[list[dict[str, Any]], list[Incident]]:
-    """The alerts with no open incident, and the incidents whose alert has stopped firing."""
+) -> tuple[list[dict[str, Any]], list[Incident], list[Incident]]:
+    """The alerts with no open incident, the open incidents whose alert fires again, and those
+    whose alert has stopped firing."""
     firing = {
         a["fingerprint"]: a for a in alerts if a["labels"].get("alertname") not in IGNORED_ALERTS
     }
     new = [a for fp, a in firing.items() if state.open_for(fp) is None]
-    cleared = [
-        i
-        for i in state.incidents.values()
-        if i.fingerprint and i.firing and i.fingerprint not in firing
-    ]
-    return new, cleared
+    alerting = [i for i in state.incidents.values() if i.fingerprint and not i.closed]
+    again = [i for i in alerting if not i.firing and i.fingerprint in firing]
+    cleared = [i for i in alerting if i.firing and i.fingerprint not in firing]
+    return new, again, cleared
 
 
 def alert_title(alert: dict[str, Any]) -> str:
@@ -109,11 +140,9 @@ def alert_title(alert: dict[str, Any]) -> str:
 
 def alert_post(alert: dict[str, Any], owner_id: int) -> str:
     notes = alert["annotations"]
-    value = notes.get("value", "")
+    value = str(notes.get("value", ""))
     # Rules with a no-data arm report -1 when their metric is gone (rules.yml).
-    shown = (
-        "no data" if value.rstrip("0").rstrip(".") == "-1" else f"{value}{notes.get('unit', '')}"
-    )
+    shown = "no data" if NO_DATA.fullmatch(value) else f"{value}{notes.get('unit', '')}"
     lines = [
         f"{notes.get('measure', 'Value')}: **{shown}**",
         f"**Why it matters:** {notes.get('harm', '')}",
@@ -159,11 +188,24 @@ def check_path(path: str) -> str:
     return path
 
 
+def redact(text: str, secrets: list[str]) -> str:
+    for value in secrets:
+        text = text.replace(value, "[redacted]")
+    return text
+
+
+def holds_secret(text: str, secrets: list[str]) -> bool:
+    return any(value in text for value in secrets)
+
+
 class Oncall(discord.Client):
     def __init__(self) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
-        super().__init__(intents=intents)
+        super().__init__(
+            intents=intents,
+            allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=False),
+        )
         self.owner_id = int(os.environ["OWNER_DISCORD_ID"])
         self.forum_id = int(os.environ["FORUM_CHANNEL_ID"])
         self.repo = os.environ["GITHUB_REPO"]
@@ -177,15 +219,25 @@ class Oncall(discord.Client):
         self.gateway_auth = aiohttp.BasicAuth("agents@homelab.internal", secret("agents_password"))
         self.github_token = secret("oncall_github_token")
         self.ping_url = secret("oncall_healthchecks_url")
+        # Never posted to Discord or a pull request, whatever the agent read in logs or files.
+        self.secrets = [secret(name) for name in SECRET_FILES]
+        self.owner = discord.AllowedMentions(
+            everyone=False, roles=False, users=[discord.Object(self.owner_id)]
+        )
+        self.quiet = discord.AllowedMentions.none()
         self.state = State.load(self.state_path)
+        self.polled_at = 0.0
         self.followers: dict[str, asyncio.Task[None]] = {}
+        self.loops: list[asyncio.Task[None]] = []
         self.web: aiohttp.ClientSession
 
     async def setup_hook(self) -> None:
         self.web = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=60))
-        self.loop.create_task(self.every("alerts", POLL_ALERTS_EVERY, self.poll_alerts))
-        self.loop.create_task(self.every("sweep", 60, self.maybe_sweep))
-        self.loop.create_task(self.every("ping", 60, self.ping))
+        self.loops = [
+            self.loop.create_task(self.every("alerts", POLL_ALERTS_EVERY, self.poll_alerts)),
+            self.loop.create_task(self.every("sweep", 60, self.maybe_sweep)),
+            self.loop.create_task(self.every("ping", 60, self.ping)),
+        ]
 
     async def on_ready(self) -> None:
         log("ready", user=str(self.user))
@@ -194,7 +246,12 @@ class Oncall(discord.Client):
                 self.follow(sid)
 
     def save(self) -> None:
-        self.state.save(self.state_path)
+        self.state.save(self.state_path, time.time())
+
+    def finish(self, incident: Incident) -> None:
+        incident.closed = True
+        incident.closed_at = time.time()
+        self.save()
 
     def forum(self) -> discord.ForumChannel:
         channel = self.get_channel(self.forum_id)
@@ -215,12 +272,12 @@ class Oncall(discord.Client):
             return None
         return channel if isinstance(channel, discord.Thread) else None
 
-    async def say(self, incident: Incident, text: str) -> None:
+    async def say(self, incident: Incident, text: str, mention: bool = False) -> None:
         thread = await self.thread(incident)
         if thread is None:
             return
-        for part in chunks(text):
-            await thread.send(part, allowed_mentions=discord.AllowedMentions(users=True))
+        for part in chunks(redact(text, self.secrets)):
+            await thread.send(part, allowed_mentions=self.owner if mention else self.quiet)
 
     async def every(self, name: str, seconds: int, step: Any) -> None:  # noqa: ANN401
         await self.wait_until_ready()
@@ -228,27 +285,35 @@ class Oncall(discord.Client):
             try:
                 await step()
             except Exception as error:
-                log("loop_failed", loop=name, error=repr(error))
+                log("loop_failed", loop=name, error=failure(error))
             await asyncio.sleep(seconds)
 
     async def ping(self) -> None:
+        # Only while alerts reach the bot: Healthchecks.io posts once the pings stop.
+        if time.time() - self.polled_at > 5 * POLL_ALERTS_EVERY:
+            return
         async with self.web.get(self.ping_url) as response:
             response.raise_for_status()
 
-    async def start_session(self, title: str, kind: str, text: str, thread_id: int | None) -> str:
+    async def new_incident(self, title: str, kind: str, **fields: Any) -> Incident:  # noqa: ANN401
+        """A session, recorded before anything is posted or sent, so a failure after this point
+        is retried on the same incident rather than opening another."""
         session = await self.anthropic.beta.sessions.create(
             agent=self.agent_id,
             environment_id=self.environment_id,
             title=title,
             metadata={"kind": kind},
+            budget={
+                "type": "limit",
+                "max_list_cost": {"amount": str(BUDGET_CENTS[kind]), "currency": "USD"},
+            },
         )
-        self.state.incidents[session.id] = Incident(session_id=session.id, thread_id=thread_id)
+        incident = Incident(session_id=session.id, **fields)
+        self.state.incidents[session.id] = incident
         self.save()
         log("session_started", session=session.id, kind=kind, title=title)
-        # Following first, so no event is missed (the history fills in what came before anyway).
         self.follow(session.id)
-        await self.message(session.id, text)
-        return session.id
+        return incident
 
     async def send(self, session_id: str, events: list[Any]) -> None:
         await self.anthropic.beta.sessions.events.send(session_id=session_id, events=events)
@@ -266,37 +331,49 @@ class Oncall(discord.Client):
     async def follow_session(self, session_id: str) -> None:
         incident = self.state.incidents[session_id]
         events = self.anthropic.beta.sessions.events
+        wait = 5
         while not incident.closed:
             try:
-                # The stream opens before the history is read, so nothing falls between them.
-                async with await events.stream(session_id=session_id) as stream:
+                # The stream opens before the history is read, so nothing falls between them. It
+                # may wait days for the owner, so it has no read timeout.
+                async with await events.stream(session_id=session_id, timeout=None) as stream:
                     async for event in events.list(session_id=session_id):
                         await self.handle(incident, event)
+                    wait = 5
                     async for event in stream:
                         await self.handle(incident, event)
-                        if event.type == "session.status_terminated":
+                        if event.type == "session.status_terminated" or incident.closed:
                             return
+            except anthropic.NotFoundError:
+                log("session_gone", session=session_id)
+                self.finish(incident)
+                return
             except Exception as error:
-                log("stream_dropped", session=session_id, error=repr(error))
-            await asyncio.sleep(5)
+                log("stream_dropped", session=session_id, error=failure(error))
+            await asyncio.sleep(wait)
+            wait = min(wait * 2, 600)
 
     async def handle(self, incident: Incident, event: Any) -> None:  # noqa: ANN401 - the SDK's union
         if event.id in incident.seen:
             return
-        incident.seen = [*incident.seen, event.id][-500:]
+        await self.act(incident, event)
+        # Only once handled, so a failure is retried when the stream reconnects.
+        incident.seen.append(event.id)
         self.save()
+
+    async def act(self, incident: Incident, event: Any) -> None:  # noqa: ANN401
         sid = incident.session_id
         if event.type == "agent.message":
             text = "".join(b.text for b in event.content if b.type == "text")
             incident.answered = True
-            log("agent_message", session=sid, text=text)
+            log("agent_message", session=sid, text=redact(text, self.secrets))
             await self.say(incident, text)
         elif event.type == "agent.custom_tool_use":
             log("tool_call", session=sid, tool=event.name, input=event.input)
             try:
                 result = await self.run_tool(incident, event.name, event.input)
             except Exception as error:
-                result = f"Failed: {error}"
+                result = f"Failed: {failure(error)}"
             log("tool_result", session=sid, tool=event.name, result=result)
             await self.send(
                 sid,
@@ -323,21 +400,24 @@ class Oncall(discord.Client):
                     incident,
                     f"Wants to run `{event.name}`:\n```\n{json.dumps(event.input)[:1500]}\n```"
                     f"Reply **yes** to allow; anything else refuses. <@{self.owner_id}>",
+                    mention=True,
                 )
         elif event.type == "session.error":
             log("session_error", session=sid, error=str(event))
             await self.say(incident, "The session hit an error; the oncall logs have it.")
         elif event.type == "session.status_idle":
-            log("idle", session=sid, stop=event.stop_reason.type)
+            stop = event.stop_reason.type
+            log("idle", session=sid, stop=stop)
+            if stop == "budget_reached":
+                await self.say(
+                    incident,
+                    f"Stopped at its spend cap. <@{self.owner_id}>",
+                    mention=True,
+                )
             # A new session idles before its first message; a sweep that has answered and found
             # nothing ends with nothing posted.
-            if (
-                incident.thread_id is None
-                and incident.answered
-                and event.stop_reason.type != "requires_action"
-            ):
-                incident.closed = True
-                self.save()
+            if incident.thread_id is None and incident.answered and stop != "requires_action":
+                self.finish(incident)
 
     async def poll_alerts(self) -> None:
         url = (
@@ -346,61 +426,87 @@ class Oncall(discord.Client):
         async with self.web.get(url, auth=self.gateway_auth) as response:
             response.raise_for_status()
             alerts = await response.json()
-        new, cleared = reconcile(self.state, alerts)
+        self.polled_at = time.time()
+        new, again, cleared = reconcile(self.state, alerts)
         for alert in new:
             await self.open_alert(alert)
+        for incident in again:
+            incident.firing = True
+            self.save()
+            log("alert_again", session=incident.session_id, fingerprint=incident.fingerprint)
+            await self.say(incident, "Firing again.")
+            await self.retag(incident)
+            await self.message(incident.session_id, "The alert is firing again in Alertmanager.")
         for incident in cleared:
             incident.firing = False
             self.save()
             log("alert_cleared", session=incident.session_id, fingerprint=incident.fingerprint)
+            if incident.muted:
+                self.finish(incident)
+                continue
             await self.say(
                 incident,
                 "Cleared: the number is back within bounds; that does not mean the cause is fixed.",
             )
+            await self.retag(incident)
             await self.message(incident.session_id, "The alert has cleared in Alertmanager.")
         now = time.time()
-        for incident in self.state.incidents.values():
-            due = incident.reminded_at and now - incident.reminded_at > REMIND_EVERY
-            if due and incident.firing and not incident.closed:
+        for incident in list(self.state.incidents.values()):
+            if incident.closed or not incident.firing or incident.muted:
+                continue
+            if incident.thread_id is None:
+                # A post that failed to open opens on a later round, on the same session.
+                await self.open_post(incident)
+            elif incident.reminded_at and now - incident.reminded_at > REMIND_EVERY:
                 incident.reminded_at = now
                 self.save()
-                await self.say(incident, f"Still firing. <@{self.owner_id}>")
+                await self.say(incident, f"Still firing. <@{self.owner_id}>", mention=True)
 
     async def open_alert(self, alert: dict[str, Any]) -> None:
-        title = alert_title(alert)
+        incident = await self.new_incident(
+            alert_title(alert),
+            "alert",
+            fingerprint=alert["fingerprint"],
+            firing=True,
+            alert={k: alert.get(k) for k in ("labels", "annotations", "startsAt")},
+            reminded_at=time.time() if alert["labels"].get("level") == "now" else 0.0,
+        )
+        await self.open_post(incident)
+
+    async def open_post(self, incident: Incident) -> None:
+        alert = incident.alert
         post = await self.forum().create_thread(
-            name=title,
+            name=alert_title(alert),
             content=alert_post(alert, self.owner_id),
             applied_tags=self.tags(FIRING, WORKING),
-            allowed_mentions=discord.AllowedMentions(users=True),
+            allowed_mentions=self.owner,
         )
-        details = {k: alert.get(k) for k in ("labels", "annotations", "startsAt")}
-        session_id = await self.start_session(
-            title,
-            "alert",
-            "An alert is firing. Triage it, fix it if you can, and close the incident.\n"
-            f"```json\n{json.dumps(details)}\n```",
-            post.thread.id,
-        )
-        incident = self.state.incidents[session_id]
-        incident.fingerprint = alert["fingerprint"]
-        incident.firing = True
-        if alert["labels"].get("level") == "now":
-            incident.reminded_at = time.time()
+        incident.thread_id = post.thread.id
         self.save()
-        log("alert_opened", session=session_id, thread=post.thread.id, alert=alert["labels"])
+        log("alert_opened", session=incident.session_id, thread=post.thread.id, alert=alert)
+        await self.message(
+            incident.session_id,
+            "An alert is firing. Triage it, fix it if you can, and close the incident.\n"
+            f"```json\n{json.dumps(alert)}\n```",
+        )
+
+    async def retag(self, incident: Incident) -> None:
+        thread = await self.thread(incident)
+        if thread is None:
+            return
+        kept = [t for t in thread.applied_tags if t.name.lower() != FIRING]
+        await thread.edit(applied_tags=kept + (self.tags(FIRING) if incident.firing else []))
 
     async def maybe_sweep(self) -> None:
         if time.time() - self.state.last_sweep < SWEEP_EVERY:
             return
         self.state.last_sweep = time.time()
         self.save()
-        await self.start_session(
-            "Anomaly sweep",
-            "sweep",
+        incident = await self.new_incident("Anomaly sweep", "sweep")
+        await self.message(
+            incident.session_id,
             "Sweep: look for anything wrong or about to go wrong that no alert covers. Call "
             "open_incident for a real finding; with none, say so in one line and stop.",
-            None,
         )
 
     async def on_message(self, message: discord.Message) -> None:
@@ -414,17 +520,20 @@ class Oncall(discord.Client):
             # A forum post's first message has the post's ID: only a new post starts a session.
             if message.id == channel.id:
                 await channel.edit(applied_tags=self.tags(WORKING))
-                await self.start_session(
-                    channel.name, "owner", f"{channel.name}\n\n{message.content}", channel.id
-                )
+                incident = await self.new_incident(channel.name, "owner", thread_id=channel.id)
+                await self.message(incident.session_id, f"{channel.name}\n\n{message.content}")
             return
         if incident.closed:
             incident.closed = False
+            incident.closed_at = 0.0
             self.save()
             self.follow(incident.session_id)
         intent = owner_intent(message.content, incident.pending_confirmation)
         log("owner_message", session=incident.session_id, intent=intent, text=message.content)
         if intent == "interrupt":
+            # An interrupt also drops a paused call, so the next reply is a message again.
+            incident.pending_confirmation = None
+            self.save()
             await self.send(incident.session_id, [{"type": "user.interrupt"}])
         elif intent in ("allow", "deny"):
             event: dict[str, Any] = {
@@ -457,32 +566,39 @@ class Oncall(discord.Client):
         if thread is None:
             return "There is no post for this incident."
         if outcome == "spam":
-            incident.closed = True
+            incident.muted = True
+            incident.thread_id = None
             self.save()
+            if not incident.firing:
+                self.finish(incident)
             log("incident_deleted", session=incident.session_id, reason=summary)
             await thread.delete()
-            return "Deleted the post."
+            return "Deleted the post; it is not posted again while this alert fires."
         needs_owner = outcome == "needs_you"
         embed = discord.Embed(
             title=outcome.replace("_", " ").capitalize(),
-            description=summary[:4000],
+            description=redact(summary, self.secrets)[:4000],
             colour=discord.Colour.orange() if needs_owner else discord.Colour.green(),
         )
-        await thread.send(content=f"<@{self.owner_id}>" if needs_owner else None, embed=embed)
+        await thread.send(
+            content=f"<@{self.owner_id}>" if needs_owner else None,
+            embed=embed,
+            allowed_mentions=self.owner if needs_owner else self.quiet,
+        )
         tags = [NEEDS_OWNER] if needs_owner else []
         done = not needs_owner and not incident.firing
         await thread.edit(
             applied_tags=self.tags(*tags, FIRING) if incident.firing else self.tags(*tags),
             archived=done,
         )
-        incident.closed = done
-        self.save()
+        if done:
+            self.finish(incident)
         log("incident_closed", session=incident.session_id, outcome=outcome, archived=done)
         return "Closed." if done else "Posted; the post stays open while the alert fires."
 
     async def restart_container(self, name: str) -> str:
-        if not CONTAINER_NAME.fullmatch(name):
-            return "Not a container name."
+        if not CONTAINER_NAME.fullmatch(name) or CONTAINER_ID.fullmatch(name):
+            return "Give the container's name, not its ID."
         if name.startswith("oncall-"):
             # Restarting this program would drop the tool's own result and stall the session.
             return "The on-call containers cannot restart themselves; ask Colin."
@@ -494,6 +610,10 @@ class Oncall(discord.Client):
         return f"Restarted {name}."
 
     async def open_pull_request(self, incident: Incident, args: dict[str, Any]) -> str:
+        texts = [args["title"], args["body"], *(f["content"] for f in args["files"])]
+        if any(holds_secret(text, self.secrets) for text in texts):
+            log("pull_request_refused", session=incident.session_id, reason="holds a secret")
+            return "Refused: it contains a secret. The repository is public; remove it."
         api = f"https://api.github.com/repos/{self.repo}"
         headers = {
             "Authorization": f"Bearer {self.github_token}",
@@ -539,8 +659,8 @@ class Oncall(discord.Client):
         if incident.thread_id is not None:
             return "This session already has a post; say it there."
         post = await self.forum().create_thread(
-            name=title[:100],
-            content=summary[:DISCORD_LIMIT],
+            name=redact(title, self.secrets)[:100],
+            content=redact(summary, self.secrets)[:DISCORD_LIMIT],
             applied_tags=self.tags(WORKING),
         )
         incident.thread_id = post.thread.id
