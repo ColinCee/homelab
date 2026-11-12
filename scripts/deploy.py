@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
@@ -11,7 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,7 +39,7 @@ class StackPlan:
     name: str
     compose_file: Path
     env_file: Path | None
-    timers: tuple[Path, ...]
+    triggers: tuple[Path, ...]
 
 
 @dataclass(frozen=True)
@@ -104,7 +105,7 @@ def discover_stack_plans(
                     name=name,
                     compose_file=compose_file,
                     env_file=env_file,
-                    timers=discover_timers(stack_dir),
+                    triggers=discover_triggers(stack_dir),
                 )
             )
         except DeploymentInputError as exc:
@@ -231,8 +232,12 @@ def head_commit(repo_root: Path) -> str:
     ).stdout.strip()
 
 
-def discover_timers(stack_dir: Path) -> tuple[Path, ...]:
-    """Find stack-prefixed service/timer pairs under a stack's systemd directory."""
+TRIGGER_SUFFIXES = (".timer", ".path")
+
+
+def discover_triggers(stack_dir: Path) -> tuple[Path, ...]:
+    """Find a stack's stack-prefixed services and the .timer and .path units that start them;
+    each service needs at least one, and each trigger its service."""
     systemd_dir = stack_dir / "systemd"
     if not systemd_dir.is_dir():
         return ()
@@ -240,20 +245,22 @@ def discover_timers(stack_dir: Path) -> tuple[Path, ...]:
     units = sorted(
         path
         for path in systemd_dir.iterdir()
-        if path.is_file() and path.suffix in {".service", ".timer"}
+        if path.is_file() and path.suffix in {".service", *TRIGGER_SUFFIXES}
     )
     errors: list[str] = []
     required_prefix = f"{stack_dir.name}-"
     for unit in units:
         if not unit.stem.startswith(required_prefix):
             errors.append(f"{unit}: unit name must start with {required_prefix!r}")
-        counterpart = ".service" if unit.suffix == ".timer" else ".timer"
-        if not unit.with_suffix(counterpart).is_file():
-            errors.append(f"{unit}: needs both .service and .timer files")
+        if unit.suffix == ".service":
+            if not any(unit.with_suffix(suffix).is_file() for suffix in TRIGGER_SUFFIXES):
+                errors.append(f"{unit}: needs a .timer or .path file")
+        elif not unit.with_suffix(".service").is_file():
+            errors.append(f"{unit}: needs a .service file")
 
     if errors:
         raise DeploymentInputError("\n".join(errors))
-    return tuple(unit for unit in units if unit.suffix == ".timer")
+    return tuple(unit for unit in units if unit.suffix in TRIGGER_SUFFIXES)
 
 
 def validate_plans(
@@ -327,7 +334,7 @@ def deploy(
                 check=True,
             )
             ready = datetime.now(UTC).isoformat()
-            install_systemd_units(plan.timers, unit_dir=unit_dir, runner=runner)
+            install_systemd_units(plan.triggers, unit_dir=unit_dir, runner=runner)
             if metrics_dir is not None:
                 record_running(repo_root, plan, metrics_dir, stamp_dir=stamp_dir, runner=runner)
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
@@ -392,7 +399,7 @@ def record_running(
         f"# TYPE {metric} gauge",
     ]
     stamps = stamp_dir or _default_stamp_dir()
-    for timer in plan.timers:
+    for timer in (unit for unit in plan.triggers if unit.suffix == ".timer"):
         stamp = stamps / f"stamp-{timer.name}"
         if stamp.is_file():
             lines.append(f'{metric}{{timer="{timer.stem}"}} {stamp.stat().st_mtime:.0f}')
@@ -508,26 +515,27 @@ def compose_command(
 
 
 def install_systemd_units(
-    timers: Sequence[Path],
+    triggers: Sequence[Path],
     *,
     unit_dir: Path | None = None,
     runner: CommandRunner = subprocess.run,
 ) -> None:
-    """Atomically install pairs and enable their timers through the user manager."""
-    if not timers:
+    """Atomically install each trigger and its service, and enable the triggers through the user
+    manager."""
+    if not triggers:
         return
 
     target_dir = unit_dir or _default_unit_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
-    for timer in timers:
-        for unit in (timer.with_suffix(".service"), timer):
+    for trigger in triggers:
+        for unit in (trigger.with_suffix(".service"), trigger):
             _atomic_copy(unit, target_dir / unit.name)
 
     environment = _systemctl_environment()
     runner(["systemctl", "--user", "daemon-reload"], env=environment, check=True)
-    for timer in timers:
+    for trigger in triggers:
         runner(
-            ["systemctl", "--user", "enable", "--now", timer.name],
+            ["systemctl", "--user", "enable", "--now", trigger.name],
             env=environment,
             check=True,
         )
@@ -642,14 +650,34 @@ def main() -> int:
     metrics_dir = METRICS_DIR if METRICS_DIR.is_dir() else None
     if metrics_dir is None:
         print(f"No {METRICS_DIR}: the alerts will not know what runs", file=sys.stderr)
-    return run(
-        repo_root,
-        tuple(args.stacks),
-        readiness_timeout=args.readiness_timeout,
-        last_deployed=args.last_deployed,
-        first_changed_since=args.first_changed_since,
-        metrics_dir=metrics_dir,
-    )
+    with one_deploy_at_a_time(args.last_deployed):
+        return run(
+            repo_root,
+            tuple(args.stacks),
+            readiness_timeout=args.readiness_timeout,
+            last_deployed=args.last_deployed,
+            first_changed_since=args.first_changed_since,
+            metrics_dir=metrics_dir,
+        )
+
+
+@contextlib.contextmanager
+def one_deploy_at_a_time(last_deployed: Path | None) -> Generator[None]:
+    """Wait for any other deploy recording to the same file: the workflow and deploy-main both
+    deploy until the workflow goes (docs/architecture.md, "Deploys")."""
+    if last_deployed is None:
+        yield
+        return
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
+    last_deployed.parent.mkdir(parents=True, exist_ok=True)
+    with open(last_deployed.with_name("deploy.lock"), "w") as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print("Waiting for another deploy to finish", flush=True)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
 
 
 def run(

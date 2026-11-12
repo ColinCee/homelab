@@ -555,6 +555,28 @@ CASES = {
             at(47, "ci-times-stale", posts("ci-times-stale", "47")),
         ],
     ),
+    "a deploy still failing after half an hour fires, and one fixed sooner does not": (
+        [
+            ("homelab_main_deploy_behind", "0x5 1x20 0x5 1x40"),
+            ("homelab_main_deploy_checked_timestamp_seconds", "0+60x70"),
+        ],
+        [
+            # Behind from 6 to 26 min, then again from 33.
+            at(28, "main-not-deployed"),
+            at(62, "main-not-deployed"),
+            at(64, "main-not-deployed", posts("main-not-deployed", "1")),
+        ],
+    ),
+    "a deployer that stopped running fires": (
+        [
+            ("homelab_main_deploy_behind", "0x120"),
+            ("homelab_main_deploy_checked_timestamp_seconds", "0x120"),
+        ],
+        [
+            at(85, "main-not-deployed"),
+            at(95, "main-not-deployed", posts("main-not-deployed", "95")),
+        ],
+    ),
 }
 
 

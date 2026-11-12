@@ -1,0 +1,9 @@
+[Unit]
+Description=Deploy main every 15 minutes, for a ring GitHub sent while the tunnel or the Beelink was down
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

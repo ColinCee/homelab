@@ -29,6 +29,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
 STACKS = (
     "backup",
+    "deploy",
     "flight-tracker",
     "home-assistant",
     "internal-names",

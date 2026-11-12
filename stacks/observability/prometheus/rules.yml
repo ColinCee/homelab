@@ -510,6 +510,27 @@ groups:
             it starts with `sudo ci-runner/install-host.sh`.
           dashboard: *home
           value: '{{ $value }}'
+      # deploy-main writes both on every run, at least every 15 minutes (stacks/deploy/deploy_main.py).
+      - alert: main-not-deployed
+        expr: |
+          max(homelab_main_deploy_behind) > 0
+          or on() round((time() - max(last_over_time(homelab_main_deploy_checked_timestamp_seconds[2h]))) / 60) > 60
+          or on() max(absent_over_time(homelab_main_deploy_checked_timestamp_seconds[2h])) * -1
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Main not deployed'
+          measure: 'Behind (1), minutes since the deployer last ran, or no record (-1)'
+          unit: ''
+          harm: 'A merged fix or update is not running on the Beelink, and later merges wait behind it.'
+          action: >-
+            Run `journalctl --user -u deploy-main -n 50` on the Beelink: a failed stack names itself. "refused" means
+            main no longer contains the deployed commit; if you rewrote main, write its commit to
+            `~/.local/state/homelab/last-deployed`. Retry with `systemctl --user start deploy-main`.
+          dashboard: *home
+          value: '{{ $value }}'
       # unattended-upgrades installs security updates each morning (apt/52unattended-upgrades-local), so some waiting
       # at every check for 3 days means it is failing. Written each minute (scripts/security_facts.py, host); the
       # offset keeps a series younger than the window quiet.

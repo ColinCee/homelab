@@ -28,9 +28,11 @@ services:
       homelab.config-hash: ${CONFIG_HASH_CLOUDFLARED:-}
     depends_on:
       - backend
+    # deploy-doorbell: the tunnel also carries GitHub's ring to the deploy stack's doorbell.
     networks:
       - default
       - observability-otlp
+      - deploy-doorbell
 
 # Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:
@@ -40,6 +42,9 @@ secrets:
 networks:
   # Owned by the observability stack; deploy it first on a fresh host.
   observability-otlp:
+    external: true
+  # Owned by the deploy stack.
+  deploy-doorbell:
     external: true
 
 volumes:

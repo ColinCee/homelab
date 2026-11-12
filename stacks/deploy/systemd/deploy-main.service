@@ -1,0 +1,11 @@
+[Unit]
+Description=Deploy main to the Beelink
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/architecture.md#deploys
+# Rings arrive in bursts; a start limit would leave the path unit failed for good.
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I %h/code/homelab/stacks/deploy/deploy_main.py
+# Above a full deploy of every stack, so a hung build cannot hold every later ring.
+TimeoutStartSec=30min

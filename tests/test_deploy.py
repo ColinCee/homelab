@@ -58,19 +58,26 @@ def test_discovers_stacks_and_stack_prefixed_systemd_pairs(tmp_path: Path) -> No
     systemd_dir.mkdir()
     (systemd_dir / "alpha-backup.service").write_text("[Service]\n", encoding="utf-8")
     (systemd_dir / "alpha-backup.timer").write_text("[Timer]\n", encoding="utf-8")
+    for unit in ("alpha-ring.service", "alpha-ring.path", "alpha-ring.timer"):
+        (systemd_dir / unit).write_text("", encoding="utf-8")
 
     plans = deploy.discover_stack_plans(repo_root)
 
     assert [plan.name for plan in plans] == ["alpha", "beta"]
-    assert plans[0].timers == (systemd_dir / "alpha-backup.timer",)
+    assert plans[0].triggers == (
+        systemd_dir / "alpha-backup.timer",
+        systemd_dir / "alpha-ring.path",
+        systemd_dir / "alpha-ring.timer",
+    )
 
 
 @pytest.mark.parametrize(
     ("units", "message"),
     [
         (["backup.service", "backup.timer"], "must start"),
-        (["alpha-backup.service"], "both"),
-        (["alpha-backup.timer"], "both"),
+        (["alpha-backup.service"], "needs a .timer or .path"),
+        (["alpha-backup.timer"], "needs a .service"),
+        (["alpha-backup.path"], "needs a .service"),
     ],
 )
 def test_rejects_unpaired_or_unprefixed_systemd_units(
