@@ -1018,7 +1018,7 @@
       "id": 9,
       "type": "table",
       "title": "Where the time goes, by step, 7 days",
-      "description": "Each workflow step across this repo's runs of the last 7 days: how often it ran, its median and slowest time, and the time all its runs took together. GitHub times steps to the second.",
+      "description": "Each workflow step that passed, across this repo's runs of the last 7 days, a fork's included: how often it ran, its median and slowest time, and the time all its runs took together. GitHub times steps to the second.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "spans"
@@ -1030,7 +1030,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:conclusion\":* \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | replace_regexp (\"@[0-9a-f]{40}$\", \"\") at name | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15 | math typical/1e9 as typical, slowest/1e9 as slowest, total/60e9 as total",
+          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:conclusion\":=success \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | replace_regexp (\"@[0-9a-f]{40}$\", \"\") at name | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15 | math typical/1e9 as typical, slowest/1e9 as slowest, total/60e9 as total",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -1184,7 +1184,7 @@
       "id": 10,
       "type": "table",
       "title": "Slowest tests, 7 days",
-      "description": "The tests each run reports as its slowest, and pytest's own start-up, averaged over the runs of the last 7 days that reported them; those seen fewer than 5 times are left out.",
+      "description": "The tests each run reports as its slowest, and pytest's own start-up, averaged over the runs of the last 7 days that reported them, so a test fast in most runs reads slower than it is; those seen fewer than 5 times are left out.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "spans"

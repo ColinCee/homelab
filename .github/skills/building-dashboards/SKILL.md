@@ -27,7 +27,8 @@ A panel goes on the page whose question it answers.
 - A Home tile opens the page that explains it: `fieldConfig.defaults.links`, `oneClick`, `/d/<uid>`.
 - Home's service tiles are `instant` queries named Up and Down: over a range the state it left
   would still show.
-- An open row's panels follow it at the top level.
+- A collapsed row keeps its panels in its own `panels`, below its line; an open row's follow it at
+  the top level.
 
 No panel has its own time range; write a window into the query (`[7d]`, `_time:1h`).
 
@@ -60,7 +61,7 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 - `homelab_ci_job_seconds` is each job's latest good run in this repo, held until the next: a median
   over it weighs hours, not runs.
 - Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (it always fires), a
-  sample a minute.
+  sample a minute. A table over the time range uses `[$__range]` in instant queries, merged.
 - Logs: VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends a container's
   lines when it restarts, so use `uniq by (_time, container_name, _msg)` before `stats` (not
   allowed in a range query, which then counts repeats).
