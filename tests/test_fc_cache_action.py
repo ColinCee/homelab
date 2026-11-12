@@ -3,6 +3,7 @@
 import os
 import re
 import subprocess
+import sys
 import tarfile
 from pathlib import Path
 
@@ -13,8 +14,9 @@ from scripts import ci_supervisor as sup
 ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
 
 
-def test_the_pack_script_checks_the_supervisors_size_limit() -> None:
-    assert f"max_unpacked={sup.CACHE_MAX_UNPACKED_BYTES}\n" in (ACTION / "pack.sh").read_text()
+def test_the_pack_checks_the_supervisors_size_limit() -> None:
+    script = (ACTION / "fc_cache.py").read_text()
+    assert f"MAX_UNPACKED = {sup.CACHE_MAX_UNPACKED_BYTES}\n" in script
 
 
 def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
@@ -28,7 +30,7 @@ def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
     env = {**os.environ, "SUDO": "", "GITHUB_RUN_ID": "70", "GITHUB_RUN_ATTEMPT": "2"}
     return subprocess.run(
-        ["bash", str(ACTION / "save.sh"), str(tar), *map(str, disks)],
+        [sys.executable, str(ACTION / "fc_cache.py"), "save", str(tar), *map(str, disks)],
         capture_output=True,
         text=True,
         env=env,
@@ -68,7 +70,7 @@ def test_fails_without_an_outbox_disk(tmp_path) -> None:
 def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProcess[str]:
     out = workspace.parent / "cache.tar"
     return subprocess.run(
-        ["bash", str(ACTION / "pack.sh"), str(cache), str(out), *paths],
+        [sys.executable, str(ACTION / "fc_cache.py"), "pack", str(cache), str(out), *paths],
         cwd=workspace,
         capture_output=True,
         text=True,
@@ -157,3 +159,14 @@ def test_fails_when_a_named_workspace_path_is_missing(tmp_path) -> None:
 
     assert result.returncode != 0
     assert "web/node_modules does not exist" in result.stderr
+
+
+def test_the_action_never_fails_the_job_and_leaves_no_tar(tmp_path) -> None:
+    # No cache folder at all, as on a VM without one: a warning, never a failed check.
+    env = {**os.environ, "RUNNER_TEMP": str(tmp_path), "FC_CACHE_DIR": str(tmp_path / "none")}
+    result = subprocess.run(
+        [sys.executable, str(ACTION / "fc_cache.py")], capture_output=True, text=True, env=env
+    )
+    assert result.returncode == 0
+    assert "was not saved" in result.stderr
+    assert not (tmp_path / "cache.tar").exists()
