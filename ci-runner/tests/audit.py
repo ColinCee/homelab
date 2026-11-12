@@ -60,7 +60,13 @@ def run_command(
 ) -> subprocess.CompletedProcess[str]:
     stderr = subprocess.DEVNULL if quiet else None
     return subprocess.run(
-        command, text=True, stdout=subprocess.PIPE, stderr=stderr, env=env, check=False
+        command,
+        text=True,
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=stderr,
+        env=env,
+        check=False,
     )
 
 
@@ -97,18 +103,13 @@ class Host:
     def path(self, name: str) -> Path:
         return self.root / name.lstrip("/")
 
-    # A missing program is an answer, as in the shell (exit 127), not a crash.
+    # A missing program raises, so the check behind it fails (Audit.check); it is never read as
+    # "no" to a question whose "no" passes.
     def ok(self, *command: str, quiet: bool = False) -> bool:
-        try:
-            return self.run(list(command), quiet=quiet).returncode == 0
-        except FileNotFoundError:
-            return False
+        return self.run(list(command), quiet=quiet).returncode == 0
 
     def out(self, *command: str, quiet: bool = False) -> str:
-        try:
-            return self.run(list(command), quiet=quiet).stdout
-        except FileNotFoundError:
-            return ""
+        return self.run(list(command), quiet=quiet).stdout
 
 
 class Audit:
@@ -262,7 +263,11 @@ class Audit:
         h = self.host
         scan = Path(tempfile.mkdtemp())
         try:
-            if not h.ok("mount", "-o", "ro,loop", IMAGE, str(scan)):
+            try:
+                mounted = h.ok("mount", "-o", "ro,loop", IMAGE, str(scan))
+            except FileNotFoundError:
+                mounted = False
+            if not mounted:
                 self.fail("image could not be mounted for the secrets scan")
                 return
             self.check(
@@ -410,7 +415,8 @@ def main(host: Host | None = None, here: Path | None = None) -> int:
         "network test",
         lambda: (
             host.run(
-                [sys.executable, str(here / "test_network.py")], env={**host.env, "RUN_VM": run_vm}
+                [sys.executable, "-Es", str(here / "test_network.py")],
+                env={**host.env, "RUN_VM": run_vm},
             ).returncode
             == 0
         ),

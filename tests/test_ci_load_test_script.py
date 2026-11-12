@@ -136,15 +136,41 @@ def test_failed_requests_fail_and_show_when_they_came(
     assert out.splitlines()[-1] == "FAIL 3 slots: loaded Home Assistant: 2 requests failed"
 
 
-def test_a_non_numeric_max_response_is_zero_and_a_killed_vm_shows_128_plus_the_signal(
+@pytest.mark.parametrize("bound", ["fast", "nan", "inf"])
+def test_a_max_response_that_is_not_a_finite_number_gives_no_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], bound: str
+) -> None:
+    host, started = make_host(tmp_path)
+    host.env = {**host.env, "MAX_RESPONSE": bound}
+    assert load.main(["20"], host) == 2
+    captured = capsys.readouterr()
+    assert "MAX_RESPONSE must be a number" in captured.err
+    assert "PASS" not in captured.out and "FAIL" not in captured.out
+    assert started == []
+
+
+def test_a_vm_killed_by_a_signal_shows_128_plus_the_signal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     host, _ = make_host(tmp_path, logs={1: (-9, "slot 1 is busy\n")})
-    host.env = {**host.env, "MAX_RESPONSE": "fast"}
     assert load.main(["20"], host) == 1
-    last = last_line(capsys)
-    assert "loaded Grafana: worst 0.012000s over fast" in last
-    assert "slot 1: VM did not boot (exit 137)" in last
+    assert "slot 1: VM did not boot (exit 137)" in last_line(capsys)
+
+
+def test_a_missing_curl_counts_as_no_answer_not_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host, _ = make_host(tmp_path)
+
+    def no_curl(command: list[str]) -> subprocess.CompletedProcess[str]:
+        if command[0] == "curl":
+            raise FileNotFoundError("curl")
+        out = "tailscale0 UNKNOWN 100.64.0.5/32 fd7a::5/128\n"
+        return subprocess.CompletedProcess(command, 0, out)
+
+    host.run = no_curl
+    assert load.main(["20"], host) == 1
+    assert "quiet Home Assistant: no answers" in capsys.readouterr().out
 
 
 def test_a_vm_that_did_not_boot_or_burn_fails_with_its_log(

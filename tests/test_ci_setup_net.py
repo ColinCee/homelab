@@ -201,6 +201,19 @@ def test_slot_and_resolver_files_that_are_not_text_fall_back_instead_of_aborting
     assert "resolvers" not in host.loaded[0]
 
 
+def test_command_output_that_is_not_utf8_does_not_abort(root: Path) -> None:
+    out = net.run_command(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'fc-slot0\\xff')"]
+    ).stdout
+    assert out == "fc-slot0\ufffd"
+
+
+def test_an_empty_mode_means_up(root: Path) -> None:
+    host = FakeHost()
+    assert setup(host, root, "") == 0
+    assert host.taps == {"fc-tap0", "fc-tap1", "fc-tap2"}
+
+
 def test_a_failing_command_ends_up_with_its_exit_code(root: Path) -> None:
     class RulesRefused(FakeHost):
         def answer(self, command: list[str], input: str | None) -> tuple[int, str]:

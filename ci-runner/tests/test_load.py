@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+import math
 import os
 import re
 import subprocess
@@ -41,7 +42,7 @@ class Waitable(Protocol):
 
 
 def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, text=True, stdout=subprocess.PIPE, check=False)
+    return subprocess.run(command, text=True, errors="replace", stdout=subprocess.PIPE, check=False)
 
 
 def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:
@@ -112,15 +113,6 @@ def memory_sample(meminfo: str) -> tuple[int, int]:
     return available, waiting
 
 
-def seconds_bound(text: str) -> float:
-    """MAX_RESPONSE as a number; anything else is 0, as awk read it, so a typo fails
-    loudly instead of aborting the run before its verdict."""
-    try:
-        return float(text)
-    except ValueError:
-        return 0.0
-
-
 def exit_status(code: int) -> int:
     """A wait result as the shell reports it: Popen gives -n for a process killed by signal n,
     the shell 128+n."""
@@ -150,7 +142,7 @@ def report(
         lines.append(line)
         if failures:
             reasons.append(f"{label} {name}: {len(failures)} requests failed")
-        if answered and float(answered[-1].seconds) > seconds_bound(max_response):
+        if answered and float(answered[-1].seconds) > float(max_response):
             reasons.append(f"{label} {name}: worst {answered[-1].seconds}s over {max_response}s")
     return lines, reasons
 
@@ -204,12 +196,15 @@ class LoadTest:
         for _ in range(count):
             for url, timings in zip(self.urls, samples.timings, strict=True):
                 at = int(self.host.clock() - self.start)
-                out = self.host.run(
-                    [
-                        *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
-                        *["%{time_total} %{http_code}\n", url],
-                    ]
-                ).stdout.split()
+                try:
+                    out = self.host.run(
+                        [
+                            *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
+                            *["%{time_total} %{http_code}\n", url],
+                        ]
+                    ).stdout.split()
+                except FileNotFoundError:
+                    out = ["0", "000"]  # what curl itself prints for no answer
                 if len(out) == 2:
                     timings.append(Timing(out[0], out[1], at))
             meminfo = (self.host.root / "proc/meminfo").read_text()
@@ -229,6 +224,14 @@ def main(argv: Sequence[str], host: Host | None = None) -> int:
         return 2
     seconds = int(seconds_text)
     max_response = host.env.get("MAX_RESPONSE") or "1"
+    # No verdict on a typo: the supervisor keeps that as not run; a FAIL would lower the slots.
+    try:
+        finite = math.isfinite(float(max_response))
+    except ValueError:
+        finite = False
+    if not finite:
+        print(f"MAX_RESPONSE must be a number of seconds, not {max_response!r}", file=sys.stderr)
+        return 2
     slots = slot_count(host.env, host.root)
     run_vm = host.env.get("RUN_VM") or RUN_VM
     tailscale = host.run(["ip", "-4", "-br", "addr", "show", "tailscale0"])

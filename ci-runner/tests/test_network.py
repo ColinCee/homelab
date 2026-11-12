@@ -38,7 +38,9 @@ def run_command(
     command: list[str], *, check: bool = False, quiet: bool = False
 ) -> subprocess.CompletedProcess[str]:
     stderr = subprocess.DEVNULL if quiet else None
-    return subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=stderr, check=check)
+    return subprocess.run(
+        command, text=True, errors="replace", stdout=subprocess.PIPE, stderr=stderr, check=check
+    )
 
 
 def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:

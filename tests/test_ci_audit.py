@@ -79,7 +79,7 @@ class FakeHost:
                 for path in sorted(Path(scan).rglob("*"), reverse=True):
                     path.rmdir() if path.is_dir() else path.unlink()
                 return 0, ""
-            case [_, network] if network.endswith("test_network.py"):
+            case [_, "-Es", network] if network.endswith("test_network.py"):
                 return 0, ""
         raise AssertionError(f"unexpected command {command}")
 
@@ -200,7 +200,7 @@ BREAKS: dict[str, Callable[[FakeHost], object]] = {
         h.root / "sys/fs/cgroup/firecracker/ci-slot0/memory.max"
     ).write_text("max\n"),
     "network test": lambda h: h.answers.update(
-        {(sys.executable, "/repo/ci-runner/tests/test_network.py"): 1}
+        {(sys.executable, "-Es", "/repo/ci-runner/tests/test_network.py"): 1}
     ),
 }
 
@@ -240,6 +240,24 @@ def test_a_missing_mount_program_fails_the_image_check_instead_of_crashing(
     out = capsys.readouterr().out
     assert "FAIL image could not be mounted for the secrets scan" in out
     assert "PASS network test" in out
+
+
+def test_a_missing_program_behind_a_check_fails_it_never_passes_it(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class NoSudo(FakeHost):
+        def answer(self, command: list[str]) -> tuple[int, str]:
+            if command[0] == "sudo":
+                raise FileNotFoundError("sudo")
+            return super().answer(command)
+
+    no_sudo = NoSudo(host.root)
+    assert run_audit(no_sudo) == 1
+    out = capsys.readouterr().out
+    assert "FAIL fc-slot1 cannot read /srv/jailer/firecracker/ci-slot0" in out
+    assert "PASS network test" in out
+    # The network test runs with Python's isolated-from-environment flags, as root.
+    assert any(c[1:2] == ["-Es"] and c[-1].endswith("test_network.py") for c in no_sudo.ran)
 
 
 def test_a_firecracker_not_run_by_its_slot_user_fails(

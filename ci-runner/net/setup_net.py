@@ -42,6 +42,7 @@ def run_command(
         command,
         input=input,
         text=True,
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL if quiet else None,
         check=check,
@@ -226,7 +227,7 @@ def main(
     here: Path | None = None,
 ) -> int:
     here = here or Path(__file__).resolve().parent
-    mode = argv[0] if argv else "up"
+    mode = (argv[0] if argv else "") or "up"
     if mode not in ("up", "down", "wan"):
         print("usage: setup-net.sh [up|down|wan]", file=sys.stderr)
         return 2
