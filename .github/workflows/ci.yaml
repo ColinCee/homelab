@@ -81,5 +81,15 @@ jobs:
           [[ -f $times ]] || exit 0
           # A workflow command's message escapes % (one line, as the JSON is).
           echo "::notice title=slowest tests::$(sed 's/%/%25/g' "$times")"
-      - uses: ./.github/actions/fc-cache
+      # The cache disk holds what mise.toml and uv.lock install, so it is saved (about 14 s) only when they changed.
+      - name: Check whether the cache disk would change
+        id: cache
         if: runner.environment == 'self-hosted'
+        run: |
+          key=$(cat mise.toml uv.lock | sha256sum | cut -c1-16)
+          if [[ $(cat /cache/key 2>/dev/null) != "$key" ]]; then
+            echo "$key" > /cache/key
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: ./.github/actions/fc-cache
+        if: steps.cache.outputs.changed == 'true'

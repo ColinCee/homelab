@@ -92,6 +92,7 @@ def test_the_tests_tools_are_the_versions_the_stack_runs() -> None:
     for service, name in [
         ("prometheus", "aqua:prometheus/prometheus"),
         ("alloy", "aqua:grafana/alloy"),
+        ("gateway", "aqua:caddyserver/caddy"),
     ]:
         image = SERVICES[service]["image"]
         tag = image.split("@")[0].rsplit(":", 1)[1].removeprefix("v")

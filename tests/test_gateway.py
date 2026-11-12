@@ -1,13 +1,12 @@
 """The read-only gateway (stacks/observability/gateway) lets each reader read only read paths,
-sends each to its store, and refuses the rest. Runs compose.yaml's
-Caddy image against stand-in stores, so it needs Docker."""
+sends each to its store, and refuses the rest. Runs its start script and the Caddy version
+compose.yaml pins (mise.toml) against stand-in stores."""
 
 import base64
-import functools
 import http.client
 import http.server
 import json
-import shutil
+import os
 import socket
 import subprocess
 import tempfile
@@ -17,28 +16,15 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-import yaml
 
+from tests.conftest import tool
 from tests.test_alert_rules import STACK
 
-SERVICE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["services"][
-    "gateway"
-]
 PASSWORDS = {"stats": "s", "agents": "a"}
 # Removed when the tests end.
 SECRETS = tempfile.TemporaryDirectory()
 STORES = ("prometheus", "alertmanager", "logs", "traces")
 QUERY = "/prometheus/api/v1/query?query=up"
-
-
-@functools.cache
-def docker() -> bool:
-    if not shutil.which("docker"):
-        return False
-    return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
-
-
-pytestmark = pytest.mark.skipif("not docker()", reason="needs Docker")
 
 
 def basic(user: str, password: str) -> str:
@@ -67,33 +53,31 @@ def store(name: str) -> http.server.ThreadingHTTPServer:
         def log_message(self, *args: object) -> None:
             pass
 
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), Store)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Store)
+    # A short poll, so shutdown() returns at once.
+    threading.Thread(target=server.serve_forever, args=(0.02,), daemon=True).start()
     return server
 
 
-def run_gateway(
-    port: int, upstreams: dict[str, int], remove: bool = True, **passwords
-) -> subprocess.CompletedProcess[str]:
-    """The gateway as compose.yaml runs it, with the stores at the host's stand-ins."""
-    env = {name.upper(): f"host.docker.internal:{p}" for name, p in upstreams.items()}
-    command = ["docker", "run", "-d", *(["--rm"] if remove else [])]
-    command += ["-p", f"127.0.0.1:{port}:5080", "--add-host", "host.docker.internal:host-gateway"]
-    command += ["--read-only", "--user", "65534:65534"]
-    command += ["--cap-drop", "ALL", "--security-opt", "no-new-privileges:true"]
-    command += ["--tmpfs", "/data:uid=65534,gid=65534", "--tmpfs", "/config:uid=65534,gid=65534"]
-    for name in ("Caddyfile", "start.sh"):
-        command += ["-v", f"{STACK / 'gateway' / name}:/etc/caddy/{name}:ro"]
+def run_gateway(port: int, upstreams: dict[str, int], **passwords) -> subprocess.Popen[str]:
+    """The gateway's own start script and Caddy, with the stores at local stand-ins. The
+    container's limits (read-only, no capabilities) are compose.yaml's, tested there."""
     secrets = Path(tempfile.mkdtemp(dir=SECRETS.name))
     for name, password in passwords.items():
-        secret = secrets / f"{name}_password"
-        secret.write_text(password, encoding="utf-8")
-        secret.chmod(0o444)
-        command += ["-v", f"{secret}:/run/secrets/{secret.name}:ro"]
-    for k, v in env.items():
-        command += ["-e", f"{k}={v}"]
-    command += ["--entrypoint", "/bin/sh", SERVICE["image"], "/etc/caddy/start.sh"]
-    return subprocess.run(command, capture_output=True, text=True, timeout=300)
+        (secrets / f"{name}_password").write_text(password, encoding="utf-8")
+    env = {
+        "PATH": f"{Path(tool('caddy')).parent}{os.pathsep}{os.environ['PATH']}",
+        # Caddy's own files, as /data and /config in the container.
+        "XDG_DATA_HOME": str(secrets),
+        "XDG_CONFIG_HOME": str(secrets),
+        "SECRETS_DIR": str(secrets),
+        "CADDYFILE": str(STACK / "gateway/Caddyfile"),
+        "GATEWAY_PORT": str(port),
+    } | {name.upper(): f"127.0.0.1:{p}" for name, p in upstreams.items()}
+    script = str(STACK / "gateway/start.sh")
+    return subprocess.Popen(
+        ["sh", script], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True
+    )
 
 
 def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict]:
@@ -109,9 +93,7 @@ def gateway() -> Iterator[int]:
     servers = {name: store(name) for name in STORES}
     port = free_port()
     upstreams = {name: s.server_address[1] for name, s in servers.items()}
-    started = run_gateway(port, upstreams, **PASSWORDS)
-    assert started.returncode == 0, started.stderr
-    container = started.stdout.strip()
+    gateway = run_gateway(port, upstreams, **PASSWORDS)
     try:
         for _ in range(100):
             try:
@@ -119,13 +101,17 @@ def gateway() -> Iterator[int]:
                     break
             except OSError:
                 pass
-            time.sleep(0.2)
+            if gateway.poll() is not None:
+                break
+            time.sleep(0.1)
         else:
-            logs = subprocess.run(["docker", "logs", container], capture_output=True, text=True)
-            pytest.fail("the gateway did not answer in 20 s: " + logs.stderr[-2000:])
+            gateway.kill()
+            pytest.fail("the gateway did not answer in 10 s: " + gateway.communicate()[1][-2000:])
+        assert gateway.poll() is None, gateway.communicate()[1][-2000:]
         yield port
     finally:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=60)
+        gateway.kill()
+        gateway.wait(timeout=30)
         for s in servers.values():
             s.shutdown()
 
@@ -215,12 +201,6 @@ def test_a_wrong_login_is_refused(gateway: int, auth: str | None) -> None:
 
 def test_a_missing_password_stops_the_gateway() -> None:
     # An empty password would make the login `stats@homelab.internal:` match.
-    started = run_gateway(free_port(), {}, remove=False, **(PASSWORDS | {"stats": ""}))
-    container = started.stdout.strip()
-    try:
-        waited = subprocess.run(
-            ["docker", "wait", container], capture_output=True, text=True, timeout=30
-        )
-        assert waited.stdout.strip() not in ("", "0")
-    finally:
-        subprocess.run(["docker", "rm", "-f", container], capture_output=True, timeout=60)
+    gateway = run_gateway(free_port(), {}, **(PASSWORDS | {"stats": ""}))
+    assert gateway.wait(timeout=30) != 0
+    gateway.communicate()

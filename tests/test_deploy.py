@@ -361,6 +361,14 @@ def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
     assert deploy.changed_stacks(repo, before) is None
 
 
+def test_a_change_to_another_script_deploys_no_stack(repo: Path) -> None:
+    before = _git(repo, "rev-parse", "HEAD")
+    (repo / "scripts" / "ci_supervisor.py").write_text("# changed\n", encoding="utf-8")
+    _commit_all(repo)
+
+    assert deploy.changed_stacks(repo, before) == ()
+
+
 @pytest.mark.parametrize("since", ["", "0123456789abcdef0123456789abcdef01234567"])
 def test_a_missing_or_unknown_last_deploy_selects_all_stacks(repo: Path, since: str) -> None:
     assert deploy.changed_stacks(repo, since) is None
