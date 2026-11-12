@@ -47,7 +47,7 @@ ROW_DAYS = 30
 Get = Callable[[str], Any]
 
 
-def seconds(value: Any) -> float:
+def seconds(value: object) -> float:
     return datetime.fromisoformat(str(value)).timestamp()
 
 
@@ -246,7 +246,7 @@ def poll(
 
 
 def github(token: str) -> Get:
-    def get(path: str) -> Any:
+    def get(path: str) -> Any:  # noqa: ANN401 - GitHub's JSON, read as each endpoint documents it
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
         request = urllib.request.Request(f"https://api.github.com{path}", headers=headers)
         for tries_left in (1, 0):
