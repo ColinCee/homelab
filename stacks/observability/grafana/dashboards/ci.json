@@ -770,7 +770,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:event\":* | sort by (_time) desc | limit 30 | fields _time, name, \"span_attr:branch\", \"span_attr:conclusion\", duration, trace_id, \"span_attr:url\"",
+          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:event\":* | sort by (_time) desc | limit 30 | math duration/1e9 as seconds | fields _time, name, \"span_attr:branch\", \"span_attr:conclusion\", seconds, trace_id, \"span_attr:url\"",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -793,7 +793,7 @@
               "name": true,
               "span_attr:branch": true,
               "span_attr:conclusion": true,
-              "duration": true,
+              "seconds": true,
               "trace_id": true,
               "span_attr:url": true
             },
@@ -802,7 +802,7 @@
               "name": 1,
               "span_attr:branch": 2,
               "span_attr:conclusion": 3,
-              "duration": 4,
+              "seconds": 4,
               "trace_id": 5,
               "span_attr:url": 6
             },
@@ -811,7 +811,7 @@
               "name": "Workflow",
               "span_attr:branch": "Branch",
               "span_attr:conclusion": "Result",
-              "duration": "Took",
+              "seconds": "Took",
               "trace_id": "Steps",
               "span_attr:url": "GitHub"
             }
@@ -866,12 +866,12 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "Took"
+              "options": "^(Took)$"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "ns"
+                "value": "suffix: s"
               },
               {
                 "id": "decimals",
@@ -1030,7 +1030,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:conclusion\":* \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15",
+          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:conclusion\":* \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | replace_regexp (\"@[0-9a-f]{40}$\", \"\") at name | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15 | math typical/1e9 as typical, slowest/1e9 as slowest, total/60e9 as total",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -1125,23 +1125,23 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "ns"
+                "value": "suffix: s"
               },
               {
                 "id": "decimals",
-                "value": 1
+                "value": 0
               }
             ]
           },
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "Together"
+              "options": "^(Together)$"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "ns"
+                "value": "suffix: min"
               },
               {
                 "id": "decimals",
@@ -1196,7 +1196,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci name:~`::|^pytest start-up$` \"span_attr:conclusion\":\"\" \"span_attr:source\":\"\" | stats by (name) count() as runs, avg(duration) as average, max(duration) as slowest | filter runs:>=5 | sort by (average) desc | limit 15",
+          "expr": "_time:7d \"resource_attr:service.name\":=ci name:~`::|^pytest start-up$` \"span_attr:conclusion\":\"\" \"span_attr:source\":\"\" | stats by (name) count() as runs, avg(duration) as average, max(duration) as slowest | filter runs:>=5 | sort by (average) desc | limit 15 | math average/1e9 as average, slowest/1e9 as slowest",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -1284,7 +1284,7 @@
             "properties": [
               {
                 "id": "unit",
-                "value": "ns"
+                "value": "suffix: s"
               },
               {
                 "id": "decimals",
@@ -1295,12 +1295,12 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "Average"
+              "options": "^(Average)$"
             },
             "properties": [
               {
                 "id": "unit",
-                "value": "ns"
+                "value": "suffix: s"
               },
               {
                 "id": "decimals",
