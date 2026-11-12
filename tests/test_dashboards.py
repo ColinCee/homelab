@@ -21,7 +21,7 @@ SOURCES = {"prometheus", "alertmanager", "logs", "traces"}
 
 # These dataviz steps pass contrast checks on Grafana's light and dark themes.
 GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
-NOW, WEEK, NEUTRAL = "#d03b3b", "#fab219", "#898781"
+NOW, WEEK, NEUTRAL, FINE = "#d03b3b", "#fab219", "#898781", "#2f8f46"
 
 # Alloy sends these in mixed case; a lower-case copy finds nothing.
 MIXED_CASE = {
@@ -180,12 +180,15 @@ def test_groups_containers_and_rules_wear_one_colour_on_every_panel() -> None:
 
 
 @every_page
-def test_tiles_are_red_or_amber_and_unlisted_series_gray(page: dict[str, Any]) -> None:
+def test_tiles_wear_a_state_colour_and_unlisted_series_gray(page: dict[str, Any]) -> None:
     for panel in charts(page):
         defaults = panel.get("fieldConfig", {}).get("defaults", {})
-        if panel["type"] == "stat":
-            steps = defaults["thresholds"]["steps"]
-            assert {s["color"] for s in steps} <= {"text", NOW, WEEK}, panel["title"]
+        if panel["type"] in ("stat", "gauge"):
+            worn = {s["color"] for s in defaults["thresholds"]["steps"]}
+            filled = panel["options"].get("colorMode", "").startswith("background")
+            # A filled tile in the text colour is a white block.
+            plain = set() if filled or panel["type"] == "gauge" else {"text"}
+            assert worn <= {NOW, WEEK, FINE, NEUTRAL} | plain, panel["title"]
             assert set(named_colours(panel).values()) <= {NOW, WEEK}, panel["title"]
         elif "color" in defaults:
             # A series no list names, like a removed container, is drawn gray.

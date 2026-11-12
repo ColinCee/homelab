@@ -140,7 +140,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               }
             ]
@@ -180,22 +180,22 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value_and_name",
         "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 6,
-        "h": 3
+        "w": 3,
+        "h": 4
       }
     },
     {
@@ -242,7 +242,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               }
             ]
@@ -282,22 +282,22 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value_and_name",
         "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 6,
+        "x": 3,
         "y": 0,
-        "w": 6,
-        "h": 3
+        "w": 3,
+        "h": 4
       }
     },
     {
@@ -344,7 +344,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               }
             ]
@@ -384,26 +384,103 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value_and_name",
         "wideLayout": false,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 12,
+        "x": 6,
         "y": 0,
-        "w": 6,
-        "h": 3
+        "w": 3,
+        "h": 4
       }
     },
     {
       "id": 4,
+      "type": "stat",
+      "title": "Sites down",
+      "description": "Public sites that do not answer; A public site is down fires after 10 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "count(min by (site) (probe_success{job=\"integrations/blackbox/sites\"} or up{job=\"integrations/blackbox/sites\"}) < 1) or vector(0)",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          },
+          "mappings": [],
+          "links": [
+            {
+              "title": "Open Services",
+              "url": "/d/services",
+              "oneClick": true
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 0,
+        "w": 3,
+        "h": 4
+      }
+    },
+    {
+      "id": 5,
       "type": "stat",
       "title": "Services stopped",
       "description": "Services the last deploy started to keep running that have no running container; A service stopped fires after 10 minutes.",
@@ -433,7 +510,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -461,26 +538,26 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 18,
+        "x": 12,
         "y": 0,
-        "w": 6,
-        "h": 3
+        "w": 3,
+        "h": 4
       }
     },
     {
-      "id": 5,
+      "id": 6,
       "type": "stat",
       "title": "Alerts firing",
       "description": "Alert rules firing now; a rule with several firing series counts once.",
@@ -510,7 +587,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -538,26 +615,26 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 0,
-        "y": 3,
-        "w": 6,
-        "h": 3
+        "x": 15,
+        "y": 0,
+        "w": 3,
+        "h": 4
       }
     },
     {
-      "id": 6,
+      "id": 7,
       "type": "stat",
       "title": "Last backup",
       "description": "Time since the last good nightly backup; amber past 26 h, when the backup alert fires.",
@@ -587,7 +664,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -615,99 +692,22 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 6,
-        "y": 3,
-        "w": 6,
-        "h": 3
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Backup storage",
-      "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "refId": "A",
-          "expr": "max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9",
-          "legendFormat": ""
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "suffix: GB",
-          "decimals": 1,
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "text",
-                "value": null
-              },
-              {
-                "color": "#fab219",
-                "value": 5
-              }
-            ]
-          },
-          "mappings": [],
-          "links": [
-            {
-              "title": "Open Server",
-              "url": "/d/server",
-              "oneClick": true
-            }
-          ]
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false,
-        "text": {
-          "titleSize": 14,
-          "valueSize": 28
-        }
-      },
-      "gridPos": {
-        "x": 12,
-        "y": 3,
-        "w": 6,
-        "h": 3
+        "x": 18,
+        "y": 0,
+        "w": 3,
+        "h": 4
       }
     },
     {
@@ -741,7 +741,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#898781",
                 "value": null
               }
             ]
@@ -765,27 +765,27 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "area",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
         "showPercentChange": false,
         "text": {
           "titleSize": 14,
-          "valueSize": 28
+          "valueSize": 26
         }
       },
       "gridPos": {
-        "x": 18,
-        "y": 3,
-        "w": 6,
-        "h": 3
+        "x": 21,
+        "y": 0,
+        "w": 3,
+        "h": 4
       }
     },
     {
       "id": 9,
-      "type": "stat",
+      "type": "gauge",
       "title": "CPU",
       "description": "Share of the CPU in use.",
       "datasource": {
@@ -814,7 +814,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -824,6 +824,8 @@
             ]
           },
           "mappings": [],
+          "min": 0,
+          "max": 100,
           "links": [
             {
               "title": "Open Server",
@@ -842,23 +844,25 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
       },
       "gridPos": {
         "x": 0,
-        "y": 6,
-        "w": 8,
-        "h": 5
+        "y": 4,
+        "w": 3,
+        "h": 7
       }
     },
     {
       "id": 10,
-      "type": "stat",
+      "type": "gauge",
       "title": "Memory",
       "description": "Share of memory in use; the memory alert fires past 90%.",
       "datasource": {
@@ -887,7 +891,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -897,6 +901,8 @@
             ]
           },
           "mappings": [],
+          "min": 0,
+          "max": 100,
           "links": [
             {
               "title": "Open Server",
@@ -915,23 +921,25 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
       },
       "gridPos": {
-        "x": 8,
-        "y": 6,
-        "w": 8,
-        "h": 5
+        "x": 3,
+        "y": 4,
+        "w": 3,
+        "h": 7
       }
     },
     {
       "id": 11,
-      "type": "stat",
+      "type": "gauge",
       "title": "Disk",
       "description": "Share of the root disk in use; the disk alert fires past 80%.",
       "datasource": {
@@ -960,7 +968,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -970,6 +978,8 @@
             ]
           },
           "mappings": [],
+          "min": 0,
+          "max": 100,
           "links": [
             {
               "title": "Open Server",
@@ -988,22 +998,307 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
-        "textMode": "value",
-        "wideLayout": true,
-        "showPercentChange": false
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
       },
       "gridPos": {
-        "x": 16,
-        "y": 6,
-        "w": 8,
-        "h": 5
+        "x": 6,
+        "y": 4,
+        "w": 3,
+        "h": 7
       }
     },
     {
       "id": 12,
+      "type": "gauge",
+      "title": "Backup storage",
+      "description": "The backup repository in R2; the alert fires past 5 GB, uploads stop at 8 GB.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max(last_over_time(homelab_backup_repository_bytes[26h])) / 1e9",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: GB",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 5
+              }
+            ]
+          },
+          "mappings": [],
+          "min": 0,
+          "max": 8,
+          "links": [
+            {
+              "title": "Open Server",
+              "url": "/d/server",
+              "oneClick": true
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 4,
+        "w": 3,
+        "h": 7
+      }
+    },
+    {
+      "id": 13,
+      "type": "gauge",
+      "title": "SSD wear",
+      "description": "Share of the SSD's rated writes used; Beelink SSD wearing out fires past 80%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max(homelab_ssd_percentage_used)",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2f8f46",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 80
+              }
+            ]
+          },
+          "mappings": [],
+          "min": 0,
+          "max": 100,
+          "links": [
+            {
+              "title": "Open Server",
+              "url": "/d/server",
+              "oneClick": true
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "minVizWidth": 75,
+        "minVizHeight": 75,
+        "shape": "gauge",
+        "sparkline": true
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 4,
+        "w": 3,
+        "h": 7
+      }
+    },
+    {
+      "id": 14,
+      "type": "table",
+      "title": "Firing now",
+      "description": "Each alert rule firing now, its level and when it began; empty when none fires. The Services page lists what fired earlier.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (alertname, level) (ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "B",
+          "expr": "max by (alertname) (ALERTS_FOR_STATE{alertname!=\"watchdog\"}) * 1000 and on (alertname) ALERTS{alertstate=\"firing\",alertname!=\"watchdog\"}",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "alertname": 0,
+              "level": 1,
+              "Value #B": 2
+            },
+            "renameByName": {
+              "alertname": "Rule",
+              "level": "Level",
+              "Value #B": "Since"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Since"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocalNoDateIfToday"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Level"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "now": {
+                        "text": "now",
+                        "color": "#d03b3b",
+                        "index": 0
+                      },
+                      "week": {
+                        "text": "week",
+                        "color": "#fab219",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 15,
+        "y": 4,
+        "w": 9,
+        "h": 7
+      }
+    },
+    {
+      "id": 15,
       "type": "timeseries",
       "title": "Memory by group",
       "description": "The stack's top is the host's own figure in use. Monitoring is the observability stack; Apps every other container; System the rest.",
@@ -1123,11 +1418,11 @@
         "x": 0,
         "y": 11,
         "w": 12,
-        "h": 8
+        "h": 9
       }
     },
     {
-      "id": 13,
+      "id": 16,
       "type": "timeseries",
       "title": "CPU by group, cores",
       "description": "The stack's top is the host's own figure in use. Monitoring is the observability stack; Apps every other container; System the rest.",
@@ -1247,7 +1542,7 @@
         "x": 12,
         "y": 11,
         "w": 12,
-        "h": 8
+        "h": 9
       }
     }
   ]
