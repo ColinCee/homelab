@@ -1,0 +1,35 @@
+# The Beelink's one Cloudflare Tunnel: an outbound connection carrying each public hostname to its service on the
+# `tunnel` network. The routes are set in Cloudflare's dashboard (docs/architecture.md, "Network and access").
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Its metrics for the observability stack's Alloy, which reaches it on observability-otlp.
+    command: ["tunnel", "--metrics", "0.0.0.0:2000", "run"]
+    environment:
+      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
+    secrets:
+      - tunnel_token
+    labels:
+      homelab.config-hash: ${CONFIG_HASH_CLOUDFLARED:-}
+    # default: its way out to Cloudflare; tunnel: the services it publishes.
+    networks:
+      - default
+      - tunnel
+      - observability-otlp
+
+# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
+secrets:
+  tunnel_token:
+    file: ../../secrets/cf_tunnel_token
+
+networks:
+  # Each published service joins it; it has no way out, so a service reaches the internet only on its own network.
+  tunnel:
+    name: tunnel
+    internal: true
+  # Owned by the observability stack; deploy it first on a fresh host.
+  observability-otlp:
+    external: true

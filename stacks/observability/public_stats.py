@@ -34,6 +34,7 @@ STACKS = (
     "home-assistant",
     "internal-names",
     "observability",
+    "tunnel",
 )
 EVERY_S = 300
 # After a failure, sooner: the first push decides whether a deploy's

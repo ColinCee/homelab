@@ -487,7 +487,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+)$/"
+              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+|tunnel-.+)$/"
             },
             "properties": [
               {
@@ -573,7 +573,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+)$/"
+              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+|tunnel-.+)$/"
             },
             "properties": [
               {
@@ -811,7 +811,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+)$/"
+              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+|tunnel-.+)$/"
             },
             "properties": [
               {
