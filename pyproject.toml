@@ -48,7 +48,7 @@ pythonpath = [".", "ci-runner"]
 # run_vm.py and stop_vms.py import vm_disks.py from their own folder.
 extra-paths = ["ci-runner"]
 
-# Kaizen's standard (standards.md, Types): no untyped value gets through, and a warning fails the check.
+# Strict: no untyped value gets through, and a warning fails the check.
 [tool.ty.rules]
 missing-type-argument = "error"
 unsound-assignment = "error"
