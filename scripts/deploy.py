@@ -663,8 +663,7 @@ def main() -> int:
 
 @contextlib.contextmanager
 def one_deploy_at_a_time(last_deployed: Path | None) -> Generator[None]:
-    """Wait for any other deploy recording to the same file: the workflow and deploy-main both
-    deploy until the workflow goes (docs/architecture.md, "Deploys")."""
+    """Wait for any other deploy recording to the same file: a ring's and one run by hand."""
     if last_deployed is None:
         yield
         return
@@ -724,10 +723,6 @@ def run(
         print(f"Error: {exc}", file=sys.stderr)
         return 2
 
-    if output := os.environ.get("GITHUB_OUTPUT"):
-        with open(output, "a", encoding="utf-8") as file:
-            file.write(f"deployed={json.dumps(list(report.completed))}\n")
-            file.write(f"ready_at={json.dumps(dict(report.ready_at))}\n")
     if report.failed:
         return 1
     if head and last_deployed is not None:

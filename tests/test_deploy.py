@@ -3,7 +3,6 @@ import json
 import os
 import shutil
 import subprocess
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -411,8 +410,6 @@ def test_deploys_changed_stacks_and_records_the_commit(
     repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state = tmp_path_factory.mktemp("state") / "last-deployed"
-    output = state.with_name("github-output")
-    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     state.write_text(_git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
     (repo / "stacks" / "gateway" / "compose.yaml").write_text(
         "services: {app: {image: new}}\n", encoding="utf-8"
@@ -425,11 +422,6 @@ def test_deploys_changed_stacks_and_records_the_commit(
     composed = {command[command.index("-f") + 1] for command, _ in calls if "-f" in command}
     assert composed == {str(repo / "stacks" / "gateway" / "compose.yaml")}
     assert state.read_text(encoding="utf-8").strip() == head
-    deployed, ready = output.read_text(encoding="utf-8").splitlines()
-    assert deployed == 'deployed=["gateway"]'
-    ready_at = json.loads(ready.removeprefix("ready_at="))
-    assert list(ready_at) == ["gateway"]
-    assert datetime.fromisoformat(ready_at["gateway"]).tzinfo is not None
 
 
 def test_a_secret_rendered_since_the_last_deploy_deploys_its_stack(

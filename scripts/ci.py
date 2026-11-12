@@ -193,20 +193,7 @@ def build_image() -> int:
     return subprocess.run([*command, "ci-runner/rootfs"], stdout=subprocess.DEVNULL).returncode
 
 
-def ghcr_login() -> int:
-    """Log Docker in to GHCR (deploy.yaml) in the job's temp folder, which the runner deletes
-    after the job, so no registry credential stays on the host."""
-    config = Path(os.environ["RUNNER_TEMP"]) / "docker"
-    config.mkdir(parents=True, exist_ok=True)
-    with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
-        f.write(f"DOCKER_CONFIG={config}\n")
-    command = ["docker", "login", "ghcr.io", "-u", os.environ["GHCR_USER"], "--password-stdin"]
-    env = os.environ | {"DOCKER_CONFIG": str(config)}
-    return subprocess.run(command, input=os.environ["GHCR_TOKEN"], text=True, env=env).returncode
-
-
 STEPS = {
-    "ghcr-login": ghcr_login,
     "pull-request-rules": pull_request_rules,
     "validate-changed-compose": validate_changed_compose,
     "vm-tools": vm_tools,

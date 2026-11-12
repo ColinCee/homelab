@@ -12,8 +12,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
   that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
   full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. A forged
-  ring deploys nothing new. Until it goes, [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy runner
-  also renders `secrets/` and deploys, one at a time.
+  ring deploys nothing new. Until it goes, [`deploy.yaml`](../.github/workflows/deploy.yaml), run by hand on the
+  deploy runner, renders `secrets/`.
 - **Who may deploy.** Whoever lands a commit on `main`. The root-owned [runner guard](../scripts/runner_job_guard.py)
   refuses every deploy-runner job but `deploy.yaml` from `main` by `ColinCee` or `renovate[bot]`; changing it takes a
   reinstall ([recovery](recovery.md#runner-guard)).
