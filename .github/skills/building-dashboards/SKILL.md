@@ -22,8 +22,10 @@ A panel goes on the page whose question it answers.
 | `server` | The box: has it got room? Network and backups too |
 | `services` | What runs on it: is each running, and what does it use and complain about? |
 | `ci` | Is CI fast, and is it getting slower? |
+| `logs` | What are the services saying? Pick containers, search words |
+| `traces` | What did each service answer, and how long did it take? |
 
-- Every page carries the same `links`: each page, then Explore's logs and traces.
+- Every page carries the same `links`: each page.
 - A Home tile opens the page that explains it: `fieldConfig.defaults.links`, `oneClick`, `/d/<uid>`.
 - Home's service tiles are `instant` queries named Up and Down: over a range the state it left
   would still show.

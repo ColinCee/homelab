@@ -245,7 +245,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "container_name:~\"${container:regex}\" ${search}",
+          "expr": "container_name:~\"${container:regex}\" ${search} | fields _time, _msg, container_name, level",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 500

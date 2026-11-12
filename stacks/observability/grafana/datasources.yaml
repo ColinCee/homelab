@@ -18,7 +18,7 @@ datasources:
       prometheusType: Prometheus
       prometheusVersion: 3.16.0
       timeInterval: 15s
-      manageAlerts: false
+      manageAlerts: true
   - name: Alertmanager
     uid: alertmanager
     type: alertmanager
