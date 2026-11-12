@@ -2,6 +2,7 @@
 
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +36,7 @@ class Recorder:
         self.users: set[str] = set()
         self.fail: str | None = None
         self.smoke_fails = False
+        self.fail_program: str | None = None
         self.link_when_first_unit_written: bool | None = None
 
     def __call__(
@@ -49,6 +51,8 @@ class Recorder:
         self.calls.append(command)
         code, out = 0, ""
         match command:
+            case [program, *_] if program == self.fail_program:
+                code = 1
             case [*_, name] if self.fail and name == self.fail:
                 code = 1
             case [path, "up"] if path == self.fail:
@@ -65,11 +69,11 @@ class Recorder:
                 code = 0 if self.version else 127
             case ["curl", *_, tgz, _]:
                 Path(tgz).write_bytes(b"tarball")
-            case ["tar", "-xzf", _, "-C", tmp]:
+            case ["tar", "-xzf", _, "-C", tmp, *_]:
                 (Path(tmp) / "python/bin").mkdir(parents=True)
                 (Path(tmp) / "python/bin/python3").write_text("python")
-            case [_, "-c", ih.PYTHON_SMOKE]:
-                code = 1 if self.smoke_fails else 0
+            case [*_, python, "-c", ih.PYTHON_SMOKE]:
+                code = 127 if not Path(python).exists() else int(self.smoke_fails)
             case ["id", name]:
                 code = 0 if name in self.users else 1
             case ["useradd", *_, name]:
@@ -104,6 +108,9 @@ def root(tmp_path: Path) -> Path:
     # The pinned Python is already there; the tests of installing it start from `link_to`.
     (tmp_path / "usr/local/bin").mkdir(parents=True)
     (tmp_path / "usr/local/bin/homelab-python3").symlink_to(PYTHON_TARGET)
+    built = tmp_path / PYTHON_TARGET.lstrip("/")
+    built.parent.mkdir(parents=True)
+    built.write_text("python")
     return tmp_path
 
 
@@ -303,6 +310,19 @@ def test_the_installer_imports_nothing_from_the_checkout(tmp_path: Path) -> None
 OLD_TARGET = f"{ih.PYTHON_DIR}/3.14.0+20250101/bin/python3"
 
 
+def test_every_python_image_is_the_version_mise_pins() -> None:
+    root = CI_RUNNER.parent
+    python = tomllib.loads((root / "mise.toml").read_text())["tools"]["python"]
+    files = [*root.glob("stacks/**/*.Dockerfile"), *root.glob("stacks/**/compose.yaml")]
+    tags = {
+        (file.name, tag)
+        for file in files
+        for tag in re.findall(r"python:(\d+\.\d+\.\d+)", file.read_text())
+    }
+    assert tags
+    assert {tag for _, tag in tags} == {python}, tags
+
+
 def test_the_host_python_is_the_one_mise_pins() -> None:
     mise = tomllib.loads((CI_RUNNER.parent / "mise.toml").read_text())
     assert PINNED["PBS_PYTHON"] == mise["tools"]["python"]
@@ -344,6 +364,42 @@ def test_a_python_download_with_the_wrong_hash_changes_nothing(root: Path) -> No
     assert recorder.link_when_first_unit_written is None
     assert not any(c[0] == "tar" for c in recorder.calls)
     assert not restarted(recorder)
+
+
+@pytest.mark.parametrize("program", ["curl", "tar"])
+def test_a_failed_python_download_or_extraction_changes_nothing(root: Path, program: str) -> None:
+    link = link_to(root, OLD_TARGET)
+    recorder = Recorder(active=True)
+    recorder.fail_program = program
+
+    with pytest.raises(subprocess.CalledProcessError):
+        install(root, recorder)
+
+    assert os.readlink(link) == OLD_TARGET
+    assert recorder.link_when_first_unit_written is None
+    assert not restarted(recorder)
+
+
+def test_a_first_install_with_no_link_downloads_and_links_the_python(root: Path) -> None:
+    link = root / "usr/local/bin/homelab-python3"
+    link.unlink()
+    recorder = Recorder(active=False)
+
+    install(root, recorder)
+
+    assert any(c[0] == "curl" for c in recorder.calls)
+    assert os.readlink(link) == PYTHON_TARGET
+    assert recorder.link_when_first_unit_written is True
+
+
+def test_a_link_to_a_python_that_is_gone_is_reinstalled(root: Path) -> None:
+    (root / PYTHON_TARGET.lstrip("/")).unlink()
+    recorder = Recorder(active=False)
+
+    install(root, recorder)
+
+    assert any(c[0] == "curl" for c in recorder.calls)
+    assert (root / PYTHON_TARGET.lstrip("/")).exists()
 
 
 def test_a_python_that_fails_its_smoke_test_is_not_linked(root: Path) -> None:

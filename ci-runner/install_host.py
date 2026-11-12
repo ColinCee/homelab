@@ -173,16 +173,38 @@ def add_user(host: Host, name: str) -> None:
         )
 
 
+def download(host: Host, dest: str, url: str) -> None:
+    """HTTPS only, and bounded, so a stalled server fails the install (update.py retries it)."""
+    limits = ["--proto", "=https", "--fail", "--max-time", "300", "--retry", "2"]
+    host.run(["curl", "-sSL", *limits, "-o", dest, url])
+
+
 def install_firecracker(host: Host, version: str, sha256: str) -> None:
     """Firecracker and jailer, pinned and checked against the hash in versions.env."""
     with tempfile.TemporaryDirectory() as tmp:
         tgz = f"{tmp}/firecracker-{version}-x86_64.tgz"
-        host.run(["curl", "-fsSL", "-o", tgz, f"{GH}/{version}/firecracker-{version}-x86_64.tgz"])
+        download(host, tgz, f"{GH}/{version}/firecracker-{version}-x86_64.tgz")
         host.run(["sha256sum", "-c", "--quiet"], input=f"{sha256}  {tgz}\n")
         host.run(["tar", "-xzf", tgz, "-C", tmp])
         rel = Path(tmp) / f"release-{version}-x86_64"
         install(host, "0755", rel / f"firecracker-{version}-x86_64", "/usr/local/bin/firecracker")
         install(host, "0755", rel / f"jailer-{version}-x86_64", "/usr/local/bin/jailer")
+
+
+def smoke_passes(host: Host, python: Path, *, check: bool = True) -> bool:
+    """Whether `python` imports what the units need, as homelab-facts (the least-privileged user
+    that runs it) once that user exists, else as root: a first install makes the user later."""
+    as_user: list[str] = []
+    if host.run(["id", "homelab-facts"], check=False, capture=True, quiet=True).returncode == 0:
+        as_user = [
+            "setpriv",
+            "--reuid",
+            "homelab-facts",
+            "--regid",
+            "homelab-facts",
+            "--clear-groups",
+        ]
+    return host.run([*as_user, str(python), "-c", PYTHON_SMOKE], check=check).returncode == 0
 
 
 def install_python(host: Host, pinned: Mapping[str, str]) -> None:
@@ -194,22 +216,26 @@ def install_python(host: Host, pinned: Mapping[str, str]) -> None:
     target = f"{PYTHON_DIR}/{name}/bin/python3"
     link = host.path(PYTHON_LINK)
     try:
-        if os.readlink(link) == target:
-            return
-        previous = Path(os.readlink(link)).parts[-3]
+        current = os.readlink(link)
+        previous = Path(current).parts[-3]
     except OSError:
-        previous = ""
+        current, previous = "", ""
+    if current == target and smoke_passes(host, host.path(target), check=False):
+        return
     home = host.path(PYTHON_DIR)
     home.mkdir(parents=True, exist_ok=True)
+    # Explicit, not the umask's: units run as other users (homelab-facts) and must read it all.
+    home.chmod(0o755)
     with tempfile.TemporaryDirectory(dir=home, prefix=".new-") as tmp:
         tgz = f"{tmp}/python.tar.gz"
         asset = f"cpython-{python}%2B{tag}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
-        host.run(["curl", "-fsSL", "-o", tgz, f"{PBS}/{tag}/{asset}"])
+        download(host, tgz, f"{PBS}/{tag}/{asset}")
         host.run(["sha256sum", "-c", "--quiet"], input=f"{pinned['PBS_SHA256']}  {tgz}\n")
-        host.run(["tar", "-xzf", tgz, "-C", tmp])
+        host.run(["tar", "-xzf", tgz, "-C", tmp, "--no-same-owner", "--no-same-permissions"])
+        host.run(["chmod", "-R", "u+rwX,go+rX", f"{tmp}/python"])
         shutil.rmtree(home / name, ignore_errors=True)
         (Path(tmp) / "python").rename(home / name)
-    host.run([str(home / name / "bin" / "python3"), "-c", PYTHON_SMOKE])
+    smoke_passes(host, home / name / "bin" / "python3")
     staged = link.with_name(f".{link.name}.new")
     staged.unlink(missing_ok=True)
     staged.symlink_to(target)
