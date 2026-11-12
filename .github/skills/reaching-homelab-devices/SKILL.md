@@ -17,10 +17,10 @@ reach what, and policy changes: Colin's notes repo (`ColinCee/notes`, checked ou
 | Home Assistant | `http://home.internal` | `http://beelink.tail4f465e.ts.net:8123` |
 | Beelink shell | `ssh beelink` | `beelink.tail4f465e.ts.net` |
 
-- Type the short forms; save the `*.ts.net` form (Grafana: `.internal`). Short names fail
-  on Beelink: `/etc/hosts` maps `beelink` to `127.0.1.1`, containers resolve it to
-  themselves or loopback, and `.internal` sites refuse it. Docker port bindings and Alloy scrape targets
-  stay IPs (the Beelink's is `100.100.146.119`).
+- Type the short forms; save the `*.ts.net` form, but Grafana's `.internal`. Short
+  names fail on Beelink: `/etc/hosts` maps `beelink` to `127.0.1.1`, containers resolve
+  it to themselves or loopback, and `.internal` sites refuse it. Docker port bindings
+  and Alloy scrape targets stay IPs (Beelink's: `100.100.146.119`).
 - `.internal` names come from `stacks/internal-names` in the homelab repo. A new one
   needs a site in its Caddyfile, the name in its Corefile, a row here, and a tailnet
   policy grant if a new device should reach it.
