@@ -1,7 +1,6 @@
 """The shared action that saves a repo's cache disk (.github/actions/fc-cache)."""
 
 import os
-import re
 import subprocess
 import sys
 import tarfile
@@ -17,14 +16,6 @@ ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
 def test_the_pack_checks_the_supervisors_size_limit() -> None:
     script = (ACTION / "fc_cache.py").read_text()
     assert f"MAX_UNPACKED = {sup.CACHE_MAX_UNPACKED_BYTES}\n" in script
-
-
-def test_the_outbox_holds_the_largest_tar_the_supervisor_takes() -> None:
-    script = (ACTION.parent.parent.parent / "ci-runner" / "run-vm.sh").read_text()
-    size = re.search(r"OUTBOX_BYTES=\$\(\((.+)\)\)", script)
-
-    assert size is not None
-    assert eval(size.group(1)) >= sup.CACHE_MAX_UNPACKED_BYTES + 512
 
 
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:

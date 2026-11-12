@@ -64,14 +64,16 @@ trap finish EXIT
 # running ones keep the copies they opened (install writes a new file, never the old one in place).
 install_vm_files() {
   install -d -o root -g root -m 0755 "$dest" "$dest/net"
-  install -o root -g root -m 0644 "$here/vm-disks.sh" "$dest/vm-disks.sh"
+  # The Python first: a new wrapper runs only what is already there.
+  install -o root -g root -m 0644 "$here/vm_disks.py" "$here/run_vm.py" "$here/stop_vms.py" "$dest/"
+  rm -f "$dest/vm-disks.sh"
   install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
   install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
   install -o root -g root -m 0755 "$here/update.sh" "$dest/update.sh"
   install -o root -g root -m 0755 "$here/tests/test-load.sh" "$dest/test-load.sh"
 }
 # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
-# Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
+# Outboxes are hard-linked into the jails (run_vm.py), so they share their filesystem.
 install -d -o root -g root -m 0755 /var/lib/homelab-ci/caches
 install -d -o root -g root -m 0700 /var/lib/homelab-ci/outbox
 # The SSD is trimmed hourly (the reason is in the file). Restarted only when it changes, as a restart
