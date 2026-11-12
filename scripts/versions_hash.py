@@ -18,7 +18,7 @@ from collections.abc import Callable
 
 VERSIONS = "ci-runner/versions.env"
 SCRIPT = "scripts/versions_hash.py"
-LINE = re.compile(r"([A-Z]+)_(VERSION|SHA256)=(\S+)")
+LINE = re.compile(r"([A-Z]+)_(VERSION|SHA256|PYTHON)=(\S+)")
 GH = "https://github.com"
 
 
@@ -27,6 +27,15 @@ def _jdk(v: str) -> str:
     return (
         f"{GH}/adoptium/temurin{major}-binaries/releases/download/jdk-{v.replace('+', '%2B')}"
         f"/OpenJDK{major}U-jdk_x64_linux_hotspot_{v.replace('+', '_')}.tar.gz"
+    )
+
+
+def pbs_url(tag: str, python: str) -> str:
+    """The python-build-standalone asset ci-runner/install_host.py installs; its name carries both
+    the Python version and the release tag."""
+    return (
+        f"{GH}/astral-sh/python-build-standalone/releases/download/{tag}"
+        f"/cpython-{python}%2B{tag}-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz"
     )
 
 
@@ -87,10 +96,16 @@ def problems(base: str, head: str, fetch: Callable[[str], str] = sha256_of) -> l
     for tool, pin in new.items():
         if "SHA256" not in pin or pin == old.get(tool):
             continue
-        if tool not in URLS or "VERSION" not in pin:
+        if (tool not in URLS and tool != "PBS") or "VERSION" not in pin:
             found.append(f"{tool}: no download URL known; add it to URLS in {SCRIPT}")
             continue
-        url = URLS[tool](pin["VERSION"])
+        if tool == "PBS":
+            if "PYTHON" not in pin:
+                found.append(f"PBS: PBS_PYTHON is missing from {VERSIONS}")
+                continue
+            url = pbs_url(pin["VERSION"], pin["PYTHON"])
+        else:
+            url = URLS[tool](pin["VERSION"])
         try:
             actual = fetch(url)
         except OSError as error:
