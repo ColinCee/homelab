@@ -251,6 +251,7 @@ class Job:
     mem_mib: int
     cache_image: str
     cache_out: str
+    cpu_weight: int = 20
 
 
 def jailer_command(slot: Slot, job: Job) -> list[str]:
@@ -263,7 +264,7 @@ def jailer_command(slot: Slot, job: Job) -> list[str]:
         "timeout", "--kill-after=10", job.timeout, "/usr/local/bin/jailer",
         "--id", slot.id, "--exec-file", "/usr/local/bin/firecracker",
         "--uid", str(job.uid), "--gid", str(job.gid), "--chroot-base-dir", str(slot.jail),
-        "--cgroup-version", "2", "--cgroup", "cpu.weight=20",
+        "--cgroup-version", "2", "--cgroup", f"cpu.weight={job.cpu_weight}",
         "--cgroup", f"memory.max={memory_max}", "--cgroup", "memory.swap.max=0",
         "--", "--config-file", "vm.json", "--no-api", "--metadata", "metadata.json",
         "--level", "Warning",
@@ -411,6 +412,8 @@ def run_vm(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Sig
         mem_mib=mem_mib,
         cache_image=env.get("CACHE_IMAGE", ""),
         cache_out=env.get("CACHE_OUT", ""),
+        # Against the other VMs: a booting standby yields to running jobs (ci_supervisor.py).
+        cpu_weight=positive(env, "CPU_WEIGHT", 20),
     )
     checked = dataclasses.replace(host, run=signals.checked(host.run))
     slot = Slot(n, checked)
