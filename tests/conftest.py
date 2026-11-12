@@ -19,8 +19,14 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     out = os.environ.get("TEST_TIMES")
     if not out or hasattr(session.config, "workerinput"):
         return
-    slowest = sorted(TIMES.items(), key=lambda item: -item[1][1])[:50]
-    rows = [{"test": t, "start": round(s, 3), "seconds": round(d, 3)} for t, (s, d) in slowest]
+    # [[test, start, seconds], ...], slowest first, under the 4096 characters GitHub keeps of an
+    # annotation (with room for escaping).
+    rows: list[list] = []
+    for test, (start, took) in sorted(TIMES.items(), key=lambda item: -item[1][1]):
+        row = [test[-150:], round(start, 2), round(took, 2)]
+        if len(json.dumps([*rows, row], separators=(",", ":"))) > 3500:
+            break
+        rows.append(row)
     Path(out).write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
 
 

@@ -12,5 +12,12 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/homelab-metrics /var/lib/homelab-ci
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
 NoNewPrivileges=yes
-TimeoutStartSec=5min
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+MemoryMax=256M
+# Under the timer's 5 minutes; a pass cut short keeps what it sent (ci_times.py, poll).
+TimeoutStartSec=4min

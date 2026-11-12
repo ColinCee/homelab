@@ -137,8 +137,8 @@ def at(minutes: int, name: str, *firing: dict) -> dict:
     return {"eval_time": f"{minutes}m", "alertname": name, "exp_alerts": list(firing)}
 
 
-CHECK_LABELS = {"workflow": "CI", "job": "check", "runner": "vm"}
-CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",job="check",runner="vm"}'
+CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
+CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
 
 # Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5); a case may add a
 # third element, its step.
@@ -524,8 +524,8 @@ CASES = {
     "CI half again and 20 s slower for most of a day fires, and clears once it is fast again": (
         [(CHECK, "20x336 50x30 20x60")],
         [
-            at(340 * 60, "ci-slower"),
-            at(352 * 60, "ci-slower", posts("ci-slower", "50", **CHECK_LABELS)),
+            at(354 * 60, "ci-slower"),
+            at(357 * 60, "ci-slower", posts("ci-slower", "50", **CHECK_LABELS)),
             at(382 * 60, "ci-slower"),
         ],
         "1h",
@@ -538,8 +538,8 @@ CASES = {
     "CI run times not written for half an hour fires": (
         [('node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-times.prom"}', "0x60")],
         [
-            at(34, "ci-times-stale"),
-            at(37, "ci-times-stale", posts("ci-times-stale", "37")),
+            at(44, "ci-times-stale"),
+            at(47, "ci-times-stale", posts("ci-times-stale", "47")),
         ],
     ),
 }

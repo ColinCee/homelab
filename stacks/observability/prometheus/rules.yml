@@ -463,18 +463,19 @@ groups:
           value: '{{ $value }}'
       # The latest main run's seconds (scripts/ci_times.py), median over a day against its 14 days: half again and
       # 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
+      # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h.
       - alert: ci-slower
         expr: |
           (
-            round(max by (workflow, job, runner) (
+            round(max by (workflow, ci_job, runner) (
               quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d])
             ))
           )
-          > 1.5 * max by (workflow, job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+          > 1.5 * max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
           and
-          max by (workflow, job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d]))
-          > 20 + max by (workflow, job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
-        for: 1h
+          max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d]))
+          > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+        for: 6h
         keep_firing_for: 10m
         labels:
           level: week
@@ -494,7 +495,8 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m]))) / 60)
           ) > 30
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m])) * -1
-        for: 5m
+        # Past a new install's first write, at most 5 minutes in.
+        for: 15m
         keep_firing_for: 10m
         labels:
           level: week

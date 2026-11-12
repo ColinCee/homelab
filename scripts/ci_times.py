@@ -2,8 +2,8 @@
 """Record how long this repo's CI and deploy runs take.
 
 Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and
-the slowest tests of Colin's own runs. The latest successful run's job and step seconds, by kind
-(main or pr), go to ci-times.prom for Prometheus and the ci-slower alert.
+the slowest tests of Colin's own runs. The latest successful run's job seconds, by kind (main or
+pr), go to ci-times.prom for Prometheus and the ci-slower alert.
 
 Neither CI host can reach the observability stack, so this asks GitHub, with the CI supervisor's
 token. Installed by ci-runner/install-host.sh and run every 5 minutes by homelab-ci-times.timer.
@@ -18,6 +18,7 @@ import os
 import re
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
@@ -38,6 +39,10 @@ SENT_KEEP = 500
 TESTS_TITLE = "slowest tests"
 TESTS_MAX = 50
 NAME_MAX = 200
+# Anyone's run is traced, and a fork's matrix could make thousands of spans.
+SPANS_MAX = 500
+# A job unseen this long (renamed, removed) drops out of the metrics.
+ROW_DAYS = 30
 
 Get = Callable[[str], Any]
 
@@ -54,10 +59,12 @@ def runner_kind(labels: Iterable[str]) -> str:
 
 
 def trusted(run: Mapping[str, Any]) -> bool:
-    """A run of Colin's from this repo, not a fork, that he also re-ran if it is a re-run."""
+    """From this repo, not a fork, and either a push to main (reviewed code, whoever merged it:
+    Renovate's merges too) or a run Colin started and, if re-run, re-ran."""
     actor, triggering = run.get("actor") or {}, run.get("triggering_actor") or {}
-    head = (run.get("head_repository") or {}).get("full_name")
-    return actor.get("id") == OWNER_ID and triggering.get("id") == OWNER_ID and head == REPO
+    if (run.get("head_repository") or {}).get("full_name") != REPO:
+        return False
+    return kind(run) == "main" or (actor.get("id") == OWNER_ID and triggering.get("id") == OWNER_ID)
 
 
 def kind(run: Mapping[str, Any]) -> str:
@@ -69,20 +76,17 @@ def kind(run: Mapping[str, Any]) -> str:
 
 
 def slowest_tests(get: Get, job_id: int) -> list[dict[str, Any]]:
-    """The job's annotation of its slowest tests, [] when absent or malformed."""
+    """The job's annotation of its slowest tests, [[test, start, seconds], ...] as
+    tests/conftest.py writes it; [] when absent or malformed."""
     for note in get(f"/repos/{REPO}/check-runs/{job_id}/annotations?per_page=50"):
         if note.get("title") != TESTS_TITLE:
             continue
         try:
             return [
-                {
-                    "test": str(t["test"])[:NAME_MAX],
-                    "start": float(t["start"]),
-                    "seconds": float(t["seconds"]),
-                }
+                {"test": str(t[0])[:NAME_MAX], "start": float(t[1]), "seconds": float(t[2])}
                 for t in json.loads(note.get("message", ""))[:TESTS_MAX]
             ]
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, IndexError):
             return []
     return []
 
@@ -159,26 +163,25 @@ def trace(
             {"key": "repository", "value": {"stringValue": REPO}},
         ]
     }
-    return {"resourceSpans": [{"resource": resource, "scopeSpans": [{"spans": spans}]}]}
+    scope = {"spans": spans[:SPANS_MAX]}
+    return {"resourceSpans": [{"resource": resource, "scopeSpans": [scope]}]}
 
 
 def label(text: str) -> str:
     return re.sub(r'["\\\n]', "_", text)
 
 
-def metrics(latest: Mapping[str, Mapping[str, Any]]) -> str:
-    """Each latest row's seconds. The file is rewritten each run, so its age is the no-data alarm,
-    since main may go days without a push."""
+def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
+    """Each recent job's latest seconds. Jobs only: step names change with each pinned action's
+    version, so their series would pile up; steps are in the traces. `ci_job`, as the scrape sets
+    `job` itself."""
     lines: list[str] = []
     for row in latest.values():
-        keys = ",".join(
-            f'{name}="{label(str(row[name]))}"' for name in ("kind", "workflow", "job", "runner")
-        )
-        if row["step"]:
-            keys += f',step="{label(row["step"])}"'
-            lines.append(f"homelab_ci_step_seconds{{{keys}}} {row['seconds']:.0f}")
-        else:
-            lines.append(f"homelab_ci_job_seconds{{{keys}}} {row['seconds']:.0f}")
+        if row["at"] < now - ROW_DAYS * 86400:
+            continue
+        keys = f'kind="{label(row["kind"])}",workflow="{label(row["workflow"])}",'
+        keys += f'ci_job="{label(row["job"])}",runner="{label(row["runner"])}"'
+        lines.append(f"homelab_ci_job_seconds{{{keys}}} {row['seconds']:.0f}")
     return "\n".join(lines) + "\n"
 
 
@@ -187,25 +190,26 @@ def latest_rows(run: Mapping[str, Any], jobs: list[Mapping[str, Any]]) -> dict[s
     for job in jobs:
         if job.get("conclusion") != "success" or not (w := window(job)):
             continue
-        base = {
+        row = {
             "kind": kind(run),
             "workflow": str(run.get("name")),
-            "job": str(job.get("name")),
+            "job": str(job.get("name"))[:NAME_MAX],
             "runner": runner_kind(job.get("labels", [])),
         }
-        prefix = "/".join(base.values())
-        rows[f"{prefix}/"] = base | {"step": "", "seconds": w[1] - w[0]}
-        for step in job.get("steps", []):
-            if s := window(step):
-                name = str(step.get("name"))[:NAME_MAX]
-                rows[f"{prefix}/{name}"] = base | {"step": name, "seconds": s[1] - s[0]}
+        rows["/".join(row.values())] = row | {"seconds": w[1] - w[0], "at": w[1]}
     return rows
 
 
-def poll(get: Get, send: Callable[[dict], None], state: Mapping[str, Any], now: float) -> dict:
+def poll(
+    get: Get,
+    send: Callable[[dict], None],
+    state: Mapping[str, Any],
+    keep: Callable[[dict], None] = lambda state: None,
+) -> dict:
     """Send each new finished run attempt's trace, oldest first, and keep the latest rows of
-    Colin's own runs: step names come from the run's workflow file, which any pull request may
-    change."""
+    Colin's own runs: job names come from the run's workflow file, which any pull request may
+    change. `done` is False when GitHub or Alloy could not be reached, and the rest wait.
+    `keep` saves the state after each run, so a pass cut short loses nothing."""
     sent: list[str] = list(state.get("sent", []))
     latest: dict[str, dict] = dict(state.get("latest", {}))
     path = f"/repos/{REPO}/actions/runs?status=completed&per_page=30"
@@ -221,15 +225,24 @@ def poll(get: Get, send: Callable[[dict], None], state: Mapping[str, Any], now: 
             jobs = get(path).get("jobs", [])
             tests = {int(j["id"]): slowest_tests(get, int(j["id"])) for j in jobs if own}
             send(trace(run, attempt, jobs, tests))
+        except urllib.error.HTTPError as e:
+            if not 400 <= e.code < 500:
+                print(f"stopped at run {key}: HTTP {e.code}")
+                return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
+            # Refused for what it is (too big, say): skipped, so it cannot hold up newer runs.
+            print(f"skipped run {key}: HTTP {e.code}")
+            sent.append(key)
+            keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
+            continue
         except OSError as e:
-            # The rest wait for the next run; what is done so far is kept.
             print(f"stopped at run {key}: {type(e).__name__}: {e}")
-            break
+            return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
         if own and run.get("conclusion") == "success":
             # A job this run did not have (deploy, skipped) keeps its row from the last that did.
             latest |= latest_rows(run, jobs)
         sent.append(key)
-    return {"sent": sent[-SENT_KEEP:], "latest": latest, "polled": now}
+        keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
+    return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": True}
 
 
 def github(token: str) -> Get:
@@ -265,9 +278,16 @@ def replace(path: Path, text: str, mode: int = 0o644) -> None:
 
 def main() -> int:
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
-    state = poll(github(TOKEN_FILE.read_text().strip()), send_trace, state, time.time())
-    replace(STATE, json.dumps(state), 0o600)
-    replace(OUT, metrics(state["latest"]))
+
+    def keep(state: dict) -> None:
+        replace(STATE, json.dumps(state), 0o600)
+
+    state = poll(github(TOKEN_FILE.read_text().strip()), send_trace, state, keep)
+    keep(state)
+    if not state["done"]:
+        return 1
+    # Rewritten only after a whole pass, so its age is ci-times-stale's measure.
+    replace(OUT, metrics(state["latest"], time.time()))
     return 0
 
 

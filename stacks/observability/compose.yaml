@@ -296,12 +296,13 @@ services:
       - traces
       - docker-socket-proxy
     # Every network internal: the only writer to the stores (ingest), the Docker API, and programs' traces on
-    # observability-otlp, which reaches no store.
+    # observability-otlp and the host's on host-otlp, neither of which reaches a store.
     networks:
       docker-api: {}
       ingest: {}
       otlp: {}
-      # A fixed address for the host's programs (scripts/ci_times.py), which have no Docker DNS.
+      # A fixed address for the host's programs (scripts/ci_times.py), which have no Docker DNS. They could already
+      # write to Prometheus (host-writes), so this lets them do nothing new.
       host-otlp:
         ipv4_address: 10.201.0.10
 
