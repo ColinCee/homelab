@@ -193,7 +193,7 @@ services:
     depends_on:
       - grafana
 
-  # Posts Prometheus's alerts to Discord, repeats, clears and holds them back (alertmanager/alertmanager.yml).
+  # Holds Prometheus's alerts for the on-call agent, and holds back those that depend on another (alertmanager/alertmanager.yml).
   alertmanager:
     image: prom/alertmanager:v0.35.0@sha256:e638797febd034838eca8b98cdbd46f951e9bf7f178777aa8669167406a9946c
     restart: unless-stopped
@@ -209,11 +209,10 @@ services:
       - ALL
     mem_limit: 128m
     # No published port: its API takes silences and alerts without a login, so only Prometheus and the gateway reach
-    # it (alerting); its other network is its way out to Discord.
+    # it (alerting); its other network is its way out to Healthchecks.io.
     labels:
       homelab.config-hash: ${CONFIG_HASH_ALERTMANAGER:-}
     secrets:
-      - discord_webhook
       - healthchecks_ping
     volumes:
       - ./alertmanager:/etc/alertmanager:ro
@@ -250,12 +249,13 @@ services:
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./gateway/start.sh:/etc/caddy/start.sh:ro
-    # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks.
+    # Reads the stores and Alertmanager; reached by Grafana, public stats and the on-call agent on their own networks.
     networks:
       - stores
       - alerting
       - grafana
       - public-stats
+      - oncall
 
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
@@ -514,6 +514,10 @@ networks:
   # Not internal: Grafana's port is published from it.
   grafana:
   public-stats:
+  # The on-call stack's reads (stacks/oncall).
+  oncall:
+    name: observability-oncall
+    internal: true
   # For any stack's programs to send traces to Alloy at alloy:4318.
   otlp:
     name: observability-otlp
@@ -533,8 +537,6 @@ networks:
 
 # Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
-  discord_webhook:
-    file: ../../secrets/discord_private_webhook_url
   healthchecks_ping:
     file: ../../secrets/healthchecks_ping_url
   grafana_admin_password:

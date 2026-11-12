@@ -8,6 +8,8 @@ zizmor = "1.32.0"
 "aqua:prometheus/prometheus" = "3.16.0"
 "aqua:grafana/alloy" = "1.21.3"
 "aqua:caddyserver/caddy" = "2.11.9"
+# `ant apply` for the on-call agent's definition (stacks/oncall/agent).
+"github:anthropics/anthropic-cli" = "2.9.0"
 
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"

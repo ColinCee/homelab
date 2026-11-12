@@ -11,7 +11,10 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    # What the stacks' Python imports, at their images' versions, for the tests and type checks.
+    "anthropic==2.8.0",
     "cryptography==50.0.2",
+    "discord.py==2.7.1",
     "pytest>=8",
     "ruff>=0.11",
     "ty>=0.0.1",

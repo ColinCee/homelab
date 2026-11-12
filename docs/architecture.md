@@ -87,8 +87,9 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
-its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #uptime. Alertmanager has no port
+its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) fire into
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml), and the [on-call agent](#on-call-agent) posts
+each to Discord. Alertmanager has no port
 (its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
 
@@ -116,6 +117,21 @@ Traps:
   200.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;
   one in another form still reaches the log store.
+
+## On-call agent
+
+Each firing alert, finding of the six-hourly sweep, or post of Colin's in the Discord forum is one forum post and one
+[Managed Agents](https://platform.claude.com/docs/en/managed-agents/overview) session, which triages, fixes what it
+can undo and closes the post. Colin's replies in a post steer its session; "stop" interrupts it.
+
+- [`bot.py`](../stacks/oncall/bot.py) polls Alertmanager through the gateway, talks to Discord and runs the agent's
+  custom tools: restarting a container (through a proxy that allows only that), opening a pull request on a branch
+  under `oncall/` (never merging), and tagging, closing or deleting the post. It holds every credential.
+- [`worker.py`](../stacks/oncall/worker.py) runs the agent's bash and file tools, with only the environment key and the
+  gateway's read-only login: whatever it can read, the agent can send to Anthropic.
+- The agent's prompt and tools are [`agent.md`](../stacks/oncall/agent/agent.md); a change goes live with
+  `ant apply --yes agent/agent.md agent/environment.yaml` from `stacks/oncall`, which updates `claude-lock.json`.
+- If the bot stops, its Healthchecks.io check stops being pinged and Healthchecks.io posts.
 
 ## Backups
 

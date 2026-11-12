@@ -1,0 +1,129 @@
+# The on-call agent: docs/architecture.md, "On-call agent".
+services:
+  # Discord, sessions and the agent's custom tools: holds the credentials the worker must not.
+  bot:
+    build:
+      context: .
+      dockerfile: oncall.Dockerfile
+    image: homelab/oncall
+    # Built here only: never pulled, since a registry image of that name would run with the keys.
+    pull_policy: build
+    restart: unless-stopped
+    command: ["python", "-I", "/app/bot.py"]
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    mem_limit: 256m
+    environment:
+      OWNER_DISCORD_ID: "124131392207454208"
+      FORUM_CHANNEL_ID: "1567861139142877295"
+      GITHUB_REPO: ColinCee/homelab
+      GATEWAY_URL: http://gateway:5080
+      DOCKER_URL: http://docker-restarts:2375
+      STATE_FILE: /state/state.json
+      CLAUDE_LOCK: /app/claude-lock.json
+    secrets:
+      - anthropic_api_key
+      - discord_bot_token
+      - oncall_github_token
+      - oncall_healthchecks_url
+      - agents_password
+    labels:
+      homelab.config-hash: ${CONFIG_HASH_BOT:-}
+    volumes:
+      - ./claude-lock.json:/app/claude-lock.json:ro
+      - state:/state
+    networks:
+      - default
+      - gateway
+      - docker-restarts
+    depends_on:
+      - docker-restarts
+
+  # Runs the agent's bash and file tools. Holds only the environment key and the gateway's
+  # read-only login, since anything it holds the agent can read and send to Anthropic.
+  worker:
+    image: homelab/oncall
+    pull_policy: never
+    restart: unless-stopped
+    command: ["python", "-I", "/app/worker.py"]
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    user: "65534:65534"
+    mem_limit: 1g
+    environment:
+      GATEWAY_URL: http://gateway:5080
+      CLAUDE_LOCK: /app/claude-lock.json
+      HOME: /workspace
+    secrets:
+      - anthropic_environment_key
+      - agents_password
+    labels:
+      homelab.config-hash: ${CONFIG_HASH_WORKER:-}
+    tmpfs:
+      - /workspace:uid=65534,gid=65534,size=512m
+      - /tmp:uid=65534,gid=65534,size=256m
+    volumes:
+      - ./claude-lock.json:/app/claude-lock.json:ro
+    networks:
+      - default
+      - gateway
+    depends_on:
+      - bot
+
+  # The Docker API for restart_container: restarts and starts only, so no reads of other
+  # containers' settings and no exec, create or delete.
+  docker-restarts:
+    image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
+    restart: unless-stopped
+    user: "65534:1001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /run:uid=65534,gid=65534
+    environment:
+      ALLOW_RESTARTS: 1
+      ALLOW_START: 1
+      POST: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-restarts
+
+volumes:
+  state:
+
+networks:
+  # The internet: Discord, Anthropic, GitHub.
+  default:
+  gateway:
+    name: observability-oncall
+    external: true
+  docker-restarts:
+    internal: true
+
+# Files on the Beelink, rendered by the deploy (deploy.yaml).
+secrets:
+  anthropic_api_key:
+    file: ../../secrets/anthropic_api_key
+  anthropic_environment_key:
+    file: ../../secrets/anthropic_environment_key
+  discord_bot_token:
+    file: ../../secrets/discord_bot_token
+  oncall_github_token:
+    file: ../../secrets/oncall_github_token
+  oncall_healthchecks_url:
+    file: ../../secrets/oncall_healthchecks_url
+  agents_password:
+    file: ../../secrets/agents_password

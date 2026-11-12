@@ -1,0 +1,3 @@
+# The worker in compose.yaml (worker.py) runs this environment's tools on the Beelink.
+name: homelab-oncall
+config: {type: self_hosted}

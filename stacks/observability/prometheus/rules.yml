@@ -1,5 +1,5 @@
 # The alert rules, held to the alert standard in docs/architecture.md ("Monitoring and alerts"). Prometheus runs them each
-# minute and sends the firing ones to Alertmanager (../alertmanager), which posts to Discord, repeats and holds back.
+# minute and sends the firing ones to Alertmanager (../alertmanager), which holds back; the on-call agent posts them.
 #
 # Each post shows `measure: value unit`, so a query gives display units, rounded. A rule that is not per series
 # takes `max` or `min` of its query, so its post carries no labels: the title prints every label but `alertname`
@@ -585,14 +585,12 @@ groups:
   - name: prometheus
     interval: 1m
     rules:
-      # Always firing while rules run and posts reach Discord. Alertmanager pings Healthchecks.io with it each minute
-      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts to #uptime when the pings stop: the Beelink,
-      # Prometheus or Alertmanager is down, or Discord refused a post in the last hour. Not a GitHub cron: GitHub ran
-      # 15-minute schedules hours late.
+      # Always firing while rules run. Alertmanager pings Healthchecks.io with it each minute
+      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts when the pings stop: the Beelink, Prometheus or
+      # Alertmanager is down. The on-call agent pings its own check (docs/architecture.md, "On-call agent"). Not a GitHub
+      # cron: GitHub ran 15-minute schedules hours late.
       - alert: watchdog
-        expr: |
-          vector(1)
-          unless on() sum(increase(alertmanager_notifications_failed_total{integration="discord"}[1h])) > 0.5
+        expr: vector(1)
         for: 0m
         keep_firing_for: 10m
         labels:
@@ -601,7 +599,7 @@ groups:
           title: 'Alerting works'
           measure: 'Working'
           unit: ''
-          harm: 'None: it never posts to Discord. It pings Healthchecks.io, which posts once the pings stop.'
+          harm: 'None: it is never posted. It pings Healthchecks.io, which posts once the pings stop.'
           action: 'Nothing while it fires. When Healthchecks.io posts, check the Beelink, then Prometheus and Alertmanager.'
           dashboard: *home
           value: '{{ $value }}'

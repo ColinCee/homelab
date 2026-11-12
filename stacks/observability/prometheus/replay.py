@@ -92,7 +92,7 @@ def main() -> None:
     start = end - days * 86400
     total = 0
     for rule in rules:
-        # The watchdog pings Healthchecks.io, never Discord.
+        # The watchdog pings Healthchecks.io and is never posted.
         if (only and rule["alert"] not in only) or rule["labels"]["level"] == "watchdog":
             continue
         found = [
