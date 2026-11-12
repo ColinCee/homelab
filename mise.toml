@@ -3,6 +3,7 @@ python = "3.15.2"
 uv = "0.13.7"
 shellcheck = "0.11.0"
 actionlint = "1.7.12"
+zizmor = "1.32.0"
 # promtool, alloy and caddy for the tests, at the versions compose.yaml runs (tests/test_observability_compose.py).
 "aqua:prometheus/prometheus" = "3.16.0"
 "aqua:grafana/alloy" = "1.21.3"
@@ -15,6 +16,8 @@ run = [
   "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/runner-job-guard-vm.sh",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
+  # GitHub Actions' security practices (pinned actions, no persisted token, no template injection), from files alone.
+  "zizmor --offline --min-severity low .github/",
 ]
 
 [tasks.format]
