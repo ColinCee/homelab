@@ -100,7 +100,7 @@
       "id": 1,
       "type": "gauge",
       "title": "CI vs usual",
-      "description": "The latest run on main of the job furthest over its 14-day median, as a share of that median. CI on main got slower fires when a day's median is past 150% and 20 s more.",
+      "description": "The latest run on main of the job furthest over its 14-day median, as a share of that median; amber past 150% when that is also 20 s more, the line CI on main got slower draws for a day's median.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -112,7 +112,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(100 * max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])))",
+          "expr": "max(100 * (max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])) and max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])))) or max(100 * clamp_max(max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])), 1.49))",
           "legendFormat": ""
         }
       ],
@@ -170,7 +170,7 @@
       "id": 2,
       "type": "gauge",
       "title": "VMs busy",
-      "description": "CI VMs running a job now, of the host's slots, across every served repo; amber when every slot is busy and the next job waits.",
+      "description": "Share of the host's CI VM slots running a job now, across every served repo; amber when every slot is busy and the next job waits.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -182,13 +182,13 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(homelab_ci_vms_busy)",
+          "expr": "100 * max(homelab_ci_vms_busy) / max(homelab_ci_vm_slots)",
           "legendFormat": ""
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "none",
+          "unit": "percent",
           "decimals": 0,
           "color": {
             "mode": "thresholds"
@@ -202,13 +202,13 @@
               },
               {
                 "color": "#fab219",
-                "value": 3
+                "value": 100
               }
             ]
           },
           "mappings": [],
           "min": 0,
-          "max": 3
+          "max": 100
         },
         "overrides": []
       },
@@ -310,7 +310,7 @@
       "id": 4,
       "type": "stat",
       "title": "Memory kills",
-      "description": "Processes the kernel killed inside CI VMs for memory, over the time range.",
+      "description": "Processes the kernel killed inside CI VMs for memory, over the last 7 days.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -322,7 +322,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum(increase(homelab_ci_vm_oom_kills_total[$__range])) or vector(0)",
+          "expr": "sum(increase(homelab_ci_vm_oom_kills_total[7d])) or vector(0)",
           "legendFormat": ""
         }
       ],
