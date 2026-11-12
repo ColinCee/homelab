@@ -95,7 +95,8 @@ def request(
     )
     try:
         with opener.open(req, timeout=20) as response:
-            return response.read(), response.headers.get("ETag", "")
+            body = bytes(response.read())
+            return body, str(response.headers.get("ETag", ""))
     except urllib.error.HTTPError as exc:
         detail = ""
         if token:

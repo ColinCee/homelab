@@ -14,6 +14,7 @@ import threading
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -35,7 +36,7 @@ def basic(user: str, password: str) -> str:
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+        return int(s.getsockname()[1])
 
 
 def store(name: str) -> http.server.ThreadingHTTPServer:
@@ -87,7 +88,7 @@ def last_log() -> str:
     return LOGS[-1].read_text(encoding="utf-8")[-2000:]
 
 
-def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict]:
+def ask(port: int, method: str, path: str, auth: str | None) -> tuple[int, dict[str, Any]]:
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
     connection.request(method, path, headers={"Authorization": auth} if auth else {})
     response = connection.getresponse()

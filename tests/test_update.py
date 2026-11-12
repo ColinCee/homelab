@@ -111,7 +111,7 @@ class Host:
 
     def update(self, *args: str, now: float | None = None, **env: str) -> int:
         host = up.Host(root=self.root, run=self.run)
-        return up.update(host, list(args), env, time.time() if now is None else now)
+        return int(up.update(host, list(args), env, time.time() if now is None else now))
 
     def ran(self, name: str) -> list[list[str]]:
         return [c for c in self.calls if any(Path(part).name == name for part in c)]

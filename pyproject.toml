@@ -47,3 +47,13 @@ pythonpath = ["."]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
 [tool.ty]
+
+# Kaizen's standard (standards.md, Types): no untyped value gets through, and a warning fails the check.
+[tool.ty.rules]
+missing-type-argument = "error"
+unsound-assignment = "error"
+unsound-return-statement = "error"
+unsound-yield = "error"
+
+[tool.ty.terminal]
+error-on-warning = true

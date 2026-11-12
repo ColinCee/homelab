@@ -58,10 +58,10 @@ def outbox_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 class Repos(NoGitHub):
-    def __init__(self, page: list[dict]) -> None:
+    def __init__(self, page: list[dict[str, Any]]) -> None:
         self.page = page
 
-    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+    def request(self, method: str, path: str, body: object = None) -> list[dict[str, Any]]:
         assert path.startswith("/user/repos?")
         return self.page
 
@@ -86,7 +86,7 @@ class Pages(NoGitHub):
     def __init__(self, total: int) -> None:
         self.total, self.asked = total, 0
 
-    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+    def request(self, method: str, path: str, body: object = None) -> list[dict[str, Any]]:
         self.asked += 1
         start = (self.asked - 1) * 100
         return [
@@ -329,14 +329,16 @@ def _outbox(directory: Path, header: bytes, repo: str = "octo/app") -> Path:
 class Runs(NoGitHub):
     """GitHub's answers about run 70, attempt 1."""
 
-    def __init__(self, event: str = "push", branch: str = "main", job: dict | None = None) -> None:
+    def __init__(
+        self, event: str = "push", branch: str = "main", job: dict[str, Any] | None = None
+    ) -> None:
         self.run = {"id": 70, "event": event, "head_branch": branch, "head_sha": "abc"}
         default = {"runner_name": RUNNER, "status": "completed", "conclusion": "success"}
         self.jobs = [{"runner_name": "other", "status": "completed", "conclusion": "success"}]
         self.jobs.append(default if job is None else job)
         self.asked: list[str] = []
 
-    def request(self, method: str, path: str, body: object = None) -> dict:
+    def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
         self.asked.append(path)
         if path.endswith("/jobs?per_page=100"):
             assert path.startswith("/repos/octo/app/actions/runs/70/attempts/1/")
@@ -457,7 +459,7 @@ class Failing(NoGitHub):
     def __init__(self, error: Exception) -> None:
         self.error = error
 
-    def request(self, method: str, path: str, body: object = None) -> dict:
+    def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
         raise self.error
 
 
@@ -556,7 +558,7 @@ class OneRepoBroken(NoGitHub):
     def __init__(self, broken: str) -> None:
         self.broken = broken
 
-    def request(self, method: str, path: str, body: object = None) -> dict:
+    def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
         if path.startswith(f"/repos/{self.broken}"):
             raise OSError("HTTP Error 404: Not Found")
         if path.endswith("/runners?per_page=100"):
@@ -681,10 +683,10 @@ def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
 
 
 class People(NoGitHub):
-    def __init__(self, logins: list[str], keys: list[dict] | None = None) -> None:
+    def __init__(self, logins: list[str], keys: list[dict[str, Any]] | None = None) -> None:
         self.logins, self.keys = logins, keys or []
 
-    def request(self, method: str, path: str, body: object = None) -> list[dict]:
+    def request(self, method: str, path: str, body: object = None) -> list[dict[str, Any]]:
         if "/keys" in path:
             return self.keys
         return [{"login": login} for login in self.logins]
@@ -706,7 +708,7 @@ def test_a_listing_too_old_to_trust_means_asking_github() -> None:
     asked = []
 
     class Public(NoGitHub):
-        def request(self, method: str, path: str, body: object = None) -> dict:
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
             asked.append(path)
             return {"private": False, "visibility": "public", "default_branch": "main"}
 
@@ -808,7 +810,7 @@ def test_the_console_reader_drops_over_long_lines_and_reads_to_the_end() -> None
     first = b"HOMELAB-MEM 1 812 1985 0\n"
     over_long = b"HOMELAB-MEM 1 990 1985 0" + b" " * 5000 + b"\n"
     console = io.BytesIO(b"Linux version 6.1\n" + first + over_long + b"login:")
-    kept: list[dict] = []
+    kept: list[dict[str, Any]] = []
     sup.read_console(console, kept.append)
     assert [line["peak"] for line in kept] == [812]
     assert console.closed
@@ -1374,7 +1376,7 @@ class Connection:
         self.drop = False
         Connection.made.append(self)
 
-    def request(self, method: str, path: str, body: bytes | None, headers: dict) -> None:
+    def request(self, method: str, path: str, body: bytes | None, headers: dict[str, Any]) -> None:
         if self.drop:
             raise http.client.RemoteDisconnected("closed")
         self.sent.append(f"{method} {path}")
@@ -1414,7 +1416,7 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: object = None) -> dict:
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
             return {"runner": {"id": 1}, "encoded_jit_config": "x"}
 
     monkeypatch.setattr(sup, "STATE_DIR", tmp_path)
@@ -1481,7 +1483,9 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     disks: list[str] = []
 
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict:
+        def request(
+            self, method: str, path: str, body: Mapping[str, Any] | None = None
+        ) -> dict[str, Any]:
             if method == "GET":  # the Builder's VM has its job
                 return {"busy": True}
             assert body is not None
@@ -1535,7 +1539,9 @@ def test_a_builders_reviewer_takes_a_standby_booted_when_its_builders_vm_ended(
     registered: list[list[str]] = []
 
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict:
+        def request(
+            self, method: str, path: str, body: Mapping[str, Any] | None = None
+        ) -> dict[str, Any]:
             if method == "GET":  # every runner has its job, or is still connecting
                 return {"busy": True}
             assert body is not None
@@ -1587,7 +1593,9 @@ def test_a_reviewer_takes_a_standby_booted_while_its_builder_ran(
     registered: list[list[str]] = []
 
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict:
+        def request(
+            self, method: str, path: str, body: Mapping[str, Any] | None = None
+        ) -> dict[str, Any]:
             if method == "GET":
                 return {"busy": True}
             assert body is not None
@@ -1757,7 +1765,7 @@ def test_a_starting_vm_covers_a_queued_job_only_until_its_runner_takes_one(
 START_VM = sup.start_vm
 
 
-class EveryUnit(set):
+class EveryUnit(set[Any]):
     """Every VM unit counts as running, unless a test says otherwise."""
 
     def __contains__(self, item: object) -> bool:
@@ -1860,7 +1868,7 @@ def test_stale_runners_skip_the_vms_still_running() -> None:
     class Runners(NoGitHub):
         deleted: ClassVar[list[str]] = []
 
-        def request(self, method: str, path: str, body: object = None) -> dict:
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
             if method == "DELETE":
                 Runners.deleted.append(path.rsplit("/", 1)[1])
                 return {}
@@ -1949,7 +1957,7 @@ def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: object = None) -> dict:
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
             return {"runner": {"id": 1}, "encoded_jit_config": "x"}
 
     for name in ("STATE_DIR", "OUTBOX_DIR"):
@@ -1974,7 +1982,7 @@ def test_a_vm_is_told_its_repo_and_counts_it_public_unless_known_served_and_priv
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     class Registers(NoGitHub):
-        def request(self, method: str, path: str, body: object = None) -> dict:
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
             return {"runner": {"id": 1}, "encoded_jit_config": "x"}
 
     for name in ("STATE_DIR", "OUTBOX_DIR"):

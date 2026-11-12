@@ -18,6 +18,7 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -33,7 +34,7 @@ def seconds(duration: str) -> int:
     return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
-def query_range(promql: str, start: int, end: int) -> list[dict]:
+def query_range(promql: str, start: int, end: int) -> list[dict[str, Any]]:
     url = os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
     query = urllib.parse.urlencode({"query": promql, "start": start, "end": end, "step": STEP})
     login = base64.b64encode(os.environ["GATEWAY_LOGIN"].encode()).decode()
@@ -56,7 +57,7 @@ def history(promql: str, start: int, end: int) -> dict[str, set[int]]:
     return series
 
 
-def posts(returned: set[int], rule: dict, start: int, end: int) -> list[tuple[int, str]]:
+def posts(returned: set[int], rule: dict[str, Any], start: int, end: int) -> list[tuple[int, str]]:
     wait, hold = seconds(rule["for"]), seconds(rule.get("keep_firing_for", "0m"))
     level = rule["labels"]["level"]
     out: list[tuple[int, str]] = []

@@ -102,8 +102,11 @@ def raised_limits(base: str | None, head: str) -> list[str]:
     ]
 
 
-def labels(event: Mapping) -> list[str]:
-    return [str(label.get("name")) for label in (event.get("pull_request") or {}).get("labels", [])]
+def labels(event: Mapping[str, object]) -> list[str]:
+    """The pull request's label names, from the event file; [] for any other shape."""
+    pull = event.get("pull_request")
+    found = pull.get("labels") if isinstance(pull, dict) else None
+    return [str(label.get("name")) for label in found or [] if isinstance(label, dict)]
 
 
 def time_limits() -> int:

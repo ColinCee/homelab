@@ -4,6 +4,7 @@
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -32,7 +33,7 @@ MIXED_CASE = {
 }
 
 
-def panels(home: dict) -> list[dict]:
+def panels(home: dict[str, Any]) -> list[dict[str, Any]]:
     """Every panel, those inside collapsed rows included."""
     found = []
     for panel in home["panels"]:
@@ -41,15 +42,15 @@ def panels(home: dict) -> list[dict]:
     return found
 
 
-def charts(home: dict) -> list[dict]:
+def charts(home: dict[str, Any]) -> list[dict[str, Any]]:
     return [p for p in panels(home) if p["type"] != "row"]
 
 
-def uid(panel: dict) -> str:
-    return (panel.get("datasource") or {}).get("uid", "")
+def uid(panel: dict[str, Any]) -> str:
+    return str((panel.get("datasource") or {}).get("uid", ""))
 
 
-def series_colours(panel: dict) -> dict[str, str]:
+def series_colours(panel: dict[str, Any]) -> dict[str, str]:
     return {
         o["matcher"]["options"]: prop["value"]["fixedColor"]
         for o in panel.get("fieldConfig", {}).get("overrides", [])
@@ -59,7 +60,7 @@ def series_colours(panel: dict) -> dict[str, str]:
     }
 
 
-def prometheus_queries(home: dict) -> list[str]:
+def prometheus_queries(home: dict[str, Any]) -> list[str]:
     return [
         t["expr"]
         for p in charts(home)
@@ -70,7 +71,7 @@ def prometheus_queries(home: dict) -> list[str]:
 
 def containers() -> dict[str, str]:
     """Each container compose starts, in its group's colour."""
-    names = {}
+    names: dict[str, str] = {}
     for compose in STACK.parent.glob("*/compose.yaml"):
         services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
         for service, spec in services.items():
@@ -109,7 +110,7 @@ def test_every_panel_reads_a_provisioned_source() -> None:
 
 def test_no_two_panels_overlap_and_all_fit_the_width() -> None:
 
-    def place(group: list[dict]) -> None:
+    def place(group: list[dict[str, Any]]) -> None:
         cells: set[tuple[int, int]] = set()
         for panel in group:
             box = panel["gridPos"]

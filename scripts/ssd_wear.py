@@ -60,7 +60,7 @@ def render(log: bytes, device: str = "nvme0") -> str:
          used),
         ("available_spare_ratio", "gauge", "Spare blocks left, 0 to 1.", spare / 100),
     ]  # fmt: skip
-    lines = []
+    lines: list[str] = []
     for name, kind, help_text, value in metrics:
         lines += [
             f"# HELP homelab_ssd_{name} {help_text}",

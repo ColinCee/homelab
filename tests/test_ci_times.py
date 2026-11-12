@@ -6,6 +6,7 @@ import json
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
 from scripts import ci_times
 
@@ -16,12 +17,12 @@ OTHER = {"id": 1, "login": "someone"}
 def run(
     n: int,
     *,
-    actor: dict = COLIN,
+    actor: dict[str, Any] = COLIN,
     event: str = "push",
     branch: str = "main",
     head: str = ci_times.REPO,
     attempt: int = 1,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "id": n,
         "run_attempt": attempt,
@@ -37,7 +38,7 @@ def run(
     }
 
 
-def job(n: int, labels: Iterable[str] = ("self-hosted", "homelab-fc")) -> dict:
+def job(n: int, labels: Iterable[str] = ("self-hosted", "homelab-fc")) -> dict[str, Any]:
     return {
         "id": n,
         "name": "check",
@@ -57,10 +58,12 @@ def job(n: int, labels: Iterable[str] = ("self-hosted", "homelab-fc")) -> dict:
     }
 
 
-def github(runs: list[dict], tests: list[list] | None = None) -> tuple[ci_times.Get, list[str]]:
+def github(
+    runs: list[dict[str, Any]], tests: list[list[Any]] | None = None
+) -> tuple[ci_times.Get, list[str]]:
     asked: list[str] = []
 
-    def get(path: str) -> dict | list[dict]:
+    def get(path: str) -> dict[str, Any] | list[dict[str, Any]]:
         asked.append(path)
         if "/annotations" in path:
             message = json.dumps(tests or [])
@@ -72,14 +75,14 @@ def github(runs: list[dict], tests: list[list] | None = None) -> tuple[ci_times.
     return get, asked
 
 
-def names(body: dict) -> list[str]:
+def names(body: dict[str, Any]) -> list[str]:
     return [s["name"] for s in body["resourceSpans"][0]["scopeSpans"][0]["spans"]]
 
 
 def test_each_run_attempt_is_sent_once_with_its_jobs_steps_and_tests() -> None:
     tests = [["tests/test_x.py::test_slow", 1794441625.0, 3.0]]
     get, _ = github([run(1), run(1, attempt=2)], tests)
-    sent: list[dict] = []
+    sent: list[dict[str, Any]] = []
     state = ci_times.poll(get, sent.append, {})
     assert len(sent) == 2
     assert names(sent[0]) == [
@@ -93,7 +96,7 @@ def test_each_run_attempt_is_sent_once_with_its_jobs_steps_and_tests() -> None:
         sent[0]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"]
         != (sent[1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"])
     )
-    again: list[dict] = []
+    again: list[dict[str, Any]] = []
     ci_times.poll(get, again.append, state)
     assert again == []
 
@@ -101,7 +104,7 @@ def test_each_run_attempt_is_sent_once_with_its_jobs_steps_and_tests() -> None:
 def test_a_test_span_stays_inside_its_step_whatever_its_clock_says() -> None:
     late = [["t", 9e9, 5.0]]
     get, _ = github([run(1)], late)
-    sent: list[dict] = []
+    sent: list[dict[str, Any]] = []
     ci_times.poll(get, sent.append, {})
     spans = sent[0]["resourceSpans"][0]["scopeSpans"][0]["spans"]
     step, test = spans[2], spans[3]
@@ -113,7 +116,7 @@ def test_others_runs_are_traced_without_their_tests_or_metrics() -> None:
     fork = run(1, event="pull_request", branch="x", head="someone/homelab")
     renovate = run(2, actor=OTHER, event="pull_request", branch="renovate/x")
     get, asked = github([fork, renovate], [["made up", 0, 1]])
-    sent: list[dict] = []
+    sent: list[dict[str, Any]] = []
     state = ci_times.poll(get, sent.append, {})
     assert [len(names(body)) for body in sent] == [3, 3]  # run, job, step: no tests
     assert not [path for path in asked if "/annotations" in path]
@@ -151,18 +154,18 @@ def test_the_tests_slowest_list_fits_github_s_annotation_limit() -> None:
 
 
 def test_a_failed_request_keeps_what_was_sent_for_the_next_run() -> None:
-    def get(path: str) -> dict | list[dict]:
+    def get(path: str) -> dict[str, Any] | list[dict[str, Any]]:
         if path.endswith("/runs/2/attempts/1/jobs?per_page=100"):
             raise ConnectionResetError("dropped")
         return github([run(1), run(2)])[0](path)
 
-    sent: list[dict] = []
+    sent: list[dict[str, Any]] = []
     state = ci_times.poll(get, sent.append, {})
     assert state["sent"] == ["1/1"] and len(sent) == 1 and state["done"] is False
 
 
 def test_a_run_alloy_refuses_is_skipped_and_a_whole_pass_says_done() -> None:
-    def refuse(body: dict) -> None:
+    def refuse(body: dict[str, Any]) -> None:
         if body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["spanId"] == ci_times.span_id(
             1, 1
         ):
