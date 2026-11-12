@@ -2,6 +2,7 @@ import email.message
 import http.client
 import io
 import json
+import os
 import tarfile
 import threading
 import urllib.error
@@ -2041,3 +2042,21 @@ def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
     sup.tick(NoGitHub(), sup.State(slots=1), ["o/ok"], now)
 
     assert started == [(0, first)]
+
+
+def test_an_idle_standby_booted_before_the_image_was_rebuilt_is_replaced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    image = tmp_path / "rootfs.ext4"
+    image.write_text("")
+    os.utime(image, (100.0, 100.0))
+    monkeypatch.setattr(sup, "ROOTFS", image)
+    monkeypatch.setattr(sup, "is_idle", lambda gh, run: True)
+    monkeypatch.setattr(sup.time, "sleep", lambda s: None)
+    stopped: list[str] = []
+    monkeypatch.setattr(sup, "stop", lambda run, why: stopped.append(why))
+    older = sup.Launch(0, "o/r", 1, "fc-0", 50.0, Path("m"), True)
+    newer = sup.Launch(1, "o/r", 2, "fc-1", 150.0, Path("m"), True)
+    for run in (older, newer):
+        sup.check_standby(NoGitHub(), run, 200.0, True)
+    assert stopped == ["booted before the image was rebuilt"]
