@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Record how long this repo's CI and deploy runs take.
 
-Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and
-the slowest tests of Colin's own runs. The latest successful run's job seconds, by kind (main or
-pr), go to ci-times.prom for Prometheus and the ci-slower alert.
+Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and,
+for Colin's own runs, the slowest tests and the job log's phases to the millisecond (each step, each
+mise task and command, pytest's start-up). GitHub's API times steps only to the second. The latest
+successful run's job seconds, by kind (main or pr), go to ci-times.prom for Prometheus and the
+ci-slower alert.
 
 Neither CI host can reach the observability stack, so this asks GitHub, with the CI supervisor's
 token. Installed by ci-runner/install-host.sh and run every 5 minutes by homelab-ci-times.timer.
@@ -41,10 +43,18 @@ TESTS_MAX = 50
 NAME_MAX = 200
 # Anyone's run is traced, and a fork's matrix could make thousands of spans.
 SPANS_MAX = 500
+# A job log's line: its time, then the text (mise's colours stripped, as escapes or as ^[ text).
+LOG_LINE = re.compile(r"^\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z (.*)$")
+COLOUR = re.compile(r"(?:\x1b|\^\[)\[[0-9;]*m")
+# mise's task lines: "[task] $ command" as a command starts, "[task] Finished in 1.2s" at its end.
+TASK_LINE = re.compile(r"^\[([\w:.-]+)\] (?:\$ (.*)|Finished in ([\d.]+)(ms|s)$)")
+LOG_MAX = 2_000_000
 # A job unseen this long (renamed, removed) drops out of the metrics.
 ROW_DAYS = 30
 
 Get = Callable[[str], Any]
+# A job's log text by job id, "" when it cannot be had.
+Logs = Callable[[int], str]
 # A JSON object from GitHub, or one sent to Alloy as OTLP.
 Json = dict[str, Any]
 
@@ -114,6 +124,66 @@ def span(
     }
 
 
+def log_time(text: str) -> float:
+    whole, _, fraction = text.partition(".")
+    return datetime.fromisoformat(f"{whole}+00:00").timestamp() + float(f"0.{fraction or 0}")
+
+
+def log_spans(trace: str, job: str, log: str) -> list[Json]:
+    """The job's phases from its log, to the millisecond: setup, each step (by its first line), the
+    post-job steps, and inside them each mise task, its commands and pytest's start-up (until
+    "bringing up nodes")."""
+    lines = []
+    for raw in log.splitlines():
+        if m := LOG_LINE.match(raw):
+            lines.append((log_time(m.group(1)), COLOUR.sub("", m.group(2))))
+    if not lines:
+        return []
+    end = lines[-1][0]
+    starts = [(lines[0][0], "set up job")]
+    for at, text in lines:
+        if text.startswith("##[group]Run "):
+            starts.append((at, "step: " + text.removeprefix("##[group]Run ")))
+        elif text.startswith("A job started hook"):
+            starts.append((at, "job started hook"))
+        elif text.startswith("Post job cleanup"):
+            starts.append((at, "post job"))
+    phases = [
+        (span_id(job, "log", n), name, at, starts[n + 1][0] if n + 1 < len(starts) else end)
+        for n, (at, name) in enumerate(starts)
+    ]
+    spans = [
+        span(trace, sid, job, name, at, until, source="log") for sid, name, at, until in phases
+    ]
+
+    def phase(at: float) -> str:
+        return next((sid for sid, _, start, until in phases if start <= at <= until), job)
+
+    tasks: dict[str, tuple[str, float]] = {}  # a task's span id and start
+    commands: dict[str, tuple[str, float, str]] = {}  # a task's running command: id, start, text
+    up = False
+    for n, (at, text) in enumerate(lines):
+        if "bringing up nodes" in text and "test" in commands and not up:
+            cid, start, _ = commands["test"]
+            spans.append(span(trace, span_id(cid, "start-up"), cid, "pytest start-up", start, at))
+            up = True  # xdist says it twice
+        if not (m := TASK_LINE.match(text)):
+            continue
+        task, command = m.group(1), m.group(2)
+        if task not in tasks:
+            tasks[task] = (span_id(job, "task", task, n), at)
+        tid, start = tasks[task]
+        if task in commands and (command is not None or m.group(3)):
+            cid, began, said = commands.pop(task)
+            spans.append(span(trace, cid, tid, said, began, at, source="log"))
+        if command is not None:
+            commands[task] = (span_id(tid, "command", n), at, command)
+        else:
+            spans.append(span(trace, tid, phase(start), f"task: {task}", start, at, source="log"))
+            del tasks[task]
+    return spans
+
+
 def window(item: Mapping[str, Any]) -> tuple[float, float] | None:
     if not (item.get("started_at") and item.get("completed_at")):
         return None
@@ -125,6 +195,7 @@ def trace(
     attempt: int,
     jobs: list[Mapping[str, Any]],
     tests: Mapping[int, list[Json]],
+    logs: Mapping[int, str] | None = None,
 ) -> Json:
     """One OTLP trace for a run attempt. Its IDs come from the run and attempt, so sending it
     twice stores the same spans."""
@@ -149,6 +220,7 @@ def trace(
         spans.append(
             span(tid, jid, root, name, job_start, job_end, runner=runner, conclusion=conclusion)
         )
+        spans += log_spans(tid, jid, (logs or {}).get(int(job["id"]), ""))
         for step in job.get("steps", []):
             if not (w := window(step)):
                 continue
@@ -212,6 +284,7 @@ def poll(
     send: Callable[[Json], None],
     state: Mapping[str, Any],
     keep: Callable[[Json], None] = lambda state: None,
+    logs: Logs = lambda job_id: "",
 ) -> Json:
     """Send each new finished run attempt's trace, oldest first, and keep the latest rows of
     Colin's own runs: job names come from the run's workflow file, which any pull request may
@@ -231,7 +304,8 @@ def poll(
         try:
             jobs = get(path).get("jobs", [])
             tests = {int(j["id"]): slowest_tests(get, int(j["id"])) for j in jobs if own}
-            send(trace(run, attempt, jobs, tests))
+            texts = {int(j["id"]): logs(int(j["id"])) for j in jobs if own}
+            send(trace(run, attempt, jobs, tests, texts))
         except urllib.error.HTTPError as e:
             if not 400 <= e.code < 500:
                 print(f"stopped at run {key}: HTTP {e.code}")
@@ -268,6 +342,38 @@ def github(token: str) -> Get:
     return get
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args: object, **kwargs: object) -> None:
+        return None
+
+
+def github_logs(token: str) -> Logs:
+    """A job's log: GitHub answers with a signed link to it, fetched without the token."""
+
+    def logs(job_id: int) -> str:
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+        url = f"https://api.github.com/repos/{REPO}/actions/jobs/{job_id}/logs"
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            opener.open(urllib.request.Request(url, headers=headers), timeout=30)
+            return ""
+        except urllib.error.HTTPError as e:
+            link = e.headers.get("Location") if e.code == 302 else None
+        except OSError:
+            return ""
+        if not link:
+            return ""
+        try:
+            with urllib.request.urlopen(link, timeout=30) as response:
+                body = response.read(LOG_MAX)
+                assert isinstance(body, bytes)
+            return body.decode("utf-8", "replace")
+        except OSError:
+            return ""
+
+    return logs
+
+
 def send_trace(body: Json) -> None:
     data = json.dumps(body).encode()
     headers = {"Content-Type": "application/json"}
@@ -289,7 +395,8 @@ def main() -> int:
     def keep(state: Json) -> None:
         replace(STATE, json.dumps(state), 0o600)
 
-    state = poll(github(TOKEN_FILE.read_text().strip()), send_trace, state, keep)
+    token = TOKEN_FILE.read_text().strip()
+    state = poll(github(token), send_trace, state, keep, github_logs(token))
     keep(state)
     if not state["done"]:
         return 1

@@ -183,3 +183,55 @@ def test_a_trace_holds_at_most_its_span_cap() -> None:
     many["steps"] = many["steps"] * 2000
     body = ci_times.trace(run(1), 1, [many], {})
     assert len(body["resourceSpans"][0]["scopeSpans"][0]["spans"]) == ci_times.SPANS_MAX
+
+
+LOG = """\ufeff2026-11-12T00:00:11.1000000Z Current runner version: '2.338.2'
+2026-11-12T00:00:11.9000000Z A job started hook has been configured by the runner administrator
+2026-11-12T00:00:12.3000000Z ##[group]Run actions/checkout@abc
+2026-11-12T00:00:14.0000000Z ##[group]Run mise run check
+2026-11-12T00:00:14.1000000Z \x1b[34m[test]\x1b[0m \x1b[1m$ uv run python -m pytest tests/\x1b[0m
+2026-11-12T00:00:14.1000000Z ^[[32m[lint]^[[0m $ uv run ruff check scripts/
+2026-11-12T00:00:14.6000000Z [lint] $ shellcheck scripts/*.sh
+2026-11-12T00:00:15.2000000Z [lint] Finished in 1.10s
+2026-11-12T00:00:18.5000000Z [test] bringing up nodes...
+2026-11-12T00:00:18.6000000Z [test] bringing up nodes...
+2026-11-12T00:00:24.4000000Z [test] Finished in 10.30s
+2026-11-12T00:00:24.5000000Z Post job cleanup.
+2026-11-12T00:00:24.9000000Z Cleaning up orphan processes"""
+
+
+def test_a_job_log_becomes_its_phases_to_the_millisecond() -> None:
+    found = ci_times.log_spans("t", "job", LOG)
+    assert [s["name"] for s in found].count("pytest start-up") == 1
+    spans = {s["name"]: s for s in found}
+
+    def took(name: str) -> float:
+        span = spans[name]
+        return round((int(span["endTimeUnixNano"]) - int(span["startTimeUnixNano"])) / 1e9, 2)
+
+    assert took("set up job") == 0.8
+    assert took("job started hook") == 0.4
+    assert took("step: actions/checkout@abc") == 1.7
+    assert took("step: mise run check") == 10.5
+    assert took("post job") == 0.4
+    assert took("task: lint") == 1.1 and took("uv run ruff check scripts/") == 0.5
+    assert took("shellcheck scripts/*.sh") == 0.6
+    assert took("task: test") == 10.3 and took("pytest start-up") == 4.4
+    # A task belongs to the step it ran in; a command to its task.
+    assert spans["task: test"]["parentSpanId"] == spans["step: mise run check"]["spanId"]
+    assert spans["shellcheck scripts/*.sh"]["parentSpanId"] == spans["task: lint"]["spanId"]
+
+
+def test_only_colins_runs_have_their_logs_read() -> None:
+    read: list[int] = []
+
+    def logs(job_id: int) -> str:
+        read.append(job_id)
+        return LOG
+
+    renovate = run(2, actor=OTHER, event="pull_request", branch="renovate/x")
+    get, _ = github([run(1), renovate])
+    sent: list[dict[str, Any]] = []
+    ci_times.poll(get, sent.append, {}, logs=logs)
+    assert read == [10]
+    assert "task: test" in names(sent[0]) and "task: test" not in names(sent[1])
