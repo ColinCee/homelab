@@ -30,7 +30,7 @@ def _jdk(v: str) -> str:
     )
 
 
-# The URLs ci-runner/rootfs/Dockerfile and ci-runner/install-host.sh download;
+# The URLs ci-runner/rootfs/Dockerfile and ci-runner/install_host.py download;
 # change them together. `v` is the _VERSION value as written in versions.env.
 URLS: dict[str, Callable[[str], str]] = {
     "FIRECRACKER": lambda v: (
