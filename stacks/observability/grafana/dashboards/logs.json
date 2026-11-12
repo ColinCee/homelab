@@ -14,7 +14,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "refresh": "1m",
+  "refresh": "5m",
   "templating": {
     "list": [
       {
@@ -245,7 +245,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "container_name:~\"${container:regex}\" ${search} | fields _time, _msg, container_name, level",
+          "expr": "container_name:~\"${container:regex}\" ${search} | fields _time, _msg, container_name, level, trace_id",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 500

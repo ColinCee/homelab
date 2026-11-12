@@ -1,7 +1,7 @@
 {
   "uid": "traces",
   "title": "Traces",
-  "description": "What did each service answer, and how long did it take?",
+  "description": "What did each service answer, and how long did it take? CI's runs are on the CI page.",
   "editable": false,
   "graphTooltip": 1,
   "schemaVersion": 41,
@@ -14,7 +14,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "refresh": "1m",
+  "refresh": "5m",
   "templating": {
     "list": []
   },
