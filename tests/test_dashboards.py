@@ -17,7 +17,7 @@ PAGES: dict[str, dict[str, Any]] = {
     path.stem: json.loads(path.read_text(encoding="utf-8"))
     for path in sorted((STACK / "grafana/dashboards").glob("*.json"))
 }
-SOURCES = {"prometheus", "alertmanager", "logs", "traces", "spans"}
+SOURCES = {"prometheus", "alertmanager", "logs", "traces"}
 
 # These dataviz steps pass contrast checks on Grafana's light and dark themes.
 GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}

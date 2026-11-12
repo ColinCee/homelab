@@ -161,13 +161,13 @@
         "x": 0,
         "y": 0,
         "w": 3,
-        "h": 5
+        "h": 6
       }
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Waiting for a VM",
+      "title": "Queue wait",
       "description": "How long the longest-waiting queued job has waited so far, across every served repo; 0 when nothing waits.",
       "datasource": {
         "type": "prometheus",
@@ -227,7 +227,7 @@
         "x": 3,
         "y": 0,
         "w": 3,
-        "h": 5
+        "h": 6
       }
     },
     {
@@ -293,13 +293,13 @@
         "x": 6,
         "y": 0,
         "w": 3,
-        "h": 5
+        "h": 6
       }
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "Out of memory",
+      "title": "Memory kills",
       "description": "Processes the kernel killed inside CI VMs for memory, over the time range.",
       "datasource": {
         "type": "prometheus",
@@ -363,7 +363,7 @@
         "x": 9,
         "y": 0,
         "w": 3,
-        "h": 5
+        "h": 6
       }
     },
     {
@@ -477,7 +477,7 @@
         "x": 12,
         "y": 0,
         "w": 12,
-        "h": 5
+        "h": 6
       }
     },
     {
@@ -581,7 +581,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 5,
+        "y": 6,
         "w": 12,
         "h": 9
       }
@@ -687,7 +687,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 5,
+        "y": 6,
         "w": 12,
         "h": 9
       }
@@ -718,16 +718,16 @@
           "id": "organize",
           "options": {
             "indexByName": {
-              "startTime": 0,
-              "traceName": 1,
-              "duration": 2,
-              "traceID": 3
+              "Start time": 0,
+              "Trace name": 1,
+              "Duration": 2,
+              "Trace ID": 3
             },
             "renameByName": {
-              "startTime": "Started",
-              "traceName": "Run",
-              "duration": "Took",
-              "traceID": "Trace"
+              "Start time": "Started",
+              "Trace name": "Run",
+              "Duration": "Took",
+              "Trace ID": "Trace"
             }
           }
         },
@@ -774,7 +774,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 14,
+        "y": 15,
         "w": 12,
         "h": 11
       }
@@ -874,7 +874,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 14,
+        "y": 15,
         "w": 12,
         "h": 11
       }
