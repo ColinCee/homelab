@@ -73,7 +73,7 @@
     {
       "type": "link",
       "title": "Logs",
-      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22logs%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22victoriametrics-logs-datasource%22%2C%22uid%22%3A%22logs%22%7D%2C%22expr%22%3A%22%2A%22%2C%22queryType%22%3A%22instant%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1",
+      "url": "/d/logs",
       "icon": "doc",
       "tags": [],
       "asDropdown": false,
@@ -85,7 +85,7 @@
     {
       "type": "link",
       "title": "Traces",
-      "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22traces%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22jaeger%22%2C%22uid%22%3A%22traces%22%7D%2C%22queryType%22%3A%22search%22%2C%22service%22%3A%22ci%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1",
+      "url": "/d/traces",
       "icon": "bolt",
       "tags": [],
       "asDropdown": false,
@@ -770,7 +770,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:event\":* | sort by (_time) desc | limit 30 | math duration/1e9 as seconds | fields _time, name, \"span_attr:branch\", \"span_attr:conclusion\", seconds, trace_id, \"span_attr:url\"",
+          "expr": "_time:7d \"resource_attr:service.name\":~\"^ci( |$)\" \"span_attr:event\":* | sort by (_time) desc | limit 30 | math duration/1e9 as seconds | fields _time, name, \"span_attr:branch\", \"span_attr:conclusion\", seconds, trace_id, \"span_attr:url\"",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -1030,7 +1030,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci \"span_attr:conclusion\":=success \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | replace_regexp (\"@[0-9a-f]{40}$\", \"\") at name | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15 | math typical/1e9 as typical, slowest/1e9 as slowest, total/60e9 as total",
+          "expr": "_time:7d \"resource_attr:service.name\":~\"^ci( |$)\" \"span_attr:conclusion\":=success \"span_attr:runner\":\"\" \"span_attr:event\":\"\" \"span_attr:source\":\"\" | replace_regexp (\"@[0-9a-f]{40}$\", \"\") at name | stats by (name) count() as runs, median(duration) as typical, max(duration) as slowest, sum(duration) as total | sort by (total) desc | limit 15 | math typical/1e9 as typical, slowest/1e9 as slowest, total/60e9 as total",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
@@ -1196,7 +1196,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:7d \"resource_attr:service.name\":=ci name:~`::|^pytest start-up$` \"span_attr:conclusion\":\"\" \"span_attr:source\":\"\" | stats by (name) count() as runs, avg(duration) as average, max(duration) as slowest | filter runs:>=5 | sort by (average) desc | limit 15 | math average/1e9 as average, slowest/1e9 as slowest",
+          "expr": "_time:7d \"resource_attr:service.name\":~\"^ci( |$)\" name:~`::|^pytest start-up$` \"span_attr:conclusion\":\"\" \"span_attr:source\":\"\" | stats by (name) count() as runs, avg(duration) as average, max(duration) as slowest | filter runs:>=5 | sort by (average) desc | limit 15 | math average/1e9 as average, slowest/1e9 as slowest",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 30
