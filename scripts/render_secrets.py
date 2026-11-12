@@ -65,7 +65,7 @@ def render(repo_root: Path, environment: Mapping[str, str] | None = None) -> tup
 def _write(path: Path, content: str) -> None:
     """Containers read it as different users, so the file is open to all and its folder to the
     owner alone. It is rewritten only when it changes, so its time marks a new value, which
-    recreates the containers reading it (deploy.py, stack_config_hash)."""
+    recreates the containers reading it (deploy.py, config_hashes)."""
     if path.is_file() and path.read_text(encoding="utf-8") == content:
         return
     temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")

@@ -25,46 +25,20 @@ jobs:
         with:
           # The pull request's merge commit and its base, to diff them.
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
-      # A pull request that only moves image pins needs only Compose validation
-      # of the stacks it touches; the others are unchanged since main passed.
-      # The base commit's copy of the script judges it, so the pull request
-      # cannot loosen its own rule.
+      # Each step's logic is in scripts/ci.py, which says why. A rule judging a pull request comes from its base commit.
       - name: Check for an image-pin-only change
         id: pins
         if: github.event_name == 'pull_request'
-        run: |
-          script="$RUNNER_TEMP/pin_only.py"
-          if git show HEAD^1:scripts/pin_only.py > "$script" && python3 "$script" HEAD^1 HEAD; then
-            echo "only=true" >> "$GITHUB_OUTPUT"
-          fi
-      # A changed release in ci-runner/versions.env is downloaded and checked
-      # against its hash, so a stale hash fails here, not in the image build
-      # after merge. The base commit's copy judges, as above.
+        run: python3 scripts/ci.py pins-only
       - name: Check versions.env hashes
         if: github.event_name == 'pull_request'
-        run: |
-          git diff --quiet HEAD^1 HEAD -- ci-runner/versions.env && exit 0
-          script="$RUNNER_TEMP/versions_hash.py"
-          git show HEAD^1:scripts/versions_hash.py > "$script" 2>/dev/null || exit 0
-          python3 "$script" HEAD^1 HEAD
-      # A test time limit (tests/conftest.py) goes up, or away, only by a decision: the slower-ci label, with the
-      # reason in the pull request.
+        run: python3 scripts/ci.py versions-hash
       - name: Check the test time limits
-        if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'slower-ci')
-        run: |
-          limits() { awk -F' = ' '/^RUN_LIMIT = /{r=$2} /^TEST_LIMIT = /{t=$2} END{print r, t}'; }
-          read -r base_run base_test < <(git show HEAD^1:tests/conftest.py | limits)
-          read -r run test < <(limits < tests/conftest.py)
-          [[ -n $base_run && -n $base_test ]] || exit 0
-          if [[ -z $run || -z $test ]] ||
-            awk -v a="$run" -v b="$base_run" -v c="$test" -v d="$base_test" 'BEGIN { exit !(a > b || c > d) }'; then
-            echo "::error::A test time limit went up (RUN_LIMIT $base_run to $run, TEST_LIMIT $base_test to $test)." \
-              "Make the tests faster, or add the slower-ci label and say why in the pull request."
-            exit 1
-          fi
+        if: github.event_name == 'pull_request'
+        run: python3 scripts/ci.py time-limits
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
-        run: git diff --name-only -z HEAD^1 HEAD | xargs -0 scripts/validate-compose.sh
+        run: python3 scripts/ci.py validate-changed-compose
       - uses: jdx/mise-action@b44d12e7d0d8ee7461bb893e1b1993500433185b # v5
         if: steps.pins.outputs.only != 'true' && runner.environment == 'github-hosted'
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
@@ -80,34 +54,19 @@ jobs:
         env:
           # Downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address shares.
           GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          export MISE_DATA_DIR=/cache/mise MISE_YES=1 MISE_TRUSTED_CONFIG_PATHS="$GITHUB_WORKSPACE"
-          env | grep '^MISE_' >> "$GITHUB_ENV"
-          mise install
+        run: python3 scripts/ci.py vm-tools
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'
         env:
           TEST_TIMES: ${{ runner.temp }}/test-times.json
         run: mise run check
-      # For the trace of this run (scripts/ci_times.py). Its own step: a workflow command must start its line, and
-      # mise prefixes each line of its tasks.
+      # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
         if: always()
-        run: |
-          times="$RUNNER_TEMP/test-times.json"
-          [[ -f $times ]] || exit 0
-          # A workflow command's message escapes % (one line, as the JSON is).
-          echo "::notice title=slowest tests::$(sed 's/%/%25/g' "$times")"
-      # The cache disk holds what mise.toml and uv.lock install, so it is saved (about 14 s) only when they changed.
-      # The key goes in a folder: fc-cache packs only folders.
+        run: python3 scripts/ci.py slowest-tests
       - name: Check whether the cache disk would change
         id: cache
         if: runner.environment == 'self-hosted'
-        run: |
-          key=$(cat mise.toml uv.lock | sha256sum | cut -c1-16)
-          if [[ $(cat /cache/mise/.ci-key 2>/dev/null) != "$key" ]]; then
-            mkdir -p /cache/mise && echo "$key" > /cache/mise/.ci-key
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+        run: python3 scripts/ci.py cache-changed
       - uses: ./.github/actions/fc-cache
         if: steps.cache.outputs.changed == 'true'

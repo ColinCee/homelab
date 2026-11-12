@@ -31,7 +31,7 @@ services:
       - r2_access_key_id
       - r2_secret_access_key
     labels:
-      homelab.config-hash: ${STACK_CONFIG_HASH:-}
+      homelab.config-hash: ${CONFIG_HASH_BACKUP:-}
     healthcheck:
       # Ready once the repository is reachable with the supplied credentials.
       test: ["CMD", "test", "-f", "/tmp/ready"]

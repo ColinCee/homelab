@@ -32,14 +32,13 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: logger -t homelab-deploy "commit=$COMMIT actor=$ACTOR"
 
-      # Every step runs from the server checkout, so the job makes no checkout of its own.
+      # Every step runs from the server checkout, so the job makes no checkout of its own. This one stays plain git, not
+      # scripts/ci.py: it is what brings the commit's code in.
       - name: Select exact revision
+        working-directory: /home/colin/code/homelab
         env:
           DEPLOY_REF: ${{ github.sha }}
-        run: |
-          cd /home/colin/code/homelab
-          git fetch --no-tags origin main
-          git reset --hard "$DEPLOY_REF"
+        run: git fetch --no-tags origin main && git reset --hard "$DEPLOY_REF"
 
       # The one list of secret names: render-secrets writes each to secrets/<name in lower case>.
       - name: Render secrets
@@ -58,21 +57,15 @@ jobs:
           R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
           RESTIC_PASSWORD: ${{ secrets.RESTIC_PASSWORD }}
           STATS_PASSWORD: ${{ secrets.STATS_PASSWORD }}
-        run: |
-          cd /home/colin/code/homelab
-          scripts/render-secrets.sh
+        working-directory: /home/colin/code/homelab
+        run: scripts/render-secrets.sh
 
-      # The login lives in the job's temp directory, which the runner deletes
-      # after the job, so no registry credential stays on the host.
       - name: Log in to GHCR
+        working-directory: /home/colin/code/homelab
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
-        run: |
-          echo "DOCKER_CONFIG=$RUNNER_TEMP/docker" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/docker"
-          printf '%s' "$GHCR_TOKEN" \
-            | DOCKER_CONFIG="$RUNNER_TEMP/docker" docker login ghcr.io -u "$GHCR_USER" --password-stdin
+        run: python3 scripts/ci.py ghcr-login
 
       # Only stacks changed since the last full deploy (all when shared deploy files changed);
       # the marker lives outside the checkout, which each deploy resets. This push's own stacks
@@ -81,7 +74,7 @@ jobs:
         id: deploy
         env:
           BEFORE: ${{ github.event.before }}
-        run: |
-          cd /home/colin/code/homelab
-          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed" \
-            --first-changed-since "$BEFORE"
+        working-directory: /home/colin/code/homelab
+        run: >-
+          scripts/deploy.sh --last-deployed "$HOME/.local/state/homelab/last-deployed"
+          --first-changed-since "$BEFORE"

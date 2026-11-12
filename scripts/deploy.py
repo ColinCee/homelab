@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -302,7 +303,7 @@ def deploy(
 
     for plan in plans:
         environment = _compose_environment()
-        environment["STACK_CONFIG_HASH"] = stack_config_hash(repo_root, plan.compose_file.parent)
+        environment |= config_hashes(repo_root, plan.compose_file.parent)
         try:
             runner(
                 compose_command(plan, "build", all_profiles=True),
@@ -401,16 +402,23 @@ def record_running(
     os.replace(temporary, out)
 
 
-def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
-    """Hash a stack's tracked config files and when each secret file last changed.
+def hash_variable(service: str) -> str:
+    """The variable a service's `homelab.config-hash` label reads (config_hashes)."""
+    return "CONFIG_HASH_" + re.sub(r"\W", "_", service).upper()
 
-    Compose does not notice edits to bind-mounted files, so services that
-    should restart on config changes put this in a label. Only git-tracked
-    files count, which keeps runtime data dirs (config/, data/) out. A secret
-    counts by its file's time alone, since anything that may inspect
-    containers reads the label. Outside a git checkout the hash is empty, so
-    labels never change.
+
+def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
+    """Each service's hash of the tracked files it bind-mounts from its stack folder, and when each
+    of its secret files last changed, by hash_variable.
+
+    Compose does not notice edits to bind-mounted files, so a service that should restart on them
+    puts its hash in a label. Per service, so a change restarts only the services that read it.
+    Only git-tracked files count, which keeps runtime data (config/, data/) out. A secret counts by
+    its file's time alone, since anything that may inspect containers reads the label. Outside a
+    git checkout every hash is empty, so labels never change.
     """
+    compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
+    services = compose.get("services") or {}
     listed = subprocess.run(
         ["git", "ls-files", "-z", "--", str(stack_dir.relative_to(repo_root))],
         cwd=repo_root,
@@ -418,17 +426,42 @@ def stack_config_hash(repo_root: Path, stack_dir: Path) -> str:
         check=False,
     )
     if listed.returncode != 0:
-        return ""
-    digest = hashlib.sha256()
-    for name in sorted(filter(None, listed.stdout.split(b"\0"))):
-        path = repo_root / name.decode()
-        if path.name == "compose.yaml" or not path.is_file():
-            continue
-        digest.update(name + b"\0" + path.read_bytes() + b"\0")
-    for secret in secret_files(stack_dir):
-        if secret.is_file():
-            digest.update(f"{secret.name}\0{secret.stat().st_mtime_ns}\0".encode())
-    return digest.hexdigest()[:16]
+        return {hash_variable(name): "" for name in services}
+    # Paths as git lists them, not resolved: a tracked symlink stays inside the repo.
+    tracked = sorted(Path(name.decode()) for name in filter(None, listed.stdout.split(b"\0")))
+    stack = stack_dir.relative_to(repo_root)
+    secret_paths = {
+        name: Path(os.path.normpath(stack_dir / spec["file"]))
+        for name, spec in (compose.get("secrets") or {}).items()
+        if isinstance(spec, dict) and "file" in spec
+    }
+    hashes: dict[str, str] = {}
+    for name, spec in services.items():
+        sources = [Path(os.path.normpath(stack / source)) for source in _bind_sources(spec)]
+        digest = hashlib.sha256()
+        for path in tracked:
+            if not any(path == s or s in path.parents for s in sources):
+                continue
+            if (repo_root / path).is_file():
+                digest.update(path.as_posix().encode() + b"\0")
+                digest.update((repo_root / path).read_bytes() + b"\0")
+        for secret in spec.get("secrets") or []:
+            source = secret if isinstance(secret, str) else secret.get("source", "")
+            path = secret_paths.get(source)
+            if path and path.is_file():
+                digest.update(f"{path.name}\0{path.stat().st_mtime_ns}\0".encode())
+        hashes[hash_variable(name)] = digest.hexdigest()[:16]
+    return hashes
+
+
+def _bind_sources(spec: Mapping) -> list[str]:
+    """A service's bind-mounted host paths inside its stack folder (./name)."""
+    sources = []
+    for volume in spec.get("volumes") or []:
+        source = volume.split(":")[0] if isinstance(volume, str) else volume.get("source", "")
+        if source.startswith("./"):
+            sources.append(source)
+    return sources
 
 
 def stacks_with_secrets_since(repo_root: Path, since_ns: int) -> tuple[str, ...]:
