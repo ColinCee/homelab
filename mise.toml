@@ -10,6 +10,7 @@ zizmor = "1.32.0"
 "aqua:caddyserver/caddy" = "2.11.9"
 
 [tasks.lint]
+depends = ["test"]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
   "uv run ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/ && uv run ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/",
@@ -25,6 +26,7 @@ description = "Format Python"
 run = "uv run ruff format scripts/ ci-runner/ stacks/ tests/ .github/actions/"
 
 [tasks.typecheck]
+depends = ["test"]
 description = "Type-check Python"
 run = "uv run ty check scripts ci-runner stacks tests .github/actions --python-platform linux"
 
@@ -34,10 +36,12 @@ description = "Run unit tests"
 run = "uv run python -m pytest tests/ -q --durations=8 -n auto --dist loadfile"
 
 [tasks."validate:compose"]
+depends = ["test"]
 description = "Validate Compose without changing local secrets"
 run = "scripts/validate-compose.sh"
 
 [tasks."docs:size"]
+depends = ["test"]
 description = "Fail when a doc grows past docs-size.json"
 run = "uv run python -m scripts.docs_size"
 
