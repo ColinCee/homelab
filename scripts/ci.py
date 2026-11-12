@@ -123,8 +123,7 @@ def time_limits() -> int:
 
 
 def pull_request_rules() -> int:
-    """The pull request's own rules in one step, as each runner step costs about a third of a
-    second. Every rule runs before the verdict."""
+    """The pull request's own rules. Every rule runs before the verdict."""
     results = [rule() for rule in (pins_only, versions_hash, time_limits)]
     return 1 if any(results) else 0
 
