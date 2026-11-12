@@ -561,9 +561,10 @@ CASES = {
             ("homelab_main_deploy_checked_timestamp_seconds", "0+60x70"),
         ],
         [
+            # Behind from 6 to 26 min, then again from 33.
             at(28, "main-not-deployed"),
-            at(59, "main-not-deployed"),
-            at(61, "main-not-deployed", posts("main-not-deployed", "1")),
+            at(62, "main-not-deployed"),
+            at(64, "main-not-deployed", posts("main-not-deployed", "1")),
         ],
     ),
     "a deployer that stopped running fires": (
