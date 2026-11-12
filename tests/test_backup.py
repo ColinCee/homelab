@@ -231,3 +231,47 @@ def test_restore_test_passes_only_when_the_file_comes_back(
 
 def test_an_unknown_mode_is_a_usage_error(tmp_path: Path) -> None:
     assert make(tmp_path, Restic()).main(["nightly"]) == 2
+
+
+def test_a_crashed_run_is_recorded_and_the_loop_keeps_going(tmp_path: Path) -> None:
+    restic = Restic()
+    job = make(tmp_path, restic)
+
+    def crashing(
+        command: list[str], *, stdout: int | None = None, stderr: int | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        if command[1] == "forget":
+            raise OSError("restic vanished")
+        return restic(command, stdout=stdout, stderr=stderr)
+
+    job.run = crashing
+    waits: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        waits.append(seconds)
+        if len(waits) == 3:
+            raise Stop
+
+    with pytest.raises(Stop):
+        job.loop(sleep)
+    assert len(restic.ran("backup")) == 2  # the second night ran after the first crashed
+    assert metric(tmp_path, "backup-failure.prom") == (
+        f'homelab_backup_last_failure_timestamp_seconds{{step="crash"}} {int(MONDAY.timestamp())}\n'
+    )
+
+
+def test_a_good_run_passes_when_the_old_failure_cannot_be_removed(tmp_path: Path) -> None:
+    (tmp_path / "metrics/backup-failure.prom").mkdir(parents=True)  # unlink fails on a folder
+    assert make(tmp_path, Restic()).main(["once"]) == 0
+    assert metric(tmp_path, "backup.prom").startswith("homelab_backup_last_success")
+
+
+def test_the_login_files_are_replaced_whole_and_stay_owner_only(tmp_path: Path) -> None:
+    job = make(tmp_path, Restic())
+    job.write_login()
+    repository = tmp_path / "tmp/restic_repository"
+    before = repository.stat().st_ino
+    job.write_login()
+    assert repository.stat().st_ino != before  # renamed over, never truncated in place
+    assert repository.stat().st_mode & 0o777 == 0o600
+    assert not list((tmp_path / "tmp").glob("*.tmp"))

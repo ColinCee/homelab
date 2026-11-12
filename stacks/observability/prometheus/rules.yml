@@ -294,7 +294,7 @@ groups:
           unit: ' days ago'
           harm: 'Damaged data in R2 goes unseen until a restore needs it.'
           action: >-
-            Run the check now with `docker exec -e DEEP_CHECK=1 backup python3 /backup.py once` and read why
+            Run the check now with `docker exec -e DEEP_CHECK=1 backup python3 -I /backup.py once` and read why
             it fails in its output; a deploy since Sunday has wiped that run's log.
           dashboard: *home
           value: '{{ $value }}'

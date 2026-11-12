@@ -47,6 +47,9 @@ DEEP_CHECK_FILE = "/metrics/backup-deep-check.prom"
 # The Backup storage nearly full alert reads it.
 SIZE_FILE = "/metrics/backup-size.prom"
 
+# Named, as ruff formats `except (A, B):` to the bare form only Python 3.14 and later parse.
+UNREADABLE = (ValueError, LookupError, TypeError)
+
 RESTORE_FILE = "/data/home-assistant/configuration.yaml"
 RESTORE_TARGET = "/tmp/restore-test"
 
@@ -130,9 +133,13 @@ class Backup:
         )
 
     def _private(self, name: str, text: str) -> None:
-        fd = os.open(self.path(name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as file:
-            file.write(text)
+        # Replaced whole, so a `docker exec` run never leaves the loop's restic an empty file.
+        file = self.path(name)
+        temporary = file.with_name(file.name + ".tmp")
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(text)
+        os.replace(temporary, file)
 
     def write_metric(self, name: str, metric: str, value: int) -> None:
         file = self.path(name)
@@ -216,11 +223,7 @@ class Backup:
         step = self.run_backup()
         if step is not None:
             warn(f"backup FAILED at {step}")
-            self.write_metric(
-                FAILURE_FILE,
-                f'homelab_backup_last_failure_timestamp_seconds{{step="{step}"}}',
-                self.timestamp(),
-            )
+            self.record_failure(step)
             return 1
         say("backup ok")
         self.write_metric(
@@ -230,8 +233,14 @@ class Backup:
             self.path(FAILURE_FILE).unlink(missing_ok=True)
         except OSError as error:
             warn(f"could not remove {FAILURE_FILE}: {error}")
-            return 1
         return 0
+
+    def record_failure(self, step: str) -> None:
+        self.write_metric(
+            FAILURE_FILE,
+            f'homelab_backup_last_failure_timestamp_seconds{{step="{step}"}}',
+            self.timestamp(),
+        )
 
     def seed_metric(self) -> bool:
         """On a fresh host, start from the newest snapshot so the alert has a value before the
@@ -243,7 +252,7 @@ class Backup:
                 self.output("snapshots", "--host", HOST, "--latest", "1", "--json")
             )
             latest = datetime.strptime(snapshots[0]["time"][:19], "%Y-%m-%dT%H:%M:%S")
-        except ValueError, LookupError, TypeError:
+        except UNREADABLE:
             return False
         seconds = int(latest.replace(tzinfo=UTC).timestamp())
         self.write_metric(METRICS_FILE, "homelab_backup_last_success_timestamp_seconds", seconds)
@@ -275,7 +284,12 @@ class Backup:
             self.record_size()
         while True:
             sleep(seconds_until(self.setting("BACKUP_TIME", "02:30"), self.now()))
-            self.report()
+            # A crash records a failure and waits for the next night, rather than ending the loop.
+            try:
+                self.report()
+            except Exception as error:
+                warn(f"backup FAILED: {error!r}")
+                self.record_failure("crash")
 
     def main(self, argv: Sequence[str]) -> int:
         self.write_login()
