@@ -163,5 +163,7 @@ COPY runner-job-guard-vm.sh /usr/local/lib/homelab/
 RUN chmod 0644 /usr/local/lib/homelab/runner_job_guard.py && chmod 0755 /usr/local/lib/homelab/runner-job-guard-vm.sh
 
 COPY ci-boot ci-trim-cache ci-memwatch /usr/local/sbin/
+# homelab's checkout for its own VM jobs (ci_checkout.py says why).
+COPY --chmod=0755 ci_checkout.py /usr/local/bin/ci-checkout
 COPY ci-boot.service ci-trim-cache.service ci-memwatch.service /etc/systemd/system/
 RUN chmod 0755 /usr/local/sbin/ci-boot /usr/local/sbin/ci-trim-cache /usr/local/sbin/ci-memwatch && systemctl enable ci-boot.service ci-trim-cache.service ci-memwatch.service
