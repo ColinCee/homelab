@@ -1,0 +1,302 @@
+"""Back up /data to the restic repository, nightly or once.
+
+usage: backup.py [loop|once|restore-test]
+  loop           wait for BACKUP_TIME (UTC) each day, then back up
+  once           back up now
+  restore-test   restore one file from the latest snapshot (systemd/backup-upkeep.service)
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Protocol
+
+HOST = "beelink"
+# The live recorder database, logs, and re-downloadable plugins are left out: a live copy of the
+# database would be inconsistent, so history-snapshot.db (stacks/home-assistant/systemd) is backed
+# up instead.
+EXCLUDES = (
+    "/data/home-assistant/home-assistant_v2.db*",
+    "/data/home-assistant/*.log*",
+    "/data/home-assistant/.cache",
+    "/data/home-assistant/deps",
+    "/data/home-assistant/tts",
+)
+FORGET = ("--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "6")
+# R2 bills past 10 GB and has no server-side quota, so the cap is enforced here: a run that would
+# take the repository over this size uploads nothing.
+MAX_REPO_BYTES = 8_000_000_000
+
+# Alloy reads this file into Prometheus for the Nightly backup didn't run alert. A metric, not the
+# "backup ok" log line: a log store missed that line once and the alert fired with backups
+# succeeding.
+METRICS_FILE = "/metrics/backup.prom"
+# The last run's failing step, for the alert to name; removed by the next good run.
+FAILURE_FILE = "/metrics/backup-failure.prom"
+# Home's Backups row reads this, not the log, for the same reason.
+DEEP_CHECK_FILE = "/metrics/backup-deep-check.prom"
+# The Backup storage nearly full alert reads it.
+SIZE_FILE = "/metrics/backup-size.prom"
+
+RESTORE_FILE = "/data/home-assistant/configuration.yaml"
+RESTORE_TARGET = "/tmp/restore-test"
+
+
+class Run(Protocol):
+    def __call__(
+        self, command: list[str], *, stdout: int | None = None, stderr: int | None = None
+    ) -> subprocess.CompletedProcess[str]: ...
+
+
+def run(
+    command: list[str], *, stdout: int | None = None, stderr: int | None = None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, stdout=stdout, stderr=stderr, text=True, check=False)
+
+
+def say(message: str) -> None:
+    # Flushed, so lines keep their place among restic's own output in the container log.
+    print(message, flush=True)
+
+
+def warn(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
+
+
+def json_number(text: str, key: str) -> int | None:
+    """The first integer `key` in any JSON object line of restic's output."""
+    for line in text.splitlines():
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(value, dict) and isinstance(number := value.get(key), int):
+            return number
+    return None
+
+
+def seconds_until(clock: str, now: datetime) -> int:
+    """Seconds from `now` to the next `clock` (HH:MM, UTC); a time already passed is tomorrow's."""
+    hour, minute = clock.split(":")
+    target = now.replace(hour=int(hour), minute=int(minute), second=0, microsecond=0)
+    if target <= now:
+        target += timedelta(days=1)
+    return int(target.timestamp()) - int(now.timestamp())
+
+
+@dataclass
+class Backup:
+    run: Run = run
+    root: Path = Path("/")
+    env: Mapping[str, str] = field(default_factory=lambda: dict(os.environ))
+    now: Callable[[], datetime] = lambda: datetime.now(UTC)
+
+    def path(self, name: str) -> Path:
+        return self.root / name.lstrip("/")
+
+    def setting(self, name: str, default: str) -> str:
+        return self.env.get(name) or default
+
+    def restic(self, *args: str, stdout: int | None = None, stderr: int | None = None) -> int:
+        return self.run(["restic", *args], stdout=stdout, stderr=stderr).returncode
+
+    def output(self, *args: str, stderr: int | None = None) -> str:
+        return self.run(["restic", *args], stdout=subprocess.PIPE, stderr=stderr).stdout or ""
+
+    def write_login(self) -> None:
+        """The repository and its S3 login, in the files restic reads (compose.yaml), from the R2
+        secrets. Owner-only, as they hold the keys."""
+        secrets = self.path("/run/secrets")
+        account, key, secret = (
+            (secrets / name).read_text().rstrip("\n")
+            for name in ("r2_account_id", "r2_access_key_id", "r2_secret_access_key")
+        )
+        self._private(
+            self.env["RESTIC_REPOSITORY_FILE"],
+            f"s3:https://{account}.r2.cloudflarestorage.com/beelink-backups\n",
+        )
+        self._private(
+            self.env["AWS_SHARED_CREDENTIALS_FILE"],
+            f"[default]\naws_access_key_id = {key}\naws_secret_access_key = {secret}\n",
+        )
+
+    def _private(self, name: str, text: str) -> None:
+        fd = os.open(self.path(name), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write(text)
+
+    def write_metric(self, name: str, metric: str, value: int) -> None:
+        file = self.path(name)
+        temporary = file.with_name(file.name + ".tmp")
+        try:
+            temporary.write_text(f"{metric} {value}\n")
+            os.replace(temporary, file)
+        except OSError:
+            warn(f"could not write {name}")
+
+    def timestamp(self) -> int:
+        return int(self.now().timestamp())
+
+    def backup_args(self, *extra: str) -> list[str]:
+        excludes = [arg for pattern in EXCLUDES for arg in ("--exclude", pattern)]
+        return ["backup", "/data", "--host", HOST, *excludes, *extra]
+
+    def repo_bytes(self) -> int | None:
+        return json_number(self.output("stats", "--mode", "raw-data", "--json"), "total_size")
+
+    def max_bytes(self) -> int:
+        return int(self.setting("MAX_REPO_BYTES", str(MAX_REPO_BYTES)))
+
+    def within_cap(self) -> bool:
+        stored = self.repo_bytes()
+        dry_run = self.output(*self.backup_args("--dry-run", "--json"), stderr=subprocess.DEVNULL)
+        summary = "\n".join(
+            line for line in dry_run.splitlines() if '"message_type":"summary"' in line
+        )
+        pending = json_number(summary, "data_added")
+        if stored is None or pending is None:
+            warn("backup SKIPPED: could not measure repository or upload size")
+            return False
+        limit = self.max_bytes()
+        if stored + pending > limit:
+            warn(
+                f"backup SKIPPED: {stored} bytes stored + {pending} new would exceed the {limit} "
+                "byte cap"
+            )
+            return False
+        return True
+
+    def verify(self) -> bool:
+        # A plain check only reads metadata. Once a week, download and verify every stored byte
+        # so silent corruption in R2 is found before a restore needs it.
+        today = str(self.now().isoweekday())
+        if today == self.setting("DEEP_CHECK_DAY", "7") or self.env.get("DEEP_CHECK") == "1":
+            if self.restic("check", "--read-data") != 0:
+                return False
+            say("deep check ok")
+            self.write_metric(
+                DEEP_CHECK_FILE,
+                "homelab_backup_last_deep_check_timestamp_seconds",
+                self.timestamp(),
+            )
+            return True
+        return self.restic("check") == 0
+
+    def record_size(self) -> None:
+        size = self.repo_bytes()
+        if size is None:
+            return
+        say(f"repository size: {size} bytes of {self.max_bytes()} allowed")
+        self.write_metric(SIZE_FILE, "homelab_backup_repository_bytes", size)
+
+    def run_backup(self) -> str | None:
+        """The step that failed, so a failed run records where it stopped; None when all pass."""
+        steps: Sequence[tuple[str, Callable[[], bool]]] = (
+            ("cap", self.within_cap),
+            ("backup", lambda: self.restic(*self.backup_args()) == 0),
+            ("forget", lambda: self.restic("forget", "--host", HOST, "--prune", *FORGET) == 0),
+            ("check", self.verify),
+        )
+        for step, passed in steps:
+            if not passed():
+                return step
+        self.record_size()
+        return None
+
+    def report(self) -> int:
+        step = self.run_backup()
+        if step is not None:
+            warn(f"backup FAILED at {step}")
+            self.write_metric(
+                FAILURE_FILE,
+                f'homelab_backup_last_failure_timestamp_seconds{{step="{step}"}}',
+                self.timestamp(),
+            )
+            return 1
+        say("backup ok")
+        self.write_metric(
+            METRICS_FILE, "homelab_backup_last_success_timestamp_seconds", self.timestamp()
+        )
+        try:
+            self.path(FAILURE_FILE).unlink(missing_ok=True)
+        except OSError as error:
+            warn(f"could not remove {FAILURE_FILE}: {error}")
+            return 1
+        return 0
+
+    def seed_metric(self) -> bool:
+        """On a fresh host, start from the newest snapshot so the alert has a value before the
+        first nightly run."""
+        if self.path(METRICS_FILE).is_file():
+            return True
+        try:
+            snapshots = json.loads(
+                self.output("snapshots", "--host", HOST, "--latest", "1", "--json")
+            )
+            latest = datetime.strptime(snapshots[0]["time"][:19], "%Y-%m-%dT%H:%M:%S")
+        except ValueError, LookupError, TypeError:
+            return False
+        seconds = int(latest.replace(tzinfo=UTC).timestamp())
+        self.write_metric(METRICS_FILE, "homelab_backup_last_success_timestamp_seconds", seconds)
+        return self.path(METRICS_FILE).is_file()
+
+    def restore_test(self) -> int:
+        target = self.path(RESTORE_TARGET)
+        shutil.rmtree(target, ignore_errors=True)
+        # restic exits non-zero because the container cannot chown restored files, so the restored
+        # file is the test.
+        self.restic(
+            "restore", "latest", "--target", str(target), "--include", RESTORE_FILE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )  # fmt: skip
+        restored = target / RESTORE_FILE.lstrip("/")
+        passed = restored.is_file() and restored.stat().st_size > 0
+        if passed:
+            say(f"restore test ok: {RESTORE_FILE}")
+        else:
+            warn(f"restore test FAILED: could not restore {RESTORE_FILE}")
+        shutil.rmtree(target, ignore_errors=True)
+        return 0 if passed else 1
+
+    def loop(self, sleep: Callable[[float], None] = time.sleep) -> None:
+        if not self.seed_metric():
+            warn(f"could not seed {METRICS_FILE}")
+        self.path("/tmp/ready").touch()
+        if not self.path(SIZE_FILE).is_file():
+            self.record_size()
+        while True:
+            sleep(seconds_until(self.setting("BACKUP_TIME", "02:30"), self.now()))
+            self.report()
+
+    def main(self, argv: Sequence[str]) -> int:
+        self.write_login()
+        # Create the repository on first use; fail fast on bad credentials.
+        quiet = subprocess.DEVNULL
+        if self.restic("cat", "config", stdout=quiet, stderr=quiet) != 0:
+            initialised = self.restic("init")
+            if initialised != 0:
+                return initialised
+        match (argv[0] if argv else "") or "loop":
+            case "once":
+                return self.report()
+            case "restore-test":
+                return self.restore_test()
+            case "loop":
+                self.loop()
+                return 0
+            case _:
+                warn("usage: backup.py [loop|once|restore-test]")
+                return 2
+
+
+if __name__ == "__main__":
+    sys.exit(Backup().main(sys.argv[1:]))

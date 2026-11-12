@@ -120,7 +120,7 @@ Traps:
 
 ## Backups
 
-[restic](../stacks/backup/backup.sh) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
+[restic](../stacks/backup/backup.py) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
 encrypted: Home Assistant's config and a consistent copy of its history, the flight tracker's heatmap volume, and
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
 ([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and

@@ -276,7 +276,7 @@ groups:
           action: 'Check `docker logs --tail 100 backup`; see docs/architecture.md, "Backups".'
           dashboard: *home
           value: '{{ $value }}'
-      # Sundays' backup reads every pack back (backup.sh, DEEP_CHECK_DAY), so over 8.5 days is a missed week. Its
+      # Sundays' backup reads every pack back (backup.py, DEEP_CHECK_DAY), so over 8.5 days is a missed week. Its
       # file stays on the host between checks, so no data is a lost file, not a check yet to run.
       - alert: deep-check-missed
         expr: |
@@ -294,7 +294,7 @@ groups:
           unit: ' days ago'
           harm: 'Damaged data in R2 goes unseen until a restore needs it.'
           action: >-
-            Run the check now with `docker exec -e DEEP_CHECK=1 backup sh -c '/bin/sh /backup.sh once'` and read why
+            Run the check now with `docker exec -e DEEP_CHECK=1 backup python3 /backup.py once` and read why
             it fails in its output; a deploy since Sunday has wiped that run's log.
           dashboard: *home
           value: '{{ $value }}'
