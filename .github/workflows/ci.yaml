@@ -81,6 +81,17 @@ jobs:
           mise install
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'
+        env:
+          TEST_TIMES: ${{ runner.temp }}/test-times.json
         run: mise run check
+      # For the trace of this run (scripts/ci_times.py). Its own step: a workflow command must start its line, and
+      # mise prefixes each line of its tasks.
+      - name: Report the slowest tests
+        if: always()
+        run: |
+          times="$RUNNER_TEMP/test-times.json"
+          [[ -f $times ]] || exit 0
+          # A workflow command's message escapes % (one line, as the JSON is).
+          echo "::notice title=slowest tests::$(sed 's/%/%25/g' "$times")"
       - uses: ./.github/actions/fc-cache
         if: runner.environment == 'self-hosted'

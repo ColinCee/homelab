@@ -1,0 +1,16 @@
+[Unit]
+Description=Record CI and deploy run times as traces and metrics (scripts/ci_times.py)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_times.py
+Nice=10
+# Reads the CI token and GitHub, writes its state and one metrics file, and posts to Alloy.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/homelab-metrics /var/lib/homelab-ci
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+TimeoutStartSec=5min

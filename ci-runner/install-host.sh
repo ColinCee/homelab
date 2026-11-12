@@ -102,6 +102,13 @@ for unit in homelab-security-facts.service homelab-security-facts.timer; do
 done
 systemctl daemon-reload
 systemctl enable --now homelab-security-facts.timer
+# CI and deploy run times, for the trace store and Prometheus (scripts/ci_times.py).
+install -o root -g root -m 0644 "$here/../scripts/ci_times.py" "$dest/ci_times.py"
+for unit in homelab-ci-times.service homelab-ci-times.timer; do
+  install -o root -g root -m 0644 "$here/systemd/$unit" "/etc/systemd/system/$unit"
+done
+systemctl daemon-reload
+systemctl enable --now homelab-ci-times.timer
 
 # The supervisor, the network rules and the slot count take a restart. Running VMs carry
 # on through it (each is a unit of its own, taken back by the new supervisor), and the

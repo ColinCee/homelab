@@ -298,9 +298,12 @@ services:
     # Every network internal: the only writer to the stores (ingest), the Docker API, and programs' traces on
     # observability-otlp, which reaches no store.
     networks:
-      - docker-api
-      - ingest
-      - otlp
+      docker-api: {}
+      ingest: {}
+      otlp: {}
+      # A fixed address for the host's programs (scripts/ci_times.py), which have no Docker DNS.
+      host-otlp:
+        ipv4_address: 10.201.0.10
 
   # Probes the flight tracker's public API (blackbox/blackbox.yml) for Prometheus, not Alloy: it probes any address
   # its caller names, so Alloy, which reads the journal, must not reach it.
@@ -517,6 +520,12 @@ networks:
     ipam:
       config:
         - subnet: 10.201.0.0/29
+  # Alloy's OTLP receiver, for the host's programs alone.
+  host-otlp:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.201.0.8/29
 
 # Written from GitHub secrets by scripts/render-secrets.sh.
 secrets:

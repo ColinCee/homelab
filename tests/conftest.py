@@ -1,7 +1,27 @@
+import json
 import os
 import shutil
+from pathlib import Path
 
 import pytest
+
+# Each test's first start and its seconds over setup, call and teardown, in the controller.
+TIMES: dict[str, list[float]] = {}
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    start, took = TIMES.get(report.nodeid, [report.start, 0.0])
+    TIMES[report.nodeid] = [min(start, report.start), took + report.stop - report.start]
+
+
+def pytest_sessionfinish(session: pytest.Session) -> None:
+    # The slowest tests for scripts/ci_times.py, which ci.yaml posts as an annotation.
+    out = os.environ.get("TEST_TIMES")
+    if not out or hasattr(session.config, "workerinput"):
+        return
+    slowest = sorted(TIMES.items(), key=lambda item: -item[1][1])[:50]
+    rows = [{"test": t, "start": round(s, 3), "seconds": round(d, 3)} for t, (s, d) in slowest]
+    Path(out).write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
 
 
 def tool(name: str) -> str:
