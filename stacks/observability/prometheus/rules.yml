@@ -668,6 +668,31 @@ groups:
             store's own container (`observability-<job>-1`).
           dashboard: *home
           value: '{{ $value }}'
+      # A program's own tracing or a log loop sends thousands a second, where the two stores take a few to a few
+      # tens: one burst from promtool reached 17,000 spans a second (obi/obi.yaml, skip_go_specific_tracers).
+      - alert: store-flooded
+        expr: |
+          sum by (job) (
+            round(rate(vl_rows_ingested_total{job="logs"}[15m]))
+            or round(rate(vt_rows_ingested_total{job="traces"}[15m]))
+          ) > 1000
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'A store is being flooded'
+          measure: 'Taken in the last 15 min, a second'
+          unit: ''
+          harm: >-
+            The log or trace store is taking in far more than its usual load, which fills its memory and disk and
+            buries what the services wrote.
+          action: >-
+            Find the sender on Grafana's Traces page (http://grafana.internal/d/traces) or Logs page
+            (http://grafana.internal/d/logs), then stop it or leave it out in stacks/observability/obi/obi.yaml or
+            config.alloy.
+          dashboard: *home
+          value: '{{ $value }}'
 
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
   # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10

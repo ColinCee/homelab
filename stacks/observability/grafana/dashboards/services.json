@@ -1355,6 +1355,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "store-flooded"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fab219"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "backup-missed"
             },
             "properties": [
