@@ -1,0 +1,25 @@
+# The doorbell GitHub's push webhook rings through the tunnel; deploy-main (systemd/) does the deploy
+# (docs/architecture.md, "Deploys").
+services:
+  doorbell:
+    image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
+    restart: unless-stopped
+    command: ["python3", "-I", "/doorbell.py"]
+    # Root in the container, with no capabilities: Docker creates the ring folder root-owned on first deploy,
+    # before deploy-main's units exist, and only root may write to it.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ./doorbell.py:/doorbell.py:ro
+      - /home/colin/.local/state/homelab/ring:/ring
+    labels:
+      homelab.config-hash: ${CONFIG_HASH_DOORBELL:-}
+    networks:
+      - doorbell
+
+networks:
+  # cloudflared (stacks/flight-tracker) joins it; nothing else reaches the doorbell.
+  doorbell:
+    name: deploy-doorbell

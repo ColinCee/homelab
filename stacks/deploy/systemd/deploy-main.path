@@ -1,0 +1,8 @@
+[Unit]
+Description=Deploy main when the doorbell rings
+
+[Path]
+PathModified=%h/.local/state/homelab/ring/rung
+
+[Install]
+WantedBy=paths.target

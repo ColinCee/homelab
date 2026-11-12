@@ -7,15 +7,16 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## Deploys
 
-- **Merging is deploying.** A merge to `main` runs [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy
-  runner: it writes the secrets its render step names to `secrets/` and runs [`deploy.sh`](../scripts/deploy.sh) for
-  the stacks changed since the last full deploy ([`deploy.py`](../scripts/deploy.py)), and those reading a changed
-  secret: a new secret goes live at the next merge or a Deploy run by hand.
-- **Who may deploy.** The deploy runner controls the host through Docker, so the
-  [runner guard](../scripts/runner_job_guard.py) refuses every job but `deploy.yaml` from `main`, started by
-  `ColinCee` or `renovate[bot]`. It is installed root-owned and deploys never update it, so changing it takes a
-  reinstall ([recovery](recovery.md#runner-guard)). It does not stop a compromised action inside an allowed workflow:
-  actions are pinned by SHA. Admins can bypass the `main` ruleset; Renovate cannot.
+- **Merging is deploying.** GitHub's push webhook rings the [doorbell](../stacks/deploy/doorbell.py) through the
+  tunnel. [`deploy-main`](../stacks/deploy/deploy_main.py), run by the ring and every 15 minutes, fetches `main`,
+  refuses one that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for the stacks changed
+  since the last full deploy ([`deploy.py`](../scripts/deploy.py)) and those reading a changed secret, until `main`
+  stops moving. A forged ring deploys nothing new. Until it goes,
+  [`deploy.yaml`](../.github/workflows/deploy.yaml) on the deploy runner also writes `secrets/` and deploys; `deploy.py`
+  runs one deploy at a time.
+- **Who may deploy.** Whoever lands a commit on `main`. Until the deploy runner goes, the root-owned
+  [runner guard](../scripts/runner_job_guard.py) refuses its every job but `deploy.yaml` from `main` by `ColinCee` or
+  `renovate[bot]`; a change to it takes a reinstall ([recovery](recovery.md#runner-guard)).
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
     the service needs it;
@@ -23,7 +24,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
     and `init: true` when its main process ignores SIGTERM as PID 1;
   - each secret a Compose `secrets:` file from `../../secrets/`, listed in `deploy.yaml`'s render step, never in
     `environment:`, which `docker inspect` shows;
-  - `systemd/<stack>-*.service` and `.timer` pairs install as user units (the host has linger on) and write
+  - `systemd/<stack>-*.service` with a `.timer` or `.path` install as user units (the host has linger on) and write
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
   - another stack's network is joined as `external: true`.
 - **Removing a stack:** deleting its folder removes nothing from the host. Stop its timers and containers by hand,
@@ -36,8 +37,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
   ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
-- The flight tracker's API is public through Cloudflare Tunnel, an outbound connection, so filtering it belongs at
-  Cloudflare.
+- The flight tracker's API and the deploy doorbell are public through Cloudflare Tunnel, an outbound connection, so
+  filtering them belongs at Cloudflare.
 - Docker's bridge containers and the CI VMs reach the internet, not the host, LAN or tailnet: two nftables tables in
   [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft). A service that needs
   the host uses host networking, as Home Assistant, the probes and `internal-names` do.
