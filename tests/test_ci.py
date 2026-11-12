@@ -110,3 +110,13 @@ def test_the_registry_login_stays_in_the_job_s_temp_folder_and_takes_the_token_o
     assert "t0ken" not in command and kw["input"] == "t0ken"
     assert kw["env"]["DOCKER_CONFIG"] == str(tmp_path / "docker")
     assert (tmp_path / "env").read_text() == f"DOCKER_CONFIG={tmp_path / 'docker'}\n"
+
+
+def test_the_pull_request_rules_all_run_and_any_failure_fails_the_step(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ran: list[str] = []
+    for name, verdict in [("pins_only", 0), ("versions_hash", 1), ("time_limits", 0)]:
+        monkeypatch.setattr(ci, name, lambda n=name, v=verdict: ran.append(n) or v)
+    assert ci.pull_request_rules() == 1
+    assert ran == ["pins_only", "versions_hash", "time_limits"]

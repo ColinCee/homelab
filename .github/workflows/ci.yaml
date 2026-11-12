@@ -33,18 +33,10 @@ jobs:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
       # Each step's logic is in scripts/ci.py, which says why. A rule judging a pull request comes from its base commit.
-      - name: Check for an image-pin-only change
+      - name: Check the pull request's rules (pin-only change, versions.env hashes, test time limits)
         id: pins
         if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py pins-only
-
-      - name: Check versions.env hashes
-        if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py versions-hash
-
-      - name: Check the test time limits
-        if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py time-limits
+        run: python3 scripts/ci.py pull-request-rules
 
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
