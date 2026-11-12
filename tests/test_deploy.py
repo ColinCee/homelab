@@ -314,14 +314,25 @@ def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
     assert up_env["CONFIG_HASH_WEB"] == after["CONFIG_HASH_WEB"]
 
 
-def test_each_service_s_label_reads_its_own_hash() -> None:
-    # A label naming another service's hash would restart it on the wrong files, or never.
+def test_each_service_reading_files_or_secrets_has_a_label_with_its_own_hash() -> None:
+    # Without the label a changed file never restarts the service; with another's hash it restarts
+    # on the wrong files. Home Assistant's config/ is its own runtime data, which it reloads itself.
     for compose_file in (Path(__file__).parent.parent / "stacks").glob("*/compose.yaml"):
         services = yaml.safe_load(compose_file.read_text(encoding="utf-8"))["services"]
         for name, spec in services.items():
             label = (spec.get("labels") or {}).get("homelab.config-hash")
-            if label is not None:
+            reads = bool(deploy._bind_sources(spec) or spec.get("secrets"))
+            if (reads and name != "homeassistant") or label is not None:
                 assert label == "${" + deploy.hash_variable(name) + ":-}", (compose_file, name)
+
+
+def test_a_secret_listed_but_not_rendered_stops_the_deploy(tmp_path: Path) -> None:
+    stack_dir = _make_stack(tmp_path, "sample")
+    (stack_dir / "compose.yaml").write_text(
+        "services: {}\nsecrets:\n  token:\n    file: ../../secrets/token\n", encoding="utf-8"
+    )
+    with pytest.raises(deploy.DeploymentInputError, match="token; render it"):
+        deploy.discover_stack_plans(tmp_path)
 
 
 def _git(repo_root: Path, *arguments: str) -> str:

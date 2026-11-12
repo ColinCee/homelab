@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""The CI workflows' steps (.github/workflows/ci.yaml, ci-image.yaml), one subcommand each, so no
-workflow holds logic of its own.
+"""The workflows' steps (.github/workflows/), one subcommand each, so no workflow holds logic of
+its own.
 
-A rule that judges a pull request (pin_only.py, versions_hash.py, the test time limits) is read
-from the base commit, so the pull request cannot loosen the rule that judges it.
+The rules that judge a pull request (pin_only.py, versions_hash.py, the test time limits) are read
+from the base commit, so a change to one cannot judge itself. The rest of this file is the pull
+request's own, as its workflow is.
 
 Runs on GitHub's runners and in the CI VMs with their system Python: standard library only.
 """
@@ -51,11 +52,11 @@ def output(name: str, value: str) -> None:
         f.write(f"{name}={value}\n")
 
 
-def run_base_rule(script: str) -> int:
-    """Run the base commit's copy of a rule script on BASE..HEAD; 0 when the base has none."""
+def run_base_rule(script: str) -> int | None:
+    """Run the base commit's copy of a rule script on BASE..HEAD; None when the base has none."""
     text = base_file(f"scripts/{script}")
     if text is None:
-        return 0
+        return None
     with tempfile.TemporaryDirectory() as folder:
         copy = Path(folder) / script
         copy.write_text(text, encoding="utf-8")
@@ -63,7 +64,8 @@ def run_base_rule(script: str) -> int:
 
 
 def pins_only() -> int:
-    """Whether the pull request only moves image pins (pin_only.py): then only Compose runs."""
+    """Whether the pull request only moves image pins (pin_only.py): then only Compose runs. No
+    rule in the base means full checks."""
     if run_base_rule("pin_only.py") == 0:
         output("only", "true")
     return 0
@@ -75,7 +77,7 @@ def changed(paths: Sequence[str]) -> list[str]:
 
 def versions_hash() -> int:
     """A changed release in versions.env against its hash (versions_hash.py), before merge."""
-    return run_base_rule("versions_hash.py") if changed([str(VERSIONS)]) else 0
+    return (run_base_rule("versions_hash.py") or 0) if changed([str(VERSIONS)]) else 0
 
 
 def validate_changed_compose() -> int:
@@ -179,7 +181,20 @@ def build_image() -> int:
     return subprocess.run([*command, "ci-runner/rootfs"], stdout=subprocess.DEVNULL).returncode
 
 
+def ghcr_login() -> int:
+    """Log Docker in to GHCR (deploy.yaml) in the job's temp folder, which the runner deletes
+    after the job, so no registry credential stays on the host."""
+    config = Path(os.environ["RUNNER_TEMP"]) / "docker"
+    config.mkdir(parents=True, exist_ok=True)
+    with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
+        f.write(f"DOCKER_CONFIG={config}\n")
+    command = ["docker", "login", "ghcr.io", "-u", os.environ["GHCR_USER"], "--password-stdin"]
+    env = os.environ | {"DOCKER_CONFIG": str(config)}
+    return subprocess.run(command, input=os.environ["GHCR_TOKEN"], text=True, env=env).returncode
+
+
 STEPS = {
+    "ghcr-login": ghcr_login,
     "pins-only": pins_only,
     "versions-hash": versions_hash,
     "validate-changed-compose": validate_changed_compose,

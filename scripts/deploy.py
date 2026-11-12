@@ -427,9 +427,9 @@ def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
     )
     if listed.returncode != 0:
         return {hash_variable(name): "" for name in services}
-    tracked = sorted(
-        (repo_root / name.decode()).resolve() for name in filter(None, listed.stdout.split(b"\0"))
-    )
+    # Paths as git lists them, not resolved: a tracked symlink stays inside the repo.
+    tracked = sorted(Path(name.decode()) for name in filter(None, listed.stdout.split(b"\0")))
+    stack = stack_dir.relative_to(repo_root)
     secret_paths = {
         name: Path(os.path.normpath(stack_dir / spec["file"]))
         for name, spec in (compose.get("secrets") or {}).items()
@@ -437,12 +437,14 @@ def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
     }
     hashes: dict[str, str] = {}
     for name, spec in services.items():
-        sources = [(stack_dir / source).resolve() for source in _bind_sources(spec)]
+        sources = [Path(os.path.normpath(stack / source)) for source in _bind_sources(spec)]
         digest = hashlib.sha256()
         for path in tracked:
-            if path.is_file() and any(path == s or s in path.parents for s in sources):
-                digest.update(path.relative_to(repo_root).as_posix().encode() + b"\0")
-                digest.update(path.read_bytes() + b"\0")
+            if not any(path == s or s in path.parents for s in sources):
+                continue
+            if (repo_root / path).is_file():
+                digest.update(path.as_posix().encode() + b"\0")
+                digest.update((repo_root / path).read_bytes() + b"\0")
         for secret in spec.get("secrets") or []:
             source = secret if isinstance(secret, str) else secret.get("source", "")
             path = secret_paths.get(source)
