@@ -61,7 +61,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py),
   vm policy) kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
-  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (service `ci`) and alerts
+  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (service `ci`, to the millisecond) and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
   ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
