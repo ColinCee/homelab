@@ -101,6 +101,8 @@ its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post throug
   means the number recovered.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
   arm, except a job's that may not have run yet.
+- A Claude Desktop task on Colin's PC triages what fired since its last run, when the PC is on: the
+  [`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md) skill.
 - Noise budget: at most one post a day over 14 days. Before adding or loosening a rule, replay it:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
   Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink.
