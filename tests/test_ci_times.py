@@ -263,6 +263,10 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
     class Store(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             seen.append(self.headers.get("Authorization"))
+            if self.path == "/never-written":
+                self.send_response(404)
+                self.end_headers()
+                return
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b"the log")
@@ -270,12 +274,13 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
         def log_message(self, format: str, *args: object) -> None: ...
 
     store = serve(Store)
-    codes = iter([302, 404, 500, 500])
+    answers = iter([(302, "/signed"), (404, ""), (302, "/never-written"), (500, ""), (500, "")])
 
     class GitHub(http.server.BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            self.send_response(next(codes))
-            self.send_header("Location", f"{store}/signed")
+            code, path = next(answers)
+            self.send_response(code)
+            self.send_header("Location", f"{store}{path}")
             self.end_headers()
 
         def log_message(self, format: str, *args: object) -> None: ...
@@ -287,5 +292,6 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
     logs = ci_times.github_logs("secret")
     assert logs(1) == "the log" and seen == [None]
     assert logs(2) == ""  # gone
+    assert logs(3) == ""  # a skipped job's link to a log never written
     with pytest.raises(OSError):
-        logs(3)  # failing twice stops the pass
+        logs(4)  # failing twice stops the pass
