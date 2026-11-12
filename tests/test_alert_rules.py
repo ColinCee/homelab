@@ -520,6 +520,13 @@ CASES = {
 }
 
 
+def test_no_rule_reads_another_rules_result() -> None:
+    # Each case loads only the rules it checks (rule_runs), which holds only while this does.
+    text = (STACK / "prometheus/rules.yml").read_text(encoding="utf-8")
+    assert all("alert" in rule for rule in RULES.values())
+    assert "record:" not in text and "ALERTS" not in text
+
+
 @pytest.fixture(scope="module")
 def rule_runs(
     tmp_path_factory: pytest.TempPathFactory,
