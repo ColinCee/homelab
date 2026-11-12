@@ -1,6 +1,6 @@
 ---
 name: building-dashboards
-description: Edit homelab dashboards: Grafana's pages, from Git. Use when changing dashboard JSON or a panel's query.
+description: Edit or design homelab dashboards: Grafana's pages, from Git. Use when changing dashboard JSON, a panel's query, or how a page looks.
 ---
 
 # Dashboards
@@ -8,6 +8,9 @@ description: Edit homelab dashboards: Grafana's pages, from Git. Use when changi
 Grafana's pages are the files in `stacks/observability/grafana/dashboards/`, each named for its `uid`.
 Grafana reloads them every 30 s and refuses a save from the UI: edit the file. A page's link is
 `http://grafana.internal/d/<uid>`.
+
+Adding or restyling a panel or a page: read [DESIGN.md](DESIGN.md) first, for the panel each job takes,
+the shapes that hold on a wide screen, how to look at it with real data, and what was dropped.
 
 ## Pages
 
@@ -27,9 +30,7 @@ A panel goes on the page whose question it answers.
 - A collapsed row keeps its panels in its own `panels`, below its line; an open row's follow it at
   the top level.
 
-The grid is 24 columns and stretches with the screen, so look at a page at 1920 and 3840 px wide: at
-1920 a tile 4 wide holds a title of about fifteen letters. No panel has its own time range; write a
-window into the query (`[7d]`, `_time:1h`).
+No panel has its own time range; write a window into the query (`[7d]`, `_time:1h`).
 
 ## Colour and order
 
@@ -40,15 +41,14 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 | Blue, aqua, orange | Monitoring, System, Apps, and each container in its group's colour |
 | Red | A service down or stopped, any alert firing, or a tile past a `level: now` rule's threshold |
 | Amber | A tile past a `week` rule's threshold, or a warning with no rule |
-| Green | Fine: a filled tile, a dial, a history line |
-| Gray | One measure, a running service, or a series no override names |
+| Green | Fine: a filled tile, a dial, a history line, a running service |
+| Gray | One measure, or a series no override names |
 | Blue, orange, aqua, yellow | Any other series (Network, CI's runners), in that order |
 
 - A tile's colour is its thresholds: base `text` (green when filled), then a step at the rule's
   threshold (or base red or amber and a `text` step, for "under").
 - A series' colour is a field override with a fixed colour: `byName`, or for containers the two
-  `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray. A line per
-  container takes the palette instead, with a table legend sorted by its last value.
+  `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray.
 - Stacks keep a fixed order with the largest at the bottom: queries in that order, as refIds A, B, C.
 
 ## Queries
