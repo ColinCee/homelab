@@ -21,7 +21,7 @@ HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
 TEMPLATE = (STACK / "alertmanager/discord.tmpl").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
-HOME = "http://beelink.tail4f465e.ts.net:5080/d/home"
+HOME = "http://grafana.internal/d/home"
 
 
 def flat(text: str) -> str:

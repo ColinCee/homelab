@@ -36,7 +36,7 @@ groups:
             On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50
             observability-alloy-1`, then `docker compose up -d` in
             /home/colin/code/homelab/stacks/observability.
-          dashboard: &home http://beelink.tail4f465e.ts.net:5080/d/home
+          dashboard: &home http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: flight-tracker-down
         expr: |

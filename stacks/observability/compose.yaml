@@ -103,7 +103,7 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # 5080, the address alert posts, bookmarks and grafana.internal use.
+    # People use grafana.internal; only its proxy (stacks/internal-names) and the runner's load test use 5080.
     ports:
       - "100.100.146.119:5080:3000"
     mem_limit: 512m
@@ -119,8 +119,8 @@ services:
       # Encrypts the data sources' passwords in its volume, which provisioning writes again at each start, so a new key
       # needs nothing else; the default key is published.
       GF_SECURITY_SECRET_KEY__FILE: /run/secrets/grafana_secret_key
-      GF_SERVER_DOMAIN: beelink.tail4f465e.ts.net
-      GF_SERVER_ROOT_URL: http://beelink.tail4f465e.ts.net:5080
+      GF_SERVER_DOMAIN: grafana.internal
+      GF_SERVER_ROOT_URL: http://grafana.internal
       GF_SERVER_ENFORCE_DOMAIN: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "false"
       GF_USERS_ALLOW_SIGN_UP: "false"
