@@ -16,8 +16,8 @@ A panel goes on the page whose question it answers.
 | Page | Question |
 |---|---|
 | `home` | Is anything wrong? One screen, no scrolling |
-| `server` | Has the box got room? Backups too |
-| `services` | Is each service running, and what is it complaining about? Alerts too |
+| `server` | The box: has it got room? Network and backups too |
+| `services` | What runs on it: is each running, and what does it use and complain about? |
 | `ci` | Is CI fast, and is it getting slower? |
 
 - Every page carries the same `links`: each page, then Explore's logs and traces.
@@ -47,7 +47,8 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 - A tile's colour is its thresholds: base `text` (green on Home), then a step at the rule's
   threshold (or base red or amber and a `text` step, for "under").
 - A series' colour is a field override with a fixed colour: `byName`, or for containers the two
-  `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray.
+  `byRegexp` patterns by stack, which a new app stack joins. The default is fixed gray. A line per
+  container takes the palette instead, with a table legend sorted by its last value.
 - Stacks keep a fixed order with the largest at the bottom: queries in that order, as refIds A, B, C.
 
 ## Queries
@@ -59,8 +60,6 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 - A running service: the `container-stopped` rule's join of `homelab_container_expected`.
 - `homelab_ci_job_seconds` is each job's latest good run in this repo, held until the next: a median
   over it weighs hours, not runs.
-- A tile shows the last value; `graphMode: area` adds the trend.
-- A top 10 is an instant query, `sort_desc(topk(10, ...))`, in a horizontal bar gauge.
 - Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (the watchdog always fires), a
   sample a minute. A table over the time range uses `[$__range]` in instant queries, merged.
 - Logs: VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends a container's
