@@ -557,10 +557,12 @@ def test_no_rule_reads_another_rules_result() -> None:
 def rule_runs(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> dict[str, subprocess.CompletedProcess[str]]:
-    """Every case's promtool run, all at once: one after another they were most of CI's time."""
+    """Every case's promtool result. One promtool per core, each testing its share of the cases:
+    one process per case spent half its CPU starting promtool, and one after another they were
+    most of CI's time."""
     folder = tmp_path_factory.mktemp("rules")
 
-    def run(numbered: tuple[int, str]) -> subprocess.CompletedProcess[str]:
+    def write(numbered: tuple[int, str]) -> str:
         n, case = numbered
         series, checks, *rest = CASES[case]
         step = rest[0] if rest else "1m"
@@ -585,10 +587,32 @@ def rule_runs(
         }
         path = folder / f"{n}.yml"
         path.write_text(json.dumps(tests), encoding="utf-8")
-        return promtool("test", "rules", str(path))
+        return str(path)
 
-    with ThreadPoolExecutor(os.cpu_count() or 1) as pool:
-        return dict(zip(CASES, pool.map(run, enumerate(CASES)), strict=True))
+    files = [write(numbered) for numbered in enumerate(CASES)]
+    cores = os.cpu_count() or 1
+    with ThreadPoolExecutor(cores) as pool:
+        runs = list(
+            pool.map(
+                lambda share: promtool("test", "rules", *share),
+                (files[i::cores] for i in range(cores)),
+            )
+        )
+    # promtool reports each file in turn: "Processing test file: <file>", then SUCCESS or FAILED.
+    found = {}
+    for ran in runs:
+        for part in ran.stdout.split("Processing test file: ")[1:]:
+            name, _, report = part.partition("\n")
+            found[name.strip()] = report + ran.stderr
+    return {
+        case: subprocess.CompletedProcess(
+            ["promtool"],
+            0 if found.get(path, "").lstrip().startswith("SUCCESS") else 1,
+            found.get(path, "no result"),
+            "",
+        )
+        for case, path in zip(CASES, files, strict=True)
+    }
 
 
 @pytest.mark.parametrize("case", CASES)
