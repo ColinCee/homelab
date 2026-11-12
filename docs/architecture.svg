@@ -19,7 +19,7 @@
   <rect class="ext" x="20" y="20" width="260" height="70" rx="8"/>
   <text class="t" x="150" y="46">GitHub</text>
   <text class="s" x="150" y="64">PR, CI (Colin's in the VMs), merge</text>
-  <text class="s" x="150" y="80">Colin and Renovate merge to main</text>
+  <text class="s" x="150" y="80">a merge rings the Beelink</text>
 
   <rect class="ext" x="350" y="20" width="260" height="70" rx="8"/>
   <text class="t" x="480" y="46">Colin's devices</text>
@@ -34,8 +34,8 @@
   <text class="l" x="924" y="140" text-anchor="end" font-weight="600">Beelink: Ubuntu, Docker</text>
 
   <rect class="box" x="40" y="160" width="200" height="70" rx="6"/>
-  <text class="t" x="140" y="184">deploy-main</text>
-  <text class="s" x="140" y="202">fetches main on a ring and</text>
+  <text class="t" x="140" y="184">deploy</text>
+  <text class="s" x="140" y="202">on a ring, fetches main and</text>
   <text class="s" x="140" y="218">applies the changed stacks</text>
 
   <rect class="box" x="40" y="260" width="200" height="90" rx="6"/>
@@ -59,9 +59,13 @@
   <text class="t" x="520" y="211">internal-names</text>
   <text class="s" x="520" y="228">.internal DNS and proxy</text>
 
+  <rect class="box" x="610" y="190" width="135" height="50" rx="6"/>
+  <text class="t" x="677" y="211">tunnel</text>
+  <text class="s" x="677" y="228">cloudflared</text>
+
   <rect class="box" x="760" y="190" width="145" height="50" rx="6"/>
   <text class="t" x="832" y="211">flight-tracker</text>
-  <text class="s" x="832" y="228">and cloudflared</text>
+  <text class="s" x="832" y="228">public API</text>
 
   <rect class="box" x="290" y="270" width="140" height="50" rx="6"/>
   <text class="t" x="360" y="291">backup</text>
@@ -102,14 +106,17 @@
   <text class="s" x="875" y="566">emails if pings stop</text>
 
   <!-- Arrows -->
-  <path class="arrow" d="M140,90 V158"/>
-  <text class="l" x="148" y="110">merge deploys</text>
+  <path class="arrow" d="M140,158 V92"/>
+  <text class="l" x="148" y="110">fetches main</text>
+  <path class="arrow" d="M640,188 V150 H200 V158"/>
+  <text class="l" x="400" y="144">ring</text>
   <path class="arrow" d="M30,90 V305 H38"/>
   <path class="arrow" d="M240,215 H288"/>
   <path class="arrow" d="M520,90 V188"/>
   <text class="l" x="528" y="110">admin pages</text>
-  <path class="arrow" d="M832,90 V188"/>
-  <text class="l" x="824" y="110" text-anchor="end">Cloudflare Tunnel</text>
+  <path class="arrow" d="M710,90 V188"/>
+  <text class="l" x="718" y="110">Cloudflare Tunnel</text>
+  <path class="arrow" d="M745,215 H758"/>
   <path class="arrow" d="M545,305 H563"/>
   <path class="arrow" d="M545,340 H563"/>
   <path class="arrow" d="M360,320 V518"/>

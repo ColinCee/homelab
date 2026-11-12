@@ -56,7 +56,7 @@ groups:
             stale.
           action: >-
             Check `docker logs --tail 50 flight-tracker-backend-1` (upstream 403 or 429?) and `docker logs
-            --tail 50 flight-tracker-cloudflared-1`.
+            --tail 50 tunnel-cloudflared-1`.
           dashboard: *home
           value: '{{ $value }}'
       # `up` too, so a stopped blackbox reads as down rather than as nothing.

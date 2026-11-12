@@ -20,12 +20,11 @@ services:
       - /home/colin/.local/state/homelab/ring:/ring
     labels:
       homelab.config-hash: ${CONFIG_HASH_DOORBELL:-}
+    # Only the tunnel's network, which has no way out: deploy.colincheung.dev/ring reaches it as doorbell:8080.
     networks:
-      - doorbell
+      - tunnel
 
 networks:
-  # cloudflared (stacks/flight-tracker) joins it; nothing else reaches the doorbell.
-  doorbell:
-    name: deploy-doorbell
-    # The doorbell needs no way out.
-    internal: true
+  # Owned by the tunnel stack.
+  tunnel:
+    external: true

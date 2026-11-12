@@ -373,12 +373,12 @@ prometheus.scrape "traces" {
 }
 
 // ================================
-// Flight Tracker's tunnel (cloudflared)
+// The tunnel (cloudflared, stacks/tunnel)
 // ================================
 
 // Its own metrics: requests through the tunnel and its connections to Cloudflare.
 prometheus.scrape "cloudflared" {
-  targets         = [{ __address__ = "flight-tracker-cloudflared-1:2000" }]
+  targets         = [{ __address__ = "tunnel-cloudflared-1:2000" }]
   job_name        = "cloudflared"
   scrape_interval = "15s"
   forward_to      = [prometheus.remote_write.default.receiver]

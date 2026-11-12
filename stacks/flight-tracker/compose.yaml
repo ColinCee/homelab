@@ -12,39 +12,14 @@ services:
       - CORS_ORIGINS=${CORS_ORIGINS:-https://flight-tracker-at-home.pages.dev}
       - CACHE_TTL=${CACHE_TTL:-10}
       - HEATMAP_DB_PATH=/app/data/historical_heatmap.parquet
-
-  cloudflared:
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    # Its metrics for the observability stack's Alloy, which reaches it on observability-otlp.
-    command: ["tunnel", "--metrics", "0.0.0.0:2000", "run"]
-    environment:
-      TUNNEL_TOKEN_FILE: /run/secrets/tunnel_token
-    secrets:
-      - tunnel_token
-    labels:
-      homelab.config-hash: ${CONFIG_HASH_CLOUDFLARED:-}
-    depends_on:
-      - backend
-    # deploy-doorbell: the tunnel also carries GitHub's ring to the deploy stack's doorbell.
+    # default: its way out to the flight data it serves; tunnel: api.colincheung.dev reaches it as backend:8000.
     networks:
       - default
-      - observability-otlp
-      - deploy-doorbell
-
-# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
-secrets:
-  tunnel_token:
-    file: ../../secrets/cf_tunnel_token
+      - tunnel
 
 networks:
-  # Owned by the observability stack; deploy it first on a fresh host.
-  observability-otlp:
-    external: true
-  # Owned by the deploy stack.
-  deploy-doorbell:
+  # Owned by the tunnel stack.
+  tunnel:
     external: true
 
 volumes:

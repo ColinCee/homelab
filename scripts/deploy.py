@@ -169,16 +169,17 @@ def changed_first(
     """Move the stacks changed since ``since`` to the front, so the push's change goes live first.
 
     A changed stack still comes after any stack that creates a network or volume it uses as
-    external, so a fresh host can create it first. The old order stays when git does not know
-    ``since`` or Compose cannot describe a stack.
+    external, so a fresh host can create it first. When git does not know ``since`` (a fresh
+    host), every stack counts as changed. The old order stays when Compose cannot describe one.
     """
     paths = _changed_paths(repo_root, since)
-    changed = set(_stacks_in(repo_root, paths)) if paths is not None else set()
-    if not changed & {plan.name for plan in plans}:
+    names = {plan.name for plan in plans}
+    changed = set(_stacks_in(repo_root, paths)) if paths is not None else names
+    if not changed & names:
         return tuple(plans)
     try:
         resources = {plan.name: _shared_resources(repo_root, plan, runner) for plan in plans}
-    except (OSError, ValueError, subprocess.CalledProcessError):
+    except (OSError, TypeError, ValueError, subprocess.CalledProcessError):
         return tuple(plans)
 
     ordered: list[str] = []
@@ -702,7 +703,7 @@ def run(
 
     try:
         plans = discover_stack_plans(repo_root, selected) if selected != () else ()
-        if first_changed_since and plans:
+        if plans:
             plans = changed_first(repo_root, plans, first_changed_since, runner=runner)
             print("In order: " + ", ".join(plan.name for plan in plans), flush=True)
         report = (

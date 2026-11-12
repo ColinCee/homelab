@@ -532,9 +532,12 @@ def test_a_changed_stack_waits_for_the_stacks_creating_what_it_uses(stacks: Path
 
 
 @pytest.mark.parametrize("since", ["", "0" * 40])
-def test_an_unknown_before_commit_keeps_the_name_order(stacks: Path, since: str) -> None:
+def test_with_no_known_before_commit_each_stack_waits_for_what_it_uses(
+    stacks: Path, since: str
+) -> None:
+    # A fresh host: every stack is new, and still needs the networks and volumes of others.
     runner, calls = _describing_runner()
 
     assert deploy.run(stacks, (), first_changed_since=since, runner=runner) == 0
 
-    assert _up_order(calls) == ["backup", "gateway", "observability", "web"]
+    assert _up_order(calls) == ["gateway", "observability", "backup", "web"]

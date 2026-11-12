@@ -7,8 +7,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## Deploys
 
-- **Merging is deploying.** GitHub's push webhook (no secret) rings the [doorbell](../stacks/deploy/doorbell.py)
-  through the tunnel's `/ring` route to `http://doorbell:8080`, both set by hand.
+- **Merging is deploying.** GitHub's push webhook (no secret, set by hand) rings the
+  [doorbell](../stacks/deploy/doorbell.py) through the tunnel.
   [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
   that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
   full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. A forged
@@ -34,8 +34,9 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
   ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
-- The flight tracker's API and the deploy doorbell are public through Cloudflare Tunnel, an outbound connection, so
-  filtering them belongs at Cloudflare.
+- Public only through the [tunnel](../stacks/tunnel/compose.yaml), an outbound connection: routes set in Cloudflare's
+  dashboard take `api.colincheung.dev` to `backend:8000` and `deploy.colincheung.dev/ring` to `doorbell:8080` on the
+  `tunnel` network, which has no way out. Filtering belongs at Cloudflare.
 - Docker's bridge containers and the CI VMs reach the internet, not the host, LAN or tailnet: two nftables tables in
   [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft). A service that needs
   the host uses host networking, as Home Assistant, the probes and `internal-names` do.
@@ -59,7 +60,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py))
   kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
-  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (each level its own service: `ci`, `ci job`, `ci step`, `ci task`, `ci test`; to the millisecond) and alerts
+  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each run and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
   ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
