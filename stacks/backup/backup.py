@@ -42,7 +42,7 @@ MAX_REPO_BYTES = 8_000_000_000
 METRICS_FILE = "/metrics/backup.prom"
 # The last run's failing step, for the alert to name; removed by the next good run.
 FAILURE_FILE = "/metrics/backup-failure.prom"
-# Home's Backups row reads this, not the log, for the same reason.
+# The Server page's Backups row reads this, not the log, for the same reason.
 DEEP_CHECK_FILE = "/metrics/backup-deep-check.prom"
 # The Backup storage nearly full alert reads it.
 SIZE_FILE = "/metrics/backup-size.prom"

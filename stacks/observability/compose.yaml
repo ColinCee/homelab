@@ -147,7 +147,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
-      - ./grafana/home.json:/var/lib/grafana/dashboards/home.json:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     # Shared with the gateway and grafana-users only, so no data source can reach a store directly.
     networks:
       - grafana
