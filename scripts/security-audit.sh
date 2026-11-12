@@ -54,7 +54,7 @@ cat /sys/kernel/mm/ksm/run
 sudo nft list table inet homelab_ci | head -3
 sudo nft list table inet homelab_wall | head -3
 # ci-runner/tests/audit.sh needs the CI supervisor stopped, so it runs after upgrades, not here.
-sudo bash ci-runner/tests/test-wall.sh
+sudo ci-runner/tests/test-wall.sh
 
 if gh auth status >/dev/null 2>&1; then
   section "GitHub: runners, collaborators, hooks, deploy keys"
