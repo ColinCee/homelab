@@ -122,7 +122,7 @@ RUNNER_PREFIX = "fc-"
 # green push to its default branch leaves on its VM's outbox disk (docs/architecture.md,
 # "CI runner").
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
-# / is shared with everything. run-vm.sh sizes the outbox to this and its header.
+# / is shared with everything. run_vm.py sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
 # Each VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json), kept
 # after the VM until judged. Not through GitHub artifacts: they count against the account's
@@ -934,7 +934,7 @@ def vm_main(argv: list[str]) -> int:
     parser.add_argument("timeout")
     parser.add_argument("--memory", type=Path)
     args = parser.parse_args(argv)
-    # Stopping the unit signals every process in it: run-vm.sh cleans up on its own, and this
+    # Stopping the unit signals every process in it: run_vm.py cleans up on its own, and this
     # reader keeps reading until it has (a closed pipe would cut its cleanup short).
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     process = subprocess.Popen(
@@ -1056,7 +1056,7 @@ def on_its_way(gh: GitHubApi, run: Launch, now: float, queued_for_want: int) -> 
 def stop(run: Launch, why: str) -> None:
     log(f"slot {run.slot}: {run.runner_name} {why}, stopping it")
     subprocess.run(["systemctl", "stop", "--no-block", run.unit], check=False, timeout=30)
-    # Do not rely on run-vm.sh's trap alone: the VM lives in its own cgroup.
+    # Do not rely on run_vm.py's trap alone: the VM lives in its own cgroup.
     kill = CGROUP_ROOT / f"ci-slot{run.slot}" / "cgroup.kill"
     if kill.exists():
         kill.write_text("1")

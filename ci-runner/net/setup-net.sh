@@ -4,7 +4,7 @@
 # accept Docker's FORWARD chain needs. Idempotent; run by homelab-ci-net.service
 # after Docker.
 #   setup-net.sh [up|down|wan]
-# "wan" refreshes the blocked public address; run-vm.sh calls it before each VM.
+# "wan" refreshes the blocked public address; run_vm.py calls it before each VM.
 set -euo pipefail
 
 # The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
@@ -24,7 +24,7 @@ accept_rules() {
 
 public_address() {
   local wan
-  # A few tries: one slow answer should not cost a VM (run-vm.sh refuses to start without it).
+  # A few tries: one slow answer should not cost a VM (run_vm.py refuses to start without it).
   wan=$(curl -4 -sf -m 3 --retry 3 --retry-all-errors --retry-delay 1 https://1.1.1.1/cdn-cgi/trace | sed -n 's/^ip=//p')
   [[ "$wan" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || { echo "cannot find the public address" >&2; return 1; }
   echo "$wan"
@@ -63,7 +63,7 @@ esac
 
 # The rules load first, with any public address already loaded, so running VMs never see
 # the blocked address set empty and the container wall is up before the slow address lookup.
-# On a first start run-vm.sh refuses VMs until the address is set.
+# On a first start run_vm.py refuses VMs until the address is set.
 # Every fc-slot user that exists, not the slot count, so a user left from a larger
 # count stays walled off too.
 uids=$(getent passwd | awk -F: '$1 ~ /^fc-slot[0-9]+$/ {print $3}' | paste -sd, -)
@@ -78,7 +78,7 @@ wan=$( (nft list set inet homelab_ci wan4; nft list set inet homelab_wall wan4) 
   [[ -z $uids ]] || echo "add element inet homelab_ci slot_uids { $uids }"
   [[ -z $resolvers ]] || echo "add element inet homelab_wall resolvers { $resolvers }"
 } | nft -f -
-refresh_wan || echo "public address not refreshed: ${wan:-none} kept; run-vm.sh refreshes it before each VM" >&2
+refresh_wan || echo "public address not refreshed: ${wan:-none} kept; run_vm.py refreshes it before each VM" >&2
 [[ -n "$uplink" ]] || { echo "no default route" >&2; exit 1; }
 
 for ((n = 0; n < SLOTS; n++)); do

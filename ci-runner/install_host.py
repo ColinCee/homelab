@@ -180,9 +180,13 @@ def install_vm_files(host: Host, here: Path) -> None:
     get them, running ones keep the copies they opened (install writes a new file, never the old
     one in place)."""
     install_dirs(host, "0755", DEST, f"{DEST}/net")
-    install(host, "0644", here / "vm-disks.sh", f"{DEST}/vm-disks.sh")
+    # The Python first: a new wrapper runs only what is already there.
+    for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
+        install(host, "0644", here / name, f"{DEST}/{name}")
     install(host, "0755", here / "run-vm.sh", f"{DEST}/run-vm.sh")
     install(host, "0755", here / "stop-vms.sh", f"{DEST}/stop-vms.sh")
+    # After the new wrappers: a VM started before them runs the old run-vm.sh, which sources it.
+    host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
     # Before its wrapper, which the timer may start at any time.
     install(host, "0644", here / "update.py", f"{DEST}/update.py")
     install(host, "0755", here / "update.sh", f"{DEST}/update.sh")
@@ -250,7 +254,7 @@ class Supervisor:
 def install_locked(host: Host, here: Path, slots: int, supervisor: Supervisor) -> None:
     dest = host.path(DEST)
     # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
-    # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
+    # Outboxes are hard-linked into the jails (run_vm.py), so they share their filesystem.
     install_dirs(host, "0755", "/var/lib/homelab-ci/caches")
     install_dirs(host, "0700", "/var/lib/homelab-ci/outbox")
     # The SSD is trimmed hourly (the reason is in the file). Restarted only when it changes,
