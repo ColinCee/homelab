@@ -11,7 +11,7 @@ on:
 permissions:
   contents: read
 
-# A newer push to a pull request cancels its older run, freeing a CI VM; each main push runs to the end.
+# A pull request's newer push or label change cancels its older run, freeing a CI VM; each main push runs to the end.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
