@@ -1,9 +1,11 @@
 """A CI VM's boot path (ci-runner/run_vm.py, vm_disks.py, stop_vms.py), through its seam: every
 command is recorded, and files go under tmp_path."""
 
+import dataclasses
 import fcntl
 import json
 import os
+import signal
 import stat
 import subprocess
 from collections.abc import Callable, Sequence
@@ -47,6 +49,33 @@ class Recorder:
         return [c for c in self.calls if " ".join(c).startswith(start)]
 
 
+class Jailer:
+    """The jailer as the run sees it: it ends by itself with `code`, or, when the box hangs it,
+    only once it is killed."""
+
+    def __init__(self, box: Box, code: int) -> None:
+        self.box = box
+        self.code = code
+
+    def killed(self) -> bool:
+        box = self.box
+        return (
+            (box.cgroup / "cgroup.kill").exists()
+            or signal.SIGKILL in box.group_signals
+            or (signal.SIGTERM in box.group_signals and not box.survives_sigterm)
+        )
+
+    def wait(self, timeout: float) -> int:
+        if self.box.on_wait:
+            self.box.on_wait()
+        if self.box.hang and not self.killed():
+            raise subprocess.TimeoutExpired("jailer", timeout)
+        return self.code
+
+    def kill_group(self, signum: int) -> None:
+        self.box.group_signals.append(signum)
+
+
 class Box:
     """A host for slot 3 under tmp_path, with images, a metadata file and a recorder."""
 
@@ -71,10 +100,22 @@ class Box:
             "dmsetup info -c --noheadings -o major,minor ci-slot3-root": (0, "253:7\n"),
             "dmsetup info -c --noheadings -o major,minor ci-slot3-cache": (0, "253:8\n"),
         }
+        self.cgroup = self.root / "sys/fs/cgroup/firecracker/ci-slot3"
+        self.hang = False
+        self.survives_sigterm = False
+        self.on_wait: Callable[[], None] | None = None
+        self.group_signals: list[int] = []
         self.run = Recorder(self.answers, {"timeout ": self.look})
         self.host = Host(
-            run=self.run, root=self.root, sleep=lambda _: None, root_ids=(os.getuid(), os.getgid())
+            run=self.run,
+            spawn=self.spawn,
+            root=self.root,
+            sleep=lambda _: None,
+            root_ids=(os.getuid(), os.getgid()),
         )
+
+    def spawn(self, command: Sequence[str]) -> Jailer:
+        return Jailer(self, self.run(command).returncode)
 
     def look(self) -> None:
         """What the jailer would find, while it runs."""
@@ -258,22 +299,98 @@ def test_guest_args_are_appended_to_the_boot_line(box: Box) -> None:
     assert boot.endswith("ci.gw=10.200.3.1 mitigations=off foo.bar=1")
 
 
-def test_a_stop_signal_waits_for_the_vm_then_cleans_up(
+def stop_during_the_run(box: Box, *, cgroup: bool = True) -> run_vm.Signals:
+    """A VM that runs until killed, and a stop signal that arrives while it runs. Its cgroup is
+    made once the run is under way: the run clears any left from before."""
+    signals = run_vm.Signals()
+    box.hang = True
+
+    def stop() -> None:
+        if cgroup:
+            box.cgroup.mkdir(parents=True, exist_ok=True)
+        signals.catch(signal.SIGTERM, None)
+
+    box.on_wait = stop
+    return signals
+
+
+def test_a_stop_signal_kills_the_running_vm_at_once_and_cleans_up(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    signals = run_vm.Signals()
+    signals = stop_during_the_run(box)
 
-    def stopped_while_running() -> None:
-        box.look()
-        signals.catch(15, None)
-
-    box.run.hooks["timeout "] = stopped_while_running
-
-    assert box.main(signals=signals) == 128 + 15
+    assert box.main(signals=signals) == 128 + signal.SIGTERM
 
     assert "VM ended (stopped)" in capsys.readouterr().err
+    assert box.group_signals == []
     assert not box.metadata.exists()
     assert not (box.root / "srv/jailer/firecracker/ci-slot3").exists()
+    assert (box.cgroup / "cgroup.kill").read_text() == "1\n"
+
+
+def test_a_vm_that_survives_its_cgroup_kill_gets_sigterm_then_sigkill(box: Box) -> None:
+    signals = stop_during_the_run(box, cgroup=False)  # nothing to write the kill to
+    box.survives_sigterm = True
+
+    assert box.main(signals=signals) == 128 + signal.SIGTERM
+
+    assert box.group_signals == [signal.SIGTERM, signal.SIGKILL]
+    assert not (box.root / "srv/jailer/firecracker/ci-slot3").exists()
+
+
+@pytest.mark.parametrize("name", ["VCPUS", "MEM_MIB"])
+@pytest.mark.parametrize("value", ["two", "0", "-1", "2.5"])
+def test_a_bad_vcpus_or_memory_stops_the_boot(box: Box, name: str, value: str) -> None:
+    assert box.main({name: value}) == 2
+    assert not box.run.ran("dmsetup create")
+    assert box.metadata.exists()
+
+
+def test_a_signal_between_the_loops_and_their_mark_leaves_none_behind(box: Box) -> None:
+    signals = run_vm.Signals()
+    box.host = dataclasses.replace(box.host, run=signals.checked(box.run))
+    box.run.hooks["dmsetup create"] = lambda: signals.catch(signal.SIGTERM, None)
+    node = box.root / "node"
+
+    with pytest.raises(vm_disks.Failed) as stopped:
+        vm_disks.attach_disk(
+            box.host, 3, "root", box.root / "var/lib/homelab-ci/images/vmlinuz", node
+        )
+
+    assert stopped.value.status == 128 + signal.SIGTERM
+    assert ["dmsetup", "remove", "--retry", "ci-slot3-root"] in box.run.calls
+    assert ["losetup", "-d", "/dev/loop1", "/dev/loop2"] in box.run.calls
+    assert list(box.host.cow_dir.iterdir()) == []
+
+
+def test_a_marked_snapshot_is_removed_not_its_loops_by_name(box: Box) -> None:
+    box.answers["mknod"] = (1, "")
+    image = box.root / "var/lib/homelab-ci/images/vmlinuz"
+
+    with pytest.raises(vm_disks.Failed):
+        vm_disks.attach_disk(box.host, 3, "root", image, box.root / "node")
+
+    assert box.run.ran("dmsetup remove --retry ci-slot3-root")
+    # Once, to mark them: the numbers may be another slot's by the time the snapshot is gone.
+    assert len(box.run.ran("losetup -d")) == 1
+
+
+def test_the_slots_files_go_even_if_the_end_line_cannot_be_printed(
+    box: Box, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jail = box.root / "srv/jailer/firecracker/ci-slot3"
+    jail.mkdir(parents=True)
+
+    def broken(*_: object, **__: object) -> None:
+        raise BrokenPipeError
+
+    monkeypatch.setattr(run_vm, "end_line", broken)
+
+    with pytest.raises(BrokenPipeError):
+        run_vm.cleanup(run_vm.Slot(3, box.host), run_vm.End("exit 0", 0, 2048, ""))
+
+    assert box.run.ran("dmsetup ls")
+    assert not jail.exists()
 
 
 def end_line_host(tmp_path: Path, stat_text: str | None) -> Host:

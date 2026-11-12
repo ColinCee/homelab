@@ -35,7 +35,7 @@ def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path: Path) -> N
     assert pack(tmp_path / "cache", tmp_path / "work").returncode == 0
     other, outbox = tmp_path / "vdb", tmp_path / "vdc"
     other.write_bytes(b"\0" * 4096)  # the cache disk: an ext4 starts with zeros
-    outbox.write_bytes(b"homelab-ci-outbox\n".ljust(1 << 20, b"\0"))  # as run-vm.sh makes it
+    outbox.write_bytes(b"homelab-ci-outbox\n".ljust(1 << 20, b"\0"))  # as run_vm.py makes it
 
     result = save(tmp_path / "cache.tar", other, outbox)
 

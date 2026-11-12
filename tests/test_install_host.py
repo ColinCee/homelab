@@ -98,6 +98,10 @@ def installed_host(root: Path) -> Recorder:
     return Recorder(active=True)
 
 
+def installed_at(recorder: Recorder, dst: Path) -> int:
+    return next(i for i, c in enumerate(recorder.calls) if c[-1] == str(dst))
+
+
 def restarted(recorder: Recorder) -> bool:
     return recorder.ran("systemctl", "stop", SERVICE)
 
@@ -116,7 +120,8 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     assert (root / "etc/homelab-ci/slots").read_text() == "5\n"
     assert (root / "etc/homelab-ci").stat().st_mode & 0o777 == 0o700
     assert (dest / "ci_supervisor.py").stat().st_mode & 0o777 == 0o755
-    assert (dest / "vm-disks.sh").stat().st_mode & 0o777 == 0o644
+    for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
+        assert (dest / name).stat().st_mode & 0o777 == 0o644
     assert (dest / "update.py").read_bytes() == (CI_RUNNER / "update.py").read_bytes()
     assert (root / "sys/kernel/mm/ksm/run").read_text() == "0\n"
     assert {f"fc-slot{n}" for n in range(5)} | {"homelab-facts"} == recorder.users
@@ -132,20 +137,20 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     recorder = installed_host(root)
     capsys.readouterr()
 
+    stale = root / "usr/local/lib/homelab-ci/vm-disks.sh"
+    stale.write_text("old")
     install(root, recorder)
 
     assert not restarted(recorder)
     assert not any(c[-1] == "up" for c in recorder.calls)
     dest = root / "usr/local/lib/homelab-ci"
     assert recorder.installed(dest / "run-vm.sh")
+    assert not (dest / "vm-disks.sh").exists()
+    # Each wrapper is installed after the Python it runs.
+    for py, sh in (("run_vm.py", "run-vm.sh"), ("stop_vms.py", "stop-vms.sh")):
+        assert installed_at(recorder, dest / py) < installed_at(recorder, dest / sh)
     # The wrapper the timer starts is never installed before the file it runs.
-    update_py = recorder.calls.index(
-        next(c for c in recorder.calls if c[-1] == str(dest / "update.py"))
-    )
-    update_sh = recorder.calls.index(
-        next(c for c in recorder.calls if c[-1] == str(dest / "update.sh"))
-    )
-    assert update_py < update_sh
+    assert installed_at(recorder, dest / "update.py") < installed_at(recorder, dest / "update.sh")
     assert "installed while jobs ran, no restart needed." in capsys.readouterr().out
 
 

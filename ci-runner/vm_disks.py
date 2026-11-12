@@ -7,6 +7,7 @@ Used by run_vm.py and stop_vms.py, as root.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -40,11 +41,37 @@ def run_command(
     )
 
 
+class Process(Protocol):
+    """A command still running: `wait` raises subprocess.TimeoutExpired when it has not ended."""
+
+    def wait(self, timeout: float) -> int: ...
+
+    def kill_group(self, signum: int) -> None: ...
+
+
+class Spawned:
+    """A command in a process group of its own, so a signal reaches what it started too."""
+
+    def __init__(self, command: Sequence[str]) -> None:
+        self.popen = subprocess.Popen(
+            list(command), stdin=subprocess.DEVNULL, start_new_session=True
+        )
+
+    def wait(self, timeout: float) -> int:
+        return self.popen.wait(timeout)
+
+    def kill_group(self, signum: int) -> None:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(self.popen.pid, signum)
+
+
 @dataclass(frozen=True)
 class Host:
-    """The side effects: commands through `run`, files under `root`."""
+    """The side effects: commands through `run` (to their end) or `spawn` (left running), files
+    under `root`."""
 
     run: Run = run_command
+    spawn: Callable[[Sequence[str]], Process] = Spawned
     root: Path = Path("/")
     sleep: Callable[[float], None] = time.sleep
     # Who owns what this makes: root, or a test's own user.
@@ -91,31 +118,39 @@ def attach_disk(host: Host, slot: int, name: str, image: Path, node: Path) -> No
     fd, cow_name = tempfile.mkstemp(prefix=f"slot{slot}-{name}.", dir=host.cow_dir)
     os.close(fd)
     cow = Path(cow_name)
-    # As big as the image, so it can hold every block the VM writes; sparse, so it only
-    # takes what is written. The page cache keeps one copy of the image for all VMs.
-    os.truncate(cow, (image.stat().st_size + 511) // 512 * 512)
-    base = check(host, ["losetup", "--find", "--show", "--read-only", str(image)], out=True)
-    cowdev = host.run(["losetup", "--find", "--show", str(cow)], out=True)
-    if cowdev.returncode != 0:
-        host.run(["losetup", "-d", base])
-        raise Failed(1)
-    loops = [base, cowdev.stdout.strip()]
-    cow.unlink(missing_ok=True)
-    sectors = host.run(["blockdev", "--getsz", base], out=True)
-    if sectors.returncode != 0:
-        host.run(["losetup", "-d", *loops])
-        raise Failed(sectors.returncode)
-    # Non-persistent (N), 4 KiB chunks: the ext4 block size.
-    table = f"0 {sectors.stdout.strip()} snapshot {base} {loops[1]} N 8"
-    if host.run(["dmsetup", "create", dm, "--table", table]).returncode != 0:
-        host.run(["losetup", "-d", *loops])
-        raise Failed(1)
-    # Held by the snapshot, so this only marks the loops to detach once it is removed.
-    check(host, ["losetup", "-d", *loops])
-    major, minor = check(
-        host, ["dmsetup", "info", "-c", "--noheadings", "-o", "major,minor", dm], out=True
-    ).split(":")
-    check(host, ["mknod", "-m", "0600", str(node), "b", major, minor])
+    loops: list[str] = []
+    created = marked = False
+    try:
+        # As big as the image, so it can hold every block the VM writes; sparse, so it only
+        # takes what is written. The page cache keeps one copy of the image for all VMs.
+        os.truncate(cow, (image.stat().st_size + 511) // 512 * 512)
+        base = check(host, ["losetup", "--find", "--show", "--read-only", str(image)], out=True)
+        loops.append(base)
+        loops.append(check(host, ["losetup", "--find", "--show", str(cow)], out=True))
+        cow.unlink(missing_ok=True)
+        sectors = check(host, ["blockdev", "--getsz", base], out=True)
+        # Non-persistent (N), 4 KiB chunks: the ext4 block size.
+        table = f"0 {sectors} snapshot {base} {loops[1]} N 8"
+        created = True  # even if create fails midway, removing a missing device is harmless
+        check(host, ["dmsetup", "create", dm, "--table", table])
+        # Held by the snapshot, so this only marks the loops to detach once it is removed.
+        marked = True
+        check(host, ["losetup", "-d", *loops])
+        major, minor = check(
+            host, ["dmsetup", "info", "-c", "--noheadings", "-o", "major,minor", dm], out=True
+        ).split(":")
+        check(host, ["mknod", "-m", "0600", str(node), "b", major, minor])
+    except BaseException:
+        # Each command still runs when a signal makes the run fail the one before. Marked loops
+        # go with the snapshot: detaching them by name could hit a number another slot has taken.
+        undo = [["dmsetup", "remove", "--retry", dm]] if created else []
+        if not marked and loops:
+            undo.append(["losetup", "-d", *loops])
+        for command in undo:
+            with contextlib.suppress(Failed):
+                host.run(command, quiet=True)
+        cow.unlink(missing_ok=True)
+        raise
 
 
 def detach_disks(host: Host, slot: int | None) -> bool:

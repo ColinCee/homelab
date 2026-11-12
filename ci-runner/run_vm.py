@@ -22,7 +22,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
 
-from vm_disks import Failed, Host, Run, attach_disk, check, detach_disks, make_dir, written_bytes
+from vm_disks import (
+    Failed,
+    Host,
+    Process,
+    Run,
+    attach_disk,
+    check,
+    detach_disks,
+    make_dir,
+    written_bytes,
+)
 
 USAGE = "usage: run-vm.sh SLOT METADATA_JSON [TIMEOUT]"
 HERE = Path(__file__).parent
@@ -42,8 +52,9 @@ GUEST_ARGS = re.compile(r"[a-z0-9=_,. -]*")
 
 
 class Signals:
-    """A stop signal is held, not raised, so a command is never cut short: like a shell, the run
-    ends after the command it came in, and the cleanup always runs."""
+    """A stop signal is held, not raised, so a setup command is never cut short: the run ends
+    after the command it came in, and the cleanup always runs. The jailer is the exception
+    (`run_jailer`): it can run for the job's whole timeout, so a signal kills the VM at once."""
 
     def __init__(self) -> None:
         self.pending: int | None = None
@@ -155,11 +166,15 @@ def cleanup(slot: Slot, end: End | None) -> None:
                 break
             except OSError:
                 host.sleep(0.1)
-    if end:
-        # What it wrote to the SSD too, to find the VMs that wear it most.
-        print(end_line(host, slot.number, end), file=sys.stderr, flush=True)
-    detach_disks(host, slot.number)
-    shutil.rmtree(slot.jail / "firecracker" / slot.id, ignore_errors=True)
+    try:
+        if end:
+            # What it wrote to the SSD too, to find the VMs that wear it most.
+            print(end_line(host, slot.number, end), file=sys.stderr, flush=True)
+    finally:
+        try:
+            detach_disks(host, slot.number)
+        finally:
+            shutil.rmtree(slot.jail / "firecracker" / slot.id, ignore_errors=True)
 
 
 def copy(source: Path, target: Path, mode: int) -> None:
@@ -256,7 +271,42 @@ def jailer_command(slot: Slot, job: Job) -> list[str]:
     ]  # fmt: skip
 
 
-def boot(slot: Slot, job: Job, ended: list[End]) -> int:
+GRACE_SECONDS = 5
+
+
+def stop_process(slot: Slot, process: Process) -> None:
+    """Kill the VM now. Firecracker is not in the unit's cgroup (the jailer moves it into the
+    slot's own), so stopping the unit does not reach it: kill that cgroup, and if the jailer is
+    still there, its process group."""
+    with contextlib.suppress(OSError):
+        (slot.cgroup / "cgroup.kill").write_text("1\n")
+    for signum in (None, signal.SIGTERM, signal.SIGKILL):
+        if signum is not None:
+            process.kill_group(signum)
+        try:
+            process.wait(GRACE_SECONDS)
+        except subprocess.TimeoutExpired:
+            continue
+        return
+
+
+def run_jailer(slot: Slot, job: Job, signals: Signals) -> int:
+    """Run the jailer to its end and return its exit status; a stop signal kills the VM and fails
+    the run as it does any other command."""
+    process = slot.host.spawn(jailer_command(slot, job))
+    while True:
+        if signals.pending is not None:
+            stop_process(slot, process)
+            raise Failed(128 + signals.pending)
+        try:
+            code = process.wait(0.2)
+        except subprocess.TimeoutExpired:
+            continue
+        # A command killed by a signal, as a shell reports it.
+        return code if code >= 0 else 128 - code
+
+
+def boot(slot: Slot, job: Job, signals: Signals, ended: list[End]) -> int:
     """Fill the chroot, run the VM to its end and return its exit status; how it ended goes in
     `ended` even when it fails."""
     host, chroot, n, uid, gid = slot.host, slot.chroot, slot.number, job.uid, job.gid
@@ -301,9 +351,7 @@ def boot(slot: Slot, job: Job, ended: list[End]) -> int:
     sampler = Sampler(slot.cgroup / "memory.stat").start()
     status = "stopped"
     try:
-        result = host.run(jailer_command(slot, job))
-        # A command killed by a signal, as a shell reports it.
-        code = result.returncode if result.returncode >= 0 else 128 - result.returncode
+        code = run_jailer(slot, job, signals)
         status = f"exit {code}"
         return code
     finally:
@@ -336,20 +384,28 @@ def main(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Signa
         return 1
 
 
+def positive(env: Mapping[str, str], name: str, default: int) -> int:
+    value = env.get(name) or str(default)
+    if not re.fullmatch(r"[0-9]+", value) or int(value) == 0:
+        raise Failed(2, f"bad {name}")
+    return int(value)
+
+
 def run_vm(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Signals) -> int:
     if len(argv) < 2 or not argv[0] or not argv[1]:
         raise Failed(1, USAGE)
     if not re.fullmatch(r"[0-9]+", argv[0]):
         raise Failed(2, "bad slot")
     n = int(argv[0])
+    vcpus, mem_mib = positive(env, "VCPUS", 2), positive(env, "MEM_MIB", 2048)
     user = f"fc-slot{n}"
     job = Job(
         metadata=Path(argv[1]),
         timeout=argv[2] if len(argv) > 2 and argv[2] else "3600",
         uid=int(check(host, ["id", "-u", user], out=True)),
         gid=int(check(host, ["id", "-g", user], out=True)),
-        vcpus=int(env.get("VCPUS") or 2),
-        mem_mib=int(env.get("MEM_MIB") or 2048),
+        vcpus=vcpus,
+        mem_mib=mem_mib,
         cache_image=env.get("CACHE_IMAGE", ""),
         cache_out=env.get("CACHE_OUT", ""),
     )
@@ -369,7 +425,7 @@ def run_vm(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Sig
     cleanup(Slot(n, host), None)
     ended: list[End] = []
     try:
-        return boot(slot, job, ended)
+        return boot(slot, job, signals, ended)
     finally:
         cleanup(Slot(n, host), ended[0] if ended else None)
         # The one-job registration goes with the VM (not at the start: it is this run's).
