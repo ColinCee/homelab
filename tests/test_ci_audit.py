@@ -41,7 +41,7 @@ class FakeHost:
         self.ran: list[list[str]] = []
 
     def run(
-        self, command: list[str], *, env: Mapping[str, str] | None = None
+        self, command: list[str], *, env: Mapping[str, str] | None = None, quiet: bool = False
     ) -> subprocess.CompletedProcess[str]:
         self.ran.append(command)
         code, out = self.answer(command)

@@ -32,7 +32,12 @@ class FakeHost:
         self.commands: list[list[str]] = []
 
     def __call__(
-        self, command: list[str], *, input: str | None = None, check: bool = True
+        self,
+        command: list[str],
+        *,
+        input: str | None = None,
+        check: bool = True,
+        quiet: bool = False,
     ) -> subprocess.CompletedProcess[str]:
         self.commands.append(command)
         code, out = self.answer(command, input)

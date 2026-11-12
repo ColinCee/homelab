@@ -26,7 +26,7 @@ LISTEN_SECONDS = 120
 
 class Run(Protocol):
     def __call__(
-        self, command: list[str], *, check: bool = False
+        self, command: list[str], *, check: bool = False, quiet: bool = False
     ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -34,10 +34,11 @@ class Waitable(Protocol):
     def wait(self) -> int: ...
 
 
-def run_command(command: list[str], *, check: bool = False) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        command, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=check
-    )
+def run_command(
+    command: list[str], *, check: bool = False, quiet: bool = False
+) -> subprocess.CompletedProcess[str]:
+    stderr = subprocess.DEVNULL if quiet else None
+    return subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=stderr, check=check)
 
 
 def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:
@@ -123,13 +124,13 @@ def main(host: Host | None = None, here: Path | None = None) -> int:
         before = drops()
         inbound = "blocked"
         nc = ["docker", "run", "--rm", "--network", "bridge", BUSYBOX, "nc", "-w", "3"]
-        if host.run([*nc, "10.200.0.2", "8080"]).returncode == 0:
+        if host.run([*nc, "10.200.0.2", "8080"], quiet=True).returncode == 0:
             inbound = "reached"
         if drops() <= before:
             inbound = "not dropped by our rule"
         # And from Beelink's own network namespace.
         tcp = ["timeout", "4", "bash", "-c", "exec 3<>/dev/tcp/10.200.0.2/8080"]
-        if host.run(tcp).returncode == 0:
+        if host.run(tcp, quiet=True).returncode == 0:
             inbound = "reached from host"
         vm.wait()
 

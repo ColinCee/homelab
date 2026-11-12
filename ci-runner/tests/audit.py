@@ -47,7 +47,7 @@ PRIVILEGED = re.compile(r"(?<!\w)(docker|sudo|kvm|adm|lxd)(?!\w)")
 
 class Run(Protocol):
     def __call__(
-        self, command: list[str], *, env: Mapping[str, str] | None = None
+        self, command: list[str], *, env: Mapping[str, str] | None = None, quiet: bool = False
     ) -> subprocess.CompletedProcess[str]: ...
 
 
@@ -56,10 +56,11 @@ class Waitable(Protocol):
 
 
 def run_command(
-    command: list[str], *, env: Mapping[str, str] | None = None
+    command: list[str], *, env: Mapping[str, str] | None = None, quiet: bool = False
 ) -> subprocess.CompletedProcess[str]:
+    stderr = subprocess.DEVNULL if quiet else None
     return subprocess.run(
-        command, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, check=False
+        command, text=True, stdout=subprocess.PIPE, stderr=stderr, env=env, check=False
     )
 
 
@@ -96,11 +97,11 @@ class Host:
     def path(self, name: str) -> Path:
         return self.root / name.lstrip("/")
 
-    def ok(self, *command: str) -> bool:
-        return self.run(list(command)).returncode == 0
+    def ok(self, *command: str, quiet: bool = False) -> bool:
+        return self.run(list(command), quiet=quiet).returncode == 0
 
-    def out(self, *command: str) -> str:
-        return self.run(list(command)).stdout
+    def out(self, *command: str, quiet: bool = False) -> str:
+        return self.run(list(command), quiet=quiet).stdout
 
 
 class Audit:
@@ -191,7 +192,7 @@ class Audit:
         """What a slot user (Firecracker after a VM escape) can reach."""
         h = self.host
         for user in ("fc-slot0", "fc-slot1"):
-            if not h.ok("id", user):
+            if not h.ok("id", user, quiet=True):
                 self.fail(f"{user} exists")
                 continue
             other = f"slot{1 - int(user.removeprefix('fc-slot'))}"
@@ -234,10 +235,12 @@ class Audit:
                 f"{user} cannot open a connection (root can)",
                 lambda user=user: (
                     h.ok("timeout", "3", "bash", "-c", CONNECT)
-                    and not h.ok("sudo", "-u", user, "timeout", "3", "bash", "-c", CONNECT)
+                    and not h.ok(
+                        "sudo", "-u", user, "timeout", "3", "bash", "-c", CONNECT, quiet=True
+                    )
                 ),
             )
-        slot_uids = h.out("nft", "list", "set", "inet", "homelab_ci", "slot_uids")
+        slot_uids = h.out("nft", "list", "set", "inet", "homelab_ci", "slot_uids", quiet=True)
         for line in h.out("getent", "passwd").splitlines():
             fields = line.split(":")
             if len(fields) > 2 and SLOT_USER.fullmatch(fields[0]):
@@ -262,7 +265,7 @@ class Audit:
 
             def no_secrets() -> bool:
                 folders = [str(scan / name) for name in ("etc", "home", "root", "opt")]
-                found = h.out("grep", "-rlIE", SECRETS, *folders).splitlines()
+                found = h.out("grep", "-rlIE", SECRETS, *folders, quiet=True).splitlines()
                 return not [f for f in found if not f.startswith(f"{scan}/opt/actions-cache/")]
 
             self.check("no tokens or private keys in image", no_secrets)
@@ -282,7 +285,11 @@ class Audit:
             self.check("runner user owns uv's Python folder", runner_owns_python)
             h.run(["umount", str(scan)])
         finally:
-            scan.rmdir()
+            # Left behind when umount failed; the audit carries on, as it did in shell.
+            try:
+                scan.rmdir()
+            except OSError as e:
+                print(f"rmdir: {e}", file=sys.stderr)
 
     def live_vm(self, run_vm: str) -> None:
         """A live VM: how Firecracker is confined, and what the guest is told."""
@@ -291,7 +298,15 @@ class Audit:
             tmp = Path(tmp_name)
             metadata = tmp / "metadata.json"
             metadata.write_text(json.dumps({"task": "probe", "probe": MMDS_PROBE}))
-            vm = h.start([run_vm, "0", str(metadata), "90"], tmp / "console.log")
+            try:
+                vm: Waitable | None = h.start(
+                    [run_vm, "0", str(metadata), "90"], tmp / "console.log"
+                )
+            except OSError as e:
+                # A missing run-vm.sh: no Firecracker to find, and the checks below fail.
+                print(f"{run_vm}: {e}", file=sys.stderr)
+                (tmp / "console.log").touch()
+                vm = None
             pid = ""
             for _ in range(30):
                 pid = next(iter(h.out("pgrep", "-x", "firecracker").splitlines()), "")
@@ -303,7 +318,8 @@ class Audit:
                 self.firecracker(pid)
             else:
                 self.fail("no Firecracker process to inspect")
-            vm.wait()
+            if vm:
+                vm.wait()
             console = (tmp / "console.log").read_text(errors="replace")
             found = re.search(r"MMDS_KEYS .*", console)
             keys = found.group(0).replace("\r", "") if found else ""

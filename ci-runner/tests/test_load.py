@@ -216,8 +216,13 @@ def main(argv: Sequence[str], host: Host | None = None) -> int:
     max_response = host.env.get("MAX_RESPONSE") or "1"
     slots = slot_count(host.env, host.root)
     run_vm = host.env.get("RUN_VM") or RUN_VM
-    tailscale = host.run(["ip", "-4", "-br", "addr", "show", "tailscale0"]).stdout.split()
-    tailnet = tailscale[2].split("/")[0] if len(tailscale) > 2 else ""
+    tailscale = host.run(["ip", "-4", "-br", "addr", "show", "tailscale0"])
+    # No verdict without the address: the supervisor keeps that as not run and tries again,
+    # where a FAIL would lower the slot count.
+    if tailscale.returncode:
+        return tailscale.returncode
+    fields = tailscale.stdout.split()
+    tailnet = fields[2].split("/")[0] if len(fields) > 2 else ""
     urls = [f"http://{tailnet}{path}" for _, path in SERVICES]
 
     test = LoadTest(host, urls)

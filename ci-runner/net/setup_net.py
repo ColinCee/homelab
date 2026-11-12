@@ -24,21 +24,26 @@ TRACE_URL = "https://1.1.1.1/cdn-cgi/trace"
 
 class Run(Protocol):
     def __call__(
-        self, command: list[str], *, input: str | None = None, check: bool = True
+        self,
+        command: list[str],
+        *,
+        input: str | None = None,
+        check: bool = True,
+        quiet: bool = False,
     ) -> subprocess.CompletedProcess[str]: ...
 
 
 def run_command(
-    command: list[str], *, input: str | None = None, check: bool = True
+    command: list[str], *, input: str | None = None, check: bool = True, quiet: bool = False
 ) -> subprocess.CompletedProcess[str]:
-    """Stdout is captured; stderr goes to the journal, except for commands run unchecked,
-    whose failure is an expected answer rather than an error."""
+    """Stdout is captured; stderr goes to the journal unless QUIET, for a command whose
+    failure is an expected answer rather than an error."""
     return subprocess.run(
         command,
         input=input,
         text=True,
         stdout=subprocess.PIPE,
-        stderr=None if check else subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL if quiet else None,
         check=check,
     )
 
@@ -112,14 +117,19 @@ class Network:
 
     def down(self) -> None:
         for rule in self.accept_rules():
-            while self.run(["iptables", "-D", "DOCKER-USER", *rule], check=False).returncode == 0:
+            while (
+                self.run(
+                    ["iptables", "-D", "DOCKER-USER", *rule], check=False, quiet=True
+                ).returncode
+                == 0
+            ):
                 pass
         for line in self.run(["ip", "-br", "link"]).stdout.splitlines():
             fields = line.split()
             if fields and fields[0].startswith("fc-tap"):
                 self.run(["ip", "link", "del", fields[0]])
         # The container wall (homelab_wall) stays: it is not the VMs'.
-        self.run(["nft", "delete", "table", "inet", "homelab_ci"], check=False)
+        self.run(["nft", "delete", "table", "inet", "homelab_ci"], check=False, quiet=True)
 
     def up(self) -> int:
         # The rules load first, with any public address already loaded, so running VMs never
@@ -140,7 +150,7 @@ class Network:
                 file=sys.stderr,
             )
         loaded = "".join(
-            self.run(["nft", "list", "set", "inet", table, "wan4"], check=False).stdout
+            self.run(["nft", "list", "set", "inet", table, "wan4"], check=False, quiet=True).stdout
             for table in ("homelab_ci", "homelab_wall")
         )
         found = IPV4.search(loaded)
@@ -165,7 +175,7 @@ class Network:
 
         for n in range(self.slots):
             tap = f"fc-tap{n}"
-            if self.run(["ip", "link", "show", tap], check=False).returncode:
+            if self.run(["ip", "link", "show", tap], check=False, quiet=True).returncode:
                 user = f"fc-slot{n}"
                 self.run(
                     [
@@ -178,7 +188,9 @@ class Network:
             self.run(["ip", "link", "set", tap, "up"])
 
         for rule in self.accept_rules():
-            if self.run(["iptables", "-C", "DOCKER-USER", *rule], check=False).returncode:
+            if self.run(
+                ["iptables", "-C", "DOCKER-USER", *rule], check=False, quiet=True
+            ).returncode:
                 self.run(["iptables", "-I", "DOCKER-USER", *rule])
         return 0
 

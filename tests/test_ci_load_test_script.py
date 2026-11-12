@@ -157,6 +157,21 @@ def test_seconds_must_be_a_number_over_15(tmp_path, seconds) -> None:
     assert started == []
 
 
+def test_without_the_tailnet_address_it_gives_no_verdict(tmp_path, capsys) -> None:
+    # The supervisor keeps no PASS or FAIL line as not run, rather than lowering the slots.
+    host, started = make_host(tmp_path)
+
+    def no_tailscale(command: list[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(command, 1, "")
+
+    host.run = no_tailscale
+    assert load.main(["20"], host) == 1
+    assert started == []
+    assert not [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith(("PASS ", "FAIL "))
+    ]
+
+
 def test_it_needs_root(tmp_path) -> None:
     host, started = make_host(tmp_path)
     host.is_root = lambda: False
