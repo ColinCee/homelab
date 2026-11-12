@@ -930,7 +930,8 @@ def adopt(state: State) -> None:
 def vm_main(argv: list[str]) -> int:
     """`vm SLOT METADATA TIMEOUT [--memory FILE]`: run-vm.sh's console reader, the main process
     of the VM's unit. It reads the console to the end (a full pipe would stall the VM), keeps
-    the latest memory line in FILE, and exits with run-vm.sh's code."""
+    the latest memory line in FILE, and exits with run_vm.py's code: 128 + the signal when a stop
+    ended it, as a shell reports it (a negative code would read as 241 and fail the unit)."""
     parser = argparse.ArgumentParser(prog="ci_supervisor.py vm")
     parser.add_argument("slot")
     parser.add_argument("metadata")
@@ -948,7 +949,8 @@ def vm_main(argv: list[str]) -> int:
     assert process.stdout is not None
     memory = (lambda seen: write_status(args.memory, seen)) if args.memory else None
     read_console(process.stdout, memory)
-    return process.wait()
+    code = process.wait()
+    return 128 - code if code < 0 else code
 
 
 def memory_line(raw: bytes) -> dict[str, int] | None:

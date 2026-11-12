@@ -2060,3 +2060,15 @@ def test_an_idle_standby_booted_before_the_image_was_rebuilt_is_replaced(
     for run in (older, newer):
         sup.check_standby(NoGitHub(), run, 200.0, True)
     assert stopped == ["booted before the image was rebuilt"]
+
+
+def test_a_vm_stopped_by_a_signal_exits_as_a_shell_reports_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # run_vm.py re-raises the stop signal; a negative code from sys.exit would read as 241.
+    script = tmp_path / "run_vm.py"
+    script.write_text("#!/bin/sh\nkill -TERM $$\n")
+    script.chmod(0o755)
+    monkeypatch.setattr(sup, "RUN_VM", script)
+    monkeypatch.setattr(sup.signal, "signal", lambda *a: None)
+    assert sup.vm_main(["0", "metadata.json", "60"]) == 143
