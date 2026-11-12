@@ -55,8 +55,10 @@ mkdir -p "$mods"
 install -d -o root -g root -m 0755 /var/lib/homelab-ci "$images"
 truncate -s "$size" "$tmp/rootfs.ext4"
 mkfs.ext4 -q -F -L rootfs -d "$tmp/root" "$tmp/rootfs.ext4"
-# install replaces the file (a new inode): running VMs keep reading the old one.
-install -o root -g root -m 0644 "$tmp/rootfs.ext4" "$images/rootfs.ext4"
+# Copied beside it, then renamed over it in one step: a VM booting meanwhile reads the old image or
+# the whole new one, never half of one, and running VMs keep reading the old inode.
+install -o root -g root -m 0644 "$tmp/rootfs.ext4" "$images/rootfs.ext4.new"
+mv -f "$images/rootfs.ext4.new" "$images/rootfs.ext4"
 install -o root -g root -m 0644 "/boot/vmlinuz-$(uname -r)" "$images/vmlinuz"
 # The supervisor serves public repos only while the image carries the job guard (ci_supervisor.py, GUARD_MARKER).
 if [[ -x $tmp/root/usr/local/lib/homelab/runner-job-guard-vm.sh ]]; then

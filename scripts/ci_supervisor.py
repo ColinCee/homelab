@@ -59,6 +59,8 @@ STRICT_APPROVAL = "all_external_contributors"
 # Written by build-rootfs.sh when the VM image carries that guard: until then (an image not yet
 # rebuilt, or a failed rebuild) no public repo is served.
 GUARD_MARKER = Path("/var/lib/homelab-ci/images/job-guard")
+# The VM image (ci-runner/build-rootfs.sh); a standby booted before it was rebuilt is replaced.
+ROOTFS = Path("/var/lib/homelab-ci/images/rootfs.ext4")
 # How often to ask GitHub which repositories the token can see. The listing and its
 # collaborator checks (two requests a repo) run beside the poll, never holding it up.
 REPOS_EVERY = 60
@@ -1078,6 +1080,14 @@ def stop_idle(gh: GitHubApi, run: Launch, now: float, queued_for_repo: int) -> N
         stop_if_still_idle(gh, run, "has no job")
 
 
+def image_since(started: float) -> bool:
+    """Whether the VM image was rebuilt after a VM booted: its next job would run the old one."""
+    try:
+        return ROOTFS.stat().st_mtime > started
+    except OSError:
+        return False
+
+
 def check_standby(gh: GitHubApi, run: Launch, now: float, served: bool) -> None:
     """A standby that got a job becomes an ordinary VM; an old idle one is replaced."""
     if not served:
@@ -1089,6 +1099,8 @@ def check_standby(gh: GitHubApi, run: Launch, now: float, served: bool) -> None:
             log(f"slot {run.slot}: standby {run.runner_name} took a job")
     elif now - run.started >= STANDBY_RECYCLE_SECONDS:
         stop_if_still_idle(gh, run, "is an old standby")
+    elif image_since(run.started):
+        stop_if_still_idle(gh, run, "booted before the image was rebuilt")
 
 
 def reap(
