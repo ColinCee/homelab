@@ -61,20 +61,22 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python3 scripts/ci.py vm-tools
 
-      - name: Prewarm (experiment)
-        run: |
-          du -sh /cache/* /cache/mise/installs/* 2>/dev/null | sort -h | tail -15
-          s=$(date +%s%N)
-          find /cache/venv /cache/uv /cache/mise/installs /usr/libexec/docker /usr/bin/docker -type f -print0 2>/dev/null \
-            | xargs -0 -P4 cat > /dev/null
-          echo "prewarm read: $(( ($(date +%s%N)-s)/1000000 )) ms"
-          free -m | head -2
-
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'
         env:
           TEST_TIMES: ${{ runner.temp }}/test-times.json
         run: mise run check
+
+      - name: Profile (experiment)
+        if: always()
+        run: |
+          set +e
+          mise exec -- uv run python -m pytest -q -p no:cacheprovider -p no:xdist --durations=40 tests/ 2>&1 | tail -45
+          for f in tests/test_*.py; do s=$(date +%s%N)
+            mise exec -- uv run python -m pytest -q -p no:cacheprovider -p no:xdist "$f" >/dev/null 2>&1
+            echo "$(( ($(date +%s%N)-s)/1000000 )) $f"; done | sort -rn | head -15
+          for t in lint typecheck validate:compose docs:size; do s=$(date +%s%N); /usr/bin/time -f "%U user %S sys" mise run $t 2>&1 | tail -1
+            echo "$(( ($(date +%s%N)-s)/1000000 )) ms wall: $t"; done
 
       # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
