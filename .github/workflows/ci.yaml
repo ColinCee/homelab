@@ -67,6 +67,26 @@ jobs:
           TEST_TIMES: ${{ runner.temp }}/test-times.json
         run: mise run check
 
+      - name: Profile (experiment)
+        if: always()
+        run: |
+          set -x
+          nproc; grep MHz /proc/cpuinfo | head -4; free -m | head -2; cat /proc/loadavg
+          ts(){ s=$(date +%s%N); "$@" >/dev/null 2>&1; echo "$(( ($(date +%s%N)-s)/1000000 )) ms: $*"; }
+          PY=/cache/venv/bin/python
+          ts uv run true; ts uv run --no-sync true; ts $PY -c pass; ts $PY -c "import pytest"; ts $PY -c "import pytest, xdist"
+          $PY -X importtime -c "import pytest, xdist" 2>&1 | sort -t'|' -k2 -n | tail -6
+          find /cache/venv -name '*.pyc' | wc -l
+          ts $PY -m pytest -q -p no:cacheprovider --collect-only tests/
+          ts $PY -m pytest -q -p no:cacheprovider --collect-only tests/
+          $PY -X importtime -m pytest -q -p no:cacheprovider --collect-only tests/ 2>&1 >/dev/null | awk -F'|' '/import time:/ {n=$3; gsub(/^ +/,"",n); split(n,a,"."); c[a[1]]+=$1+0} END {for (k in c) print c[k], k}' | sort -rn | head -15
+          for f in tests/test_*.py; do s=$(date +%s%N); $PY -m pytest -q -p no:cacheprovider --collect-only "$f" >/dev/null 2>&1; echo "$(( ($(date +%s%N)-s)/1000000 )) $f"; done | sort -rn | head -10
+          ts $PY -m pytest -q -p no:cacheprovider -n 4 --dist loadfile tests/
+          $PY -m pytest -q -p no:cacheprovider -p no:xdist --durations=30 tests/ 2>&1 | tail -40
+          for t in "ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/" "ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/"; do ts uv run $t; done
+          ts mise run typecheck; ts mise run validate:compose; ts mise run docs:size; ts mise run lint
+          ts git -c protocol.version=2 fetch --no-tags --depth=2 https://github.com/ColinCee/homelab +refs/pull/${{ github.event.pull_request.number }}/merge
+
       # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
         if: always()
