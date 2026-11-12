@@ -11,6 +11,7 @@ Why the pages look as they do: what to keep when you change one, and what was tr
 - Server is the box, Services what runs on it: a panel per container is Services'.
 - Explore opens empty, so Logs and Traces are pages that show the latest on open; a row there opens
   Explore on that one trace. Digging further is Explore's.
+- Browsing every metric with no query is the sidebar's Drilldown (Grafana's Metrics Drilldown app, in its image).
 
 ## The panel for the job
 
