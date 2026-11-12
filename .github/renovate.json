@@ -54,6 +54,10 @@
     {
       "groupName": "alloy",
       "matchPackageNames": ["grafana/alloy"]
+    },
+    {
+      "groupName": "caddy",
+      "matchPackageNames": ["caddy", "caddyserver/caddy"]
     }
   ],
   "customManagers": [

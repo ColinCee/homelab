@@ -113,8 +113,15 @@ def discover_stack_plans(
     return tuple(plans)
 
 
-# Files every stack's deploy depends on: a change to any of them deploys all stacks.
-SHARED_PATHS = ("scripts/", ".github/workflows/deploy.yaml")
+# Files every stack's deploy depends on: a change to any of them deploys all stacks. Only the
+# deploy's own scripts, so a change to another (the CI supervisor, say) deploys nothing.
+SHARED_PATHS = (
+    "scripts/deploy.sh",
+    "scripts/deploy.py",
+    "scripts/render-secrets.sh",
+    "scripts/render_secrets.py",
+    ".github/workflows/deploy.yaml",
+)
 
 
 def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None:
