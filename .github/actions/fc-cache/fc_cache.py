@@ -21,7 +21,7 @@ from pathlib import Path
 
 # scripts/ci_supervisor.py, CACHE_MAX_UNPACKED_BYTES.
 MAX_UNPACKED = 6442450944
-# ci-runner/run-vm.sh writes it as the outbox disk's first line.
+# ci-runner/run_vm.py writes it as the outbox disk's first line.
 OUTBOX_MARK = b"homelab-ci-outbox\n"
 
 

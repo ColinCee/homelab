@@ -250,12 +250,17 @@ def install_vm_files(host: Host, here: Path) -> None:
     get them, running ones keep the copies they opened (install writes a new file, never the old
     one in place)."""
     install_dirs(host, "0755", DEST, f"{DEST}/net")
-    install(host, "0644", here / "vm-disks.sh", f"{DEST}/vm-disks.sh")
+    # The Python first: a new wrapper runs only what is already there.
+    for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
+        install(host, "0644", here / name, f"{DEST}/{name}")
     install(host, "0755", here / "run-vm.sh", f"{DEST}/run-vm.sh")
     install(host, "0755", here / "stop-vms.sh", f"{DEST}/stop-vms.sh")
+    # After the new wrappers: a VM started before them runs the old run-vm.sh, which sources it.
+    host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
     # Before its wrapper, which the timer may start at any time.
     install(host, "0644", here / "update.py", f"{DEST}/update.py")
     install(host, "0755", here / "update.sh", f"{DEST}/update.sh")
+    install(host, "0755", here / "tests" / "test_load.py", f"{DEST}/test_load.py")
     install(host, "0755", here / "tests" / "test-load.sh", f"{DEST}/test-load.sh")
 
 
@@ -325,7 +330,7 @@ def install_locked(
     # with the old units in place, and update.py tries again.
     install_python(host, pinned)
     # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
-    # Outboxes are hard-linked into the jails (run-vm.sh), so they share their filesystem.
+    # Outboxes are hard-linked into the jails (run_vm.py), so they share their filesystem.
     install_dirs(host, "0755", "/var/lib/homelab-ci/caches")
     install_dirs(host, "0700", "/var/lib/homelab-ci/outbox")
     # The SSD is trimmed hourly (the reason is in the file). Restarted only when it changes,
@@ -354,6 +359,7 @@ def install_locked(
     restart_files = {
         here.parent / "scripts" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
         here / "net" / "homelab-ci.nft": f"{DEST}/net/homelab-ci.nft",
+        here / "net" / "setup_net.py": f"{DEST}/net/setup_net.py",
         here / "net" / "setup-net.sh": f"{DEST}/net/setup-net.sh",
         here / "systemd" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
         here / "systemd" / SERVICE: f"/etc/systemd/system/{SERVICE}",
@@ -392,6 +398,8 @@ def install_locked(
 
         install_vm_files(host, here)
         install(host, "0644", here / "net" / "homelab-ci.nft", f"{DEST}/net/homelab-ci.nft")
+        # The code before its wrapper: run-vm.sh calls setup-net.sh at any time.
+        install(host, "0755", here / "net" / "setup_net.py", f"{DEST}/net/setup_net.py")
         install(host, "0755", here / "net" / "setup-net.sh", f"{DEST}/net/setup-net.sh")
         install(
             host, "0755", here.parent / "scripts" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py"
