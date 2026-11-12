@@ -14,10 +14,13 @@ RUN apt-get update \
  && systemctl mask systemd-resolved.service systemd-networkd.service \
       systemd-timesyncd.service apt-daily.timer apt-daily-upgrade.timer \
       e2scrub_reap.service getty@tty1.service serial-getty@ttyS0.service \
+      tmp.mount \
  && rm -f /etc/machine-id /var/lib/dbus/machine-id && : > /etc/machine-id \
  && useradd --create-home --shell /bin/bash runner \
  && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner
 # Root inside the VM is fine: the VM is the boundary, and it is thrown away.
+# /tmp stays on the VM's disk (tmp.mount masked): in memory it held half the VM's RAM, so tests' temporary files
+# filled it ("No space left on device") and took memory from the job.
 # One Python, PYTHON_VERSION (versions.env), as python and python3: Ubuntu's older python3 is not installed, so no
 # job runs on a Python its repo never tested.
 
