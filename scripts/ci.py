@@ -122,6 +122,13 @@ def time_limits() -> int:
     return 1 if raised else 0
 
 
+def pull_request_rules() -> int:
+    """The pull request's own rules in one step, as each runner step costs about a third of a
+    second. Every rule runs before the verdict."""
+    results = [rule() for rule in (pins_only, versions_hash, time_limits)]
+    return 1 if any(results) else 0
+
+
 def vm_tools() -> int:
     """Install mise.toml's tools onto the VM's cache disk, and point later steps at them."""
     env = {
@@ -201,10 +208,8 @@ def ghcr_login() -> int:
 
 STEPS = {
     "ghcr-login": ghcr_login,
-    "pins-only": pins_only,
-    "versions-hash": versions_hash,
+    "pull-request-rules": pull_request_rules,
     "validate-changed-compose": validate_changed_compose,
-    "time-limits": time_limits,
     "vm-tools": vm_tools,
     "slowest-tests": slowest_tests,
     "cache-changed": cache_changed,
