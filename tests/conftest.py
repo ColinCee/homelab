@@ -8,13 +8,13 @@ from typing import Any
 
 import pytest
 
-# CI's time limits, which fail the run in CI: the whole run at about twice today's 10-15 s, and one
-# test's own body (a sleep, a timeout, a container started per test). Shared fixtures count in the
-# whole run. Raise one only in a pull request that says why.
+# CI's time limits, which fail the run in CI: one test process's run (scripts/test_shards.py runs
+# one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
+# started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
 RUN_LIMIT = 30.0
 TEST_LIMIT = 5.0
 
-# Each test's first start and its seconds over setup, call and teardown, in the controller.
+# Each test's first start and its seconds over setup, call and teardown.
 TIMES: dict[str, list[float]] = {}
 CALLS: dict[str, float] = {}
 STARTED = [time.monotonic()]
@@ -43,8 +43,6 @@ def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    if hasattr(session.config, "workerinput"):
-        return
     over = over_limits(time.monotonic() - STARTED[0], CALLS)
     for line in over:
         print()
