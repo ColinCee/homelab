@@ -12,7 +12,7 @@ zizmor = "1.32.0"
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
-  "uv run ruff check scripts/ stacks/ tests/ ci-runner/ .github/actions/ && uv run ruff format --check scripts/ stacks/ tests/ ci-runner/ .github/actions/",
+  "uv run ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/ && uv run ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/",
   "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/runner-job-guard-vm.sh",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
@@ -22,11 +22,11 @@ run = [
 
 [tasks.format]
 description = "Format Python"
-run = "uv run ruff format scripts/ stacks/ tests/ ci-runner/ .github/actions/"
+run = "uv run ruff format scripts/ ci-runner/ stacks/ tests/ .github/actions/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts/tailscale_policy.py scripts/deploy.py scripts/render_secrets.py scripts/pc_backup.py scripts/runner_job_guard.py scripts/ci_supervisor.py scripts/ci_times.py scripts/ci.py .github/actions/fc-cache/fc_cache.py scripts/public_stats_key.py scripts/pin_only.py scripts/versions_hash.py scripts/ssd_wear.py scripts/security_facts.py scripts/docs_size.py stacks/observability/public_stats.py stacks/observability/prometheus/replay.py stacks/observability/grafana/users.py ci-runner/net/setup_net.py ci-runner/tests/test_load.py ci-runner/tests/test_network.py ci-runner/tests/audit.py"
+run = "uv run ty check scripts ci-runner stacks tests .github/actions --python-platform linux"
 
 [tasks.test]
 description = "Run unit tests"

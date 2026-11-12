@@ -2,7 +2,9 @@ import json
 import os
 import shutil
 import time
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -50,18 +52,20 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     if over and os.environ.get("CI") and session.exitstatus == pytest.ExitCode.OK:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
     # The slowest tests for scripts/ci_times.py, which ci.yaml posts as an annotation.
-    out = os.environ.get("TEST_TIMES")
-    if not out:
-        return
-    # [[test, start, seconds], ...], slowest first, under the 4096 characters GitHub keeps of an
-    # annotation (with room for escaping).
-    rows: list[list] = []
+    if out := os.environ.get("TEST_TIMES"):
+        write_slowest(Path(out))
+
+
+def write_slowest(out: Path) -> None:
+    """[[test, start, seconds], ...], slowest first, under the 4096 characters GitHub keeps of an
+    annotation (with room for escaping)."""
+    rows: list[list[Any]] = []
     for test, (start, took) in sorted(TIMES.items(), key=lambda item: -item[1][1]):
         row = [test[-150:], round(start, 2), round(took, 2)]
         if len(json.dumps([*rows, row], separators=(",", ":"))) > 3500:
             break
         rows.append(row)
-    Path(out).write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
+    out.write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
 
 
 def tool(name: str) -> str:
@@ -72,6 +76,20 @@ def tool(name: str) -> str:
     if os.environ.get("CI"):
         pytest.fail(f"{name} is not on PATH; mise.toml installs it")
     pytest.skip(f"needs {name} (mise install)")
+
+
+class NoGitHub:
+    """scripts/ci_supervisor.py's GitHub for code that must not ask it. A fake subclasses it and
+    gives `request` GitHub's answers."""
+
+    def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> object:
+        raise AssertionError(f"GitHub was asked: {method} {path}")
+
+    def forget(self, drop: Callable[[str], bool]) -> None:
+        pass
+
+    def clone(self) -> NoGitHub:
+        return self
 
 
 @pytest.fixture(autouse=True)

@@ -35,12 +35,12 @@ import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Protocol
 
 LABEL = "homelab-fc"
 RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
@@ -387,7 +387,9 @@ def wants_us(labels: Iterable[str]) -> bool:
 
 
 def queued_jobs(
-    repo: str, runs: Iterable[Mapping[str, Any]], get_jobs: Callable[[int], Any]
+    repo: str,
+    runs: Iterable[Mapping[str, Any]],
+    get_jobs: Callable[[int], Iterable[Mapping[str, Any]]],
 ) -> list[Job]:
     jobs: list[Job] = []
     for run in runs:
@@ -436,7 +438,7 @@ def start_order(jobs: Iterable[Job], waited_since: Callable[[int], float], now: 
     return sorted(jobs, key=lambda job: (new(job), job.id))
 
 
-def github_time(value: Any) -> float:
+def github_time(value: object) -> float:
     """Seconds since the epoch of one of GitHub's times, 0 when missing or unreadable."""
     try:
         return datetime.fromisoformat(str(value)).timestamp()
@@ -469,7 +471,7 @@ def is_served(repo_data: Mapping[str, Any], repo: str, approval: Callable[[], st
     return listed and GUARD_MARKER.exists() and approval() == STRICT_APPROVAL
 
 
-def approval_policy(gh: GitHub, repo: str) -> str:
+def approval_policy(gh: GitHubApi, repo: str) -> str:
     path = f"/repos/{repo}/actions/permissions/fork-pr-contributor-approval"
     return str(gh.request("GET", path).get("approval_policy", ""))
 
@@ -478,6 +480,16 @@ class RateLimited(Exception):
     def __init__(self, until: float) -> None:
         super().__init__(f"rate limited until {time.strftime('%H:%M:%S', time.localtime(until))}")
         self.until = until
+
+
+class GitHubApi(Protocol):
+    """What the supervisor asks of GitHub, so tests can stand in for it."""
+
+    def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any: ...  # noqa: ANN401 - GitHub's JSON, read as each endpoint documents it
+
+    def forget(self, drop: Callable[[str], bool]) -> None: ...
+
+    def clone(self) -> GitHubApi: ...
 
 
 class GitHub:
@@ -500,7 +512,8 @@ class GitHub:
         """One request on this thread's open connection. One GitHub closed while it sat
         idle fails at once and is tried again on a new one; a POST (a VM's registration)
         always gets a new one, so it is never sent twice."""
-        conn: http.client.HTTPSConnection | None = getattr(self._local, "conn", None)
+        held = getattr(self._local, "conn", None)
+        conn = held if isinstance(held, http.client.HTTPSConnection) else None
         if method == "POST" and conn is not None:
             conn.close()
             conn = None
@@ -521,7 +534,7 @@ class GitHub:
                 conn.close()
                 raise
 
-    def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:
+    def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> Any:  # noqa: ANN401 - see GitHubApi.request
         data = None if body is None else json.dumps(body).encode()
         # Sent only to api.github.com: redirects are not followed.
         headers = {
@@ -583,7 +596,9 @@ def is_public(state: State, repo: str) -> bool:
     return repo in PUBLIC_REPOS or bool(known and known.public)
 
 
-def check_served(gh: GitHub, state: State, repo: str, now: float, *, fresh: bool = False) -> bool:
+def check_served(
+    gh: GitHubApi, state: State, repo: str, now: float, *, fresh: bool = False
+) -> bool:
     known = state.serving.get(repo)
     # A repo with VMs here, or about to get its first, is re-checked; the rest are known
     # served from the minutely repo listing (list_repos), one request for all of them,
@@ -606,10 +621,10 @@ def check_served(gh: GitHub, state: State, repo: str, now: float, *, fresh: bool
 def colins(run: Mapping[str, Any]) -> bool:
     """A run Colin started and, if re-run, re-ran."""
     actor, triggering = run.get("actor") or {}, run.get("triggering_actor") or {}
-    return actor.get("id") == OWNER_ID and triggering.get("login") == OWNER
+    return bool(actor.get("id") == OWNER_ID and triggering.get("login") == OWNER)
 
 
-def find_queued(gh: GitHub, repo: str, *, colins_only: bool = False) -> list[Job]:
+def find_queued(gh: GitHubApi, repo: str, *, colins_only: bool = False) -> list[Job]:
     """`colins_only` (a public repo) leaves out others' runs: no VM starts for them."""
     runs: list[Mapping[str, Any]] = []
     # A multi-job run is in_progress while its later jobs wait for a runner. A run that
@@ -623,7 +638,7 @@ def find_queued(gh: GitHub, repo: str, *, colins_only: bool = False) -> list[Job
     def jobs_path(run_id: int) -> str:
         return f"/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
 
-    def get_jobs(run_id: int) -> Any:
+    def get_jobs(run_id: int) -> Iterable[Mapping[str, Any]]:
         return gh.request("GET", jobs_path(run_id)).get("jobs", [])
 
     # Forget finished runs, so the cache only holds what is still polled.
@@ -632,7 +647,7 @@ def find_queued(gh: GitHub, repo: str, *, colins_only: bool = False) -> list[Job
     return queued_jobs(repo, runs, get_jobs)
 
 
-def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> bool:
+def delete_runner(gh: GitHubApi, repo: str, runner_id: int, name: str) -> bool:
     """True if the registration is gone (removed now, or it removed itself)."""
     gh.forget(lambda path: path == f"/repos/{repo}/actions/runners/{runner_id}")
     try:
@@ -646,7 +661,7 @@ def delete_runner(gh: GitHub, repo: str, runner_id: int, name: str) -> bool:
 
 
 def launch(
-    gh: GitHub,
+    gh: GitHubApi,
     state: State,
     repo: str,
     slot: int,
@@ -997,7 +1012,7 @@ def may_be_idle(age: float, queued_for_repo: int) -> bool:
     return age >= IDLE_AFTER_SECONDS and queued_for_repo == 0
 
 
-def is_idle(gh: GitHub, run: Launch) -> bool:
+def is_idle(gh: GitHubApi, run: Launch) -> bool:
     """GitHub says the VM's runner is connected and has no job."""
     try:
         runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
@@ -1009,7 +1024,7 @@ def is_idle(gh: GitHub, run: Launch) -> bool:
     return runner.get("busy") is False
 
 
-def has_job(gh: GitHub, run: Launch) -> bool:
+def has_job(gh: GitHubApi, run: Launch) -> bool:
     """GitHub says the VM's runner has taken a job (or has finished and gone)."""
     try:
         runner = gh.request("GET", f"/repos/{run.repo}/actions/runners/{run.runner_id}")
@@ -1026,7 +1041,7 @@ def note_ready(run: Launch, runner: Mapping[str, Any]) -> None:
         run.ready = True
 
 
-def on_its_way(gh: GitHub, run: Launch, now: float, queued_for_want: int) -> bool:
+def on_its_way(gh: GitHubApi, run: Launch, now: float, queued_for_want: int) -> bool:
     """The VM may still take a queued job of its repo and label: a standby, one that just
     took a job, or one starting whose runner has no job yet. GitHub is asked only while a
     job it could cover is queued, at most once a poll."""
@@ -1048,7 +1063,7 @@ def stop(run: Launch, why: str) -> None:
         kill.write_text("1")
 
 
-def stop_if_still_idle(gh: GitHub, run: Launch, why: str) -> None:
+def stop_if_still_idle(gh: GitHubApi, run: Launch, why: str) -> None:
     """Asked twice, so a job assigned between the two answers is not killed."""
     if is_idle(gh, run):
         time.sleep(2)
@@ -1056,14 +1071,14 @@ def stop_if_still_idle(gh: GitHub, run: Launch, why: str) -> None:
             stop(run, why)
 
 
-def stop_idle(gh: GitHub, run: Launch, now: float, queued_for_repo: int) -> None:
+def stop_idle(gh: GitHubApi, run: Launch, now: float, queued_for_repo: int) -> None:
     """A VM whose job was cancelled or taken by another runner would wait out its
     timeout; stop it as soon as it is clearly not going to get one."""
     if may_be_idle(now - run.started, queued_for_repo):
         stop_if_still_idle(gh, run, "has no job")
 
 
-def check_standby(gh: GitHub, run: Launch, now: float, served: bool) -> None:
+def check_standby(gh: GitHubApi, run: Launch, now: float, served: bool) -> None:
     """A standby that got a job becomes an ordinary VM; an old idle one is replaced."""
     if not served:
         stop(run, "serves a repo that is no longer served")
@@ -1077,7 +1092,7 @@ def check_standby(gh: GitHub, run: Launch, now: float, served: bool) -> None:
 
 
 def reap(
-    gh: GitHub,
+    gh: GitHubApi,
     state: State,
     now: float,
     queued: Mapping[Want, int] | None = None,
@@ -1119,7 +1134,7 @@ def reap(
 
 
 @contextlib.contextmanager
-def bookkeeping(run: Launch, what: str) -> Iterator[None]:
+def bookkeeping(run: Launch, what: str) -> Generator[None, None, None]:
     """Logs a failure of one VM's after-the-fact bookkeeping instead of failing the poll. A
     rate limit still ends the poll, leaving the VM to be tried again on the next."""
     try:
@@ -1144,7 +1159,9 @@ def skipped(repo: str, error: Exception | None) -> None:
         log(f"{repo} is back")
 
 
-def remove_stale_runners(gh: GitHub, repos: Iterable[str], keep: Iterable[str] = ()) -> list[str]:
+def remove_stale_runners(
+    gh: GitHubApi, repos: Iterable[str], keep: Iterable[str] = ()
+) -> list[str]:
     """Registrations left by a previous supervisor whose VMs have ended (`keep` names the
     ones still running). Returns the repos GitHub would not show (say, the token cannot see
     them), to try again later."""
@@ -1277,7 +1294,7 @@ def build_cache_image(stream: IO[bytes], image: Path) -> None:
         staged.replace(image)
 
 
-def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) -> bool:
+def take_outbox(gh: GitHubApi, tar: Path, branches: Mapping[str, str], now: float) -> bool:
     """Turn an ended VM's outbox into its repo's cache disk if the job that VM ran passed on
     a push to the default branch, so a branch or pull request cannot replace the cache. The
     header only says which run to ask about; GitHub's job list must name this VM's runner.
@@ -1328,7 +1345,7 @@ def take_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) 
     return False
 
 
-def judge_outbox(gh: GitHub, tar: Path, branches: Mapping[str, str], now: float) -> bool:
+def judge_outbox(gh: GitHubApi, tar: Path, branches: Mapping[str, str], now: float) -> bool:
     """take_outbox, deleting the outbox unless it is kept for another try. Only a failure that
     may clear (GitHub down or rate limited) keeps it: a VM could name a run that does not
     exist, and its 6 GiB would stay an hour."""
@@ -1356,7 +1373,7 @@ def ended_outboxes(state: State, now: float) -> list[Path]:
     ]
 
 
-def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
+def maybe_take_outboxes(gh: GitHubApi, state: State, now: float) -> None:
     """Judge ended VMs' outboxes one at a time in the background, so polling never waits on
     a build. Each is deleted once judged; one GitHub cannot answer for is kept an hour."""
     due = ended_outboxes(state, now)
@@ -1379,7 +1396,7 @@ def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
     threading.Thread(target=work, daemon=True).start()
 
 
-def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
+def ask(gh: GitHubApi, state: State, repo: str, now: float) -> tuple[list[Job] | None, float]:
     """One repo's queued jobs (None if it is not served this poll), and the seconds the
     asking took. Run for every polled repo at once, each on its own thread."""
     asked = time.monotonic()
@@ -1408,7 +1425,7 @@ def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | No
         return None, time.monotonic() - asked
 
 
-def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, float]:
+def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str, float]:
     """One poll. Returns how long asking each repo for queued jobs took, in seconds."""
     queued: Counter[Want] = Counter()
     job_ids: dict[Want, list[int]] = {}
@@ -1631,9 +1648,9 @@ def note_waits(
     starts waiting and every WAIT_LOG_SECONDS, and at once if GitHub had queued it
     UNSEEN_LOG_SECONDS before the supervisor saw it. A job that was logged gets one more line
     when it stops waiting. Jobs of repos not polled this time are left as they are."""
-    queued_at = queued_at or {}
-    workflows = workflows or {}
-    unmatched = unmatched or {}
+    queued_at = queued_at or dict[int, float]()
+    workflows = workflows or dict[int, str]()
+    unmatched = unmatched or dict[int, tuple[str, ...]]()
     for job_id, wait in list(state.waits.items()):
         if job_id not in reasons and wait.repo in repos:
             del state.waits[job_id]
@@ -1863,7 +1880,7 @@ def read_load_test() -> dict[str, object] | None:
         record = json.loads(LOAD_TEST_FILE.read_text())
     except (OSError, ValueError):
         return None
-    return record if isinstance(record, dict) else None
+    return {str(k): v for k, v in record.items()} if isinstance(record, dict) else None
 
 
 def file_hash(path: Path) -> str:
@@ -1985,10 +2002,10 @@ def replace_file(path: Path, text: str) -> None:
         raise
 
 
-def private_repos(gh: GitHub) -> dict[str, str]:
+def private_repos(gh: GitHubApi) -> dict[str, str]:
     """Colin's private repositories the token can see, the ones that signed up, each
     with its default branch. An archived one takes no jobs, so it gets no VM or standby."""
-    repos: list[dict] = []
+    repos: list[dict[str, Any]] = []
     for n in range(1, 11):
         page = gh.request(
             "GET", f"/user/repos?visibility=private&affiliation=owner&per_page=100&page={n}"
@@ -2005,7 +2022,7 @@ def private_repos(gh: GitHub) -> dict[str, str]:
     }
 
 
-def only_colin(gh: GitHub, repo: str) -> bool:
+def only_colin(gh: GitHubApi, repo: str) -> bool:
     """Whether nobody but Colin can push to the repo: no other collaborator and no deploy
     key that can write. Asked on every listing and before a repo's first VM (unchanged
     answers are free); any doubt is a no, so only Colin and his own apps start jobs here."""
@@ -2023,7 +2040,7 @@ def only_colin(gh: GitHub, repo: str) -> bool:
     )
 
 
-def public_repos(gh: GitHub) -> dict[str, str]:
+def public_repos(gh: GitHubApi) -> dict[str, str]:
     """The PUBLIC_REPOS served now (is_served), each with its default branch."""
     found: dict[str, str] = {}
     for repo in sorted(PUBLIC_REPOS):
@@ -2040,7 +2057,7 @@ def public_repos(gh: GitHub) -> dict[str, str]:
     return found
 
 
-def list_repos(gh: GitHub) -> tuple[dict[str, str], list[str]]:
+def list_repos(gh: GitHubApi) -> tuple[dict[str, str], list[str]]:
     """The served repos with their default branches, and those nobody else can push to:
     the ones to serve."""
     listing = private_repos(gh) | public_repos(gh)

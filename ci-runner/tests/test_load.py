@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -Es
 """Check that a VM in every slot at full tilt leaves the services responsive:
   sudo ci-runner/tests/test-load.sh [SECONDS]
 Boots a VM in every slot at the size the supervisor gives a job when others run
@@ -112,6 +112,21 @@ def memory_sample(meminfo: str) -> tuple[int, int]:
     return available, waiting
 
 
+def seconds_bound(text: str) -> float:
+    """MAX_RESPONSE as a number; anything else is 0, as awk read it, so a typo fails
+    loudly instead of aborting the run before its verdict."""
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+
+def exit_status(code: int) -> int:
+    """A wait result as the shell reports it: Popen gives -n for a process killed by signal n,
+    the shell 128+n."""
+    return 128 - code if code < 0 else code
+
+
 def report(
     label: str, timings: Sequence[Sequence[Timing]], max_response: str
 ) -> tuple[list[str], list[str]]:
@@ -135,7 +150,7 @@ def report(
         lines.append(line)
         if failures:
             reasons.append(f"{label} {name}: {len(failures)} requests failed")
-        if answered and float(answered[-1].seconds) > float(max_response):
+        if answered and float(answered[-1].seconds) > seconds_bound(max_response):
             reasons.append(f"{label} {name}: worst {answered[-1].seconds}s over {max_response}s")
     return lines, reasons
 
@@ -243,7 +258,7 @@ def main(argv: Sequence[str], host: Host | None = None) -> int:
         # Time the services from the start, so VM start-up counts too.
         loaded = test.sample(seconds - 5)
         for n, vm in enumerate(vms):
-            status = vm.wait()
+            status = exit_status(vm.wait())
             line, reason = vm_outcome(n, status, (tmp / f"vm{n}.log").read_text(errors="replace"))
             print(line)
             if reason:

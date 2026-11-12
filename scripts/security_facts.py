@@ -23,6 +23,7 @@ import subprocess
 from collections.abc import Iterable, Set
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 OUT = Path("/var/lib/homelab-metrics/security.prom")
 # Installed by hand (scripts/install-runner-guard.sh); main's copy is the CI host's checkout, which
@@ -68,14 +69,14 @@ HELP = {
 Events = dict[str, dict[tuple[str, ...], float]]
 
 
-def journal(since: str = "-1h") -> list[dict]:
+def journal(since: str = "-1h") -> list[dict[str, Any]]:
     command = ["journalctl", "--output=json", "--no-pager", "--quiet", f"--since={since}"]
     command += [f"--identifier={name}" for name in IDENTIFIERS]
     lines = subprocess.run(command, capture_output=True, text=True, check=True, timeout=60).stdout
     return [json.loads(line) for line in lines.splitlines() if line]
 
 
-def events(entries: Iterable[dict], devices: dict[str, str]) -> Events:
+def events(entries: Iterable[dict[str, Any]], devices: dict[str, str]) -> Events:
     """The newest time of each event, by kind and labels; `devices` names tailnet addresses."""
     found: Events = {kind: {} for kind in LABELS}
     for entry in entries:
@@ -110,7 +111,7 @@ def events(entries: Iterable[dict], devices: dict[str, str]) -> Events:
     return found
 
 
-def tailnet(status: dict) -> tuple[dict[str, float], dict[str, str]]:
+def tailnet(status: dict[str, Any]) -> tuple[dict[str, float], dict[str, str]]:
     """When each device was added, by its DNS name's first label (its host name can be
     "localhost"), and the device of each address."""
     added: dict[str, float] = {}
@@ -131,7 +132,7 @@ def known_devices(current: Iterable[str], state: Path = STATE) -> set[str]:
     return set(json.loads(state.read_text(encoding="utf-8")))
 
 
-def tailscale_status() -> dict:
+def tailscale_status() -> dict[str, Any]:
     run = subprocess.run(
         ["tailscale", "status", "--json"], capture_output=True, text=True, check=True, timeout=30
     )
@@ -153,7 +154,7 @@ def label(value: str) -> str:
 def render(
     found: Events, added: dict[str, float], guard_matches: bool, known: Set[str] = frozenset()
 ) -> str:
-    lines = []
+    lines: list[str] = []
     for kind, names in LABELS.items():
         metric = f"homelab_{kind}_timestamp_seconds"
         lines += [f"# HELP {metric} {HELP[kind]}", f"# TYPE {metric} gauge"]

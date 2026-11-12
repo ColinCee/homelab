@@ -8,6 +8,7 @@ import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -126,14 +127,14 @@ def test_the_config_and_rules_load() -> None:
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
-def posts(alert: str, value: str, **labels: str) -> dict:
+def posts(alert: str, value: str, **labels: str) -> dict[str, Any]:
     """What a firing rule hands Alertmanager: its labels and its filled-in annotations."""
     rule = RULES[alert]
     notes = {k: v.replace("{{ $value }}", value) for k, v in rule["annotations"].items()}
     return {"exp_labels": rule["labels"] | labels, "exp_annotations": notes}
 
 
-def at(minutes: int, name: str, *firing: dict) -> dict:
+def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
     return {"eval_time": f"{minutes}m", "alertname": name, "exp_alerts": list(firing)}
 
 

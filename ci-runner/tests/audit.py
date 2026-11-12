@@ -97,11 +97,18 @@ class Host:
     def path(self, name: str) -> Path:
         return self.root / name.lstrip("/")
 
+    # A missing program is an answer, as in the shell (exit 127), not a crash.
     def ok(self, *command: str, quiet: bool = False) -> bool:
-        return self.run(list(command), quiet=quiet).returncode == 0
+        try:
+            return self.run(list(command), quiet=quiet).returncode == 0
+        except FileNotFoundError:
+            return False
 
     def out(self, *command: str, quiet: bool = False) -> str:
-        return self.run(list(command), quiet=quiet).stdout
+        try:
+            return self.run(list(command), quiet=quiet).stdout
+        except FileNotFoundError:
+            return ""
 
 
 class Audit:

@@ -45,9 +45,11 @@ SPANS_MAX = 500
 ROW_DAYS = 30
 
 Get = Callable[[str], Any]
+# A JSON object from GitHub, or one sent to Alloy as OTLP.
+Json = dict[str, Any]
 
 
-def seconds(value: Any) -> float:
+def seconds(value: object) -> float:
     return datetime.fromisoformat(str(value)).timestamp()
 
 
@@ -64,7 +66,9 @@ def trusted(run: Mapping[str, Any]) -> bool:
     actor, triggering = run.get("actor") or {}, run.get("triggering_actor") or {}
     if (run.get("head_repository") or {}).get("full_name") != REPO:
         return False
-    return kind(run) == "main" or (actor.get("id") == OWNER_ID and triggering.get("id") == OWNER_ID)
+    return kind(run) == "main" or bool(
+        actor.get("id") == OWNER_ID and triggering.get("id") == OWNER_ID
+    )
 
 
 def kind(run: Mapping[str, Any]) -> str:
@@ -97,7 +101,7 @@ def span_id(*parts: object) -> str:
 
 def span(
     trace: str, sid: str, parent: str, name: str, start: float, end: float, **attrs: object
-) -> dict:
+) -> Json:
     return {
         "traceId": trace,
         "spanId": sid,
@@ -117,8 +121,11 @@ def window(item: Mapping[str, Any]) -> tuple[float, float] | None:
 
 
 def trace(
-    run: Mapping[str, Any], attempt: int, jobs: list[Mapping[str, Any]], tests: Mapping[int, list]
-) -> dict:
+    run: Mapping[str, Any],
+    attempt: int,
+    jobs: list[Mapping[str, Any]],
+    tests: Mapping[int, list[Json]],
+) -> Json:
     """One OTLP trace for a run attempt. Its IDs come from the run and attempt, so sending it
     twice stores the same spans."""
     tid = hashlib.sha256(f"{REPO}/{run['id']}/{attempt}".encode()).hexdigest()[:32]
@@ -185,8 +192,8 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
     return "\n".join(lines) + "\n"
 
 
-def latest_rows(run: Mapping[str, Any], jobs: list[Mapping[str, Any]]) -> dict[str, dict]:
-    rows: dict[str, dict] = {}
+def latest_rows(run: Mapping[str, Any], jobs: list[Mapping[str, Any]]) -> dict[str, Json]:
+    rows: dict[str, Json] = {}
     for job in jobs:
         if job.get("conclusion") != "success" or not (w := window(job)):
             continue
@@ -202,16 +209,16 @@ def latest_rows(run: Mapping[str, Any], jobs: list[Mapping[str, Any]]) -> dict[s
 
 def poll(
     get: Get,
-    send: Callable[[dict], None],
+    send: Callable[[Json], None],
     state: Mapping[str, Any],
-    keep: Callable[[dict], None] = lambda state: None,
-) -> dict:
+    keep: Callable[[Json], None] = lambda state: None,
+) -> Json:
     """Send each new finished run attempt's trace, oldest first, and keep the latest rows of
     Colin's own runs: job names come from the run's workflow file, which any pull request may
     change. `done` is False when GitHub or Alloy could not be reached, and the rest wait.
     `keep` saves the state after each run, so a pass cut short loses nothing."""
     sent: list[str] = list(state.get("sent", []))
-    latest: dict[str, dict] = dict(state.get("latest", {}))
+    latest: dict[str, Json] = dict(state.get("latest", {}))
     path = f"/repos/{REPO}/actions/runs?status=completed&per_page=30"
     runs = get(path).get("workflow_runs", [])
     for run in sorted(runs, key=lambda r: (r["id"], r.get("run_attempt", 1))):
@@ -246,7 +253,7 @@ def poll(
 
 
 def github(token: str) -> Get:
-    def get(path: str) -> Any:
+    def get(path: str) -> Any:  # noqa: ANN401 - GitHub's JSON, read as each endpoint documents it
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
         request = urllib.request.Request(f"https://api.github.com{path}", headers=headers)
         for tries_left in (1, 0):
@@ -261,7 +268,7 @@ def github(token: str) -> Get:
     return get
 
 
-def send_trace(body: dict) -> None:
+def send_trace(body: Json) -> None:
     data = json.dumps(body).encode()
     headers = {"Content-Type": "application/json"}
     request = urllib.request.Request(TRACES, data, headers, method="POST")
@@ -279,7 +286,7 @@ def replace(path: Path, text: str, mode: int = 0o644) -> None:
 def main() -> int:
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
 
-    def keep(state: dict) -> None:
+    def keep(state: Json) -> None:
         replace(STATE, json.dumps(state), 0o600)
 
     state = poll(github(TOKEN_FILE.read_text().strip()), send_trace, state, keep)

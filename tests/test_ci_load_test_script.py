@@ -82,7 +82,9 @@ def last_line(capsys: pytest.CaptureFixture[str]) -> str:
     return capsys.readouterr().out.splitlines()[-1]
 
 
-def test_every_vm_booted_and_every_answer_quick_passes(tmp_path, capsys) -> None:
+def test_every_vm_booted_and_every_answer_quick_passes(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     host, started = make_host(tmp_path)
     assert load.main(["20"], host) == 0
     out = capsys.readouterr().out
@@ -97,7 +99,9 @@ def test_every_vm_booted_and_every_answer_quick_passes(tmp_path, capsys) -> None
     assert "host most data waiting for the disk: 3 MiB" in out
 
 
-def test_a_slow_answer_under_load_fails_with_the_service_and_its_time(tmp_path, capsys) -> None:
+def test_a_slow_answer_under_load_fails_with_the_service_and_its_time(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     def slow_grafana(url: str, loaded: bool, now: float) -> str:
         return "1.400000 200" if loaded and url.endswith(":5080/healthz") else "0.010000 200"
 
@@ -106,7 +110,7 @@ def test_a_slow_answer_under_load_fails_with_the_service_and_its_time(tmp_path, 
     assert last_line(capsys) == "FAIL 3 slots: loaded Grafana: worst 1.400000s over 1s"
 
 
-def test_max_response_raises_the_bound(tmp_path, capsys) -> None:
+def test_max_response_raises_the_bound(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     def slowish(url: str, loaded: bool, now: float) -> str:
         return "1.400000 200"
 
@@ -116,7 +120,9 @@ def test_max_response_raises_the_bound(tmp_path, capsys) -> None:
     assert last_line(capsys).endswith("worst response within 2s")
 
 
-def test_failed_requests_fail_and_show_when_they_came(tmp_path, capsys) -> None:
+def test_failed_requests_fail_and_show_when_they_came(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     def refused_at_boot(url: str, loaded: bool, now: float) -> str:
         # The quiet phase takes the first 15 seconds.
         return "0.000000 000" if loaded and url.endswith(":8123/") and now < 17 else "0.01 200"
@@ -130,7 +136,20 @@ def test_failed_requests_fail_and_show_when_they_came(tmp_path, capsys) -> None:
     assert out.splitlines()[-1] == "FAIL 3 slots: loaded Home Assistant: 2 requests failed"
 
 
-def test_a_vm_that_did_not_boot_or_burn_fails_with_its_log(tmp_path, capsys) -> None:
+def test_a_non_numeric_max_response_is_zero_and_a_killed_vm_shows_128_plus_the_signal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host, _ = make_host(tmp_path, logs={1: (-9, "slot 1 is busy\n")})
+    host.env = {**host.env, "MAX_RESPONSE": "fast"}
+    assert load.main(["20"], host) == 1
+    last = last_line(capsys)
+    assert "loaded Grafana: worst 0.012000s over fast" in last
+    assert "slot 1: VM did not boot (exit 137)" in last
+
+
+def test_a_vm_that_did_not_boot_or_burn_fails_with_its_log(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     logs = {1: (1, "slot 1 is busy\n"), 2: (0, "=== probe start\nBURN_MEM 1900 MiB\n")}
     host, _ = make_host(tmp_path, logs=logs)
     assert load.main(["20"], host) == 1
@@ -141,7 +160,7 @@ def test_a_vm_that_did_not_boot_or_burn_fails_with_its_log(tmp_path, capsys) -> 
     )
 
 
-def test_a_quiet_failure_counts_too(tmp_path, capsys) -> None:
+def test_a_quiet_failure_counts_too(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     def down_before(url: str, loaded: bool, now: float) -> str:
         return "0.01 200" if loaded else "0.000000 000"
 
@@ -151,13 +170,15 @@ def test_a_quiet_failure_counts_too(tmp_path, capsys) -> None:
 
 
 @pytest.mark.parametrize("seconds", ["15", "x", "-20"])
-def test_seconds_must_be_a_number_over_15(tmp_path, seconds) -> None:
+def test_seconds_must_be_a_number_over_15(tmp_path: Path, seconds: str) -> None:
     host, started = make_host(tmp_path)
     assert load.main([seconds], host) == 2
     assert started == []
 
 
-def test_without_the_tailnet_address_it_gives_no_verdict(tmp_path, capsys) -> None:
+def test_without_the_tailnet_address_it_gives_no_verdict(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     # The supervisor keeps no PASS or FAIL line as not run, rather than lowering the slots.
     host, started = make_host(tmp_path)
 
@@ -172,7 +193,7 @@ def test_without_the_tailnet_address_it_gives_no_verdict(tmp_path, capsys) -> No
     ]
 
 
-def test_it_needs_root(tmp_path) -> None:
+def test_it_needs_root(tmp_path: Path) -> None:
     host, started = make_host(tmp_path)
     host.is_root = lambda: False
     assert load.main([], host) == 1 and started == []

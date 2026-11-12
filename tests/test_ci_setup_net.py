@@ -98,7 +98,7 @@ def root(tmp_path: Path) -> Path:
 
 
 def setup(host: FakeHost, root: Path, mode: str, env: dict[str, str] | None = None) -> int:
-    return net.main([mode], run=host, root=root, env=env or {}, here=root)
+    return int(net.main([mode], run=host, root=root, env=env or {}, here=root))
 
 
 def test_up_makes_a_tap_per_slot_owned_by_its_user(root: Path) -> None:
@@ -174,6 +174,31 @@ def test_wan_fails_when_the_public_address_cannot_be_found(root: Path) -> None:
     host.public = "not an address"
     assert setup(host, root, "wan") == 1
     assert host.loaded == []
+
+
+def test_wan_without_curl_finds_no_address_instead_of_crashing(root: Path) -> None:
+    class NoCurl(FakeHost):
+        def answer(self, command: list[str], input: str | None) -> tuple[int, str]:
+            if command[0] == "curl":
+                raise FileNotFoundError("curl")
+            return super().answer(command, input)
+
+    host = NoCurl()
+    assert setup(host, root, "wan") == 1
+    # up still loads the rules, and so the wall, before it fails to find the address.
+    assert setup(host, root, "up") == 0
+    assert host.loaded
+
+
+def test_slot_and_resolver_files_that_are_not_text_fall_back_instead_of_aborting_up(
+    root: Path,
+) -> None:
+    (root / "etc/homelab-ci/slots").write_bytes(b"\xff\xfe4\n")
+    (root / "run/systemd/resolve/resolv.conf").write_bytes(b"nameserver \xff\n")
+    host = FakeHost()
+    assert setup(host, root, "up") == 0
+    assert len(host.taps) == 5
+    assert "resolvers" not in host.loaded[0]
 
 
 def test_a_failing_command_ends_up_with_its_exit_code(root: Path) -> None:

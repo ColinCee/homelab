@@ -20,7 +20,7 @@ the same repository URL, R2 keys and password. Named volumes restore the same wa
 ## Backup store full
 
 Uploads stop at 8 GB, so every night fails until it shrinks: find what grew (`docker exec backup restic stats`, then
-`restic diff` between snapshots), exclude it in [`backup.sh`](../stacks/backup/backup.sh), and drop the oversized
+`restic diff` between snapshots), exclude it in [`backup.py`](../stacks/backup/backup.py), and drop the oversized
 snapshots with `restic forget --prune <id>`.
 
 ## Rebuilding the Beelink

@@ -65,7 +65,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   'has waited'`. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (service `ci`) and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
-  ([`update.sh`](../ci-runner/update.sh)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
+  ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
   the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
   connection.
 - [`ci-runner/tests/audit.sh`](../ci-runner/tests/audit.sh) is the gate: run it after every Firecracker, kernel or
@@ -120,7 +120,7 @@ Traps:
 
 ## Backups
 
-[restic](../stacks/backup/backup.sh) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
+[restic](../stacks/backup/backup.py) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
 encrypted: Home Assistant's config and a consistent copy of its history, the flight tracker's heatmap volume, and
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
 ([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and

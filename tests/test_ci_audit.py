@@ -146,10 +146,12 @@ def run_audit(host: FakeHost, *, owner: Callable[[Path], tuple[str, str]] | None
         is_root=lambda: True,
         owner=owner or owners({proc}),
     )
-    return audit.main(fake, here=Path("/repo/ci-runner/tests"))
+    return int(audit.main(fake, here=Path("/repo/ci-runner/tests")))
 
 
-def test_a_sound_host_passes_every_check(host, capsys) -> None:
+def test_a_sound_host_passes_every_check(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert run_audit(host) == 0
     lines = capsys.readouterr().out.splitlines()
     assert lines[-1] == "audit passed"
@@ -172,7 +174,7 @@ def test_a_sound_host_passes_every_check(host, capsys) -> None:
     assert len(names) == len(lines) - 1 == CHECKS
 
 
-BREAKS: dict[str, Callable[[FakeHost], None]] = {
+BREAKS: dict[str, Callable[[FakeHost], object]] = {
     "KSM off": lambda h: (h.root / "sys/kernel/mm/ksm/run").write_text("1\n"),
     "token root-only": lambda h: (h.root / "etc/homelab-ci/github-token").chmod(0o640),
     "cache disks root-owned, read-only to others": lambda h: (
@@ -204,7 +206,9 @@ BREAKS: dict[str, Callable[[FakeHost], None]] = {
 
 
 @pytest.mark.parametrize("name", BREAKS)
-def test_any_one_failing_check_fails_the_audit_and_the_rest_still_run(host, capsys, name) -> None:
+def test_any_one_failing_check_fails_the_audit_and_the_rest_still_run(
+    host: FakeHost, capsys: pytest.CaptureFixture[str], name: str
+) -> None:
     BREAKS[name](host)
     assert run_audit(host) == 1
     lines = capsys.readouterr().out.splitlines()
@@ -213,26 +217,48 @@ def test_any_one_failing_check_fails_the_audit_and_the_rest_still_run(host, caps
     assert len(lines) == CHECKS + 1  # every check still ran
 
 
-def test_a_missing_file_fails_its_check_instead_of_stopping_the_audit(host, capsys) -> None:
+def test_a_missing_file_fails_its_check_instead_of_stopping_the_audit(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
     (host.root / "sys/fs/cgroup/firecracker/cpu.weight").unlink()
     assert run_audit(host) == 1
     out = capsys.readouterr().out
     assert "FAIL CPU weight below services" in out and "PASS network test" in out
 
 
-def test_a_firecracker_not_run_by_its_slot_user_fails(host, capsys) -> None:
+def test_a_missing_mount_program_fails_the_image_check_instead_of_crashing(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class NoMount(FakeHost):
+        def answer(self, command: list[str]) -> tuple[int, str]:
+            if command[0] == "mount":
+                raise FileNotFoundError("mount")
+            return super().answer(command)
+
+    no_mount = NoMount(host.root)
+    assert run_audit(no_mount) == 1
+    out = capsys.readouterr().out
+    assert "FAIL image could not be mounted for the secrets scan" in out
+    assert "PASS network test" in out
+
+
+def test_a_firecracker_not_run_by_its_slot_user_fails(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
     assert run_audit(host, owner=owners(set())) == 1
     assert "FAIL Firecracker runs as fc-slot0" in capsys.readouterr().out
 
 
-def test_a_missing_slot_user_fails_and_skips_its_checks(host, capsys) -> None:
+def test_a_missing_slot_user_fails_and_skips_its_checks(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
     host.answers[("id", "fc-slot1")] = 1
     assert run_audit(host) == 1
     out = capsys.readouterr().out
     assert "FAIL fc-slot1 exists" in out and "fc-slot1 cannot read" not in out
 
 
-def test_no_firecracker_process_fails(host, capsys) -> None:
+def test_no_firecracker_process_fails(host: FakeHost, capsys: pytest.CaptureFixture[str]) -> None:
     host.boots = False
     assert run_audit(host) == 1
     out = capsys.readouterr().out
@@ -240,7 +266,9 @@ def test_no_firecracker_process_fails(host, capsys) -> None:
     assert "FAIL guest is told only its task ()" in out
 
 
-def test_it_will_not_run_beside_the_supervisor(host, capsys) -> None:
+def test_it_will_not_run_beside_the_supervisor(
+    host: FakeHost, capsys: pytest.CaptureFixture[str]
+) -> None:
     host.answers[("systemctl", "is-active", "--quiet", "homelab-ci-supervisor.service")] = 0
     assert run_audit(host) == 1
     assert "stop the supervisor" in capsys.readouterr().err

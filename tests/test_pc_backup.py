@@ -15,8 +15,8 @@ def _project(root: Path, name: str, manifest: str) -> Path:
 
 
 def test_each_project_is_one_tar_with_a_database_copied_whole_and_exclusions_left_out(
-    tmp_path, monkeypatch
-):
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     home = tmp_path / "home"
     data = home / ".thing"
     (data / "shots").mkdir(parents=True)
@@ -47,7 +47,9 @@ def test_each_project_is_one_tar_with_a_database_copied_whole_and_exclusions_lef
     assert count == 2 and tar_path.name.endswith("-thing.tar")
 
 
-def test_a_listed_path_that_is_missing_or_a_broken_manifest_is_an_error_not_a_silent_skip(tmp_path):
+def test_a_listed_path_that_is_missing_or_a_broken_manifest_is_an_error_not_a_silent_skip(
+    tmp_path: Path,
+) -> None:
     root = tmp_path / "projects"
     _project(root, "gone", f'paths = ["{(tmp_path / "nowhere").as_posix()}"]\n')
     [project] = pc_backup.manifests(root)
@@ -58,7 +60,9 @@ def test_a_listed_path_that_is_missing_or_a_broken_manifest_is_an_error_not_a_si
         pc_backup.manifests(root)
 
 
-def test_a_run_reports_each_project_and_fails_when_one_fails(tmp_path, monkeypatch):
+def test_a_run_reports_each_project_and_fails_when_one_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sent = []
     monkeypatch.setattr(pc_backup, "STATUS", tmp_path / "status.json")
     monkeypatch.setattr(pc_backup, "send", lambda tar, to: sent.append((tar.name, to)))

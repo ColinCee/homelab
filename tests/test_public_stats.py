@@ -2,6 +2,7 @@ import io
 import json
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -12,7 +13,7 @@ from stacks.observability.public_stats import STACKS, StatsError, build_body, si
 NOW = 1_800_000_000.0
 
 
-def results(running: tuple[str, ...] = STACKS) -> dict:
+def results(running: tuple[str, ...] = STACKS) -> dict[str, Any]:
     return {
         "running": [
             {"metric": {"container_label_com_docker_compose_project": s}, "value": [NOW, "1"]}

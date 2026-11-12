@@ -31,7 +31,7 @@ def server(request: pytest.FixtureRequest) -> Iterator[int]:
         sock.sendto(answer(question, rcode, address), client)
 
     threading.Thread(target=serve, daemon=True).start()
-    yield sock.getsockname()[1]
+    yield int(sock.getsockname()[1])
     sock.close()
 
 

@@ -24,7 +24,7 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 
 [tool.ruff.per-file-target-version]
 "scripts/tailscale_policy.py" = "py312"
@@ -37,6 +37,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 ".github/actions/fc-cache/fc_cache.py" = "py312"
 "scripts/pin_only.py" = "py312"
 "scripts/versions_hash.py" = "py312"
+"ci-runner/install_host.py" = "py312"
+"ci-runner/update.py" = "py312"
 "ci-runner/net/setup_net.py" = "py312"
 "ci-runner/tests/test_load.py" = "py312"
 "ci-runner/tests/test_network.py" = "py312"
@@ -49,3 +51,13 @@ pythonpath = ["."]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
 [tool.ty]
+
+# Kaizen's standard (standards.md, Types): no untyped value gets through, and a warning fails the check.
+[tool.ty.rules]
+missing-type-argument = "error"
+unsound-assignment = "error"
+unsound-return-statement = "error"
+unsound-yield = "error"
+
+[tool.ty.terminal]
+error-on-warning = true

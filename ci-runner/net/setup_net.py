@@ -54,7 +54,7 @@ def slot_count(env: Mapping[str, str], root: Path) -> int:
     text = env.get("SLOTS", "")
     if not text:
         try:
-            text = (root / "etc/homelab-ci/slots").read_text()
+            text = (root / "etc/homelab-ci/slots").read_text(errors="replace")
         except OSError:
             text = ""
     text = re.sub(r"\s", "", text)
@@ -86,13 +86,16 @@ class Network:
 
     def public_address(self) -> str | None:
         # A few tries: one slow answer should not cost a VM (run-vm.sh refuses to start without it).
-        trace = self.run(
-            [
-                *["curl", "-4", "-sf", "-m", "3", "--retry", "3", "--retry-all-errors"],
-                *["--retry-delay", "1", TRACE_URL],
-            ],
-            check=False,
-        ).stdout
+        try:
+            trace = self.run(
+                [
+                    *["curl", "-4", "-sf", "-m", "3", "--retry", "3", "--retry-all-errors"],
+                    *["--retry-delay", "1", TRACE_URL],
+                ],
+                check=False,
+            ).stdout
+        except FileNotFoundError:
+            trace = ""
         wan = "\n".join(line[3:] for line in trace.splitlines() if line.startswith("ip="))
         if not re.fullmatch(r"[0-9]{1,3}(\.[0-9]{1,3}){3}", wan):
             print("cannot find the public address", file=sys.stderr)
@@ -196,7 +199,7 @@ class Network:
 
     def resolvers(self) -> list[str]:
         try:
-            text = (self.root / "run/systemd/resolve/resolv.conf").read_text()
+            text = (self.root / "run/systemd/resolve/resolv.conf").read_text(errors="replace")
         except OSError:
             return []
         return [
