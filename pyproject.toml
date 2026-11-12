@@ -35,13 +35,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 "scripts/runner_job_guard.py" = "py312"
 "ci-runner/install_host.py" = "py312"
 "ci-runner/update.py" = "py312"
-"ci-runner/net/setup_net.py" = "py312"
-"ci-runner/tests/test_load.py" = "py312"
-"ci-runner/tests/test_network.py" = "py312"
-"ci-runner/tests/audit.py" = "py312"
-"ci-runner/vm_disks.py" = "py312"
-"ci-runner/run_vm.py" = "py312"
-"ci-runner/stop_vms.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

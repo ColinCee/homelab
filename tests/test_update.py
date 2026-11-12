@@ -348,3 +348,14 @@ def test_the_units_and_the_updater_run_the_same_python() -> None:
     assert len(commands) == 5
     assert {words[0] for words in commands} == {installer.PYTHON_LINK}
     assert up.SUPERVISOR[0] == installer.PYTHON_LINK
+
+    # The wrappers too; install-host.sh and update.sh repair the host, so they stay on the system's.
+    wrappers = [
+        line.split()[1]
+        for script in CI_RUNNER.glob("**/*.sh")
+        if script.name not in ("install-host.sh", "update.sh")
+        for line in script.read_text().splitlines()
+        if line.startswith("exec ") and ".py" in line
+    ]
+    assert len(wrappers) == 6
+    assert set(wrappers) == {installer.PYTHON_LINK}
