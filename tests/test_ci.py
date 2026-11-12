@@ -112,11 +112,27 @@ def test_the_registry_login_stays_in_the_job_s_temp_folder_and_takes_the_token_o
     assert (tmp_path / "env").read_text() == f"DOCKER_CONFIG={tmp_path / 'docker'}\n"
 
 
-def test_the_pull_request_rules_all_run_and_any_failure_fails_the_step(
+def test_prepare_runs_every_rule_then_the_tools_unless_pins_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ran: list[str] = []
-    for name, verdict in [("pins_only", 0), ("versions_hash", 1), ("time_limits", 0)]:
-        monkeypatch.setattr(ci, name, lambda n=name, v=verdict: ran.append(n) or v)
-    assert ci.pull_request_rules() == 1
-    assert ran == ["pins_only", "versions_hash", "time_limits"]
+
+    def setup(only: bool, hash_fails: int) -> None:
+        ran.clear()
+        monkeypatch.setattr(ci, "pins_only", lambda: ran.append("pins") or only)
+        monkeypatch.setattr(ci, "versions_hash", lambda: ran.append("hash") or hash_fails)
+        monkeypatch.setattr(ci, "time_limits", lambda: ran.append("limits") or 0)
+        monkeypatch.setattr(ci, "vm_tools", lambda: ran.append("tools") or 0)
+
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", "self-hosted")
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    setup(only=False, hash_fails=1)
+    assert ci.prepare() == 1 and ran == ["pins", "hash", "limits", "tools"]
+    setup(only=True, hash_fails=0)
+    assert ci.prepare() == 0 and ran == ["pins", "hash", "limits"]
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "push")
+    setup(only=False, hash_fails=0)
+    assert ci.prepare() == 0 and ran == ["tools"]
+    monkeypatch.setenv("RUNNER_ENVIRONMENT", "github-hosted")
+    setup(only=False, hash_fails=0)
+    assert ci.prepare() == 0 and ran == []

@@ -39,10 +39,15 @@ jobs:
           fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 1 }}
 
       # Each step's logic is in scripts/ci.py, which says why. A rule judging a pull request comes from its base commit.
-      - name: Check the pull request's rules (pin-only change, versions.env hashes, test time limits)
+      # A pull request's rules (pin-only change, versions.env hashes, test time limits), then a VM's tools from its
+      # cache disk (/cache, built from main's last green push).
+      - name: Prepare
         id: pins
-        if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py pull-request-rules
+        env:
+          # The VM's downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address
+          # shares. Only the VMs get it: a fork's code runs this step on GitHub's runners.
+          GITHUB_TOKEN: ${{ runner.environment == 'self-hosted' && github.token || '' }}
+        run: python3 scripts/ci.py prepare
 
       - name: Validate Compose (image pins only)
         if: steps.pins.outputs.only == 'true'
@@ -58,14 +63,6 @@ jobs:
         with:
           path: ~/.cache/uv
           key: uv-${{ runner.os }}-${{ hashFiles('uv.lock', 'mise.toml') }}
-
-      # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
-      - name: Install tools from the cache disk
-        if: steps.pins.outputs.only != 'true' && runner.environment == 'self-hosted'
-        env:
-          # Downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address shares.
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci.py vm-tools
 
       - name: Run checks (lint + typecheck + test + validate)
         if: steps.pins.outputs.only != 'true'

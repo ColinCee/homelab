@@ -63,12 +63,13 @@ def run_base_rule(script: str) -> int | None:
         return subprocess.run([sys.executable, str(copy), BASE, "HEAD"]).returncode
 
 
-def pins_only() -> int:
+def pins_only() -> bool:
     """Whether the pull request only moves image pins (pin_only.py): then only Compose runs. No
     rule in the base means full checks."""
-    if run_base_rule("pin_only.py") == 0:
+    only = run_base_rule("pin_only.py") == 0
+    if only:
         output("only", "true")
-    return 0
+    return only
 
 
 def changed(paths: Sequence[str]) -> list[str]:
@@ -122,11 +123,16 @@ def time_limits() -> int:
     return 1 if raised else 0
 
 
-def pull_request_rules() -> int:
-    """The pull request's own rules in one step, as each runner step costs about a third of a
-    second. Every rule runs before the verdict."""
-    results = [rule() for rule in (pins_only, versions_hash, time_limits)]
-    return 1 if any(results) else 0
+def prepare() -> int:
+    """A pull request's rules, then a VM's tools, in one step: each runner step costs about a
+    fifth of a second. Every rule runs before the verdict; a pin-only change needs no tools."""
+    failed = only = False
+    if os.environ.get("GITHUB_EVENT_NAME") == "pull_request":
+        only = pins_only()
+        failed = any([versions_hash(), time_limits()])
+    if os.environ.get("RUNNER_ENVIRONMENT") == "self-hosted" and not only:
+        failed = bool(vm_tools()) or failed
+    return 1 if failed else 0
 
 
 def vm_tools() -> int:
@@ -208,9 +214,8 @@ def ghcr_login() -> int:
 
 STEPS = {
     "ghcr-login": ghcr_login,
-    "pull-request-rules": pull_request_rules,
+    "prepare": prepare,
     "validate-changed-compose": validate_changed_compose,
-    "vm-tools": vm_tools,
     "slowest-tests": slowest_tests,
     "cache-changed": cache_changed,
     "build-image": build_image,
