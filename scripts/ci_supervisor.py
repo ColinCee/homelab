@@ -195,11 +195,12 @@ WAIT_METRICS_SECONDS = 15.0
 # (the wait log's reason), at most this many, oldest first: ci-boot writes it to
 # /etc/homelab-ci/waits.json for the job's own record.
 VM_WAITS_MAX = 50
-# The host's own load test (ci-runner/tests/test-load.sh), run by LOAD_TEST_UNIT once for each
+# The host's own load test (ci-runner/tests/test_load.py), run by LOAD_TEST_UNIT once for each
 # slot count and version of the test (docs/architecture.md, "CI runner"). Its
 # result goes in the status file and in each VM at /etc/homelab-ci/load-test.json.
 LOAD_TEST_FILE = Path("/var/lib/homelab-ci/load-test.json")
-LOAD_TEST_SCRIPT = Path("/usr/local/lib/homelab-ci/test-load.sh")
+# Run and hashed itself, not its wrapper, so a change to the test makes a new version.
+LOAD_TEST_SCRIPT = Path("/usr/local/lib/homelab-ci/test_load.py")
 LOAD_TEST_UNIT = "homelab-ci-load-test.service"
 # While this file exists no VM starts and the standbys stop, so the test has the host to itself.
 # The unit removes it however it ends (ExecStopPost), and /run is empty after a reboot.
@@ -1916,7 +1917,7 @@ def start_load_test_if_due() -> int:
 
 
 def run_load_test() -> int:
-    """`load-test`, LOAD_TEST_UNIT's work: drain, run test-load.sh at every slot, keep the
+    """`load-test`, LOAD_TEST_UNIT's work: drain, run test_load.py at every slot, keep the
     result, and on a FAIL lower the slot count by one for the next run to test. Whatever
     breaks after the drain starts is kept as "not run", so the test waits
     LOAD_TEST_RETRY_SECONDS instead of draining the host again on every update pass."""
@@ -1945,7 +1946,7 @@ def run_load_test() -> int:
 
 
 def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
-    """Wait for the running VMs to end, then run test-load.sh and keep its result."""
+    """Wait for the running VMs to end, then run test_load.py and keep its result."""
     deadline = time.monotonic() + DRAIN_LIMIT_SECONDS
     log("draining: no new VMs; waiting for the running ones to end")
     # None (systemd did not answer) is not known to be empty: wait on.
@@ -1973,7 +1974,7 @@ def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
         code = proc.returncode
     passed = code == 0 and line.startswith("PASS ")
     if not line:
-        keep(False, False, f"not run: test-load.sh exited {code} with no PASS or FAIL line")
+        keep(False, False, f"not run: test_load.py exited {code} with no PASS or FAIL line")
         return 1
     keep(True, passed, line)
     if not passed and slots > MIN_TESTED_SLOTS:

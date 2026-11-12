@@ -190,6 +190,7 @@ def install_vm_files(host: Host, here: Path) -> None:
     # Before its wrapper, which the timer may start at any time.
     install(host, "0644", here / "update.py", f"{DEST}/update.py")
     install(host, "0755", here / "update.sh", f"{DEST}/update.sh")
+    install(host, "0755", here / "tests" / "test_load.py", f"{DEST}/test_load.py")
     install(host, "0755", here / "tests" / "test-load.sh", f"{DEST}/test-load.sh")
 
 
@@ -283,6 +284,7 @@ def install_locked(host: Host, here: Path, slots: int, supervisor: Supervisor) -
     restart_files = {
         here.parent / "scripts" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
         here / "net" / "homelab-ci.nft": f"{DEST}/net/homelab-ci.nft",
+        here / "net" / "setup_net.py": f"{DEST}/net/setup_net.py",
         here / "net" / "setup-net.sh": f"{DEST}/net/setup-net.sh",
         here / "systemd" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
         here / "systemd" / SERVICE: f"/etc/systemd/system/{SERVICE}",
@@ -321,6 +323,8 @@ def install_locked(host: Host, here: Path, slots: int, supervisor: Supervisor) -
 
         install_vm_files(host, here)
         install(host, "0644", here / "net" / "homelab-ci.nft", f"{DEST}/net/homelab-ci.nft")
+        # The code before its wrapper: run-vm.sh calls setup-net.sh at any time.
+        install(host, "0755", here / "net" / "setup_net.py", f"{DEST}/net/setup_net.py")
         install(host, "0755", here / "net" / "setup-net.sh", f"{DEST}/net/setup-net.sh")
         install(
             host, "0755", here.parent / "scripts" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py"

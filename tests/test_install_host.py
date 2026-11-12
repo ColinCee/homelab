@@ -120,6 +120,8 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     assert (root / "etc/homelab-ci/slots").read_text() == "5\n"
     assert (root / "etc/homelab-ci").stat().st_mode & 0o777 == 0o700
     assert (dest / "ci_supervisor.py").stat().st_mode & 0o777 == 0o755
+    assert (dest / "test_load.py").stat().st_mode & 0o777 == 0o755
+    assert (dest / "net/setup_net.py").stat().st_mode & 0o777 == 0o755
     for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
         assert (dest / name).stat().st_mode & 0o777 == 0o644
     assert (dest / "update.py").read_bytes() == (CI_RUNNER / "update.py").read_bytes()
@@ -187,6 +189,7 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
         "usr/local/lib/homelab-ci/ci_supervisor.py",
         "usr/local/lib/homelab-ci/net/homelab-ci.nft",
         "usr/local/lib/homelab-ci/net/setup-net.sh",
+        "usr/local/lib/homelab-ci/net/setup_net.py",
         f"etc/systemd/system/{SERVICE}",
         "etc/systemd/system/homelab-ci-net.service",
     ],
@@ -203,6 +206,21 @@ def test_a_changed_supervisor_or_network_file_restarts_the_supervisor(
     assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup-net.sh"), "up")
     assert recorder.ran("systemctl", "enable", "--now", SERVICE)
     assert (root / changed).read_bytes() != b"old UNIT_PREFIX\n"
+
+
+def test_the_network_code_is_installed_before_its_wrapper(root: Path) -> None:
+    recorder = installed_host(root)
+    (root / "usr/local/lib/homelab-ci/net/setup_net.py").write_text("old\n")
+
+    install(root, recorder)
+
+    dest = root / "usr/local/lib/homelab-ci/net"
+    order = [
+        c[-1]
+        for c in recorder.calls
+        if c[-1] in (str(dest / "setup_net.py"), str(dest / "setup-net.sh"))
+    ]
+    assert order == [str(dest / "setup_net.py"), str(dest / "setup-net.sh")]
 
 
 def test_a_new_slot_count_restarts_and_adds_its_users(root: Path) -> None:

@@ -21,7 +21,7 @@ def host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr(sup, "SLOTS_FILE", tmp_path / "slots")
     monkeypatch.setattr(sup, "COMMIT_FILE", tmp_path / "commit")
     monkeypatch.setattr(sup, "UPDATE_LOCK", tmp_path / "update.lock")
-    monkeypatch.setattr(sup, "LOAD_TEST_SCRIPT", tmp_path / "test-load.sh")
+    monkeypatch.setattr(sup, "LOAD_TEST_SCRIPT", tmp_path / "test_load.py")
     monkeypatch.setattr(sup, "log", lambda message: None)
     monkeypatch.setattr(sup, "running_vms", lambda: set())
     (tmp_path / "slots").write_text("5\n")
@@ -38,7 +38,7 @@ def host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def write_test_script(folder: Path, result: str) -> None:
-    script = folder / "test-load.sh"
+    script = folder / "test_load.py"
     drain = folder / "run" / "load-test-drain"
     script.write_text(
         f'#!/bin/sh\ntest -e {drain} || {{ echo "not drained"; exit 3; }}\n{result}\n'
@@ -109,7 +109,7 @@ def test_the_drain_ends_when_the_test_breaks_and_it_waits_to_try_again(
     host: Path, broken: str | None
 ) -> None:
     if broken is None:
-        (host / "test-load.sh").chmod(0o644)
+        (host / "test_load.py").chmod(0o644)
         with pytest.raises(PermissionError):
             sup.run_load_test()
     else:
