@@ -64,3 +64,14 @@ datasources:
     secureJsonData:
       basicAuthPassword: $__file{/run/secrets/agents_password}
     editable: false
+  # The same store's spans as rows, through its LogsQL paths: sums across traces, which Jaeger's paths cannot give.
+  - name: Spans
+    uid: spans
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://gateway:5080/traces
+    basicAuth: true
+    basicAuthUser: agents@homelab.internal
+    secureJsonData:
+      basicAuthPassword: $__file{/run/secrets/agents_password}
+    editable: false
