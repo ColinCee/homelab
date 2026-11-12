@@ -2,11 +2,15 @@
 metrics, and others' runs' own words kept out."""
 
 import email.message
+import http.server
 import json
 import tempfile
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 from scripts import ci_times
 
@@ -183,3 +187,109 @@ def test_a_trace_holds_at_most_its_span_cap() -> None:
     many["steps"] = many["steps"] * 2000
     body = ci_times.trace(run(1), 1, [many], {})
     assert len(body["resourceSpans"][0]["scopeSpans"][0]["spans"]) == ci_times.SPANS_MAX
+
+
+LOG = """\ufeff2026-11-12T00:00:11.1000000Z Current runner version: '2.338.2'
+2026-11-12T00:00:11.9000000Z A job started hook has been configured by the runner administrator
+2026-11-12T00:00:12.3000000Z ##[group]Run actions/checkout@abc
+2026-11-12T00:00:14.0000000Z ##[group]Run mise run check
+2026-11-12T00:00:14.1000000Z \x1b[34m[test]\x1b[0m \x1b[1m$ uv run python -m pytest tests/\x1b[0m
+2026-11-12T00:00:14.1000000Z ^[[32m[lint]^[[0m $ uv run ruff check scripts/
+2026-11-12T00:00:14.6000000Z [lint] $ shellcheck scripts/*.sh
+2026-11-12T00:00:15.2000000Z [lint] Finished in 1.10s
+2026-11-12T00:00:18.5000000Z [test] bringing up nodes...
+2026-11-12T00:00:18.6000000Z [test] bringing up nodes...
+2026-11-12T00:00:24.4000000Z [test] Finished in 10.30s
+2026-11-12T00:00:24.5000000Z Post job cleanup.
+2026-11-12T00:00:24.9000000Z Cleaning up orphan processes"""
+
+
+def test_a_job_log_becomes_its_phases_to_the_millisecond() -> None:
+    found = ci_times.log_spans("t", "job", LOG)
+    assert [s["name"] for s in found].count("pytest start-up") == 1
+    spans = {s["name"]: s for s in found}
+
+    def took(name: str) -> float:
+        span = spans[name]
+        return round((int(span["endTimeUnixNano"]) - int(span["startTimeUnixNano"])) / 1e9, 2)
+
+    assert took("set up job") == 0.8
+    assert took("job started hook") == 0.4
+    assert took("step: actions/checkout@abc") == 1.7
+    assert took("step: mise run check") == 10.5
+    assert took("post job") == 0.4
+    assert took("task: lint") == 1.1 and took("uv run ruff check scripts/") == 0.5
+    assert took("shellcheck scripts/*.sh") == 0.6
+    assert took("task: test") == 10.3 and took("pytest start-up") == 4.4
+    # A task belongs to the step it ran in; a command to its task.
+    assert spans["task: test"]["parentSpanId"] == spans["step: mise run check"]["spanId"]
+    assert spans["shellcheck scripts/*.sh"]["parentSpanId"] == spans["task: lint"]["spanId"]
+
+
+def test_only_colins_runs_have_their_logs_read() -> None:
+    read: list[int] = []
+
+    def logs(job_id: int) -> str:
+        read.append(job_id)
+        return LOG
+
+    renovate = run(2, actor=OTHER, event="pull_request", branch="renovate/x")
+    get, _ = github([run(1), renovate])
+    sent: list[dict[str, Any]] = []
+    ci_times.poll(get, sent.append, {}, logs=logs)
+    assert read == [10]
+    assert "task: test" in names(sent[0]) and "task: test" not in names(sent[1])
+
+
+def test_a_bad_or_unfinished_log_still_gives_its_phases() -> None:
+    # A run may print a carriage return and a line that looks like a time but is not one; a task
+    # that failed never says "Finished in".
+    log = LOG.replace("[test] Finished in 10.30s", "[test] FAILED")
+    log += "\r2026-13-45T00:00:00Z not a time\n2026-11-12T00:00:25.0000000Z the end"
+    spans = {s["name"]: s for s in ci_times.log_spans("t", "job", log)}
+    assert spans["task: test"]["endTimeUnixNano"] == str(
+        int(ci_times.log_time("2026-11-12T00:00:25") * 1e9)
+    )
+    assert {"key": "ended", "value": {"stringValue": "no"}} in spans["task: test"]["attributes"]
+
+
+def serve(handler: type[http.server.BaseHTTPRequestHandler]) -> str:
+    server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{server.server_port}"
+
+
+def test_a_log_is_read_through_its_signed_link_without_the_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str | None] = []
+
+    class Store(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"the log")
+
+        def log_message(self, format: str, *args: object) -> None: ...
+
+    store = serve(Store)
+    codes = iter([302, 404, 500, 500])
+
+    class GitHub(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(next(codes))
+            self.send_header("Location", f"{store}/signed")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None: ...
+
+    api = serve(GitHub)
+    monkeypatch.setattr(ci_times, "API", api)
+    monkeypatch.setattr(ci_times, "SIGNED", store)
+    monkeypatch.setattr(ci_times.time, "sleep", lambda s: None)
+    logs = ci_times.github_logs("secret")
+    assert logs(1) == "the log" and seen == [None]
+    assert logs(2) == ""  # gone
+    with pytest.raises(OSError):
+        logs(3)  # failing twice stops the pass
