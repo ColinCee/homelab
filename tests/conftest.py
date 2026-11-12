@@ -1,7 +1,22 @@
 import os
 import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
+import yaml
+
+
+def pytest_sessionstart(session: pytest.Session) -> None:
+    # The gateway tests' image downloads while the other tests run: it was the slowest part of CI.
+    if hasattr(session.config, "workerinput") or not shutil.which("docker"):
+        return
+    compose = Path(__file__).parent.parent / "stacks/observability/compose.yaml"
+    image = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]["gateway"]["image"]
+    quiet = subprocess.DEVNULL
+    subprocess.Popen(
+        ["docker", "pull", "-q", image], stdout=quiet, stderr=quiet, start_new_session=True
+    )
 
 
 def tool(name: str) -> str:
