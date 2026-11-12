@@ -3,7 +3,7 @@
 
 Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and,
 for Colin's own runs, the slowest tests and the job log's phases to the millisecond (each step, each
-mise task and command, pytest's start-up). GitHub's API times steps only to the second. The latest
+mise task and command). GitHub's API times steps only to the second. The latest
 successful run's job seconds, by kind (main or pr), go to ci-times.prom for Prometheus and the
 ci-slower alert.
 
@@ -133,8 +133,7 @@ def log_time(text: str) -> float:
 
 def log_spans(trace: str, job: str, log: str) -> list[Json]:
     """The job's phases from its log, to the millisecond: setup, each step (by its first line), the
-    post-job steps, and inside them each mise task, its commands and pytest's start-up (until
-    "bringing up nodes")."""
+    post-job steps, and inside them each mise task and its commands."""
     lines: list[tuple[float, str]] = []
     for raw in log.split("\n"):
         if m := LOG_LINE.match(raw.rstrip("\r")):
@@ -166,12 +165,7 @@ def log_spans(trace: str, job: str, log: str) -> list[Json]:
 
     tasks: dict[str, tuple[str, float]] = {}  # a task's span id and start
     commands: dict[str, tuple[str, float, str]] = {}  # a task's running command: id, start, text
-    up = False
     for n, (at, text) in enumerate(lines):
-        if "bringing up nodes" in text and "test" in commands and not up:
-            cid, start, _ = commands["test"]
-            spans.append(span(trace, span_id(cid, "start-up"), cid, "pytest start-up", start, at))
-            up = True  # xdist says it twice
         if not (m := TASK_LINE.match(text)):
             continue
         task, command = m.group(1), m.group(2)

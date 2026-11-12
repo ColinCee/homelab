@@ -197,17 +197,13 @@ LOG = """\ufeff2026-11-12T00:00:11.1000000Z Current runner version: '2.338.2'
 2026-11-12T00:00:14.1000000Z ^[[32m[lint]^[[0m $ uv run ruff check scripts/
 2026-11-12T00:00:14.6000000Z [lint] $ shellcheck scripts/*.sh
 2026-11-12T00:00:15.2000000Z [lint] Finished in 1.10s
-2026-11-12T00:00:18.5000000Z [test] bringing up nodes...
-2026-11-12T00:00:18.6000000Z [test] bringing up nodes...
 2026-11-12T00:00:24.4000000Z [test] Finished in 10.30s
 2026-11-12T00:00:24.5000000Z Post job cleanup.
 2026-11-12T00:00:24.9000000Z Cleaning up orphan processes"""
 
 
 def test_a_job_log_becomes_its_phases_to_the_millisecond() -> None:
-    found = ci_times.log_spans("t", "job", LOG)
-    assert [s["name"] for s in found].count("pytest start-up") == 1
-    spans = {s["name"]: s for s in found}
+    spans = {s["name"]: s for s in ci_times.log_spans("t", "job", LOG)}
 
     def took(name: str) -> float:
         span = spans[name]
@@ -220,7 +216,7 @@ def test_a_job_log_becomes_its_phases_to_the_millisecond() -> None:
     assert took("post job") == 0.4
     assert took("task: lint") == 1.1 and took("uv run ruff check scripts/") == 0.5
     assert took("shellcheck scripts/*.sh") == 0.6
-    assert took("task: test") == 10.3 and took("pytest start-up") == 4.4
+    assert took("task: test") == 10.3
     # A task belongs to the step it ran in; a command to its task.
     assert spans["task: test"]["parentSpanId"] == spans["step: mise run check"]["spanId"]
     assert spans["shellcheck scripts/*.sh"]["parentSpanId"] == spans["task: lint"]["spanId"]
