@@ -145,9 +145,11 @@ def slowest_tests() -> int:
 
 
 def cache_key(root: Path = Path()) -> str:
-    """mise.toml's [tools] and uv.lock: its tasks change often and install nothing."""
-    tools = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8")).get("tools", {})
-    digest = hashlib.sha256(json.dumps(tools, sort_keys=True).encode())
+    """mise.toml's tools, settings and env, and uv.lock: its tasks change often and install
+    nothing."""
+    mise = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8"))
+    installs = {name: mise.get(name, {}) for name in ("tools", "settings", "env")}
+    digest = hashlib.sha256(json.dumps(installs, sort_keys=True).encode())
     digest.update((root / "uv.lock").read_bytes())
     return digest.hexdigest()[:16]
 
