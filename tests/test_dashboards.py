@@ -3,6 +3,7 @@
 
 import json
 import re
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +70,7 @@ def prometheus_queries(home: dict[str, Any]) -> list[str]:
     ]
 
 
+@cache  # Read once: the colour test asks for it per panel.
 def containers() -> dict[str, str]:
     """Each container compose starts, in its group's colour."""
     names: dict[str, str] = {}
