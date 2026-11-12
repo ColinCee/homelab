@@ -20,6 +20,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -28,9 +29,8 @@ LIMITS_FILE = "tests/conftest.py"
 LIMIT_NAMES = ("RUN_LIMIT", "TEST_LIMIT")
 SLOWER_LABEL = "slower-ci"
 VERSIONS = Path("ci-runner/versions.env")
-# The VM's cache disk (/cache) holds what these install; its key sits in a folder, as fc-cache
-# packs only folders.
-CACHE_INPUTS = ("mise.toml", "uv.lock")
+# The key of what the VM's cache disk (/cache) holds (cache_key); in a folder, as fc-cache packs
+# only folders.
 CACHE_KEY = Path("/cache/mise/.ci-key")
 
 
@@ -145,9 +145,12 @@ def slowest_tests() -> int:
 
 
 def cache_key(root: Path = Path()) -> str:
-    digest = hashlib.sha256()
-    for name in CACHE_INPUTS:
-        digest.update((root / name).read_bytes())
+    """mise.toml's tools, settings and env, and uv.lock: its tasks change often and install
+    nothing."""
+    mise = tomllib.loads((root / "mise.toml").read_text(encoding="utf-8"))
+    installs = {name: mise.get(name, {}) for name in ("tools", "settings", "env")}
+    digest = hashlib.sha256(json.dumps(installs, sort_keys=True).encode())
+    digest.update((root / "uv.lock").read_bytes())
     return digest.hexdigest()[:16]
 
 
