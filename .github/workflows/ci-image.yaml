@@ -1,0 +1,30 @@
+name: CI image
+
+# The CI VMs' image reaches the Beelink only after merge, so a change to it is built here first. On GitHub's runners:
+# a CI VM (2 GiB beside other jobs) cannot hold the build.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ci-runner/rootfs/**
+      - ci-runner/versions.env
+      - scripts/runner_job_guard.py
+      - .github/workflows/ci-image.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Build the CI job image
+        run: |
+          set -a && source ci-runner/versions.env && set +a
+          args=()
+          while IFS='=' read -r name _; do
+            if [[ $name =~ ^[A-Z0-9_]+$ ]]; then args+=(--build-arg "$name"); fi
+          done < ci-runner/versions.env
+          docker build -q "${args[@]}" --build-context scripts=scripts ci-runner/rootfs > /dev/null

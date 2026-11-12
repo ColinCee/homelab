@@ -303,8 +303,9 @@ prometheus.scrape "logs" {
 // OTLP from programs (traces and their logs)
 // ================================
 
-// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp (compose.yaml). Traces go on to
-// VictoriaTraces, logs to the log store with their trace and span IDs, which Grafana links to the trace.
+// Programs send traces, logs and metrics here, by OTLP over HTTP on observability-otlp, and the host's on host-otlp
+// (compose.yaml). Traces go on to VictoriaTraces, logs to the log store with their trace and span IDs, which Grafana
+// links to the trace.
 otelcol.receiver.otlp "programs" {
   http {
     endpoint = "0.0.0.0:4318"

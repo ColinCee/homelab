@@ -461,6 +461,55 @@ groups:
             on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
           dashboard: *home
           value: '{{ $value }}'
+      # The latest main run's seconds (scripts/ci_times.py), median over a day against its 14 days: half again and
+      # 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
+      # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h.
+      - alert: ci-slower
+        expr: |
+          (
+            round(max by (workflow, ci_job, runner) (
+              quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d])
+            ))
+          )
+          > 1.5 * max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+          and
+          max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d]))
+          > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+        for: 6h
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'CI on main got slower'
+          measure: 'Median today'
+          unit: ' s'
+          harm: 'Every merge waits longer for its checks or its deploy, and slow runs hide a fault.'
+          action: >-
+            Open the trace store (Grafana, Explore, traces, service `ci`) and compare a slow run's steps and
+            slowest tests with one from last week.
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: ci-times-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m]))) / 60)
+          ) > 30
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m])) * -1
+        # Past a new install's first write, at most 5 minutes in.
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'CI run times stopped'
+          measure: 'Last record'
+          unit: ' min ago'
+          harm: 'A slower CI or deploy would go unnoticed, and no run is traced.'
+          action: >-
+            Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times` on the Beelink;
+            it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: *home
+          value: '{{ $value }}'
       # unattended-upgrades installs security updates each morning (apt/52unattended-upgrades-local), so some waiting
       # at every check for 3 days means it is failing. Written each minute (scripts/security_facts.py, host); the
       # offset keeps a series younger than the window quiet.

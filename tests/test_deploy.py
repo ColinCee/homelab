@@ -315,13 +315,14 @@ def test_a_changed_secret_changes_the_hash_but_its_value_does_not_reach_it(
 
 
 def _git(repo_root: Path, *arguments: str) -> str:
-    return subprocess.run(
+    ran = subprocess.run(
         ["git", "-c", "user.name=t", "-c", "user.email=t@t", *arguments],
         cwd=repo_root,
         capture_output=True,
         text=True,
-        check=True,
-    ).stdout.strip()
+    )
+    assert ran.returncode == 0, f"git {' '.join(arguments)}: {ran.stderr}"
+    return ran.stdout.strip()
 
 
 def _commit_all(repo_root: Path) -> str:
