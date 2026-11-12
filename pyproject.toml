@@ -37,6 +37,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
 ".github/actions/fc-cache/fc_cache.py" = "py312"
 "scripts/pin_only.py" = "py312"
 "scripts/versions_hash.py" = "py312"
+"ci-runner/install_host.py" = "py312"
+"ci-runner/update.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
