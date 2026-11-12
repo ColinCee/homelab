@@ -22,8 +22,10 @@ A panel goes on the page whose question it answers.
 | `server` | The box: has it got room? Network and backups too |
 | `services` | What runs on it: is each running, and what does it use and complain about? |
 | `ci` | Is CI fast, and is it getting slower? |
+| `logs` | What are the services saying? Pick containers, search words |
+| `traces` | What did each service answer, and how long did it take? |
 
-- Every page carries the same `links`: each page, then Explore's logs and traces.
+- Every page carries the same `links`, one to each page.
 - A Home tile opens the page that explains it: `fieldConfig.defaults.links`, `oneClick`, `/d/<uid>`.
 - Home's service tiles are `instant` queries named Up and Down: over a range the state it left
   would still show.
@@ -60,10 +62,13 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
 - A running service: the `container-stopped` rule's join of `homelab_container_expected`.
 - `homelab_ci_job_seconds` is each job's latest good run in this repo, held until the next: a median
   over it weighs hours, not runs.
-- Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (the watchdog always fires), a
+- Alert history is `ALERTS{alertstate="firing",alertname!="watchdog"}` (it always fires), a
   sample a minute. A table over the time range uses `[$__range]` in instant queries, merged.
 - Logs: VictoriaLogs' stream field is `container_name`, the line `_msg`. Alloy resends a container's
-  recent lines when it restarts, so use `uniq by (_time, container_name, _msg)` before `stats` (not
+  lines when it restarts, so use `uniq by (_time, container_name, _msg)` before `stats` (not
   allowed in a range query, which then counts repeats).
+- Spans (`uid: spans`): the trace store in LogsQL. `duration` is nanoseconds, a field
+  with a colon is quoted (`"span_attr:event":*`), and a span's attributes tell a run from a job, a
+  step or a test (`scripts/ci_times.py`).
 
-Check: `uv run python -m pytest tests/test_dashboards.py`.
+Check: `uv run pytest tests/test_dashboards.py`.

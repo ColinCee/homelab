@@ -201,7 +201,8 @@ def trace(
     logs: Mapping[int, str] | None = None,
 ) -> Json:
     """One OTLP trace for a run attempt. Its IDs come from the run and attempt, so sending it
-    twice stores the same spans."""
+    twice stores the same spans. Each level of span is its own service, as Grafana's timeline
+    colours a span by its service."""
     tid = hashlib.sha256(f"{REPO}/{run['id']}/{attempt}".encode()).hexdigest()[:32]
     root = span_id(run["id"], attempt)
     timed = [(job, w) for job in jobs if (w := window(job))]
@@ -214,41 +215,52 @@ def trace(
         "attempt": attempt,
         "url": run.get("html_url"),
     }
-    spans = [span(tid, root, "", str(run.get("name")), start, end, **about)]
+    spans = [("ci", span(tid, root, "", str(run.get("name")), start, end, **about))]
     for job, (job_start, job_end) in timed:
         jid = span_id(run["id"], attempt, job["id"])
         runner = runner_kind(job.get("labels", []))
         conclusion = job.get("conclusion")
         name = str(job.get("name"))
-        spans.append(
-            span(tid, jid, root, name, job_start, job_end, runner=runner, conclusion=conclusion)
+        job_span = span(
+            tid, jid, root, name, job_start, job_end, runner=runner, conclusion=conclusion
         )
+        spans.append(("ci job", job_span))
         for step in job.get("steps", []):
             if not (w := window(step)):
                 continue
             sid = span_id(jid, step.get("number"))
             name = str(step.get("name"))
-            spans.append(span(tid, sid, jid, name, *w, conclusion=step.get("conclusion")))
+            step_span = span(tid, sid, jid, name, *w, conclusion=step.get("conclusion"))
+            spans.append(("ci step", step_span))
             if not name.startswith("Run checks"):
                 continue
             for test in tests.get(int(job["id"]), []):
                 # The test host's clock, kept inside its step's.
                 t_start = min(max(test["start"], w[0]), w[1])
                 t_end = min(t_start + test["seconds"], w[1])
-                spans.append(
-                    span(tid, span_id(sid, test["test"]), sid, test["test"], t_start, t_end)
-                )
-    resource = {
-        "attributes": [
-            {"key": "service.name", "value": {"stringValue": "ci"}},
-            {"key": "repository", "value": {"stringValue": REPO}},
-        ]
-    }
+                test_span = span(tid, span_id(sid, test["test"]), sid, test["test"], t_start, t_end)
+                spans.append(("ci test", test_span))
     for job, _ in timed:
         jid = span_id(run["id"], attempt, job["id"])
-        spans += log_spans(tid, jid, (logs or {}).get(int(job["id"]), ""))
-    scope = {"spans": spans[:SPANS_MAX]}
-    return {"resourceSpans": [{"resource": resource, "scopeSpans": [scope]}]}
+        log = (logs or {}).get(int(job["id"]), "")
+        spans += [("ci task", log_span) for log_span in log_spans(tid, jid, log)]
+    by_service: dict[str, list[Json]] = {}
+    for service, one in spans[:SPANS_MAX]:
+        by_service.setdefault(service, []).append(one)
+    return {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": service}},
+                        {"key": "repository", "value": {"stringValue": REPO}},
+                    ]
+                },
+                "scopeSpans": [{"spans": group}],
+            }
+            for service, group in by_service.items()
+        ]
+    }
 
 
 def label(text: str) -> str:

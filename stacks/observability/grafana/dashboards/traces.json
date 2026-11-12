@@ -1,0 +1,734 @@
+{
+  "uid": "traces",
+  "title": "Traces",
+  "description": "What did each service answer, and how long did it take? CI's runs are on the CI page.",
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 41,
+  "tags": [
+    "homelab"
+  ],
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "refresh": "5m",
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "link",
+      "title": "Home",
+      "url": "/d/home",
+      "icon": "dashboard",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    },
+    {
+      "type": "link",
+      "title": "Server",
+      "url": "/d/server",
+      "icon": "dashboard",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    },
+    {
+      "type": "link",
+      "title": "Services",
+      "url": "/d/services",
+      "icon": "dashboard",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    },
+    {
+      "type": "link",
+      "title": "CI",
+      "url": "/d/ci",
+      "icon": "dashboard",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    },
+    {
+      "type": "link",
+      "title": "Logs",
+      "url": "/d/logs",
+      "icon": "doc",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    },
+    {
+      "type": "link",
+      "title": "Traces",
+      "url": "/d/traces",
+      "icon": "bolt",
+      "tags": [],
+      "asDropdown": false,
+      "includeVars": false,
+      "keepTime": false,
+      "targetBlank": false,
+      "tooltip": ""
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Requests an hour, by service",
+      "description": "Requests each service answered, counted from its traces.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "kind:=2 | stats by (\"resource_attr:service.name\") count() as requests",
+          "legendFormat": "{{resource_attr:service.name}}",
+          "queryType": "statsRange",
+          "step": "1h",
+          "editorMode": "code"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "table",
+          "placement": "right",
+          "calcs": [
+            "lastNotNull"
+          ],
+          "sortBy": "Last *",
+          "sortDesc": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 10
+      },
+      "interval": "1h"
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Each service, last 24 hours",
+      "description": "Requests each service answered in the last 24 hours, how many failed, and how long they took: the median, the time 95 in 100 came under, and the slowest.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "_time:1d kind:=2 | stats by (\"resource_attr:service.name\") count() as requests, count() if (status_code:=2) as failed, median(duration) as typical, quantile(0.95, duration) as most, max(duration) as slowest | sort by (requests) desc | limit 30 | math typical/1e6 as typical, most/1e6 as most, slowest/1e6 as slowest",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 30
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "resource_attr:service.name": true,
+              "requests": true,
+              "failed": true,
+              "typical": true,
+              "most": true,
+              "slowest": true
+            },
+            "indexByName": {
+              "resource_attr:service.name": 0,
+              "requests": 1,
+              "failed": 2,
+              "typical": 3,
+              "most": 4,
+              "slowest": 5
+            },
+            "renameByName": {
+              "resource_attr:service.name": "Service",
+              "requests": "Requests",
+              "failed": "Failed",
+              "typical": "Typical",
+              "most": "95 in 100 under",
+              "slowest": "Slowest"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Requests",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "Failed",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "Typical",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "95 in 100 under",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "Slowest",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Requests",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 60
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(Typical|95 in 100 under)$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: ms"
+              },
+              {
+                "id": "decimals",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(Slowest)$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Failed"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "text",
+                      "value": null
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 10
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Slowest requests, last hour",
+      "description": "The requests that took longest in the last hour. Open timeline shows what a request called and where its time went.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "_time:1h kind:=2 | sort by (duration) desc | limit 25 | math duration/1e6 as ms | fields _time, \"resource_attr:service.name\", name, ms, trace_id",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 30
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "Time": true,
+              "resource_attr:service.name": true,
+              "name": true,
+              "ms": true,
+              "trace_id": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "resource_attr:service.name": 1,
+              "name": 2,
+              "ms": 3,
+              "trace_id": 4
+            },
+            "renameByName": {
+              "Time": "Finished",
+              "resource_attr:service.name": "Service",
+              "name": "Request",
+              "ms": "Took",
+              "trace_id": "Steps"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Took",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Finished",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 60
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Finished"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocalNoDateIfToday"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(Took)$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Steps"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": ".+",
+                      "result": {
+                        "text": "Open timeline",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the request's timeline",
+                    "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22traces%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22jaeger%22%2C%22uid%22%3A%22traces%22%7D%2C%22query%22%3A%22${__value.raw}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 12,
+        "h": 12
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Failed requests, last 24 hours",
+      "description": "The latest requests a service answered with an error.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "_time:1d kind:=2 status_code:=2 | sort by (_time) desc | limit 25 | math duration/1e6 as ms | fields _time, \"resource_attr:service.name\", name, ms, trace_id",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 30
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "Time": true,
+              "resource_attr:service.name": true,
+              "name": true,
+              "ms": true,
+              "trace_id": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "resource_attr:service.name": 1,
+              "name": 2,
+              "ms": 3,
+              "trace_id": 4
+            },
+            "renameByName": {
+              "Time": "Finished",
+              "resource_attr:service.name": "Service",
+              "name": "Request",
+              "ms": "Took",
+              "trace_id": "Steps"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Took",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Finished",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 60
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Finished"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocalNoDateIfToday"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^(Took)$"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "suffix: ms"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Steps"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "regex",
+                    "options": {
+                      "pattern": ".+",
+                      "result": {
+                        "text": "Open timeline",
+                        "index": 0
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open the request's timeline",
+                    "url": "/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22traces%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22jaeger%22%2C%22uid%22%3A%22traces%22%7D%2C%22query%22%3A%22${__value.raw}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D&orgId=1"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 10,
+        "w": 12,
+        "h": 12
+      }
+    }
+  ]
+}

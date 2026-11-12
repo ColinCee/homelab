@@ -79,8 +79,20 @@ def github(
     return get, asked
 
 
+def by_service(body: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Each service's spans, with every resource checked to be one service of this repo's."""
+    spans: dict[str, list[dict[str, Any]]] = {}
+    for resource in body["resourceSpans"]:
+        about = {a["key"]: a["value"]["stringValue"] for a in resource["resource"]["attributes"]}
+        assert about["repository"] == ci_times.REPO
+        assert about["service.name"] not in spans
+        (scope,) = resource["scopeSpans"]
+        spans[about["service.name"]] = scope["spans"]
+    return spans
+
+
 def names(body: dict[str, Any]) -> list[str]:
-    return [s["name"] for s in body["resourceSpans"][0]["scopeSpans"][0]["spans"]]
+    return [s["name"] for spans in by_service(body).values() for s in spans]
 
 
 def test_each_run_attempt_is_sent_once_with_its_jobs_steps_and_tests() -> None:
@@ -96,13 +108,40 @@ def test_each_run_attempt_is_sent_once_with_its_jobs_steps_and_tests() -> None:
         "tests/test_x.py::test_slow",
     ]
     # Different attempts, different traces; the same attempt again is not sent.
-    assert (
-        sent[0]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"]
-        != (sent[1]["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["traceId"])
-    )
+    assert by_service(sent[0])["ci"][0]["traceId"] != by_service(sent[1])["ci"][0]["traceId"]
     again: list[dict[str, Any]] = []
     ci_times.poll(get, again.append, state)
     assert again == []
+
+
+def test_each_level_of_span_is_its_own_service_in_the_one_trace() -> None:
+    # A task that never finished is a log span too, though it is built apart from the others.
+    log = LOG.replace("[test] Finished in 10.30s", "[test] FAILED")
+    tests = {10: [{"test": "tests/test_x.py::test_slow", "start": 1794441625.0, "seconds": 3.0}]}
+    spans = by_service(ci_times.trace(run(1), 1, [job(10)], tests, {10: log}))
+    assert {service: [s["name"] for s in group] for service, group in spans.items()} == {
+        "ci": ["CI"],
+        "ci job": ["check"],
+        "ci step": ["Run checks (lint + typecheck + test + validate)"],
+        "ci test": ["tests/test_x.py::test_slow"],
+        "ci task": [
+            "set up job",
+            "job started hook",
+            "step: actions/checkout@abc",
+            "step: mise run check",
+            "post job",
+            "uv run ruff check scripts/",
+            "shellcheck scripts/*.sh",
+            "task: lint",
+            "uv run python -m pytest tests/",
+            "task: test",
+        ],
+    }
+    every = [s for group in spans.values() for s in group]
+    assert len({s["traceId"] for s in every}) == 1
+    # Each span but the run hangs from another in the trace, whichever service holds it.
+    ids = {s["spanId"] for s in every}
+    assert [s["name"] for s in every if s["parentSpanId"] not in ids] == ["CI"]
 
 
 def test_a_test_span_stays_inside_its_step_whatever_its_clock_says() -> None:
@@ -110,8 +149,8 @@ def test_a_test_span_stays_inside_its_step_whatever_its_clock_says() -> None:
     get, _ = github([run(1)], late)
     sent: list[dict[str, Any]] = []
     ci_times.poll(get, sent.append, {})
-    spans = sent[0]["resourceSpans"][0]["scopeSpans"][0]["spans"]
-    step, test = spans[2], spans[3]
+    spans = by_service(sent[0])
+    (step,), (test,) = spans["ci step"], spans["ci test"]
     assert step["startTimeUnixNano"] <= test["startTimeUnixNano"] <= step["endTimeUnixNano"]
     assert test["endTimeUnixNano"] <= step["endTimeUnixNano"]
 
@@ -170,9 +209,7 @@ def test_a_failed_request_keeps_what_was_sent_for_the_next_run() -> None:
 
 def test_a_run_alloy_refuses_is_skipped_and_a_whole_pass_says_done() -> None:
     def refuse(body: dict[str, Any]) -> None:
-        if body["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["spanId"] == ci_times.span_id(
-            1, 1
-        ):
+        if by_service(body)["ci"][0]["spanId"] == ci_times.span_id(1, 1):
             raise ci_times.urllib.error.HTTPError(
                 "url", 413, "too big", email.message.Message(), None
             )
@@ -182,11 +219,17 @@ def test_a_run_alloy_refuses_is_skipped_and_a_whole_pass_says_done() -> None:
     assert state["sent"] == ["1/1", "2/1"] and state["done"] is True
 
 
-def test_a_trace_holds_at_most_its_span_cap() -> None:
+def test_a_trace_holds_at_most_its_span_cap_across_its_services() -> None:
     many = job(10)
     many["steps"] = many["steps"] * 2000
-    body = ci_times.trace(run(1), 1, [many], {})
-    assert len(body["resourceSpans"][0]["scopeSpans"][0]["spans"]) == ci_times.SPANS_MAX
+    spans = by_service(ci_times.trace(run(1), 1, [many, job(11)], {}, {10: LOG}))
+    # The earliest built are kept, whatever their service: the second job and the log's spans,
+    # built after the first job's steps, are not.
+    assert {service: len(group) for service, group in spans.items()} == {
+        "ci": 1,
+        "ci job": 1,
+        "ci step": ci_times.SPANS_MAX - 2,
+    }
 
 
 LOG = """\ufeff2026-11-12T00:00:11.1000000Z Current runner version: '2.338.2'

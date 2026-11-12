@@ -485,8 +485,8 @@ groups:
           unit: ' s'
           harm: 'Every merge waits longer for its checks or its deploy, and slow runs hide a fault.'
           action: >-
-            Open the trace store (Grafana, Explore, traces, service `ci`) and compare a slow run's steps and
-            slowest tests with one from last week.
+            On Grafana's CI page (http://grafana.internal/d/ci), open a slow run's timeline from Recent runs and
+            compare its steps and slowest tests with one from last week.
           dashboard: *home
           value: '{{ $value }}'
       - alert: ci-times-stale

@@ -9,7 +9,8 @@ Why the pages look as they do: what to keep when you change one, and what was tr
 - Home answers "is anything wrong?" on one screen. A number that is never wrong goes on the page behind it.
 - Link, never copy: a panel lives on one page, and a Home tile opens the page that explains it.
 - Server is the box, Services what runs on it: a panel per container is Services'.
-- Digging through logs, metrics and traces is Explore's; pages link into it.
+- Explore opens empty, so Logs and Traces are pages that show the latest on open; a row there opens
+  Explore on that one trace. Digging further is Explore's.
 
 ## The panel for the job
 
