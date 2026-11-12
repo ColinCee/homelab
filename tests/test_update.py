@@ -357,5 +357,5 @@ def test_the_units_and_the_updater_run_the_same_python() -> None:
         for line in script.read_text().splitlines()
         if line.startswith("exec ") and ".py" in line
     ]
-    assert len(wrappers) == 6
+    assert len(wrappers) == 8
     assert set(wrappers) == {installer.PYTHON_LINK}
