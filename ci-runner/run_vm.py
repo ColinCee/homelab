@@ -230,8 +230,7 @@ def make_outbox(slot: Slot, cache_out: Path) -> bool:
     # goes without an outbox and its cache is simply not saved.
     try:
         os.link(cache_out, slot.chroot / "outbox.img")
-    except OSError as e:
-        print(f"ln: {e}", file=sys.stderr)
+    except OSError:
         print(
             f"slot {slot.number}: no outbox, {cache_out} cannot be linked into the chroot",
             file=sys.stderr,
@@ -277,10 +276,14 @@ GRACE_SECONDS = 5
 def stop_process(slot: Slot, process: Process) -> None:
     """Kill the VM now. Firecracker is not in the unit's cgroup (the jailer moves it into the
     slot's own), so stopping the unit does not reach it: kill that cgroup, and if the jailer is
-    still there, its process group."""
-    with contextlib.suppress(OSError):
+    still there, its process group. Without that cgroup (the signal came before the jailer made
+    it) the group is signalled at once: there is nothing else to wait for."""
+    signums: list[int | None] = [None, signal.SIGTERM, signal.SIGKILL]
+    try:
         (slot.cgroup / "cgroup.kill").write_text("1\n")
-    for signum in (None, signal.SIGTERM, signal.SIGKILL):
+    except OSError:
+        signums.pop(0)
+    for signum in signums:
         if signum is not None:
             process.kill_group(signum)
         try:

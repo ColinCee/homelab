@@ -490,3 +490,25 @@ def test_stop_vms_kills_every_vm_and_clears_its_files(tmp_path: Path) -> None:
     assert len(run.ran("dmsetup remove")) == 3
     assert sorted(p.name for p in run_dir.rglob("*")) == ["slot2.lock", "vms"]
     assert not jail.parent.exists()
+
+
+def test_stop_vms_carries_on_past_a_failed_step_and_says_so(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    host, run, _ = detach_box(tmp_path)
+    jail = tmp_path / "srv/jailer/firecracker/ci-slot2/root"
+    jail.mkdir(parents=True)
+
+    def no_systemctl(
+        command: Sequence[str], *, out: bool = False, quiet: bool = False
+    ) -> subprocess.CompletedProcess[str]:
+        if command[0] == "systemctl":
+            raise FileNotFoundError("systemctl")
+        return run(command, out=out, quiet=quiet)
+
+    status = stop_vms.stop_vms(dataclasses.replace(host, run=no_systemctl))
+
+    assert status == 1
+    assert "stop-vms: stop units: systemctl" in capsys.readouterr().err
+    assert len(run.ran("dmsetup remove")) == 3
+    assert not jail.parent.exists()

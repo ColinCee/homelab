@@ -183,9 +183,10 @@ def install_vm_files(host: Host, here: Path) -> None:
     # The Python first: a new wrapper runs only what is already there.
     for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
         install(host, "0644", here / name, f"{DEST}/{name}")
-    host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
     install(host, "0755", here / "run-vm.sh", f"{DEST}/run-vm.sh")
     install(host, "0755", here / "stop-vms.sh", f"{DEST}/stop-vms.sh")
+    # After the new wrappers: a VM started before them runs the old run-vm.sh, which sources it.
+    host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
     # Before its wrapper, which the timer may start at any time.
     install(host, "0644", here / "update.py", f"{DEST}/update.py")
     install(host, "0755", here / "update.sh", f"{DEST}/update.sh")

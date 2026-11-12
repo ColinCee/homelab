@@ -131,6 +131,33 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     )
 
 
+def test_the_old_vm_disks_script_goes_only_after_the_wrappers_that_no_longer_need_it(
+    root: Path,
+) -> None:
+    recorder = Recorder(active=False)
+    stale = root / "usr/local/lib/homelab-ci/vm-disks.sh"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("old")
+    stale_at_wrapper_install: list[bool] = []
+
+    def watching(
+        command: list[str],
+        *,
+        check: bool = True,
+        capture: bool = False,
+        quiet: bool = False,
+        input: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        if command[0] == "install" and command[-1] == str(stale.with_name("run-vm.sh")):
+            stale_at_wrapper_install.append(stale.exists())
+        return recorder(command, check=check, capture=capture, quiet=quiet, input=input)
+
+    ih.install_host(ih.Host(root=root, run=watching), CI_RUNNER, {})
+
+    assert stale_at_wrapper_install == [True]
+    assert not stale.exists()
+
+
 def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

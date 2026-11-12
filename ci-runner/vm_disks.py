@@ -134,8 +134,8 @@ def attach_disk(host: Host, slot: int, name: str, image: Path, node: Path) -> No
         created = True  # even if create fails midway, removing a missing device is harmless
         check(host, ["dmsetup", "create", dm, "--table", table])
         # Held by the snapshot, so this only marks the loops to detach once it is removed.
-        marked = True
         check(host, ["losetup", "-d", *loops])
+        marked = True
         major, minor = check(
             host, ["dmsetup", "info", "-c", "--noheadings", "-o", "major,minor", dm], out=True
         ).split(":")
