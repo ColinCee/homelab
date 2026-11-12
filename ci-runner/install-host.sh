@@ -68,6 +68,7 @@ install_vm_files() {
   install -o root -g root -m 0755 "$here/run-vm.sh" "$dest/run-vm.sh"
   install -o root -g root -m 0755 "$here/stop-vms.sh" "$dest/stop-vms.sh"
   install -o root -g root -m 0755 "$here/update.sh" "$dest/update.sh"
+  install -o root -g root -m 0755 "$here/tests/test_load.py" "$dest/test_load.py"
   install -o root -g root -m 0755 "$here/tests/test-load.sh" "$dest/test-load.sh"
 }
 # Cache disks the supervisor builds from main-only outboxes; VMs read them, never write.
@@ -117,6 +118,7 @@ changed() { ! cmp -s "$1" "$2"; }
 restart=false
 for pair in "../scripts/ci_supervisor.py:$dest/ci_supervisor.py" \
   "net/homelab-ci.nft:$dest/net/homelab-ci.nft" "net/setup-net.sh:$dest/net/setup-net.sh" \
+  "net/setup_net.py:$dest/net/setup_net.py" \
   "systemd/homelab-ci-net.service:/etc/systemd/system/homelab-ci-net.service" \
   "systemd/$service:/etc/systemd/system/$service"; do
   if changed "$here/${pair%%:*}" "${pair#*:}"; then restart=true; fi
@@ -146,6 +148,8 @@ else
 
   install_vm_files
   install -o root -g root -m 0644 "$here/net/homelab-ci.nft" "$dest/net/homelab-ci.nft"
+  # The code before its wrapper: run-vm.sh calls setup-net.sh at any time.
+  install -o root -g root -m 0755 "$here/net/setup_net.py" "$dest/net/setup_net.py"
   install -o root -g root -m 0755 "$here/net/setup-net.sh" "$dest/net/setup-net.sh"
   install -o root -g root -m 0755 "$here/../scripts/ci_supervisor.py" "$dest/ci_supervisor.py"
   install -o root -g root -m 0644 "$here/systemd/homelab-ci-net.service" /etc/systemd/system/homelab-ci-net.service
