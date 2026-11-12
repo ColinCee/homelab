@@ -16,7 +16,6 @@ Checks: `mise run check` (CI's check job; Compose validation needs Docker), befo
   user's own terminal. Never request a Bitwarden vault session or run these prompts through an agent tool.
 - The `homelab-fc` Firecracker VMs (no secrets, deploy access or home network) run only Colin's jobs; others' run on
   GitHub's runners. Change the Beelink's CI runner only by merging to main.
-- Unattended agents (the `homelab-oncall` check) may open pull requests, never merge; Renovate alone
-  auto-merges.
+- Unattended agents may open pull requests, never merge; Renovate alone auto-merges.
 - Docs are `README.md`, `docs/architecture.md`, `docs/recovery.md` and `docs/adr/` (only comparisons run),
   capped by `docs-size.json` (`mise run docs:size`): cut first, or say in the pull request why it grows.
