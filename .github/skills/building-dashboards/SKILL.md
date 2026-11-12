@@ -6,8 +6,8 @@ description: Edit homelab dashboards: Grafana's Home, from Git. Use when changin
 # Dashboards
 
 Grafana's Home is `stacks/observability/grafana/home.json`. Grafana loads the file on start and every
-30 s, and refuses a save from the UI: edit the file, not the UI. Open it at `http://grafana.internal/d/home` (save
-`http://beelink.tail4f465e.ts.net:5080/d/home`).
+30 s, and refuses a save from the UI: edit the file, not the UI. Open and link it at
+`http://grafana.internal/d/home`.
 
 ## Home
 

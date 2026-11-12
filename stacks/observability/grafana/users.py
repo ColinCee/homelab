@@ -13,7 +13,7 @@ from typing import Any
 
 URL = "http://grafana:3000"
 # Grafana redirects any other name to its own (compose.yaml, GF_SERVER_ENFORCE_DOMAIN).
-HOST = "beelink.tail4f465e.ts.net"
+HOST = "grafana.internal"
 LOGIN = "agents"
 SECRETS = Path("/run/secrets")
 

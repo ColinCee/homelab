@@ -11,15 +11,15 @@ reach what, and policy changes: Colin's notes repo (`ColinCee/notes`, checked ou
 `notes` beside the code repos; pull first), `04-dev/homelab/network.md` and
 `tailscale-policy.md`. No checkout: `gh api repos/ColinCee/notes/contents/<path> -H 'Accept: application/vnd.github.raw'`.
 
-| Service | Type | Save in code, docs and dashboards |
+| Service | Type | Save in code, docs, dashboards |
 |---|---|---|
-| Grafana | `http://grafana.internal` | `http://beelink.tail4f465e.ts.net:5080` |
+| Grafana | `http://grafana.internal` | `http://grafana.internal` |
 | Home Assistant | `http://home.internal` | `http://beelink.tail4f465e.ts.net:8123` |
 | Beelink shell | `ssh beelink` | `beelink.tail4f465e.ts.net` |
 
-- Type the short forms; save the full `*.ts.net` form. Short names fail on Beelink
-  itself: its `/etc/hosts` maps `beelink` to `127.0.1.1`, and its containers resolve
-  it to themselves or to loopback. Docker port bindings and Alloy scrape targets
+- Type the short forms; save the `*.ts.net` form (Grafana: `.internal`). Short names fail
+  on Beelink: `/etc/hosts` maps `beelink` to `127.0.1.1`, containers resolve it to
+  themselves or loopback, and `.internal` sites refuse it. Docker port bindings and Alloy scrape targets
   stay IPs (the Beelink's is `100.100.146.119`).
 - `.internal` names come from `stacks/internal-names` in the homelab repo. A new one
   needs a site in its Caddyfile, the name in its Corefile, a row here, and a tailnet
