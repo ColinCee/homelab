@@ -6,7 +6,8 @@ ADD --checksum=sha256:72c7dbe4bc046f278670f6ab4c4b1518201037f35f534eff462f76fa6e
     https://github.com/VictoriaMetrics/victorialogs-datasource/releases/download/v0.34.0/victoriametrics-logs-datasource-v0.34.0.tar.gz \
     /tmp/victorialogs.tar.gz
 # Grafana's own Metrics Drilldown app, the sidebar's Drilldown, checked against the checksum grafana.com lists for
-# the version. Each version names the Grafana versions it runs on, so it moves with the image above.
+# the version. Each version names the Grafana versions it runs on, and Renovate sees neither pin here: move both by
+# hand when the image above moves.
 ADD --checksum=sha256:06429398b25f087af6f951801f823b86eae280dd168f510a542b092d8bad1451 \
     https://grafana.com/api/plugins/grafana-metricsdrilldown-app/versions/3.1.0/download \
     /tmp/metricsdrilldown.zip
