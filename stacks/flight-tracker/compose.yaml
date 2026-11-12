@@ -34,7 +34,7 @@ services:
       - observability-otlp
       - deploy-doorbell
 
-# Written from GitHub secrets by scripts/render-secrets.sh.
+# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
   tunnel_token:
     file: ../../secrets/cf_tunnel_token

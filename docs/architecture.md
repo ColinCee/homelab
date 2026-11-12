@@ -12,17 +12,14 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
   that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
   full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. A forged
-  ring deploys nothing new. Until it goes, [`deploy.yaml`](../.github/workflows/deploy.yaml), run by hand on the
-  deploy runner, renders `secrets/`.
-- **Who may deploy.** Whoever lands a commit on `main`. The root-owned [runner guard](../scripts/runner_job_guard.py)
-  refuses every deploy-runner job but `deploy.yaml` from `main` by `ColinCee` or `renovate[bot]`; changing it takes a
-  reinstall ([recovery](recovery.md#runner-guard)).
+  ring deploys nothing new. No code from GitHub runs on the Beelink to deploy.
+- **Who may deploy.** Whoever lands a commit on `main`, which takes a pull request with checks green, admins included.
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
     the service needs it;
   - `labels: {homelab.config-hash: ${CONFIG_HASH_<SERVICE>:-}}` on a service that reads a mounted file without reloading,
     and `init: true` when its main process ignores SIGTERM as PID 1;
-  - each secret a Compose `secrets:` file from `../../secrets/`, listed in `deploy.yaml`'s render step, never in
+  - each secret a Compose `secrets:` file from `../../secrets/` (its one copy elsewhere is in Bitwarden), never in
     `environment:`, which `docker inspect` shows;
   - `systemd/<stack>-*.service` with a `.timer` or `.path` install as user units (the host has linger on) and write
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
@@ -59,8 +56,8 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
 - Served, with no other writer: private repos the token sees, and `PUBLIC_REPOS`
   ([`ci_supervisor.py`](../scripts/ci_supervisor.py)) while GitHub holds outside contributors' runs for approval. A
-  runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py),
-  vm policy) kills a public repo's job unless Colin started it from the repo.
+  runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py))
+  kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
   VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each (each level its own service: `ci`, `ci job`, `ci step`, `ci task`, `ci test`; to the millisecond) and alerts
   when main slows.
@@ -68,9 +65,8 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
   the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
   connection.
-- Host units run `homelab-python3`, the `mise.toml` Python, which `install_host.py` links after a hash check. It,
-  `update.py` and the [runner guard](../scripts/runner_job_guard.py) stay on the system's 3.12 to repair or guard it, as
-  do the deploy scripts, which need its `python3-yaml`.
+- Host units run `homelab-python3`, the `mise.toml` Python, which `install_host.py` links after a hash check. It and
+  `update.py` stay on the system's 3.12 to repair it, as do the deploy scripts, which need its `python3-yaml`.
 - [`audit.sh`](../ci-runner/tests/audit.sh) gates every Firecracker, kernel or runner upgrade.
 
 ## Monitoring and alerts

@@ -53,7 +53,7 @@ OWNER_ID = 11246116
 # Public repos served as well. A repo signs up here, not by token access: GitHub must hold
 # every outside contributor's run for approval (STRICT_APPROVAL) and nobody else may push
 # (only_colin). VMs start only for Colin's runs, and each VM's job guard refuses any other
-# job (runner_job_guard.py, vm policy), since a repo's runner takes any queued job.
+# job (runner_job_guard.py), since a repo's runner takes any queued job.
 PUBLIC_REPOS = frozenset({"ColinCee/homelab"})
 STRICT_APPROVAL = "all_external_contributors"
 # Written by build-rootfs.sh when the VM image carries that guard: until then (an image not yet

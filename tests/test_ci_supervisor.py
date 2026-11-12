@@ -114,8 +114,8 @@ def test_the_standby_goes_to_the_repo_of_the_last_job() -> None:
         (["homelab-fc"], True),
         (["self-hosted", "linux", "x64", "homelab-fc"], True),
         (["Self-Hosted", "HOMELAB-FC"], True),
-        (["self-hosted"], False),  # could be the deploy runner's job
-        (["homelab-fc", "beelink"], False),  # the deploy runner's label
+        (["self-hosted"], False),  # the VMs carry only homelab-fc
+        (["homelab-fc", "beelink"], False),  # beelink is not a VM's label
     ],
 )
 def test_takes_only_jobs_asking_for_our_label(labels: list[str], ours: bool) -> None:

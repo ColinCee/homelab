@@ -1,46 +1,26 @@
 #!/usr/bin/env python3
-"""Refuse any job on the Beelink deploy runner except the deploy workflow on main, and
-(vm policy) any job on a public repo's CI VM that is not Colin's own.
+"""Refuse any job on a public repo's CI VM that is not Colin's own (docs/architecture.md,
+"CI runner").
 
 Runs as the runner's job-started hook (ACTIONS_RUNNER_HOOK_JOB_STARTED), before the
 job's first step. A failing hook only marks the job failed: the runner still runs later
 steps whose condition allows it (`if: always()`, and the pre steps of JavaScript
 actions). So a refusal also kills the job's Runner.Worker, the process that runs the
-steps, and nothing after the hook runs. The repository is public, so a fork
-pull request can bring its own workflow targeting this runner, and only an approval
-click stands in the way. This guard closes that path on the host, where workflows
-cannot change it.
+steps, and nothing after the hook runs.
 
-The installed copy is root-owned and is not updated by deploys, so a push to main
-cannot rewrite the policy. See docs/architecture.md, "Deploys".
-
-Stays on the host's /usr/bin/python3 (py312 in pyproject.toml): it guards the host, so it must
-not depend on the homelab-python3 that install_host.py installs.
+Built into the VM image (ci-runner/rootfs), on the image's python3.
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import os
 import signal
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-REPOSITORY = "ColinCee/homelab"
-REF = "refs/heads/main"
-EVENTS = frozenset({"push", "workflow_dispatch"})
-WORKFLOWS = frozenset({f"{REPOSITORY}/.github/workflows/deploy.yaml@{REF}"})
-# Who may start a job here: Colin, and Renovate merging its own pull requests.
-# The actor is checked by ID. The triggering actor (who started a re-run) is only
-# available by name, so renaming any account means updating this list.
-ACTOR_IDS = {
-    "11246116": "ColinCee",
-    "29139614": "renovate[bot]",
-}
-TRIGGERING_ACTORS = frozenset(ACTOR_IDS.values())
 # Present only if a workflow's env reached the hook; bash would have sourced them first.
 INJECTION_VARIABLES = ("BASH_ENV", "ENV")
 # Values safe to log; everything else is logged by name only.
@@ -67,34 +47,7 @@ class Decision:
     reason: str
 
 
-def decide(env: Mapping[str, str]) -> Decision:
-    """Allow only the deploy workflow, from main, on this repository. Missing means no."""
-    for name in INJECTION_VARIABLES:
-        if env.get(name):
-            return Decision(False, f"{name} is set; workflow environment reached the hook")
-    repository = env.get("GITHUB_REPOSITORY", "")
-    if repository != REPOSITORY:
-        return Decision(False, f"repository {repository or '(missing)'} is not {REPOSITORY}")
-    event = env.get("GITHUB_EVENT_NAME", "")
-    if event not in EVENTS:
-        return Decision(False, f"event {event or '(missing)'} is not one of {sorted(EVENTS)}")
-    ref = env.get("GITHUB_REF", "")
-    if ref != REF:
-        return Decision(False, f"ref {ref or '(missing)'} is not {REF}")
-    workflow = env.get("GITHUB_WORKFLOW_REF", "")
-    if workflow not in WORKFLOWS:
-        return Decision(False, f"workflow {workflow or '(missing)'} is not the deploy workflow")
-    actor_id = env.get("GITHUB_ACTOR_ID", "")
-    if actor_id not in ACTOR_IDS:
-        actor = env.get("GITHUB_ACTOR", "") or "(missing)"
-        return Decision(False, f"actor {actor} ({actor_id or 'no id'}) is not allowed")
-    triggering = env.get("GITHUB_TRIGGERING_ACTOR", "")
-    if triggering not in TRIGGERING_ACTORS:
-        return Decision(False, f"triggering actor {triggering or '(missing)'} is not allowed")
-    return Decision(True, f"{event} of {workflow} by {ACTOR_IDS[actor_id]}")
-
-
-# The CI VMs (vm policy): what the supervisor says a VM serves, written by ci-boot.
+# What the supervisor says a VM serves, written by ci-boot.
 SERVES = "/etc/homelab-ci/serves.json"
 VM_EVENTS = frozenset({"push", "pull_request", "workflow_dispatch"})
 OWNER_ID, OWNER = "11246116", "ColinCee"
@@ -137,17 +90,17 @@ def read_json(path: str) -> Mapping[str, Any]:
     try:
         with open(path, encoding="utf-8") as f:
             value = json.load(f)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return {}
     return value if isinstance(value, dict) else {}
 
 
-def audit_line(env: Mapping[str, str], decision: Decision, mode: str) -> str:
-    """One line for the host journal: the decision, safe values, and other variable names."""
+def audit_line(env: Mapping[str, str], decision: Decision) -> str:
+    """One line for the VM's journal: the decision, safe values, and other variable names."""
     values = " ".join(f"{name}={env.get(name, '')}" for name in LOGGED_VALUES)
     others = ",".join(sorted(name for name in env if name not in LOGGED_VALUES))
     verdict = "allow" if decision.allowed else "refuse"
-    return f"mode={mode} verdict={verdict} reason={decision.reason!r} {values} names={others}"
+    return f"verdict={verdict} reason={decision.reason!r} {values} names={others}"
 
 
 def command_value(text: str) -> str:
@@ -172,7 +125,7 @@ def find_worker(start: int, read_stat: Callable[[int], tuple[str, int]] = _read_
             return None
         try:
             name, parent = read_stat(pid)
-        except (OSError, ValueError):
+        except OSError, ValueError:
             return None
         if name == WORKER:
             return pid
@@ -212,42 +165,17 @@ def _journal(line: str) -> None:
     syslog.syslog(syslog.LOG_NOTICE, line)
 
 
-def main(
-    argv: Sequence[str] | None = None,
-    env: Mapping[str, str] | None = None,
-    stop: Callable[[int], str] = stop_job,
-) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--mode",
-        choices=("enforce", "observe"),
-        default="enforce",
-        help="observe logs the decision but lets every job run (for rollout only)",
-    )
-    parser.add_argument(
-        "--policy",
-        choices=("deploy", "vm"),
-        default="deploy",
-        help="deploy: the Beelink deploy runner; vm: a CI VM, by what it serves (SERVES)",
-    )
-    args = parser.parse_args(argv)
+def main(env: Mapping[str, str] | None = None, stop: Callable[[int], str] = stop_job) -> int:
     env = os.environ if env is None else env
-    if args.policy == "vm":
-        event = read_json(env.get("GITHUB_EVENT_PATH", ""))
-        decision = decide_vm(env, read_json(SERVES), event)
-    else:
-        decision = decide(env)
-    _journal(audit_line(env, decision, args.mode))
+    event = read_json(env.get("GITHUB_EVENT_PATH", ""))
+    decision = decide_vm(env, read_json(SERVES), event)
+    _journal(audit_line(env, decision))
     if decision.allowed:
         print(f"Runner guard: allowed ({decision.reason}).")
         return 0
-    reason = command_value(decision.reason)
-    if args.mode == "observe":
-        print(f"::warning::Runner guard (observe mode) would refuse this job: {reason}")
-        return 0
-    print(f"::error::Runner guard refused this job: {reason}", flush=True)
+    print(f"::error::Runner guard refused this job: {command_value(decision.reason)}", flush=True)
     outcome = stop(os.getppid())
-    _journal(f"mode=enforce stop={outcome!r}")
+    _journal(f"stop={outcome!r}")
     print(f"Runner guard: {outcome}.", flush=True)
     return 1
 

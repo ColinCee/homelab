@@ -34,9 +34,9 @@
   <text class="l" x="924" y="140" text-anchor="end" font-weight="600">Beelink: Ubuntu, Docker</text>
 
   <rect class="box" x="40" y="160" width="200" height="70" rx="6"/>
-  <text class="t" x="140" y="184">Deploy runner</text>
-  <text class="s" x="140" y="202">applies the changed stacks</text>
-  <text class="s" x="140" y="218">guard: main, Colin or Renovate</text>
+  <text class="t" x="140" y="184">deploy-main</text>
+  <text class="s" x="140" y="202">fetches main on a ring and</text>
+  <text class="s" x="140" y="218">applies the changed stacks</text>
 
   <rect class="box" x="40" y="260" width="200" height="90" rx="6"/>
   <text class="t" x="140" y="284">CI runner</text>

@@ -717,32 +717,11 @@ groups:
 
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
   # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
-  # minutes. A CI-host install by Colin or Renovate is every merge, so only another's posts. A deploy.yaml run's actor
-  # is GitHub's; the install's author is the commit's own text, so a forged one is caught only by main's ruleset.
+  # minutes. A CI-host install by Colin or Renovate is every merge, so only another's posts. The install's author is
+  # the commit's own text, so a forged one is caught only by main's ruleset.
   - name: intrusion
     interval: 1m
     rules:
-      - alert: deploy-ran
-        expr: |
-          max by (actor, commit) (
-            round((time() - homelab_deploy_timestamp_seconds{actor!~`ColinCee|renovate\[bot\]`}) / 60)
-          ) < 10
-        for: 0m
-        keep_firing_for: 10m
-        labels:
-          level: now
-        annotations:
-          title: 'Secrets written by someone else'
-          measure: 'Started'
-          unit: ' min ago'
-          harm: >-
-            A deploy.yaml run writes the secrets on the Beelink as colin, so one you did not start means someone else
-            can run that workflow.
-          action: >-
-            Open the run in https://github.com/ColinCee/homelab/actions/workflows/deploy.yaml; if you did not start
-            it, remove this actor's access to the repository.
-          dashboard: *home
-          value: '{{ $value }}'
       - alert: ci-host-updated
         expr: |
           max by (author, commit) (
@@ -788,43 +767,6 @@ groups:
             https://login.tailscale.com/admin/machines and rotate your Tailscale login.
           dashboard: *home
           value: '{{ $value }}'
-      - alert: runner-guard-changed
-        expr: min(homelab_runner_guard_matches_main) < 1
-        for: 15m
-        keep_firing_for: 10m
-        labels:
-          level: now
-        annotations:
-          title: 'Runner guard differs from main'
-          measure: 'Installed guard is main''s (1 yes, 0 no)'
-          unit: ''
-          harm: >-
-            The guard is what stops a fork's workflow running on the deploy runner, and only root can change it, so a
-            copy that is not main's is either not yet installed or someone with root changed it.
-          action: >-
-            Run `diff /usr/local/lib/homelab/runner_job_guard.py scripts/runner_job_guard.py` in a main checkout on
-            the Beelink. If main changed it, install it with `sudo scripts/install-runner-guard.sh enforce`;
-            otherwise treat the Beelink as taken over.
-          dashboard: *home
-          value: '{{ $value }}'
-      - alert: runner-guard-refused
-        expr: max by (repository, actor) (round((time() - homelab_runner_guard_refusal_timestamp_seconds) / 60)) < 10
-        for: 0m
-        keep_firing_for: 10m
-        labels:
-          level: now
-        annotations:
-          title: 'Runner guard refused a job'
-          measure: 'Refused'
-          unit: ' min ago'
-          harm: >-
-            Something asked the deploy runner to run a workflow that is not allowed there, such as a fork's pull
-            request aiming at it.
-          action: >-
-            Read why with `journalctl -t homelab-runner-guard -n 5` on the Beelink, then the run on GitHub; block
-            the actor if it was not you.
-          dashboard: *home
-          value: '{{ $value }}'
       - alert: ssh-login-elsewhere
         expr: |
           max by (user, from, device) (
@@ -858,7 +800,7 @@ groups:
           title: 'Security checks stopped'
           measure: 'Last check'
           unit: ' min ago'
-          harm: 'Deploys, new Tailscale devices, guard changes and SSH logins go unseen while it is stopped.'
+          harm: 'CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.'
           action: >-
             Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
             ci-runner/install-host.sh`.

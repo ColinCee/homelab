@@ -236,14 +236,8 @@ CASES = {
         ],
     ),
     # Colin's and Renovate's never post.
-    "another's deploy and CI-host install post who and what, then clear": (
+    "another's CI-host install posts who and what, then clears": (
         [
-            (
-                'homelab_deploy_timestamp_seconds{actor="mallory",commit="0123456789ab"}',
-                "_x5 300x55",
-            ),
-            ('homelab_deploy_timestamp_seconds{actor="ColinCee",commit="1"}', "_x5 300x55"),
-            ('homelab_deploy_timestamp_seconds{actor="renovate[bot]",commit="2"}', "_x5 300x55"),
             (
                 'homelab_ci_host_install_timestamp_seconds{author="mallory",commit="ba9876543210"}',
                 "_x5 300x55",
@@ -258,16 +252,14 @@ CASES = {
             ),
         ],
         [
-            at(4, "deploy-ran"),
-            at(6, "deploy-ran", posts("deploy-ran", "1", actor="mallory", commit="0123456789ab")),
+            at(4, "ci-host-updated"),
             at(
                 6,
                 "ci-host-updated",
                 posts("ci-host-updated", "1", author="mallory", commit="ba9876543210"),
             ),
-            at(13, "deploy-ran", posts("deploy-ran", "8", actor="mallory", commit="0123456789ab")),
             # Not under 10 minutes from 15, then the 10-minute hold.
-            at(30, "deploy-ran"),
+            at(30, "ci-host-updated"),
         ],
     ),
     "the watchdog fires while Discord takes posts and stops for an hour after one fails": (
@@ -302,19 +294,8 @@ CASES = {
         [('homelab_tailscale_device_created_timestamp_seconds{name="stranger"}', "0x100")],
         [at(95, "tailscale-device-added", posts("tailscale-device-added", "2", name="stranger"))],
     ),
-    "a runner guard that is not main's fires after 15 minutes": (
-        [("homelab_runner_guard_matches_main", "1x10 0x30")],
+    "an SSH login from elsewhere fires, the PC's login does not": (
         [
-            at(25, "runner-guard-changed"),
-            at(26, "runner-guard-changed", posts("runner-guard-changed", "0")),
-        ],
-    ),
-    "a refused job and an SSH login from elsewhere fire, the PC's login does not": (
-        [
-            (
-                'homelab_runner_guard_refusal_timestamp_seconds{repository="someone/fork",actor="someone"}',
-                "_x5 300x30",
-            ),
             (
                 'homelab_ssh_login_timestamp_seconds{user="colin",from="100.64.0.10",device="desktop",known="true"}',
                 "_x5 300x30",
@@ -325,11 +306,6 @@ CASES = {
             ),
         ],
         [
-            at(
-                6,
-                "runner-guard-refused",
-                posts("runner-guard-refused", "1", repository="someone/fork", actor="someone"),
-            ),
             at(
                 6,
                 "ssh-login-elsewhere",

@@ -7,8 +7,7 @@ deploys never touch these files:
 
 update.py reruns it when main changes anything under ci-runner/ or scripts/. Runs as root with
 the host's system Python: standard library only. It stays on /usr/bin/python3, not the
-homelab-python3 it installs: the repair path must not depend on what it repairs (as update.py and
-the runner guard).
+homelab-python3 it installs: the repair path must not depend on what it repairs (as update.py).
 """
 
 from __future__ import annotations

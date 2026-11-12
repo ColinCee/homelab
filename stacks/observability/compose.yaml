@@ -531,7 +531,7 @@ networks:
       config:
         - subnet: 10.201.0.8/29
 
-# Written from GitHub secrets by scripts/render-secrets.sh.
+# Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
   discord_webhook:
     file: ../../secrets/discord_private_webhook_url

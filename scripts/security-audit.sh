@@ -45,10 +45,8 @@ sudo dpkg --verify | grep -v ' c /'
 section "Containers (each should be a stacks/*/compose.yaml service)"
 docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}'
 
-section "Runner guard refusals, each explained?"
-journalctl -t homelab-runner-guard --since -30d | grep verdict=refuse
-section "Runners, Firecracker (only while a job runs), KSM (should be 0)"
-ls -d ~/actions-runner*
+section "Runners on the host (should be none), Firecracker (only while a job runs), KSM (should be 0)"
+ls -d ~/actions-runner* 2>/dev/null
 pgrep -a firecracker
 cat /sys/kernel/mm/ksm/run
 sudo nft list table inet homelab_ci | head -3
@@ -62,7 +60,7 @@ if gh auth status >/dev/null 2>&1; then
   gh api repos/ColinCee/homelab/collaborators --jq '.[].login'
   gh api repos/ColinCee/homelab/hooks --jq length
   gh api repos/ColinCee/homelab/keys --jq length
-  section "Runners on other repos (should be empty): one has the deploy runner's power without its guard"
+  section "Runners on other repos (should be empty): a runner on the Beelink would hold its secrets and home network"
   gh api "users/ColinCee/repos?per_page=100" --jq '.[].name' | grep -vx homelab |
     xargs -I{} gh api repos/ColinCee/{}/actions/runners --jq '.runners[] | "{} \(.name)"'
 else
