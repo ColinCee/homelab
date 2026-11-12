@@ -7,8 +7,7 @@ from pathlib import Path
 
 import yaml
 
-# `needs_docker` calls `docker` by name from this module.
-from tests.test_alert_rules import docker, needs_docker, promtool  # noqa: F401
+from tests.test_alert_rules import promtool
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
 HOME = json.loads((STACK / "grafana/home.json").read_text(encoding="utf-8"))
@@ -171,7 +170,6 @@ def test_prometheus_queries_name_metrics_as_alloy_sends_them() -> None:
             assert not re.search(r"(?<!\{)\{\w+\}(?!\})", legend), panel["title"]
 
 
-@needs_docker
 def test_prometheus_parses_every_query(tmp_path: Path) -> None:
     # Grafana shows a query Prometheus cannot parse only as an error on its panel. Grafana fills in
     # its duration macros before Prometheus sees the query.
@@ -179,10 +177,7 @@ def test_prometheus_parses_every_query(tmp_path: Path) -> None:
     queries = [macros.sub("1h", q) for q in prometheus_queries(HOME)]
     rules = [{"record": f"home:{i}", "expr": q} for i, q in enumerate(queries)]
     (tmp_path / "home.yml").write_text(json.dumps({"groups": [{"name": "home", "rules": rules}]}))
-    # promtool runs as nobody, and pytest makes the folder for its owner only.
-    tmp_path.chmod(0o755)
-    (tmp_path / "home.yml").chmod(0o644)
-    checked = promtool(tmp_path, "check", "rules", "/t/home.yml")
+    checked = promtool("check", "rules", str(tmp_path / "home.yml"))
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 

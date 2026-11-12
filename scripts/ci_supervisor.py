@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Start a throwaway Firecracker VM for each queued CI job on Colin's private repos.
+"""Start a throwaway Firecracker VM for each queued CI job on Colin's served repos.
 
 Polls GitHub for queued jobs asking for the `homelab-fc` label, on every private
-repository of Colin's that its token can see: a repository signs up by being added to
-the token's repository access in GitHub, nothing on the host. For each job it asks
+repository of Colin's that its token can see (a repository signs up by being added to
+the token's repository access in GitHub, nothing on the host) and on the public ones in
+PUBLIC_REPOS, whose VMs take only Colin's own jobs. For each job it asks
 GitHub for a just-in-time runner registration (good for exactly one job) and boots a
 VM with run-vm.sh, which receives that registration through Firecracker's metadata
 service. The GitHub token stays on
 the host; a VM only ever sees its one-job registration. A repository that is not
-private, or not Colin's, is never served. See docs/architecture.md, "CI runner".
+Colin's, or public and not listed, is never served. See docs/architecture.md, "CI runner".
 
 Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervisor.service.
 """
@@ -48,6 +49,16 @@ RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 CACHE_LABEL_PREFIX = "fc-cache-"
 # Only Colin's own repositories are served, whatever else the token can see.
 OWNER = "ColinCee"
+OWNER_ID = 11246116
+# Public repos served as well. A repo signs up here, not by token access: GitHub must hold
+# every outside contributor's run for approval (STRICT_APPROVAL) and nobody else may push
+# (only_colin). VMs start only for Colin's runs, and each VM's job guard refuses any other
+# job (runner_job_guard.py, vm policy), since a repo's runner takes any queued job.
+PUBLIC_REPOS = frozenset({"ColinCee/homelab"})
+STRICT_APPROVAL = "all_external_contributors"
+# Written by build-rootfs.sh when the VM image carries that guard: until then (an image not yet
+# rebuilt, or a failed rebuild) no public repo is served.
+GUARD_MARKER = Path("/var/lib/homelab-ci/images/job-guard")
 # How often to ask GitHub which repositories the token can see. The listing and its
 # collaborator checks (two requests a repo) run beside the poll, never holding it up.
 REPOS_EVERY = 60
@@ -266,17 +277,18 @@ class Launch:
 
 
 @dataclass
-class Privacy:
-    private: bool
+class Serving:
+    served: bool
     checked: float
     default_branch: str = ""
+    public: bool = False
 
 
 @dataclass
 class State:
     slots: int = DEFAULT_SLOTS
     launches: dict[int, Launch] = field(default_factory=dict)
-    privacy: dict[str, Privacy] = field(default_factory=dict)
+    serving: dict[str, Serving] = field(default_factory=dict)
     cache_checked: dict[str, float] = field(default_factory=dict)
     cache_busy: threading.Lock = field(default_factory=threading.Lock)
     # The threads that ask the polled repos for queued jobs at once, kept so each keeps
@@ -445,11 +457,20 @@ def plan(in_order: Iterable[Want], booting: Mapping[Want, int], free_slots: int)
     return starts
 
 
-def is_private(repo_data: Mapping[str, Any], repo: str) -> bool:
-    return (
-        repo_data.get("private") is True
-        and str(repo_data.get("full_name", "")).lower() == repo.lower()
-    )
+def is_served(repo_data: Mapping[str, Any], repo: str, approval: Callable[[], str]) -> bool:
+    """Private, or public, listed and holding outside contributors' runs for approval
+    (`approval` asks GitHub, only for a listed public repo)."""
+    if str(repo_data.get("full_name", "")).lower() != repo.lower():
+        return False
+    if repo_data.get("private") is True:
+        return True
+    listed = repo_data.get("private") is False and repo in PUBLIC_REPOS
+    return listed and GUARD_MARKER.exists() and approval() == STRICT_APPROVAL
+
+
+def approval_policy(gh: GitHub, repo: str) -> str:
+    path = f"/repos/{repo}/actions/permissions/fork-pr-contributor-approval"
+    return str(gh.request("GET", path).get("approval_policy", ""))
 
 
 class RateLimited(Exception):
@@ -556,10 +577,15 @@ def rate_limit_until(retry_after: str | None, reset: str | None, now: float) -> 
     return float(reset) if reset else now + 60
 
 
-def check_private(gh: GitHub, state: State, repo: str, now: float, *, fresh: bool = False) -> bool:
-    known = state.privacy.get(repo)
+def is_public(state: State, repo: str) -> bool:
+    known = state.serving.get(repo)
+    return repo in PUBLIC_REPOS or bool(known and known.public)
+
+
+def check_served(gh: GitHub, state: State, repo: str, now: float, *, fresh: bool = False) -> bool:
+    known = state.serving.get(repo)
     # A repo with VMs here, or about to get its first, is re-checked; the rest are known
-    # private from the minutely repo listing (served_repos), one request for all of them,
+    # served from the minutely repo listing (list_repos), one request for all of them,
     # and asked directly if that listing is out of date.
     if (
         known is None
@@ -568,20 +594,30 @@ def check_private(gh: GitHub, state: State, repo: str, now: float, *, fresh: boo
         or (repo in state.used and now - known.checked > PRIVACY_RECHECK_SECONDS)
     ):
         data = gh.request("GET", f"/repos/{repo}")
-        private = is_private(data, repo)
-        if not private:
-            log(f"refusing {repo}: not a private repository")
-        state.privacy[repo] = Privacy(private, now, str(data.get("default_branch", "")))
-    return state.privacy[repo].private
+        served = is_served(data, repo, lambda: approval_policy(gh, repo))
+        if not served:
+            log(f"refusing {repo}: not private, nor a listed public repo holding runs for approval")
+        public = data.get("private") is not True
+        state.serving[repo] = Serving(served, now, str(data.get("default_branch", "")), public)
+    return state.serving[repo].served
 
 
-def find_queued(gh: GitHub, repo: str) -> list[Job]:
+def colins(run: Mapping[str, Any]) -> bool:
+    """A run Colin started and, if re-run, re-ran."""
+    actor, triggering = run.get("actor") or {}, run.get("triggering_actor") or {}
+    return actor.get("id") == OWNER_ID and triggering.get("login") == OWNER
+
+
+def find_queued(gh: GitHub, repo: str, *, colins_only: bool = False) -> list[Job]:
+    """`colins_only` (a public repo) leaves out others' runs: no VM starts for them."""
     runs: list[Mapping[str, Any]] = []
     # A multi-job run is in_progress while its later jobs wait for a runner. A run that
     # waited on a concurrency group can stay pending after its job is queued.
     for status in ("queued", "pending", "in_progress"):
         page = gh.request("GET", f"/repos/{repo}/actions/runs?status={status}&per_page=50")
         runs.extend(page.get("workflow_runs", []))
+    if colins_only:
+        runs = [run for run in runs if colins(run)]
 
     def jobs_path(run_id: int) -> str:
         return f"/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
@@ -635,6 +671,9 @@ def launch(
     vcpus, mem_mib = next_size(state, standby)
     timeout = STANDBY_TIMEOUT_SECONDS if standby else VM_TIMEOUT_SECONDS
     run = Launch(slot, repo, runner_id, name, now, metadata, standby, label=label)
+    # Unknown counts as public: the VM's guard then takes only Colin's jobs.
+    known = state.serving.get(repo)
+    public = not (known and known.served and not known.public)
     try:
         fd = os.open(metadata, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
@@ -644,6 +683,7 @@ def launch(
                     "jitconfig": registration["encoded_jit_config"],
                     "waits": vm_waits(state, jobs, now),
                     "load_test": read_load_test() or {},
+                    "serves": {"repo": repo, "public": public},
                 },
                 f,
             )
@@ -1022,10 +1062,10 @@ def stop_idle(gh: GitHub, run: Launch, now: float, queued_for_repo: int) -> None
         stop_if_still_idle(gh, run, "has no job")
 
 
-def check_standby(gh: GitHub, run: Launch, now: float, private: bool) -> None:
+def check_standby(gh: GitHub, run: Launch, now: float, served: bool) -> None:
     """A standby that got a job becomes an ordinary VM; an old idle one is replaced."""
-    if not private:
-        stop(run, "serves a repo that is no longer private")
+    if not served:
+        stop(run, "serves a repo that is no longer served")
     elif not is_idle(gh, run):
         if now - run.started >= IDLE_AFTER_SECONDS:  # connected, so not idle means busy
             run.standby = False
@@ -1040,10 +1080,10 @@ def reap(
     state: State,
     now: float,
     queued: Mapping[Want, int] | None = None,
-    private: Iterable[str] = (),
+    served: Iterable[str] = (),
 ) -> None:
     """Clear finished VMs. With this poll's queue, also stop VMs left without a job."""
-    private = set(private)
+    served = set(served)
     running = running_vms()
     if running is None:
         return  # systemd did not answer: tried again next poll
@@ -1052,7 +1092,7 @@ def reap(
             if queued is None:
                 continue
             if run.standby:
-                check_standby(gh, run, now, run.repo in private)
+                check_standby(gh, run, now, run.repo in served)
                 if not run.standby:  # it took a job
                     state.used.add(run.repo)
                     # A restart must not take it for a standby.
@@ -1134,11 +1174,14 @@ def cache_image(repo: str) -> Path:
 
 
 def cache_for(repo: str, label: str, private: Iterable[str]) -> Path | None:
-    """A VM's cache disk: its own repo's, or the one its label names if that repo is
-    served, private (`private` is this poll's served private repos) and has a disk."""
+    """A VM's cache disk: its own repo's, or the one its label names if both repos are
+    served and private (`private` is this poll's served private repos) and it has a disk.
+    A public repo's job never gets, or gives, another repo's cache."""
     if not label:
         return cache_image(repo)
     served = {r.lower(): r for r in private}
+    if repo.lower() not in served:
+        return None
     named = served.get(cache_label_repo(label) or "")
     image = cache_image(named) if named else None
     return image if image and image.exists() else None
@@ -1318,7 +1361,7 @@ def maybe_take_outboxes(gh: GitHub, state: State, now: float) -> None:
     due = ended_outboxes(state, now)
     if not due or not state.cache_busy.acquire(blocking=False):
         return
-    branches = {r: p.default_branch for r, p in state.privacy.items() if p.private}
+    branches = {r: p.default_branch for r, p in state.serving.items() if p.served}
     for tar in due:
         state.cache_checked[tar.stem] = now
     # Its own client: the request cache is not shared between threads.
@@ -1339,20 +1382,20 @@ def ask(gh: GitHub, state: State, repo: str, now: float) -> tuple[list[Job] | No
     """One repo's queued jobs (None if it is not served this poll), and the seconds the
     asking took. Run for every polled repo at once, each on its own thread."""
     asked = time.monotonic()
-    # A repo that is no longer private has nothing queued as far as we are
+    # A repo that is no longer served has nothing queued as far as we are
     # concerned, so its idle VMs are stopped and no new ones start. One
     # repo GitHub will not show is skipped this poll; it never stops the others
     # (3 Nov: a repo the token could not see stopped all CI).
     try:
-        if not check_private(gh, state, repo, now):
+        if not check_served(gh, state, repo, now):
             skipped(repo, None)
             return None, time.monotonic() - asked
-        jobs = find_queued(gh, repo)
-        # A repo about to get its first VM is asked about its privacy directly.
+        jobs = find_queued(gh, repo, colins_only=is_public(state, repo))
+        # A repo about to get its first VM is asked about its serving directly.
         if (
             jobs
             and repo not in state.used
-            and not (check_private(gh, state, repo, now, fresh=True) and only_colin(gh, repo))
+            and not (check_served(gh, state, repo, now, fresh=True) and only_colin(gh, repo))
         ):
             return None, time.monotonic() - asked
         skipped(repo, None)
@@ -1368,7 +1411,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     """One poll. Returns how long asking each repo for queued jobs took, in seconds."""
     queued: Counter[Want] = Counter()
     job_ids: dict[Want, list[int]] = {}
-    private: list[str] = []
+    served: list[str] = []
     spent: dict[str, float] = {}
     # Why each queued job not started this poll waits: (repo, why).
     reasons: dict[int, tuple[str, str]] = {}
@@ -1384,7 +1427,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
         spent[repo] = took
         if jobs is None:
             continue
-        private.append(repo)
+        served.append(repo)
         for job in jobs:
             queued_at[job.id] = job.queued_at
             workflows[job.id] = job.workflow
@@ -1395,7 +1438,8 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
             queued[job.want] += 1
             job_ids.setdefault(job.want, []).append(job.id)
             polled.append(job)
-    reap(gh, state, now, queued, private)
+    reap(gh, state, now, queued, served)
+    private = [r for r in served if not is_public(state, r)]
     # Ended VMs' outboxes are after-the-fact too: a failure to list them never stops a start.
     try:
         maybe_take_outboxes(gh, state, now)
@@ -1490,7 +1534,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
                 reasons[job_id] = (want[0], BOOTING)
             else:
                 reasons[job_id] = (want[0], full)
-    note_waits(state, private, reasons, now, queued_at, workflows, unmatched)
+    note_waits(state, served, reasons, now, queued_at, workflows, unmatched)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
     # memory, if the standby cannot take it.
@@ -1509,7 +1553,7 @@ def tick(gh: GitHub, state: State, repos: list[str], now: float) -> dict[str, fl
     waiting_builds = sum(n for n in waiting.values() if n > 0)
     # Each want gets one first; once all have one, a further standby waits for the most needed,
     # so two runs of the busiest repo starting jobs together both find one booted.
-    wants = standby_wants(state, repos, private)
+    wants = standby_wants(state, repos, served)
     uncovered = next((w for w in wants if all(r.want != w for r in standbys)), None)
     target = uncovered or (wants[0] if wants else None)
     if uncovered and len(standbys) >= standby_count():
@@ -1747,7 +1791,7 @@ def prune_waits(now: float) -> None:
     replace_file(WAITS_FILE, "".join(kept))
 
 
-def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Want]:
+def standby_wants(state: State, repos: list[str], served: list[str]) -> list[Want]:
     """The repos and cache labels build standbys boot for, most needed first: the last build
     job's (or the first polled repo's) once no VM runs it, then each running build job's,
     oldest first (a run's next job asks for the one before it seconds after it ends, even when
@@ -1763,7 +1807,7 @@ def standby_wants(state: State, repos: list[str], private: list[str]) -> list[Wa
         last = (repos[0], state.last_label if repos[0] == state.last_repo else "")
         # The last build job's want leads once its VM has ended: that is when it is asked for.
         wants = [*wants, last] if last in wants else [last, *wants]
-    return [w for w in dict.fromkeys(wants) if w[0] in private]
+    return [w for w in dict.fromkeys(wants) if w[0] in served]
 
 
 def standby_count() -> int:
@@ -1940,7 +1984,7 @@ def replace_file(path: Path, text: str) -> None:
         raise
 
 
-def served_repos(gh: GitHub) -> dict[str, str]:
+def private_repos(gh: GitHub) -> dict[str, str]:
     """Colin's private repositories the token can see, the ones that signed up, each
     with its default branch. An archived one takes no jobs, so it gets no VM or standby."""
     repos: list[dict] = []
@@ -1978,10 +2022,27 @@ def only_colin(gh: GitHub, repo: str) -> bool:
     )
 
 
+def public_repos(gh: GitHub) -> dict[str, str]:
+    """The PUBLIC_REPOS served now (is_served), each with its default branch."""
+    found: dict[str, str] = {}
+    for repo in sorted(PUBLIC_REPOS):
+        try:
+            data = gh.request("GET", f"/repos/{repo}")
+            served = is_served(data, repo, lambda r=repo: approval_policy(gh, r))
+        except RateLimited:
+            raise
+        except Exception as e:
+            skipped(repo, e)
+            continue
+        if served and not data.get("archived"):
+            found[repo] = str(data.get("default_branch", ""))
+    return found
+
+
 def list_repos(gh: GitHub) -> tuple[dict[str, str], list[str]]:
-    """The served private repos with their default branches, and those nobody else can
-    push to: the ones to serve."""
-    listing = served_repos(gh)
+    """The served repos with their default branches, and those nobody else can push to:
+    the ones to serve."""
+    listing = private_repos(gh) | public_repos(gh)
     return listing, [r for r in listing if only_colin(gh, r)]
 
 
@@ -2064,7 +2125,7 @@ def main(argv: list[str] | None = None) -> int:
     unclean: list[str] = []
     # Why the status file could not be written last time, so a lasting failure logs once.
     status_error = ""
-    log(f"{state.slots} slots; serving private repos the token can see")
+    log(f"{state.slots} slots; serving private repos the token can see, and {sorted(PUBLIC_REPOS)}")
     # VMs started before a restart are still running: take them back before anything else.
     adopt(state)
     while True:
@@ -2080,10 +2141,10 @@ def main(argv: list[str] | None = None) -> int:
                 done, listing = listing, None
                 # A failed listing keeps the last list (none at start), never ending the poll.
                 try:
-                    privacy, found = done.result()
-                    # Listed private just now: quiet repos need no privacy request of their own.
-                    for repo, branch in privacy.items():
-                        state.privacy[repo] = Privacy(True, listed, branch)
+                    served, found = done.result()
+                    # Listed as served just now: quiet repos need no request of their own.
+                    for repo, branch in served.items():
+                        state.serving[repo] = Serving(True, listed, branch, repo in PUBLIC_REPOS)
                     skipped("the repo list", None)
                 except RateLimited:
                     raise
@@ -2115,7 +2176,7 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
             note_poll(state, False, time.time())
-            # Without GitHub nothing re-checks privacy, so no VM is left waiting meanwhile.
+            # Without GitHub nothing re-checks serving, so no VM is left waiting meanwhile.
             if state.poll_failures == 5:
                 for run in [r for r in state.launches.values() if r.standby]:
                     stop(run, "cannot be checked while GitHub fails")

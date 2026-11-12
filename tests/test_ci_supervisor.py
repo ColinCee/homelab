@@ -77,7 +77,7 @@ def test_serves_only_colins_private_repos_the_token_can_see() -> None:
             "owner": {"login": "ColinCee"},
         },
     ]
-    assert list(sup.served_repos(Repos(page))) == ["ColinCee/cortex", "ColinCee/servo"]
+    assert list(sup.private_repos(Repos(page))) == ["ColinCee/cortex", "ColinCee/servo"]
 
 
 class Pages:
@@ -95,7 +95,7 @@ class Pages:
 
 def test_reads_every_page_of_repos() -> None:
     gh = Pages(150)
-    assert len(sup.served_repos(gh)) == 150 and gh.asked == 2
+    assert len(sup.private_repos(gh)) == 150 and gh.asked == 2
 
 
 def test_the_standby_goes_to_the_repo_of_the_last_job() -> None:
@@ -158,16 +158,48 @@ def test_plans_one_vm_per_uncovered_job_oldest_first(
 
 
 @pytest.mark.parametrize(
-    ("data", "private"),
+    ("repo", "private", "approval", "served"),
     [
-        ({"private": True, "full_name": "ColinCee/cortex"}, True),
-        ({"private": False, "full_name": "ColinCee/cortex"}, False),
-        ({"private": "true", "full_name": "ColinCee/cortex"}, False),
-        ({"private": True, "full_name": "someone/cortex"}, False),  # renamed or transferred
+        ("ColinCee/cortex", True, "", True),
+        ("ColinCee/cortex", False, "all_external_contributors", False),  # public, not listed
+        ("ColinCee/cortex", "true", "", False),
+        ("ColinCee/homelab", False, "all_external_contributors", True),
+        ("ColinCee/homelab", False, "first_time_contributors", False),
+        ("ColinCee/homelab", None, "all_external_contributors", False),
     ],
 )
-def test_serves_only_a_repo_that_is_still_private(data: dict[str, object], private: bool) -> None:
-    assert sup.is_private(data, "ColinCee/cortex") is private
+def test_serves_a_private_repo_or_a_listed_public_one_holding_runs_for_approval(
+    repo: str, private: object, approval: str, served: bool, tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(sup, "GUARD_MARKER", tmp_path / "job-guard")
+    data = {"private": private, "full_name": repo}
+    if private is False:
+        # An image without the job guard serves no public repo.
+        assert sup.is_served(data, repo, lambda: approval) is False
+    (tmp_path / "job-guard").touch()
+    assert sup.is_served(data, repo, lambda: approval) is served
+    # Renamed or transferred.
+    assert sup.is_served(data | {"full_name": "someone/x"}, repo, lambda: approval) is False
+
+
+def test_a_public_repo_gets_vms_only_for_colins_runs() -> None:
+    colin = {"id": sup.OWNER_ID, "login": sup.OWNER}
+    other = {"id": 1, "login": "someone"}
+    assert sup.colins({"actor": colin, "triggering_actor": colin})
+    # Colin re-running someone else's run still runs their code.
+    assert not sup.colins({"actor": other, "triggering_actor": colin})
+    assert not sup.colins({"actor": colin, "triggering_actor": other})
+    assert not sup.colins({})
+
+
+def test_a_public_repos_job_never_gets_or_gives_another_repos_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sup, "CACHE_DIR", tmp_path)
+    (tmp_path / "ColinCee__cortex.ext4").touch()
+    private = ["ColinCee/cortex", "ColinCee/servo"]
+    assert sup.cache_for("ColinCee/servo", "fc-cache-ColinCee--cortex", private) is not None
+    assert sup.cache_for("ColinCee/homelab", "fc-cache-ColinCee--cortex", private) is None
 
 
 @pytest.mark.parametrize(
@@ -524,7 +556,7 @@ def test_stale_runners_are_cleared_where_github_answers_and_retried_where_not(mo
     assert deleted == ["o/ok"]
 
 
-@pytest.mark.parametrize("fails", ["check_private", "find_queued"])
+@pytest.mark.parametrize("fails", ["check_served", "find_queued"])
 def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: str) -> None:
     def broken(repo: str, value):
         if repo == "o/gone":
@@ -533,16 +565,16 @@ def test_a_repo_github_will_not_show_never_stops_the_others(monkeypatch, fails: 
 
     monkeypatch.setattr(
         sup,
-        "check_private",
+        "check_served",
         lambda gh, state, repo, now, fresh=False: (
-            broken(repo, True) if fails == "check_private" else True
+            broken(repo, True) if fails == "check_served" else True
         ),
     )
     job = sup.Job("o/ok", 1, "check", tuple(sup.RUNNER_LABELS))
     monkeypatch.setattr(
         sup,
         "find_queued",
-        lambda gh, repo: (
+        lambda gh, repo, **_: (
             broken(repo, [job] if repo == "o/ok" else [])
             if fails == "find_queued"
             else ([job] if repo == "o/ok" else [])
@@ -563,7 +595,7 @@ def test_a_rate_limit_still_ends_the_poll(monkeypatch) -> None:
     def limited(gh, state, repo, now):
         raise sup.RateLimited(0.0)
 
-    monkeypatch.setattr(sup, "check_private", limited)
+    monkeypatch.setattr(sup, "check_served", limited)
     with pytest.raises(sup.RateLimited):
         sup.tick(OneRepoBroken("o/gone"), sup.State(), ["o/ok"], 0.0)
 
@@ -619,8 +651,8 @@ def test_a_slow_poll_says_what_it_spent_its_time_on() -> None:
 
 
 def test_a_quiet_repo_listed_private_needs_no_privacy_request() -> None:
-    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 100.0, "main")})
-    assert sup.check_private(Repos([]), state, "a/quiet", 130.0) is True
+    state = sup.State(serving={"a/quiet": sup.Serving(True, 100.0, "main")})
+    assert sup.check_served(Repos([]), state, "a/quiet", 130.0) is True
 
 
 class People:
@@ -645,7 +677,7 @@ def test_doubt_about_collaborators_is_a_no() -> None:
 
 
 def test_a_listing_too_old_to_trust_means_asking_github() -> None:
-    state = sup.State(privacy={"a/quiet": sup.Privacy(True, 0.0, "main")})
+    state = sup.State(serving={"a/quiet": sup.Serving(True, 0.0, "main")})
     asked = []
 
     class Public:
@@ -653,7 +685,7 @@ def test_a_listing_too_old_to_trust_means_asking_github() -> None:
             asked.append(path)
             return {"private": False, "visibility": "public", "default_branch": "main"}
 
-    assert sup.check_private(Public(), state, "a/quiet", 3 * sup.REPOS_EVERY) is False
+    assert sup.check_served(Public(), state, "a/quiet", 3 * sup.REPOS_EVERY) is False
     assert asked == ["/repos/a/quiet"]
 
 
@@ -705,12 +737,12 @@ def test_an_unreadable_slot_file_means_the_default(tmp_path, monkeypatch) -> Non
 
 
 def test_vms_start_only_in_the_hosts_slots(caches, monkeypatch) -> None:
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(
         sup,
         "find_queued",
-        lambda gh, repo: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
+        lambda gh, repo, **_: [sup.Job(repo, n, "j", tuple(sup.RUNNER_LABELS)) for n in range(9)],
     )
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
@@ -778,7 +810,7 @@ def test_reads_available_memory_and_the_reserve_from_the_host(tmp_path, monkeypa
 @pytest.fixture
 def host(caches, monkeypatch):
     """One served repo with jobs queued, and a launch that records the VMs it starts."""
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
@@ -800,7 +832,7 @@ def host(caches, monkeypatch):
         monkeypatch.setattr(
             sup,
             "find_queued",
-            lambda gh, repo: (
+            lambda gh, repo, **_: (
                 [
                     sup.Job(
                         repo,
@@ -905,7 +937,7 @@ def test_a_job_with_no_free_slot_is_logged_with_its_wait_every_few_minutes(host,
     state = sup.State(slots=1)
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     second = [sup.Job("o/ok", 1, "j", tuple(sup.RUNNER_LABELS))]  # the first has its VM
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: second if repo == "o/ok" else [])
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: second if repo == "o/ok" else [])
     for now in (2.0, 179.0, 200.0):
         sup.tick(None, state, ["o/ok"], now)  # type: ignore[arg-type]
     assert len(started) == 1
@@ -1031,7 +1063,7 @@ def test_a_job_taken_by_a_vm_booted_for_another_is_recorded_with_its_seconds_and
     assert len(started) == 1 and state.waits[1].why == "all 1 build slots in use"
     # GitHub gives that VM job 1, not job 0 it booted for.
     first = [sup.Job("o/ok", 0, "j", tuple(sup.RUNNER_LABELS))]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: first if repo == "o/ok" else [])
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: first if repo == "o/ok" else [])
     sup.tick(None, state, ["o/ok"], 60.0)  # type: ignore[arg-type]
     record = json.loads(waits_file.read_text())
     assert (record["job"], record["slots"], record["why"]) == (1, 60, "all 1 build slots in use")
@@ -1162,7 +1194,7 @@ def test_a_job_asking_for_a_label_no_vm_has_is_logged_named_and_never_started(
     assert [(job.id, job.ours) for job in found] == [(7, False)]
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: found if repo == "o/ok" else [])
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: found if repo == "o/ok" else [])
     state = sup.State()
     sup.tick(None, state, ["o/ok"], 0.0)  # type: ignore[arg-type]
     sup.tick(None, state, ["o/ok"], 20.0)  # type: ignore[arg-type]
@@ -1228,11 +1260,11 @@ def test_the_polled_repos_are_asked_at_once(monkeypatch) -> None:
     # Each answer waits until every repo is being asked: one after another, it would time out.
     together = threading.Barrier(len(repos), timeout=5)
 
-    def find(gh, repo: str) -> list[sup.Job]:
+    def find(gh, repo: str, **_: object) -> list[sup.Job]:
         together.wait()
         return [sup.Job(repo, 1, "check", tuple(sup.RUNNER_LABELS))]
 
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "find_queued", find)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
@@ -1315,7 +1347,7 @@ def test_a_standby_does_not_make_its_repo_polled_every_time_a_job_does(
 @pytest.fixture
 def pools(caches, monkeypatch):
     """Build jobs queued in one repo; launch records (slot, label)."""
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
@@ -1332,7 +1364,7 @@ def pools(caches, monkeypatch):
 
     def queue(build: int) -> None:
         jobs = [sup.Job("o/ok", n, "b", tuple(sup.RUNNER_LABELS)) for n in range(build)]
-        monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+        monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: jobs)
 
     return queue, started
 
@@ -1354,7 +1386,7 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     def start_vm(run, timeout, env) -> None:
         disks.append(env["CACHE_IMAGE"])
 
-    for name in ("check_private", "only_colin"):
+    for name in ("check_served", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
@@ -1366,7 +1398,9 @@ def test_the_standby_after_a_labelled_job_registers_with_its_label_and_disk(
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     labelled = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
     jobs: list[sup.Job] = []
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "octo/agent" else [])
+    monkeypatch.setattr(
+        sup, "find_queued", lambda gh, repo, **_: jobs if repo == "octo/agent" else []
+    )
     repos = ["octo/agent", "octo/widgets"]
     state = sup.State(slots=2)
 
@@ -1404,7 +1438,7 @@ def test_a_builders_reviewer_takes_a_standby_booted_when_its_builders_vm_ended(
             return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
 
     (caches / "octo__gears.ext4").touch()
-    for name in ("check_private", "only_colin"):
+    for name in ("check_served", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "delete_runner", lambda *a, **k: True)
@@ -1415,7 +1449,9 @@ def test_a_builders_reviewer_takes_a_standby_booted_when_its_builders_vm_ended(
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     widgets = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
     jobs: list[sup.Job] = []
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "octo/agent" else [])
+    monkeypatch.setattr(
+        sup, "find_queued", lambda gh, repo, **_: jobs if repo == "octo/agent" else []
+    )
     repos = ["octo/agent", "octo/widgets", "octo/gears"]
     # Task A's Builder runs on widgets' disk; task B's, started after it, on gears'.
     builder = sup.Launch(0, "octo/agent", 1, "fc-0-1", 0.0, caches / "m0", label=widgets[-1])
@@ -1451,7 +1487,7 @@ def test_a_reviewer_takes_a_standby_booted_while_its_builder_ran(caches, monkeyp
             registered.append(body["labels"])
             return {"runner": {"id": len(registered)}, "encoded_jit_config": "x"}
 
-    for name in ("check_private", "only_colin"):
+    for name in ("check_served", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "delete_runner", lambda *a, **k: True)
@@ -1462,7 +1498,9 @@ def test_a_reviewer_takes_a_standby_booted_while_its_builder_ran(caches, monkeyp
     monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
     widgets = (*sup.RUNNER_LABELS, "fc-cache-octo--widgets")
     jobs: list[sup.Job] = []
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs if repo == "octo/agent" else [])
+    monkeypatch.setattr(
+        sup, "find_queued", lambda gh, repo, **_: jobs if repo == "octo/agent" else []
+    )
     repos = ["octo/agent"]
     # Task A's Builder runs on widgets' disk; task B's build, started after it, on gears'.
     builder = sup.Launch(0, "octo/agent", 1, "fc-0-1", 0.0, caches / "m0", label=widgets[-1])
@@ -1668,13 +1706,13 @@ def test_an_ended_vms_failed_bookkeeping_frees_its_slot_and_the_queued_job_still
     removed: list[str] = []
     monkeypatch.setattr(sup, "delete_runner", lambda gh, repo, rid, name: removed.append(name))
     monkeypatch.setattr(sup, "running_vms", lambda: set())
-    for name in ("check_private", "only_colin"):
+    for name in ("check_served", "only_colin"):
         monkeypatch.setattr(sup, name, lambda *a, **k: True)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
     monkeypatch.setattr(sup, "has_job", lambda gh, run: False)
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     job = sup.Job("o/ok", 1, "j", tuple(sup.RUNNER_LABELS))
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: [job] if repo == "o/ok" else [])
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: [job] if repo == "o/ok" else [])
     started: list[int] = []
 
     def launch(gh, state, repo, slot, now, **k) -> None:
@@ -1810,6 +1848,25 @@ def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(monkeypatch, tmp_p
     assert list(json.loads((tmp_path / "metadata-slot1.json").read_text())["waits"]) == ["7"]
 
 
+def test_a_vm_is_told_its_repo_and_counts_it_public_unless_known_served_and_private(
+    monkeypatch, tmp_path
+) -> None:
+    class Registers:
+        def request(self, method: str, path: str, body: object = None) -> dict:
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    for name in ("STATE_DIR", "OUTBOX_DIR"):
+        monkeypatch.setattr(sup, name, tmp_path)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
+    monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: None)
+    monkeypatch.setattr(sup, "log", lambda line: None)
+    state = sup.State(serving={"o/private": sup.Serving(True, 0.0, "main")})
+    for slot, repo, public in [(0, "o/private", False), (1, "o/unknown", True)]:
+        sup.launch(Registers(), state, repo, slot, 0.0, cache=None)  # type: ignore[arg-type]
+        metadata = json.loads((tmp_path / f"metadata-slot{slot}.json").read_text())
+        assert metadata["serves"] == {"repo": repo, "public": public}
+
+
 def test_a_queued_job_knows_its_run_already_finished_a_build() -> None:
     hosted = ["ubuntu-latest"]
     build = ["self-hosted", "linux", "x64", "homelab-fc"]
@@ -1849,7 +1906,7 @@ def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
         sup.Job("o/ok", 1, "build", (*labels, "fc-cache-o--build"), queued_at=now - build_waited),
         sup.Job("o/ok", 2, "review", (*labels, "fc-cache-o--review"), run_started=True),
     ]
-    monkeypatch.setattr(sup, "find_queued", lambda gh, repo: jobs)
+    monkeypatch.setattr(sup, "find_queued", lambda gh, repo, **_: jobs)
 
     sup.tick(None, sup.State(slots=1), ["o/ok"], now)  # type: ignore[arg-type]
 

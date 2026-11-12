@@ -1,14 +1,13 @@
 """Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
-loads (its validate command, so that test needs Docker)."""
+loads (its validate command)."""
 
-import functools
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
-import pytest
 import yaml
+
+from tests.conftest import tool
 
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
@@ -44,18 +43,7 @@ def test_every_container_label_read_is_sent() -> None:
     assert read <= sent
 
 
-@functools.cache
-def docker() -> bool:
-    if not shutil.which("docker"):
-        return False
-    return subprocess.run(["docker", "info"], capture_output=True, timeout=60).returncode == 0
-
-
-@pytest.mark.skipif("not docker()", reason="needs Docker")
 def test_the_config_loads() -> None:
-    image = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))["services"]
-    config = f"{STACK / 'config.alloy'}:/etc/alloy/config.alloy:ro"
-    command = ["docker", "run", "--rm", "-v", config, image["alloy"]["image"]]
-    command += ["validate", "/etc/alloy/config.alloy"]
+    command = [tool("alloy"), "validate", str(STACK / "config.alloy")]
     ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
     assert ran.returncode == 0, ran.stdout + ran.stderr

@@ -72,7 +72,7 @@ if [[ $want != "$have" ]]; then
   fi
 fi
 
-inputs=(ci-runner/build-rootfs.sh ci-runner/rootfs ci-runner/versions.env)
+inputs=(ci-runner/build-rootfs.sh ci-runner/rootfs ci-runner/versions.env scripts/runner_job_guard.py)
 # Rebuilt only when what goes into it changed since the commit it was built from; below the jobs on the disk.
 built=$(cat "$images/commit" 2>/dev/null || true)
 if [[ -z $built ]] || ! git -C "$src" diff --quiet "$built" "$want" -- "${inputs[@]}"; then

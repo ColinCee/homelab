@@ -145,7 +145,7 @@ def test_the_unit_ends_the_drain_however_it_stops() -> None:
 
 
 def queued_job(monkeypatch, repo: str = "o/ok") -> None:
-    monkeypatch.setattr(sup, "check_private", lambda *a, **k: True)
+    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
     monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
     monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
     monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
@@ -154,7 +154,7 @@ def queued_job(monkeypatch, repo: str = "o/ok") -> None:
     monkeypatch.setattr(sup, "WAITS_FILE", sup.DRAIN_FILE.parent / "waits.jsonl")
     monkeypatch.setattr(sup, "WAIT_METRICS", sup.DRAIN_FILE.parent / "ci-waits.prom")
     monkeypatch.setattr(
-        sup, "find_queued", lambda gh, r: [sup.Job(r, 1, "j", tuple(sup.RUNNER_LABELS))]
+        sup, "find_queued", lambda gh, r, **_: [sup.Job(r, 1, "j", tuple(sup.RUNNER_LABELS))]
     )
 
 

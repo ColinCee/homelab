@@ -53,5 +53,7 @@ def test_no_answer_fails() -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as quiet:
         quiet.bind(("127.0.0.1", 0))
         port = quiet.getsockname()[1]
-        passed = probes.resolves("home.internal", "127.0.0.1", "100.100.146.119", port=port)
+        passed = probes.resolves(
+            "home.internal", "127.0.0.1", "100.100.146.119", port=port, timeout=0.2
+        )
     assert passed is False

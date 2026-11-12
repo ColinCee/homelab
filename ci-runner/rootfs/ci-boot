@@ -44,6 +44,10 @@ case "$task" in
     # The host's last load test (the supervisor's read_load_test), {} when there is none.
     { mmds load_test | jq -cn 'first(inputs | objects) // {}' 2>/dev/null || echo '{}'; } > /etc/homelab-ci/load-test.json
     chmod 0644 /etc/homelab-ci/load-test.json
+    # The repo this VM serves and whether it is public, for the job guard, which refuses every job when it is {}.
+    { mmds serves | jq -cn 'first(inputs | objects) // {}' 2>/dev/null || echo '{}'; } > /etc/homelab-ci/serves.json
+    chmod 0644 /etc/homelab-ci/serves.json
+    echo 'ACTIONS_RUNNER_HOOK_JOB_STARTED=/usr/local/lib/homelab/runner-job-guard-vm.sh' >> /opt/runner/.env
     # A just-in-time runner: registered for exactly one job, gone afterwards.
     jit=$(mmds jitconfig | jq -r .)
     echo "=== runner start"
