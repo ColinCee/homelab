@@ -129,8 +129,11 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
-      # A snapshot would publish a panel's data to the maker's public server.
+      # A snapshot or a public dashboard is read by its link alone, with no login; an external snapshot would also
+      # publish a panel's data to the maker's public server.
+      GF_SNAPSHOTS_ENABLED: "false"
       GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
       GF_LOG_LEVEL: warn
       # Its plugins are in its image (grafana.Dockerfile).
       GF_PLUGINS_PREINSTALL_DISABLED: "true"

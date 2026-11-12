@@ -89,6 +89,8 @@ def test_alloy_reaches_no_internet_host_or_tailnet() -> None:
 def test_nothing_reads_or_changes_the_stack_without_a_login() -> None:
     grafana = SERVICES["grafana"]["environment"]
     assert grafana["GF_AUTH_ANONYMOUS_ENABLED"] == "false"
+    # A snapshot and a public dashboard are each read by its link alone.
+    assert grafana["GF_SNAPSHOTS_ENABLED"] == grafana["GF_PUBLIC_DASHBOARDS_ENABLED"] == "false"
     assert "GF_USERS_VIEWERS_CAN_EDIT" not in grafana
     flags = SERVICES["prometheus"]["command"]
     assert not [f for f in flags if "admin" in f or "lifecycle" in f]
