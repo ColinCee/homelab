@@ -36,10 +36,15 @@ def pack(cache_dir: Path, out: Path, paths: Sequence[str], cwd: Path) -> int:
     # web/node_modules): pack the job's fresh ones, not both, or every cache would carry all
     # earlier copies too.
     tops = {p.removeprefix("./").split("/")[0] for p in paths}
+    try:
+        entries = list(cache_dir.iterdir())
+    except OSError:  # no cache folder: an empty one, and the workspace paths still save
+        entries = []
     folders = sorted(
         entry.name
-        for entry in cache_dir.iterdir()
+        for entry in entries
         if entry.is_dir()
+        and not entry.name.startswith(".")
         and entry.name != "lost+found"
         and entry.name not in tops
         and os.access(entry, os.R_OK | os.X_OK)
@@ -105,9 +110,11 @@ def save_cache() -> int:
     fails the job."""
     tar = Path(os.environ["RUNNER_TEMP"]) / "cache.tar"
     paths = os.environ.get("PATHS", "").split()
+    # Tests point these elsewhere: inside a CI VM the defaults are the real disks.
     cache = Path(os.environ.get("FC_CACHE_DIR", "/cache"))
+    disks = os.environ.get("FC_CACHE_DISKS", "").split()
     try:
-        saved = pack(cache, tar, paths, Path.cwd()) == 0 and save(tar, []) == 0
+        saved = pack(cache, tar, paths, Path.cwd()) == 0 and save(tar, disks) == 0
     except Exception as e:  # anything at all: the job's own result stands
         warn(f"{type(e).__name__}: {e}")
         saved = False

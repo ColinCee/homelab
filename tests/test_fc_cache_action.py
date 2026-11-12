@@ -161,12 +161,42 @@ def test_fails_when_a_named_workspace_path_is_missing(tmp_path) -> None:
     assert "web/node_modules does not exist" in result.stderr
 
 
+def test_a_missing_cache_folder_is_an_empty_one_and_the_workspace_paths_still_pack(
+    tmp_path,
+) -> None:
+    (tmp_path / "work" / "web").mkdir(parents=True)
+    (tmp_path / "work" / "web" / "lock.json").write_text("{}")
+    assert pack(tmp_path / "none", tmp_path / "work", "web/lock.json").returncode == 0
+    with tarfile.open(tmp_path / "cache.tar") as tar:
+        assert tar.getnames() == ["web/lock.json"]
+
+
+def test_a_hidden_cache_folder_is_left_out(tmp_path) -> None:
+    (tmp_path / "cache" / ".hidden").mkdir(parents=True)
+    (tmp_path / "cache" / "uv").mkdir()
+    (tmp_path / "work").mkdir()
+    assert pack(tmp_path / "cache", tmp_path / "work").returncode == 0
+    with tarfile.open(tmp_path / "cache.tar") as tar:
+        assert tar.getnames() == ["uv"]
+
+
 def test_the_action_never_fails_the_job_and_leaves_no_tar(tmp_path) -> None:
-    # No cache folder at all, as on a VM without one: a warning, never a failed check.
-    env = {**os.environ, "RUNNER_TEMP": str(tmp_path), "FC_CACHE_DIR": str(tmp_path / "none")}
+    # The pack works, the save finds no outbox disk: a warning, never a failed check.
+    (tmp_path / "cache" / "uv").mkdir(parents=True)
+    env = {
+        **os.environ,
+        "RUNNER_TEMP": str(tmp_path),
+        "FC_CACHE_DIR": str(tmp_path / "cache"),
+        "FC_CACHE_DISKS": str(tmp_path / "no-disk"),
+        "SUDO": "",
+    }
     result = subprocess.run(
-        [sys.executable, str(ACTION / "fc_cache.py")], capture_output=True, text=True, env=env
+        [sys.executable, str(ACTION / "fc_cache.py")],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=tmp_path,
     )
     assert result.returncode == 0
-    assert "was not saved" in result.stderr
+    assert "no outbox disk" in result.stderr and "was not saved" in result.stderr
     assert not (tmp_path / "cache.tar").exists()
