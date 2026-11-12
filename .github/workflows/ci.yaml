@@ -26,7 +26,13 @@ jobs:
       && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
       && '["self-hosted", "linux", "x64", "homelab-fc"]' || '"ubuntu-26.04"') }}
     steps:
+      # The VM image's own checkout, about a second faster (ci-runner/rootfs/ci_checkout.py says why).
+      - name: Check out
+        if: runner.environment == 'self-hosted'
+        run: ci-checkout
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: runner.environment == 'github-hosted'
         with:
           persist-credentials: false
           # The pull request's merge commit and its base, to diff them.
