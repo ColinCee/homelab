@@ -12,12 +12,12 @@ zizmor = "1.32.0"
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
-  "uv run ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/ && uv run ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/",
-  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/runner-job-guard-vm.sh",
-  "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
-  "actionlint",
+  "nice -n 10 uv run ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/ && nice -n 10 uv run ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/",
+  "nice -n 10 shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/runner-job-guard-vm.sh",
+  "nice -n 10 uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
+  "nice -n 10 actionlint",
   # GitHub Actions' security practices (pinned actions, no persisted token, no template injection), from files alone.
-  "zizmor --offline --min-severity low .github/",
+  "nice -n 10 zizmor --offline --min-severity low .github/",
 ]
 
 [tasks.format]
@@ -26,7 +26,7 @@ run = "uv run ruff format scripts/ ci-runner/ stacks/ tests/ .github/actions/"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts ci-runner stacks tests .github/actions --python-platform linux"
+run = "nice -n 10 uv run ty check scripts ci-runner stacks tests .github/actions --python-platform linux"
 
 [tasks.test]
 description = "Run unit tests"
@@ -35,11 +35,11 @@ run = "uv run python -m pytest tests/ -q --durations=8 -n auto --dist loadfile"
 
 [tasks."validate:compose"]
 description = "Validate Compose without changing local secrets"
-run = "scripts/validate-compose.sh"
+run = "nice -n 10 scripts/validate-compose.sh"
 
 [tasks."docs:size"]
 description = "Fail when a doc grows past docs-size.json"
-run = "uv run python -m scripts.docs_size"
+run = "nice -n 10 uv run python -m scripts.docs_size"
 
 [tasks.check]
 description = "Run CI checks"

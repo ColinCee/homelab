@@ -65,7 +65,8 @@ jobs:
         if: steps.pins.outputs.only != 'true'
         env:
           TEST_TIMES: ${{ runner.temp }}/test-times.json
-        run: mise run check
+          UV_NO_SYNC: '1'
+        run: uv sync --frozen -q && mise run check
 
       # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
