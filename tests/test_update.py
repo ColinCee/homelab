@@ -328,3 +328,34 @@ def test_the_installed_copy_runs_alone(tmp_path: Path) -> None:
     assert result.returncode == 1
     message = "update.sh: usage:" if os.geteuid() == 0 else "run with sudo"
     assert result.stderr.startswith(message), result.stderr
+
+
+def test_the_units_and_the_updater_run_the_same_python() -> None:
+    # install_host.py makes the link; a unit or SUPERVISOR naming another python3 would run the
+    # repo's code on the host's 3.12, or fail where the link is missing.
+    spec = importlib.util.spec_from_file_location(
+        "install_host_link", CI_RUNNER / "install_host.py"
+    )
+    assert spec is not None and spec.loader is not None
+    installer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(installer)
+    commands = [
+        line.split("=", 1)[1].split()
+        for unit in (CI_RUNNER / "systemd").glob("*.service")
+        for line in unit.read_text().splitlines()
+        if line.startswith("ExecStart=") and "/usr/local/lib/homelab-ci/" in line and ".py" in line
+    ]
+    assert len(commands) == 5
+    assert {words[0] for words in commands} == {installer.PYTHON_LINK}
+    assert up.SUPERVISOR[0] == installer.PYTHON_LINK
+
+    # The wrappers too; install-host.sh and update.sh repair the host, so they stay on the system's.
+    wrappers = [
+        line.split()[1]
+        for script in CI_RUNNER.glob("**/*.sh")
+        if script.name not in ("install-host.sh", "update.sh")
+        for line in script.read_text().splitlines()
+        if line.startswith("exec ") and ".py" in line
+    ]
+    assert len(wrappers) == 6
+    assert set(wrappers) == {installer.PYTHON_LINK}

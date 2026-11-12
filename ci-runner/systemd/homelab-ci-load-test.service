@@ -10,6 +10,6 @@ StartLimitBurst=3
 Type=oneshot
 # The drain waits up to 65 minutes for running jobs, then the test takes a few.
 TimeoutStartSec=90min
-ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py load-test
+ExecStart=/usr/local/bin/homelab-python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py load-test
 # However it ends, a crash or a timeout included, the supervisor takes jobs again.
 ExecStopPost=/usr/bin/rm -f /run/homelab-ci/load-test-drain

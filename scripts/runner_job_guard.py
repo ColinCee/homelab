@@ -13,6 +13,9 @@ cannot change it.
 
 The installed copy is root-owned and is not updated by deploys, so a push to main
 cannot rewrite the policy. See docs/architecture.md, "Deploys".
+
+Stays on the host's /usr/bin/python3 (py312 in pyproject.toml): it guards the host, so it must
+not depend on the homelab-python3 that install_host.py installs.
 """
 
 from __future__ import annotations

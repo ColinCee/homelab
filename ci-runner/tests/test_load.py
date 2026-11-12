@@ -1,4 +1,4 @@
-#!/usr/bin/python3 -Es
+#!/usr/local/bin/homelab-python3 -Es
 """Check that a VM in every slot at full tilt leaves the services responsive:
   sudo ci-runner/tests/test-load.sh [SECONDS]
 Boots a VM in every slot at the size the supervisor gives a job when others run

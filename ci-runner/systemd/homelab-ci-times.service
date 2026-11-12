@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_times.py
+ExecStart=/usr/local/bin/homelab-python3 -I /usr/local/lib/homelab-ci/ci_times.py
 Nice=10
 # Reads the CI token and GitHub, writes its state and one metrics file, and posts to Alloy.
 ProtectSystem=strict

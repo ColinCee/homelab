@@ -122,7 +122,7 @@ class Audit:
         carries on to the next."""
         try:
             passed = test()
-        except (OSError, KeyError, ValueError, IndexError, subprocess.SubprocessError):
+        except OSError, KeyError, ValueError, IndexError, subprocess.SubprocessError:
             passed = False
         if passed:
             print(f"PASS {name}")

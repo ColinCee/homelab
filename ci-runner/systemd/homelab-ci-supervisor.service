@@ -5,7 +5,7 @@ Requires=homelab-ci-net.service
 Wants=network-online.target
 
 [Service]
-ExecStart=/usr/bin/python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py
+ExecStart=/usr/local/bin/homelab-python3 -I /usr/local/lib/homelab-ci/ci_supervisor.py
 Restart=always
 RestartSec=30
 # Each VM is a unit of its own (homelab-ci-vm-*), so stopping or restarting the supervisor

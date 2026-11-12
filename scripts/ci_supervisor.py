@@ -525,7 +525,7 @@ class GitHub:
                 conn.request(method, path, body=data, headers=dict(headers))
                 response = conn.getresponse()
                 return response, response.read()
-            except (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError):
+            except http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError:
                 conn.close()
                 if not reused:
                     raise
@@ -826,7 +826,7 @@ def running_vms() -> set[str] | None:
             check=True,
             timeout=30,
         ).stdout
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         return None
     return {line.split()[0].removesuffix(".service") for line in out.splitlines() if line.strip()}
 
@@ -849,7 +849,7 @@ def count_memory(run: Launch) -> None:
     try:
         seen = json.loads(run.memory_file.read_text())
         peak, total, kills = int(seen["peak"]), int(seen["total"]), int(seen["kills"])
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return
     if run.standby or total <= 0:
         return
@@ -911,7 +911,7 @@ def adopt(state: State) -> None:
                 standby=bool(fields["standby"]),
                 label=str(fields["label"]),
             )
-        except (OSError, ValueError, TypeError, KeyError):
+        except OSError, ValueError, TypeError, KeyError:
             path.unlink(missing_ok=True)
             continue
         if run.unit in running and run.slot not in state.launches:
@@ -995,14 +995,14 @@ def disk_wait_percent() -> float:
     try:
         some = IO_PRESSURE.read_text().splitlines()[0].split()
         return float(dict(f.split("=") for f in some[1:])["avg60"])
-    except (OSError, IndexError, KeyError, ValueError):
+    except OSError, IndexError, KeyError, ValueError:
         return 0.0
 
 
 def memory_reserve_mib() -> int:
     try:
         return max(0, int(MEMORY_RESERVE_FILE.read_text().strip()))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return DEFAULT_MEMORY_RESERVE_MIB
 
 
@@ -1134,7 +1134,7 @@ def reap(
 
 
 @contextlib.contextmanager
-def bookkeeping(run: Launch, what: str) -> Generator[None, None, None]:
+def bookkeeping(run: Launch, what: str) -> Generator[None]:
     """Logs a failure of one VM's after-the-fact bookkeeping instead of failing the poll. A
     rate limit still ends the poll, leaving the VM to be tried again on the next."""
     try:
@@ -1305,7 +1305,7 @@ def take_outbox(gh: GitHubApi, tar: Path, branches: Mapping[str, str], now: floa
         repo = str(fields["repo"])
         with tar.open("rb") as f:
             first = f.read(512)
-    except (OSError, ValueError, KeyError, TypeError):
+    except OSError, ValueError, KeyError, TypeError:
         return False
     header = OUTBOX_HEADER.match(first)
     if not header:
@@ -1804,7 +1804,7 @@ def prune_waits(now: float) -> None:
         try:
             if now - float(json.loads(text)["until"]) < WAITS_KEEP_SECONDS:
                 kept.append(text + "\n")
-        except (ValueError, KeyError, TypeError):
+        except ValueError, KeyError, TypeError:
             continue  # a half-written line from a crash
     replace_file(WAITS_FILE, "".join(kept))
 
@@ -1838,7 +1838,7 @@ def count_in(path: Path, default: int = 1) -> int:
     """How many standbys a host file asks for: `default` if it is missing or not a number."""
     try:
         return max(0, int(path.read_text().strip()))
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return default
 
 
@@ -1878,7 +1878,7 @@ def read_load_test() -> dict[str, object] | None:
     """The last load test's record, or None if there is none or it is not a JSON object."""
     try:
         record = json.loads(LOAD_TEST_FILE.read_text())
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
     return {str(k): v for k, v in record.items()} if isinstance(record, dict) else None
 
@@ -2103,7 +2103,7 @@ COMMIT_FILE = Path("/etc/homelab-ci/commit")
 def read_word(path: Path) -> str:
     try:
         return path.read_text().split()[0]
-    except (OSError, IndexError):
+    except OSError, IndexError:
         return ""
 
 

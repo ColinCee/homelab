@@ -30,7 +30,9 @@ INSTALLED = "/etc/homelab-ci/commit"
 FAILED = "/var/lib/homelab-ci/update-failed"
 PINNED = "/etc/homelab-ci/pinned"
 LOCK = "/run/homelab-ci-update.lock"
-SUPERVISOR = ["/usr/bin/python3", "-I", "/usr/local/lib/homelab-ci/ci_supervisor.py"]
+# The units run homelab-python3 (install_host.py, PYTHON_LINK); this file stays on /usr/bin/python3,
+# so a broken pinned Python cannot stop the updater that would repair it.
+SUPERVISOR = ["/usr/local/bin/homelab-python3", "-I", "/usr/local/lib/homelab-ci/ci_supervisor.py"]
 USAGE = "update.sh: usage: update.sh <commit> [reason] | --follow"
 # What install-host.sh installs, and what goes into the image.
 INSTALL_PATHS = ["ci-runner", "scripts"]
