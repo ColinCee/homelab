@@ -17,11 +17,12 @@ PAGES: dict[str, dict[str, Any]] = {
     path.stem: json.loads(path.read_text(encoding="utf-8"))
     for path in sorted((STACK / "grafana/dashboards").glob("*.json"))
 }
-SOURCES = {"prometheus", "alertmanager", "logs", "traces"}
+SOURCES = {"prometheus", "alertmanager", "logs", "traces", "spans"}
 
 # These dataviz steps pass contrast checks on Grafana's light and dark themes.
 GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
 NOW, WEEK, NEUTRAL, FINE = "#d03b3b", "#fab219", "#898781", "#2f8f46"
+GRAY = {"mode": "fixed", "fixedColor": NEUTRAL}
 
 # Alloy sends these in mixed case; a lower-case copy finds nothing.
 MIXED_CASE = {
@@ -190,9 +191,9 @@ def test_tiles_wear_a_state_colour_and_unlisted_series_gray(page: dict[str, Any]
             plain = set() if filled or panel["type"] == "gauge" else {"text"}
             assert worn <= {NOW, WEEK, FINE, NEUTRAL} | plain, panel["title"]
             assert set(named_colours(panel).values()) <= {NOW, WEEK}, panel["title"]
-        elif "color" in defaults:
-            # A series no list names, like a removed container, is drawn gray.
-            assert defaults["color"] == {"mode": "fixed", "fixedColor": NEUTRAL}, panel["title"]
+        elif defaults.get("color", {}).get("mode") != "palette-classic":
+            # Past a line per container, each its own colour, a series no list names is gray.
+            assert defaults.get("color", GRAY) == GRAY, panel["title"]
 
 
 @every_page
@@ -226,4 +227,4 @@ def test_log_patterns_hold_no_control_characters(page: dict[str, Any]) -> None:
     # A "\b" written through a non-raw string becomes a backspace and the pattern matches nothing.
     for panel in charts(page):
         for target in panel["targets"]:
-            assert target["expr"].isprintable(), panel["title"]
+            assert target.get("expr", "").isprintable(), panel["title"]

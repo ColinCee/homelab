@@ -129,7 +129,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#898781",
                 "value": null
               }
             ]
@@ -146,17 +146,21 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
-        "showPercentChange": false
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
       },
       "gridPos": {
         "x": 0,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 5
       }
     },
@@ -191,7 +195,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#898781",
                 "value": null
               }
             ]
@@ -208,17 +212,21 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
-        "showPercentChange": false
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
       },
       "gridPos": {
-        "x": 6,
+        "x": 3,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 5
       }
     },
@@ -253,7 +261,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#898781",
                 "value": null
               }
             ]
@@ -270,17 +278,21 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
-        "showPercentChange": false
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
       },
       "gridPos": {
-        "x": 12,
+        "x": 6,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 5
       }
     },
@@ -315,7 +327,7 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "text",
+                "color": "#2f8f46",
                 "value": null
               },
               {
@@ -336,17 +348,21 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background_solid",
         "graphMode": "none",
-        "justifyMode": "auto",
+        "justifyMode": "center",
         "textMode": "value",
         "wideLayout": true,
-        "showPercentChange": false
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
       },
       "gridPos": {
-        "x": 18,
+        "x": 9,
         "y": 0,
-        "w": 6,
+        "w": 3,
         "h": 5
       }
     },
@@ -458,10 +474,10 @@
         "cellHeight": "sm"
       },
       "gridPos": {
-        "x": 0,
-        "y": 5,
+        "x": 12,
+        "y": 0,
         "w": 12,
-        "h": 9
+        "h": 5
       }
     },
     {
@@ -564,7 +580,7 @@
         }
       },
       "gridPos": {
-        "x": 12,
+        "x": 0,
         "y": 5,
         "w": 12,
         "h": 9
@@ -670,14 +686,101 @@
         }
       },
       "gridPos": {
-        "x": 0,
-        "y": 14,
+        "x": 12,
+        "y": 5,
         "w": 12,
-        "h": 8
+        "h": 9
       }
     },
     {
       "id": 8,
+      "type": "table",
+      "title": "Recent runs",
+      "description": "The latest CI and deploy runs of this repo and how long each took. A run's ID opens its trace: its jobs, steps, tasks and slowest tests, each with its time.",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "traces"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "jaeger",
+            "uid": "traces"
+          },
+          "refId": "A",
+          "queryType": "search",
+          "service": "ci",
+          "limit": 30
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "startTime": 0,
+              "traceName": 1,
+              "duration": 2,
+              "traceID": 3
+            },
+            "renameByName": {
+              "startTime": "Started",
+              "traceName": "Run",
+              "duration": "Took",
+              "traceID": "Trace"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Started",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 60
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Started"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocalNoDateIfToday"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 11
+      }
+    },
+    {
+      "id": 9,
       "type": "timeseries",
       "title": "VMs busy, of slots",
       "description": "CI VMs running a job, against the slots the host has.",
@@ -773,7 +876,7 @@
         "x": 12,
         "y": 14,
         "w": 12,
-        "h": 8
+        "h": 11
       }
     }
   ]
