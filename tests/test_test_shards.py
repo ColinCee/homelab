@@ -22,3 +22,17 @@ def test_the_slowest_tests_merge_slowest_first_within_the_annotation_size() -> N
     merged = json.loads(test_shards.merge_times([a, b, ""]))
     assert [r[0] for r in merged[:3]] == ["a::slow", "b::middle", "a::quick"]
     assert len(json.dumps(merged, separators=(",", ":"))) <= test_shards.TIMES_CHARS
+
+
+def test_a_shard_a_filter_left_empty_passes_but_any_failure_fails() -> None:
+    assert test_shards.verdict([0, 5, 5]) == 0
+    assert test_shards.verdict([5, 5]) == 5
+    assert test_shards.verdict([0, 1, 5]) == 1
+    assert test_shards.verdict([0, -9]) == 137
+
+
+def test_every_test_module_is_one_the_runner_finds() -> None:
+    # The runner takes tests/test_*.py only: a test elsewhere would never run.
+    here = Path(__file__).parent
+    found = {p.name for p in here.rglob("*.py")} - {"conftest.py", "__init__.py"}
+    assert found == {p.name for p in here.glob("test_*.py")}

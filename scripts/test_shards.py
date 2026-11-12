@@ -33,6 +33,7 @@ HEAVY = {
 LIGHT = 0.4
 # What GitHub keeps of an annotation, as tests/conftest.py's write_slowest caps it.
 TIMES_CHARS = 3500
+NO_TESTS = 5
 
 
 def shares(files: Sequence[Path], count: int) -> list[list[Path]]:
@@ -57,6 +58,15 @@ def merge_times(parts: Sequence[str]) -> str:
     return json.dumps(kept, separators=(",", ":"))
 
 
+def verdict(codes: Sequence[int]) -> int:
+    """The run's exit code: a shard a filter (-k) left without tests (pytest's 5) passes, unless
+    every shard was."""
+    failed = [code for code in codes if code not in (0, NO_TESTS)]
+    if failed:
+        return failed[0] if failed[0] > 0 else 128 - failed[0]  # killed: 128 + the signal
+    return NO_TESTS if codes and all(code == NO_TESTS for code in codes) else 0
+
+
 def main(args: Sequence[str], env: Mapping[str, str] = os.environ) -> int:
     planned = shares(sorted(Path("tests").glob("test_*.py")), os.process_cpu_count() or 1)
     times = env.get("TEST_TIMES")
@@ -64,19 +74,23 @@ def main(args: Sequence[str], env: Mapping[str, str] = os.environ) -> int:
     for n, share in enumerate(planned):
         own = {**env, "TEST_TIMES": f"{times}.{n}"} if times else dict(env)
         command = [sys.executable, "-m", "pytest", "-q", *args, *map(str, share)]
-        procs.append(subprocess.Popen(command, env=own, stdout=subprocess.PIPE, text=True))
-    code = 0
+        procs.append(
+            subprocess.Popen(
+                command, env=own, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True
+            )
+        )
+    codes = []
     for proc in procs:
         out, _ = proc.communicate()
         print(out, end="", flush=True)
-        code = code or int(proc.returncode)
+        codes.append(int(proc.returncode))
     if times:
         parts = [Path(f"{times}.{n}") for n in range(len(planned))]
         texts = [p.read_text(encoding="utf-8") for p in parts if p.exists()]
         Path(times).write_text(merge_times(texts), encoding="utf-8")
         for p in parts:
             p.unlink(missing_ok=True)
-    return code
+    return verdict(codes)
 
 
 if __name__ == "__main__":
