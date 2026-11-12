@@ -729,6 +729,193 @@
         "w": 12,
         "h": 12
       }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Spans taken in, a second",
+      "description": "Every span the trace store takes in, whatever sent it. The usual is a few a second; A store is being flooded fires past 1,000 over 15 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sum(rate(vt_rows_ingested_total{job=\"traces\"}[5m]))",
+          "legendFormat": "Spans"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#898781"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": false,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Spans by sender, last 24 hours",
+      "description": "Every span stored in the last 24 hours, by the service that sent it: requests, what a program does inside itself, and CI's runs. A sender far above the rest is flooding the store.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "_time:1d \"resource_attr:service.name\":* | stats by (\"resource_attr:service.name\") count() as spans, count_uniq(trace_id) as traces | sort by (spans) desc | limit 15",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 30
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "resource_attr:service.name": true,
+              "spans": true,
+              "traces": true
+            },
+            "indexByName": {
+              "resource_attr:service.name": 0,
+              "spans": 1,
+              "traces": 2
+            },
+            "renameByName": {
+              "resource_attr:service.name": "Sender",
+              "spans": "Spans",
+              "traces": "Traces"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Spans",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "Traces",
+                "destinationType": "number"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Spans",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false,
+            "minWidth": 60
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "^Spans$"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "min",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#2a78d6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      }
     }
   ]
 }

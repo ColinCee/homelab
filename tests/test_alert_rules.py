@@ -223,6 +223,18 @@ CASES = {
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
         ],
     ),
+    "a store taking in a flood is named, one at its usual rate is not": (
+        [
+            # A span a second, then 100,000 a minute.
+            ('vt_rows_ingested_total{job="traces"}', "0+60x10 600+100000x30"),
+            ('vl_rows_ingested_total{job="logs",type="opentelemetry"}', "0+600x40"),
+        ],
+        [
+            # Past 1,000 a second over 15 minutes from about 19 min, then 5 min of `for`.
+            at(18, "store-flooded"),
+            at(30, "store-flooded", posts("store-flooded", "1667", job="traces")),
+        ],
+    ),
     # Colin's and Renovate's never post.
     "another's deploy and CI-host install post who and what, then clear": (
         [
