@@ -512,3 +512,9 @@ def test_stop_vms_carries_on_past_a_failed_step_and_says_so(
     assert "stop-vms: stop units: systemctl" in capsys.readouterr().err
     assert len(run.ran("dmsetup remove")) == 3
     assert not jail.parent.exists()
+
+
+def test_a_standby_s_cpu_weight_reaches_its_cgroup(box: Box) -> None:
+    assert box.main({"VCPUS": "4", "MEM_MIB": "4096", "CPU_WEIGHT": "1"}) == 0
+    [jailer] = box.run.ran("timeout ")
+    assert "cpu.weight=1" in jailer and "cpu.weight=20" not in jailer

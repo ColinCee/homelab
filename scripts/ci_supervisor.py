@@ -117,6 +117,11 @@ STANDBY_RECYCLE_SECONDS = 45 * 60
 # /etc/homelab-ci/standbys if present (see standby_count and standby_wants).
 STANDBY_COUNT_FILE = Path("/etc/homelab-ci/standbys")
 STANDBY_TIMEOUT_SECONDS = 2 * 3600
+# A VM's CPU weight against the other VMs. A standby boots as a job takes the one before it, and
+# its boot (about 6 CPU-seconds) took CPU from that job's checks; it boots at the least and gets
+# a job VM's weight once booted or busy.
+VM_CPU_WEIGHT = 20
+STANDBY_CPU_WEIGHT = 1
 # Checked every poll: conditional requests make an unchanged answer free.
 PRIVACY_RECHECK_SECONDS = 0
 RUNNER_PREFIX = "fc-"
@@ -707,7 +712,9 @@ def launch(
             )
         # The record first: a supervisor that dies right after starting the VM still finds it.
         write_status(run.record, record(run))
+        weight = STANDBY_CPU_WEIGHT if standby else VM_CPU_WEIGHT
         env = {"VCPUS": str(vcpus), "MEM_MIB": str(mem_mib), "CACHE_IMAGE": str(cache or "")}
+        env["CPU_WEIGHT"] = str(weight)
         (OUTBOX_DIR / f"{name}.json").write_text(json.dumps({"repo": repo}))
         env["CACHE_OUT"] = str(OUTBOX_DIR / f"{name}.tar")
         start_vm(run, timeout, env)
@@ -1090,11 +1097,26 @@ def image_since(started: float) -> bool:
         return False
 
 
+def full_weight(run: Launch) -> None:
+    """A booted or busy standby gets a job VM's CPU weight (STANDBY_CPU_WEIGHT says why)."""
+    weight = CGROUP_ROOT / f"ci-slot{run.slot}" / "cpu.weight"
+    try:
+        if weight.read_text().strip() != str(VM_CPU_WEIGHT):
+            weight.write_text(f"{VM_CPU_WEIGHT}\n")
+    except FileNotFoundError:
+        pass  # Gone with its VM.
+    except OSError as e:
+        log(f"slot {run.slot}: could not raise {run.runner_name}'s CPU weight: {e}")
+
+
 def check_standby(gh: GitHubApi, run: Launch, now: float, served: bool) -> None:
     """A standby that got a job becomes an ordinary VM; an old idle one is replaced."""
+    if run.ready:
+        full_weight(run)
     if not served:
         stop(run, "serves a repo that is no longer served")
     elif not is_idle(gh, run):
+        full_weight(run)  # booting or busy, it boots no further at the least weight
         if now - run.started >= IDLE_AFTER_SECONDS:  # connected, so not idle means busy
             run.standby = False
             run.covers_until = now + 10

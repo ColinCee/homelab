@@ -2072,3 +2072,38 @@ def test_a_vm_stopped_by_a_signal_exits_as_a_shell_reports_it(
     monkeypatch.setattr(sup, "RUN_VM", script)
     monkeypatch.setattr(sup.signal, "signal", lambda *a: None)
     assert sup.vm_main(["0", "metadata.json", "60"]) == 143
+
+
+def test_a_standby_boots_at_the_least_cpu_weight_and_gets_a_job_s_once_ready_or_busy(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class Registers(NoGitHub):
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    weights: list[str] = []
+    monkeypatch.setattr(
+        sup, "start_vm", lambda run, timeout, env: weights.append(env["CPU_WEIGHT"])
+    )
+    monkeypatch.setattr(sup, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(sup, "LAST_REPO_FILE", tmp_path / "last-repo")
+    monkeypatch.setattr(sup, "CGROUP_ROOT", tmp_path)
+    state = sup.State()
+    sup.launch(Registers(), state, "o/r", 0, 0.0, cache=None, standby=True)
+    sup.launch(Registers(), state, "o/r", 1, 0.0, cache=None)
+    assert weights == [str(sup.STANDBY_CPU_WEIGHT), str(sup.VM_CPU_WEIGHT)]
+
+    for slot in (0, 1):
+        (tmp_path / f"ci-slot{slot}").mkdir()
+        (tmp_path / f"ci-slot{slot}" / "cpu.weight").write_text("1\n")
+    booting = sup.Launch(0, "o/r", 1, "fc-0", 0.0, Path("m"), True)
+    monkeypatch.setattr(sup, "is_idle", lambda gh, run: True)
+    sup.check_standby(NoGitHub(), booting, 10.0, True)
+    assert (tmp_path / "ci-slot0" / "cpu.weight").read_text() == "1\n"
+    booting.ready = True
+    sup.check_standby(NoGitHub(), booting, 20.0, True)
+    assert (tmp_path / "ci-slot0" / "cpu.weight").read_text() == f"{sup.VM_CPU_WEIGHT}\n"
+    busy = sup.Launch(1, "o/r", 2, "fc-1", 0.0, Path("m"), True)
+    monkeypatch.setattr(sup, "is_idle", lambda gh, run: False)
+    sup.check_standby(NoGitHub(), busy, 60.0, True)
+    assert (tmp_path / "ci-slot1" / "cpu.weight").read_text() == f"{sup.VM_CPU_WEIGHT}\n"
