@@ -34,6 +34,7 @@ STACKS = (
     "home-assistant",
     "internal-names",
     "observability",
+    "oncall",
     "tunnel",
 )
 EVERY_S = 300

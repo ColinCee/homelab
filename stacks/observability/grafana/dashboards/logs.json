@@ -197,7 +197,7 @@
           {
             "matcher": {
               "id": "byRegexp",
-              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+|tunnel-.+)$/"
+              "options": "/^(backup|homeassistant|deploy-.+|flight-tracker-.+|internal-names-.+|oncall-.+|tunnel-.+)$/"
             },
             "properties": [
               {
