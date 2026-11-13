@@ -234,3 +234,20 @@ def test_log_patterns_hold_no_control_characters(page: dict[str, Any]) -> None:
     for panel in charts(page):
         for target in panel["targets"]:
             assert target.get("expr", "").isprintable(), panel["title"]
+
+
+def test_data_source_links_name_real_data_sources_and_fields() -> None:
+    # A span opens its logs and metrics, a log line its trace (docs/architecture.md, "Monitoring and
+    # alerts"): each link names a data source that exists, and the field Alloy gives each line.
+    path = Path(__file__).parent.parent / "stacks/observability/grafana/datasources.yaml"
+    sources = yaml.safe_load(path.read_text(encoding="utf-8"))["datasources"]
+    uids = {source["uid"] for source in sources}
+    linked = re.findall(r"datasourceUid: (\w+)", path.read_text(encoding="utf-8"))
+    assert {"logs", "prometheus", "traces"} <= set(linked) <= uids
+    # The field both links read is one Alloy gives each container line.
+    traces = next(source for source in sources if source["uid"] == "traces")
+    assert traces["jsonData"]["tracesToLogsV2"]["query"].startswith("trace_id:=")
+    alloy = (Path(__file__).parent.parent / "stacks/observability/config.alloy").read_text("utf-8")
+    docker = alloy[alloy.index('loki.process "docker"') :]
+    kept = re.search(r"stage\.structured_metadata \{(.*?)\n  \}", docker, re.DOTALL)
+    assert kept and re.search(r"^\s*trace_id\s*=", kept.group(1), re.MULTILINE)

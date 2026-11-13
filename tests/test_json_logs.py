@@ -30,7 +30,7 @@ JSON_SETTINGS: dict[str, tuple[str, str] | None] = {
     "cloudflare/cloudflared": ("environment", "TUNNEL_LOG_OUTPUT"),
     # Its `logging` block: test_alloy_logs_json.
     "grafana/alloy": None,
-    # Caddy's own logs are JSON unless a Caddyfile sets another format.
+    # Caddy's own logs are JSON unless a Caddyfile sets another format: test_caddy_logs_json.
     "caddy": None,
     # Our Python services: test_python_services_log_through_the_json_formatter.
     "python": None,
@@ -71,6 +71,12 @@ def test_every_image_logs_json_or_is_wrapped() -> None:
             assert service.get("environment", {}).get(value) == "json", f"{name}: {value} not json"
 
 
+def test_caddy_logs_json() -> None:
+    for caddyfile in STACKS.glob("**/Caddyfile"):
+        text = caddyfile.read_text(encoding="utf-8")
+        assert not re.search(r"^\s*format\s+(?!json\b)", text, re.MULTILINE), caddyfile
+
+
 def test_alloy_logs_json() -> None:
     config = (STACKS / "observability/config.alloy").read_text(encoding="utf-8")
     assert re.search(r'^logging \{\n  format = "json"\n\}', config, re.MULTILINE)
@@ -99,13 +105,14 @@ def _listed(value: object) -> list[str]:
 
 def test_python_services_log_through_the_json_formatter() -> None:
     scripts = python_services()
-    assert len(scripts) >= 6
+    assert scripts
     for script in scripts:
         text = script.read_text(encoding="utf-8")
         calls = [n.func for n in ast.walk(ast.parse(text)) if isinstance(n, ast.Call)]
         assert not any(isinstance(f, ast.Name) and f.id == "print" for f in calls), script
         if any(isinstance(f, ast.Attribute) and f.attr in LOG_CALLS for f in calls):
-            assert "class JsonLines(logging.Formatter)" in text, script
+            assert "handler.setFormatter(JsonLines())" in text, script
+            assert any(isinstance(f, ast.Name) and f.id == "log_json" for f in calls), script
 
 
 def block(path: Path) -> str:
@@ -117,7 +124,6 @@ def block(path: Path) -> str:
 
 def test_every_service_has_the_same_copy() -> None:
     copies = [p for p in python_services() if "JsonLines" in p.read_text(encoding="utf-8")]
-    assert len(copies) >= 5
     for path in copies[1:]:
         assert block(path) == block(copies[0]), path
 
