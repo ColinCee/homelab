@@ -23,6 +23,13 @@ services:
       - /home/colin/.local/state/homelab/ring:/ring
     labels:
       homelab.config-hash: ${CONFIG_HASH_DOORBELL:-}
+    # Answered at all: a POST to / gets 404; /ring would deploy.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qS -O /dev/null --post-data '' http://127.0.0.1:8080/ 2>&1 | grep -q ' 404 '"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     # Only the tunnel's network, which has no way out: deploy.colincheung.dev/ring reaches it as doorbell:8080.
     networks:
       - tunnel

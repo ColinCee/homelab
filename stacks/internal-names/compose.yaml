@@ -21,6 +21,18 @@ services:
     image: caddy:2.11.9@sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c
     restart: unless-stopped
     mem_limit: 128m
+    read_only: true
+    # Its lock, instance id and autosaved config; no certificates, as auto_https is off.
+    tmpfs:
+      - /data
+      - /config
+    # Its metrics site (Caddyfile), served by the same Caddy as the names.
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2019/metrics"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     security_opt:
       - no-new-privileges:true
     # On the host network, Docker's default NET_RAW would let it capture the host's traffic;
