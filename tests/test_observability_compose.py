@@ -30,14 +30,10 @@ def test_only_alloy_reaches_the_stores_write_paths() -> None:
     assert COMPOSE["networks"]["host-writes"]["internal"] is True
 
 
-def test_only_prometheus_and_the_gateway_reach_alertmanager() -> None:
+def test_only_prometheus_and_the_gateway_reach_alertmanager_and_it_reaches_only_the_relay() -> None:
     assert members("alerting") == {"prometheus", "alertmanager", "gateway"}
-    assert set(SERVICES["alertmanager"]["networks"]) == {
-        "alerting",
-        "alertmanager-out",
-        "incidents",
-    }
-    assert members("alertmanager-out") == {"alertmanager"}
+    assert set(SERVICES["alertmanager"]["networks"]) == {"alerting", "incidents"}
+    assert members("incidents") == {"alertmanager", "incidents"}
 
 
 def test_only_alertmanager_reaches_the_incidents_relay() -> None:

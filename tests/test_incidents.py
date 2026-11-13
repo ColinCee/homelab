@@ -1,21 +1,15 @@
 """The incidents relay (stacks/observability/incidents/relay.py) opens one post per alert,
-starts the on-call agent once, clears the same post and survives a restart; Alertmanager sends
-it every alert but the watchdog and still posts each to #alerts."""
+mentions Colin only for a firing `now` alert, starts the on-call agent once, clears the same post,
+survives a restart and passes the watchdog on to Healthchecks.io."""
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 
 from stacks.observability.incidents import relay
 
-ALERTMANAGER = yaml.safe_load(
-    (Path(__file__).parent.parent / "stacks/observability/alertmanager/alertmanager.yml").read_text(
-        encoding="utf-8"
-    )
-)
 TAGS = {
     "available_tags": [{"name": "Firing", "id": "t-firing"}, {"name": "Cleared", "id": "t-cleared"}]
 }
@@ -57,6 +51,17 @@ class FakeFire:
         return f"https://claude.ai/code/session_{len(self.texts)}"
 
 
+class FakePing:
+    def __init__(self) -> None:
+        self.count = 0
+        self.fail = False
+
+    def __call__(self) -> None:
+        if self.fail:
+            raise OSError("healthchecks down")
+        self.count += 1
+
+
 def ago(days: int) -> str:
     return (datetime.now(UTC) - timedelta(days=days)).isoformat()
 
@@ -84,9 +89,19 @@ Parts = tuple[relay.Relay, "FakeDiscord", "FakeFire"]
 
 
 @pytest.fixture
-def parts(tmp_path: Path) -> tuple[relay.Relay, FakeDiscord, FakeFire]:
+def ping() -> FakePing:
+    return FakePing()
+
+
+@pytest.fixture
+def parts(tmp_path: Path, ping: FakePing) -> tuple[relay.Relay, FakeDiscord, FakeFire]:
     discord, fire = FakeDiscord(), FakeFire()
-    return relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire), discord, fire
+    r = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire, ping)
+    return r, discord, fire
+
+
+def opened(discord: FakeDiscord) -> dict[str, Any]:
+    return next(b for m, p, b in discord.calls if p.endswith("/threads") and b)
 
 
 def test_a_new_alert_opens_one_post_and_starts_the_agent_once(parts: Parts) -> None:
@@ -94,9 +109,8 @@ def test_a_new_alert_opens_one_post_and_starts_the_agent_once(parts: Parts) -> N
     assert r.handle(alert()) == 200
     assert r.handle(alert()) == 200
     assert discord.threads == 1 and len(fire.texts) == 1
-    opened = next(b for m, p, b in discord.calls if p == "/channels/forum/threads")
-    assert opened is not None
-    assert opened["name"] == "Disk filling" and opened["applied_tags"] == ["t-firing"]
+    post = opened(discord)
+    assert post["name"] == "Disk filling" and post["applied_tags"] == ["t-firing"]
     assert discord.said("thread-1") == ["On-call agent: https://claude.ai/code/session_1"]
 
 
@@ -109,7 +123,7 @@ def test_its_end_clears_the_same_post_and_a_quick_return_reopens_it(parts: Parts
     assert patch in discord.calls
     r.handle(alert())
     assert discord.threads == 1 and len(fire.texts) == 1
-    assert discord.said("thread-1")[-1] == "Firing again."
+    assert discord.said("thread-1")[-1].endswith("Firing again.")
 
 
 def test_a_return_a_day_after_clearing_is_a_new_incident(parts: Parts) -> None:
@@ -134,7 +148,7 @@ def test_a_failed_clear_is_sent_again(parts: Parts) -> None:
 def test_a_restart_opens_nothing_again(parts: Parts, tmp_path: Path) -> None:
     r, discord, fire = parts
     r.handle(alert())
-    again = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire)
+    again = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire, FakePing())
     again.handle(alert())
     assert discord.threads == 1 and len(fire.texts) == 1
 
@@ -191,9 +205,36 @@ def test_anything_but_an_alertmanager_alert_is_refused(parts: Parts, payload: ob
     assert not discord.calls
 
 
-def test_every_alert_but_the_watchdog_reaches_the_relay_and_still_posts_to_alerts() -> None:
-    first = ALERTMANAGER["route"]["routes"][0]
-    assert first["receiver"] == "incidents" and first["continue"] is True
-    assert first["matchers"] == ['alertname!="watchdog"']
-    receiver = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "incidents")
-    assert receiver["webhook_configs"][0]["send_resolved"] is True
+def test_an_act_now_alert_mentions_colin_when_it_opens_and_returns_only(parts: Parts) -> None:
+    r, discord, _ = parts
+    r.handle(alert())
+    message = opened(discord)["message"]
+    assert message["content"].startswith(f"<@{relay.COLIN}> ")
+    assert message["allowed_mentions"] == {"parse": [], "users": [relay.COLIN]}
+    r.handle(alert())
+    r.handle(alert("resolved"))
+    assert not any("<@" in t for t in discord.said("thread-1"))
+    r.handle(alert())
+    assert discord.said("thread-1")[-1] == f"<@{relay.COLIN}> Firing again."
+
+
+def test_a_this_week_alert_mentions_no_one(parts: Parts) -> None:
+    r, discord, _ = parts
+    r.handle(alert(level="week"))
+    message = opened(discord)["message"]
+    assert "<@" not in message["content"]
+    assert message["allowed_mentions"] == {"parse": [], "users": []}
+
+
+def test_the_watchdog_pings_healthchecks_and_never_posts(parts: Parts, ping: FakePing) -> None:
+    r, discord, fire = parts
+    assert r.handle(alert(alertname="watchdog", level="watchdog")) == 200
+    assert r.handle(alert("resolved", alertname="watchdog", level="watchdog")) == 200
+    assert ping.count == 1 and not discord.calls and not fire.texts
+
+
+def test_a_failed_ping_is_not_a_relay_failure(parts: Parts, ping: FakePing) -> None:
+    # A 502 would stop the watchdog for an hour (rules.yml), paging Colin over a blip.
+    r, _, _ = parts
+    ping.fail = True
+    assert r.handle(alert(alertname="watchdog", level="watchdog")) == 200
