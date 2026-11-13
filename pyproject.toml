@@ -37,7 +37,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 "stacks/backup/unit_metrics.py" = "py312"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+# Each test sits beside what it tests (AGENTS.md); the host checks in host-tests/ are not pytest.
+python_files = ["*_test.py"]
 # Tests import checks/ and stacks/ as packages, and host programs and telemetry by name, whichever way pytest is
 # started.
 pythonpath = [

@@ -19,16 +19,16 @@ from pathlib import Path
 # Seconds per file alone on a CI VM (12 Nov); an unlisted file is about LIGHT. Out of date numbers
 # only unbalance the shares a little.
 HEAVY = {
-    "test_update.py": 2.2,
-    "test_alert_rules.py": 1.6,
-    "test_deploy.py": 1.4,
-    "test_fc_cache_action.py": 1.0,
-    "test_dashboards.py": 0.8,
-    "test_ci_supervisor.py": 0.8,
-    "test_pin_only.py": 0.76,
-    "test_install_host.py": 0.75,
-    "test_gateway.py": 0.7,
-    "test_versions_hash.py": 0.66,
+    "update_test.py": 2.2,
+    "alert_rules_test.py": 1.6,
+    "deploy_test.py": 1.4,
+    "fc_cache_test.py": 1.0,
+    "dashboards_test.py": 0.8,
+    "ci_supervisor_test.py": 0.8,
+    "pin_only_test.py": 0.76,
+    "install_host_test.py": 0.75,
+    "gateway_test.py": 0.7,
+    "versions_hash_test.py": 0.66,
 }
 LIGHT = 0.4
 # What GitHub keeps of an annotation, as tests/conftest.py's write_slowest caps it.
@@ -67,8 +67,16 @@ def verdict(codes: Sequence[int]) -> int:
     return NO_TESTS if codes and all(code == NO_TESTS for code in codes) else 0
 
 
+def files_to_run() -> list[Path]:
+    """Every test file in git: each sits beside what it tests, as `<name>_test.py`."""
+    listed = subprocess.run(
+        ["git", "ls-files", "*_test.py"], check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    return sorted(Path(p) for p in listed)
+
+
 def main(args: Sequence[str], env: Mapping[str, str] = os.environ) -> int:
-    planned = shares(sorted(Path("tests").glob("test_*.py")), os.process_cpu_count() or 1)
+    planned = shares(files_to_run(), os.process_cpu_count() or 1)
     times = env.get("TEST_TIMES")
     procs = []
     for n, share in enumerate(planned):

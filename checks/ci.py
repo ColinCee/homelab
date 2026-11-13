@@ -25,7 +25,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 BASE = "HEAD^1"
-LIMITS_FILE = "tests/conftest.py"
+LIMITS_FILE = "conftest.py"
 LIMIT_NAMES = ("RUN_LIMIT", "TEST_LIMIT")
 SLOWER_LABEL = "slower-ci"
 VERSIONS = Path("ci-runner/versions.env")
