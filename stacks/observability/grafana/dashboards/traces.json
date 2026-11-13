@@ -112,7 +112,7 @@
             "uid": "spans"
           },
           "refId": "A",
-          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:server.address\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:server.address\" as address | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as target) | format if (target:=\"\") \"<address>\" as target | filter target:!=\"\" -target:eq_field(source) | stats by (source, target) count() calls, count() if (status_code:=2) errors | format \"<source> to <target>\" as id | format \"<errors>\" as failed | delete errors",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:server.address\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:server.address\" as address | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as target) | format if (target:=\"\") \"<address>\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code) | stats by (source, target) count() calls, count() if (status_code:=2) errors | format \"<source> to <target>\" as id | format \"<errors>\" as failed | delete errors",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 200

@@ -132,6 +132,19 @@ def test_every_link_opens_a_page_and_every_page_has_the_same_link_bar() -> None:
             assert opened in PAGES, name
 
 
+def test_the_map_gives_the_node_graph_its_edges() -> None:
+    # The node graph draws arrows only from fields named id, source and target; with any missing it
+    # draws a grid of unnamed circles.
+    [graph] = [p for page in PAGES.values() for p in charts(page) if p["type"] == "nodeGraph"]
+    query = graph["targets"][0]["expr"]
+    assert "stats by (source, target)" in query and '" as id' in query
+    # A client span with several server spans under it counts once.
+    assert "uniq by (span_id, " in query
+    steps = {t["id"]: t["options"] for t in graph["transformations"]}
+    assert steps["extractFields"]["replace"] is True
+    assert set(steps["organize"]["renameByName"].values()) == {"mainstat", "secondarystat"}
+
+
 @every_page
 def test_every_panel_reads_a_provisioned_source(page: dict[str, Any]) -> None:
     ids = [p["id"] for p in panels(page)]
