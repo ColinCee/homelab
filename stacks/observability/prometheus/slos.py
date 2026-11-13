@@ -4,11 +4,11 @@ and its query, thresholds and tests follow one shape. docs/architecture.md, "Mon
     uv run python -m stacks.observability.prometheus.slos     (rewrites slos.rules.yml)
 
 Two kinds of promise:
-- Fresh: a writer's metrics file, or the success time it records, is no older than one missed
-  run. The run's interval comes from the writer's systemd timer when it has one.
-- Good minutes: a PromQL condition says a minute is bad; it alerts once more than BAD_SHARE of
-  the last WINDOW was bad and it is still bad, while the data it reads is fresh (else its
-  writer's promise posts).
+- Fresh: a writer's metrics file, or the success time it records, is no older than `late`, set
+  from its normal (baseline.py); without enough history, one missed run of its timer.
+- Good minutes: a minute is bad when `measure` is over `target`, set from its normal; it alerts
+  once more than BAD_SHARE of the last WINDOW was bad and it is still bad, while the data it
+  reads is fresh (else its writer's promise posts).
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ HOME = "http://grafana.internal/d/home"
 LATE_SLACK = 600
 # How long a vanished series still counts as its last value before it is no data.
 NO_DATA = "30m"
+# Past "Beelink metrics stopped" (5 min of no data), which holds this back when Alloy is the cause.
 FRESH_FOR = "5m"
 WINDOW = "1h"
 BAD_SHARE = 0.10
@@ -74,16 +75,31 @@ class Slo:
     file: str
     every: int = 0
     metric: str = ""
-    bad: str = ""
+    limit: int = 0
+    measure: str = ""
+    target: int = 0
     promise: str = ""
 
     @property
-    def late(self) -> int:
+    def default_late(self) -> int:
         return round(self.every * 1.1) + LATE_SLACK
 
     @property
+    def late(self) -> int:
+        return self.limit or self.default_late
+
+    @property
     def fresh(self) -> bool:
-        return not self.bad
+        return not self.measure
+
+    @property
+    def bad(self) -> str:
+        return f"({self.measure}) > {self.target}"
+
+    @property
+    def stated(self) -> str:
+        """The promise, its target in words."""
+        return self.promise.format(target=f"{self.target // 60} min")
 
 
 def catalogue(path: Path = CATALOGUE) -> tuple[list[Slo], dict[str, str]]:
@@ -95,8 +111,18 @@ def catalogue(path: Path = CATALOGUE) -> tuple[list[Slo], dict[str, str]]:
         timer = entry.pop("timer", None)
         every = entry.pop("every", None)
         interval = timer_interval(ROOT / timer) if timer else seconds(every) if every else 0
-        slos.append(Slo(**entry, every=interval))
+        limit = seconds(entry.pop("late")) if "late" in entry else 0
+        target = seconds(entry.pop("target")) if "target" in entry else 0
+        slos.append(Slo(**entry, every=interval, limit=limit, target=target))
     return slos, dict(data["unwatched"])
+
+
+def incidents(path: Path = CATALOGUE) -> list[tuple[int, int]]:
+    """The known outages, as epoch seconds, which a baseline leaves out of normal."""
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return [
+        (int(i["from"].timestamp()), int(i["to"].timestamp())) for i in data.get("incidents", [])
+    ]
 
 
 def by_file(slos: list[Slo]) -> dict[str, Slo]:
@@ -129,7 +155,7 @@ def good_minutes_rule(slo: Slo, writers: dict[str, Slo]) -> dict[str, Any]:
         f"and on() max_over_time({bad}[{RECENT}:1m]) > 0\n"
         f"and on() (time() - max({TEXTFILE.format(slo.file)})) < {writer.late}\n"
     )
-    return rule(slo, expr, "0m", f"Last {WINDOW} not meeting: {slo.promise}", "%")
+    return rule(slo, expr, "0m", f"Last {WINDOW} not meeting: {slo.stated}", "%")
 
 
 def rule(slo: Slo, expr: str, wait: str, measure: str, unit: str) -> dict[str, Any]:
