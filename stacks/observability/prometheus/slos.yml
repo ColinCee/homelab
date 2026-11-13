@@ -1,0 +1,131 @@
+# What the homelab promises, one entry per alert; slos.py turns them into slos.rules.yml (docs/architecture.md,
+# "Monitoring and alerts"). Each needs `file`, the metrics file its data comes from, and either:
+# - fresh: `timer` (the writer's systemd timer, read for its interval) or `every`, and `metric` when the file holds a
+#   success time that can be late while the file itself is rewritten;
+# - good minutes: `bad`, a PromQL condition true in a bad minute, and `promise`, what a good minute means.
+# Every metrics file the code writes has a fresh promise or is under `unwatched` with why.
+slos:
+  - alert: ci-jobs-not-starting
+    level: now
+    title: CI jobs not starting
+    file: ci-waits.prom
+    promise: CI jobs start within 10 min of GitHub queueing them
+    # Polls failing hide new jobs, so they count as late too.
+    bad: homelab_ci_queued_seconds > 600 or homelab_ci_poll_failed_seconds > 600
+    harm: Private repositories' checks sit queued, so nothing of theirs merges or deploys.
+    action: >-
+      On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting on "a VM booting for it":
+      VMs die at start, `sudo journalctl -t homelab-ci-vm -n 30` says why; fix it and merge. "A VM ready for it": its
+      runner is up but GitHub sends it no job; check githubstatus.com. "Slots in use" or "memory": a backlog, cancel
+      runs you do not need. "Rate limited until": it clears by itself then. "Poll failed": fix the error it names.
+      See docs/architecture.md, "CI runner".
+
+  - alert: ci-supervisor-stopped
+    level: now
+    title: CI supervisor stopped
+    file: ci-waits.prom
+    every: 15s  # ci-runner/supervisor/ci_supervisor.py, WAIT_METRICS_SECONDS
+    harm: No CI machine starts, so private repositories' checks wait and nothing of theirs merges.
+    action: >-
+      Read `sudo journalctl -u homelab-ci-supervisor -n 100` on the Beelink, fix the cause, then `sudo systemctl
+      restart homelab-ci-supervisor`; see docs/architecture.md, "CI runner".
+
+  - alert: probes-stopped
+    level: now
+    title: Health checks stopped
+    file: probes.prom
+    every: 1m  # stacks/observability/probes.py
+    harm: Home Assistant and the .internal names going down would go unseen.
+    action: >-
+      Check `docker ps -a --filter name=observability-probes` and `docker logs --tail 50 observability-probes-1`,
+      then `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
+
+  - alert: security-checks-stopped
+    level: now
+    title: Security checks stopped
+    file: security.prom
+    timer: beelink/security/homelab-security-facts.timer
+    harm: CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.
+    action: >-
+      Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
+      ci-runner/install-host.sh`.
+
+  - alert: main-deploy-stopped
+    level: now
+    title: Deployer stopped running
+    file: main-deploy.prom
+    metric: homelab_main_deploy_checked_timestamp_seconds
+    timer: stacks/deploy/systemd/deploy-main.timer
+    harm: Merges to main no longer reach the Beelink, and a failed deploy would go unseen.
+    action: >-
+      Run `systemctl --user status deploy-main.timer deploy-main` and `journalctl --user -u deploy-main -n 50` on
+      the Beelink; start it with `systemctl --user start deploy-main`.
+
+  - alert: failed-units-check-stopped
+    level: week
+    title: Failed unit check stopped
+    file: failed-units.prom
+    timer: stacks/observability/systemd/observability-failed-units.timer
+    harm: A failed systemd unit, the system's or Colin's, goes unseen while it is stopped.
+    action: >-
+      Check `systemctl --user status observability-failed-units.service` and `systemctl --user list-timers
+      observability-failed-units.timer` on the Beelink; deploy-main installs it with the observability stack.
+
+  - alert: ssd-wear-stale
+    level: week
+    title: SSD wear check stopped
+    file: ssd.prom
+    timer: beelink/ssd-wear/homelab-ssd-wear.timer
+    harm: A wearing SSD would go unnoticed.
+    action: >-
+      Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer` on the
+      Beelink; it starts with `sudo ci-runner/install-host.sh`.
+
+  - alert: ci-times-stale
+    level: week
+    title: CI run times stopped
+    file: ci-times.prom
+    timer: ci-runner/run-times/homelab-ci-times.timer
+    harm: A slower CI or deploy would go unnoticed, and no run is traced.
+    action: >-
+      Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times` on the Beelink; it
+      starts with `sudo ci-runner/install-host.sh`.
+
+  - alert: backup-missed
+    level: week
+    title: Nightly backup didn't run
+    file: backup.prom
+    metric: homelab_backup_last_success_timestamp_seconds
+    every: 1d  # stacks/backup/backup.py, BACKUP_TIME
+    harm: Without a nightly copy in R2, a lost disk loses everything since the last good backup.
+    action: Check `docker logs --tail 100 backup`; see docs/architecture.md, "Backups".
+
+  - alert: deep-check-missed
+    level: week
+    title: Weekly backup check didn't pass
+    file: backup-deep-check.prom
+    metric: homelab_backup_last_deep_check_timestamp_seconds
+    every: 7d  # stacks/backup/backup.py, DEEP_CHECK_DAY
+    harm: Damaged data in R2 goes unseen until a restore needs it.
+    action: >-
+      Run the check now with `docker exec -e DEEP_CHECK=1 backup python3 -I /backup.py once` and read why it fails
+      in its output; a deploy since Sunday has wiped that run's log.
+
+  - alert: pc-backup-stale
+    level: week
+    title: PC backup stopped arriving
+    file: pc-backup.prom
+    metric: homelab_pc_backup_newest_timestamp_seconds
+    # The PC sends one a day while it is on, and is off some days.
+    every: 2d
+    harm: The Windows PC's files are no longer copied off it, so a dead PC disk loses them.
+    action: >-
+      Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl --user status
+      backup-pc-receive` on the Beelink; see docs/architecture.md, "Backups".
+
+unwatched:
+  ci-vm-memory.prom: The CI supervisor writes it as VMs end; ci-supervisor-stopped watches the same writer.
+  deploy-*.prom: Written once per deploy, not on a schedule; main-deploy-stopped watches the deployer.
+  backup-size.prom: Written by the same nightly run as backup.prom, which backup-missed watches.
+  backup-failure.prom: Written only when a backup fails.
+  upkeep-*.prom: Written once a month; upkeep-missed watches the run.

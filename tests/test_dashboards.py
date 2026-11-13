@@ -11,6 +11,7 @@ import pytest
 import yaml
 from conftest import services
 
+from stacks.observability.prometheus import slos
 from tests.test_alert_rules import promtool
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
@@ -107,8 +108,7 @@ def containers() -> dict[str, str]:
 
 def levels() -> dict[str, str]:
     """Each alert rule, in its level's colour."""
-    groups = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
-    found = {r["alert"]: r["labels"]["level"] for g in groups for r in g["rules"]}
+    found = {r["alert"]: r["labels"]["level"] for g in slos.rule_groups() for r in g["rules"]}
     # Always firing, so the dashboards leave it out.
     found.pop("watchdog")
     return {name: NOW if level == "now" else WEEK for name, level in found.items()}

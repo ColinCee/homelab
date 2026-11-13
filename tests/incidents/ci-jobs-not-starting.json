@@ -1,0 +1,24 @@
+{
+ "what": "13 Nov 2026: every CI VM died at start from 18:36 to 19:06 UTC, so jobs sat queued.",
+ "start": "2026-11-13T17:50:00Z",
+ "series": [
+  {
+   "series": "homelab_ci_queued_seconds{repo=\"ColinCee/homelab\",workflow=\"CI\"}",
+   "values": [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, 18, 81, 143, 207, 255, 321, 384, 450, 500, 566, 627, 687, 748, 809, 871, 932, 993, 1053, 1097, 1163, 1229, 1293, 1336, 1400, 1464, 1527, 1593, 1637, 1702, 1745, null, null, null, 12, null, null, null, null, null, null, null, null, null]
+  },
+  {
+   "series": "homelab_ci_poll_failed_seconds",
+   "values": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  },
+  {
+   "series": "node_textfile_mtime_seconds{file=\"/var/lib/homelab-metrics/ci-waits.prom\"}",
+   "values": [-17, 29, 92, 155, 219, 282, 345, 396, 460, 524, 569, 634, 698, 762, 809, 872, 937, 1001, 1065, 1116, 1180, 1245, 1293, 1356, 1420, 1467, 1532, 1596, 1660, 1725, 1786, 1836, 1899, 1964, 2014, 2074, 2136, 2203, 2252, 2321, 2374, 2440, 2505, 2556, 2621, 2685, 2730, 2795, 2854, 2916, 2979, 3044, 3092, 3157, 3215, 3281, 3330, 3396, 3457, 3517, 3579, 3639, 3701, 3763, 3823, 3884, 3928, 3993, 4060, 4123, 4166, 4230, 4294, 4358, 4423, 4467, 4532, 4576, 4652, 4720, 4771, 4820, 4897, 4945, 5019, 5068, 5131, 5194, 5260, 5306, 5370]
+  }
+ ],
+ "checks": [
+  [40, null],
+  [63, null],
+  [64, "12"],
+  [93, null]
+ ]
+}
