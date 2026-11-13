@@ -135,13 +135,45 @@ def test_the_map_gives_the_node_graph_its_edges() -> None:
     # The node graph draws arrows only from fields named id, source and target; with any missing it
     # draws a grid of unnamed circles.
     [graph] = [p for page in PAGES.values() for p in charts(page) if p["type"] == "nodeGraph"]
-    query = graph["targets"][0]["expr"]
-    assert "stats by (source, target)" in query and '" as id' in query
+    queries = {t["refId"]: t["expr"] for t in graph["targets"]}
+    edges, nodes = queries.pop("edges"), queries.pop("nodes")
+    assert not queries
+    assert "stats by (source, target)" in edges and '" as id' in edges
     # A client span with several server spans under it counts once.
-    assert "uniq by (span_id, " in query
+    assert "uniq by (span_id, " in edges
+    # Both name each call the same way.
+    calls = edges[: edges.index(" | stats ")]
+    assert nodes.startswith(calls + " | ")
     steps = {t["id"]: t["options"] for t in graph["transformations"]}
-    assert steps["extractFields"]["replace"] is True
-    assert set(steps["organize"]["renameByName"].values()) == {"mainstat", "secondarystat"}
+    assert (
+        steps == {"extractFields": steps["extractFields"]}
+        and steps["extractFields"]["replace"] is True
+    )
+    # The graph prints a number to two places (decimals 0 reads as unset) and shows a legend of
+    # any node stat: the counts arrive as text, and a node's in its subtitle.
+    assert re.search(
+        r'format "<calls> calls" as mainstat .*format "<failed> failed" as secondarystat', edges
+    )
+    assert " as subtitle" in nodes and "mainstat" not in nodes
+
+
+def test_the_map_names_whom_each_call_reached() -> None:
+    # `server.address` is the Host header, which a proxy passes on: it names a call only when
+    # neither Docker (config.alloy, `peer.service`), the answering span nor a host port has.
+    [graph] = [p for page in PAGES.values() for p in charts(page) if p["type"] == "nodeGraph"]
+    edges = graph["targets"][0]["expr"]
+    names = re.findall(r'(?:"span_attr:peer\.service" as target|"<\w+>" as target)', edges)
+    assert names == [
+        '"span_attr:peer.service" as target',
+        '"<answered>" as target',
+        '"<listener>" as target',
+        '"<host>" as target',
+    ]
+    alloy = (STACK / "config.alloy").read_text("utf-8")
+    assert 'set(attributes[\\"peer.service\\"]' in alloy
+    # A failed call is one the server failed, as the tables count server spans: OBI fails a
+    # client span on any 4xx, such as the 403 the probes expect from home.internal.
+    assert 'count() if (status_code:=2 -http_status:~"^4") failed' in edges
 
 
 def test_every_page_marks_each_deploy_from_the_deploy_s_trace() -> None:
