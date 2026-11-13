@@ -66,11 +66,14 @@ def test_a_new_tool_without_a_url_fails(base: str) -> None:
     ]
 
 
-def test_every_pinned_tool_here_has_a_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    repo = Path(__file__).parent.parent
-    monkeypatch.chdir(repo)
-    head = git(repo, "rev-parse", "HEAD")
-    empty = git(repo, "hash-object", "-t", "tree", "/dev/null")
+def test_every_pinned_tool_here_has_a_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # This checkout's pins, committed in a repository of the test's own, so it runs wherever the
+    # checkout's own git does not (a Windows worktree read from WSL).
+    pinned = (Path(__file__).parent.parent / VERSIONS).read_text(encoding="utf-8")
+    git(tmp_path, "init", "-q")
+    monkeypatch.chdir(tmp_path)
+    empty = _commit(tmp_path, "")
+    head = _commit(tmp_path, pinned)
     found = problems(empty, head, lambda url: "")
     assert found and all("wrong hash" in line for line in found), found
 
