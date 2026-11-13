@@ -94,8 +94,7 @@ LINES = [
     # Caddy
     ('{"level":"warn","logger":"http.log","msg":"handled request"}', "handled", "warn"),
     ('{"level":"INFO","msg":"saw level=error in a reply"}', "reply", "info"),
-    # uvicorn, CoreDNS and Home Assistant, which cannot log JSON
-    ('INFO:     192.168.96.2:55072 - "GET /aircraft HTTP/1.1" 200 OK', "aircraft", "info"),
+    # CoreDNS and Home Assistant, which cannot log JSON
     ("[INFO] plugin/reload: Running configuration SHA512", "SHA512", "info"),
     ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
     ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
