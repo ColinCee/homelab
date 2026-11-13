@@ -97,6 +97,106 @@
   ],
   "panels": [
     {
+      "id": 7,
+      "type": "nodeGraph",
+      "title": "Who calls whom, last hour",
+      "description": "Each arrow is one service's calls to another in the last hour, from its traces; hover for how many failed. A call to a traced service is named by that service, any other by the address called, so the stores and the internet show as addresses. Drag to pan.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "spans"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "A",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:server.address\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:server.address\" as address | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as target) | format if (target:=\"\") \"<address>\" as target | filter target:!=\"\" -target:eq_field(source) | stats by (source, target) count() calls, count() if (status_code:=2) errors | format \"<source> to <target>\" as id | format \"<errors>\" as failed | delete errors",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 200
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": true
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "calls": "mainstat",
+              "failed": "secondarystat"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "mainstat",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "secondarystat",
+                "destinationType": "number"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "mainstat"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Calls"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "secondarystat"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Failed"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "nodes": {},
+        "edges": {},
+        "zoomMode": "cooperative",
+        "layoutAlgorithm": "layered"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 22
+      }
+    },
+    {
       "id": 1,
       "type": "timeseries",
       "title": "Requests an hour, by service",
@@ -157,7 +257,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 0,
+        "y": 22,
         "w": 12,
         "h": 10
       },
@@ -361,7 +461,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 0,
+        "y": 22,
         "w": 12,
         "h": 10
       }
@@ -543,7 +643,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 10,
+        "y": 32,
         "w": 12,
         "h": 12
       }
@@ -725,7 +825,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 10,
+        "y": 32,
         "w": 12,
         "h": 12
       }
@@ -784,7 +884,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 22,
+        "y": 44,
         "w": 12,
         "h": 9
       }
@@ -905,7 +1005,7 @@
       },
       "gridPos": {
         "x": 12,
-        "y": 22,
+        "y": 44,
         "w": 12,
         "h": 9
       }
