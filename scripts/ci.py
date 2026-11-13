@@ -202,7 +202,7 @@ def build_image() -> int:
     """Build the CI VMs' image as ci-runner/build-rootfs.sh does, to catch a broken one before
     merge: the Beelink builds it only after."""
     pinned = versions(VERSIONS.read_text(encoding="utf-8"))
-    command = ["docker", "build", "-q", "--build-context", "scripts=scripts"]
+    command = ["docker", "build", "-q"]
     for name, value in pinned.items():
         command += ["--build-arg", f"{name}={value}"]
     return subprocess.run([*command, "ci-runner/rootfs"], stdout=subprocess.DEVNULL).returncode

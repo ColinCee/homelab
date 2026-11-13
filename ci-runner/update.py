@@ -40,7 +40,6 @@ IMAGE_INPUTS = [
     "ci-runner/build-rootfs.sh",
     "ci-runner/rootfs",
     "ci-runner/versions.env",
-    "scripts/runner_job_guard.py",
 ]
 GIVE_UP_FAILURES = 2
 RETRY_SECONDS = 3600

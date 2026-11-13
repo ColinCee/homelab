@@ -2,8 +2,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-from scripts import runner_job_guard as guard
+import runner_job_guard as guard
 
 
 @pytest.fixture(autouse=True)

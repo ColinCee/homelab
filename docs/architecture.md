@@ -57,7 +57,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
 - Served, with no other writer: private repos the token sees, and `PUBLIC_REPOS`
   ([`ci_supervisor.py`](../ci-runner/supervisor/ci_supervisor.py)) while GitHub holds outside contributors' runs for approval. A
-  runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py))
+  runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../ci-runner/rootfs/runner_job_guard.py))
   kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
   VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../ci-runner/run-times/ci_times.py) traces each run and alerts

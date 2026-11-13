@@ -156,9 +156,8 @@ RUN for a in ${CACHED_ACTIONS}; do \
  && echo "/opt/hostedtoolcache/node/${NODE_VERSION#v}/x64/bin:/opt/jdk/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > /opt/runner/.path \
  && chown runner:runner /opt/runner/.path
 
-# The job guard ci-boot hooks into the runner, root-owned so no job can change it; the guard comes from the build's
-# `scripts` context (build-rootfs.sh).
-COPY --from=scripts runner_job_guard.py /usr/local/lib/homelab/
+# The job guard ci-boot hooks into the runner, root-owned so no job can change it.
+COPY runner_job_guard.py /usr/local/lib/homelab/
 COPY runner-job-guard-vm.sh /usr/local/lib/homelab/
 RUN chmod 0644 /usr/local/lib/homelab/runner_job_guard.py && chmod 0755 /usr/local/lib/homelab/runner-job-guard-vm.sh
 
