@@ -1,7 +1,7 @@
 """Write each systemd unit held as failed, the system's and Colin's, to failed-units.prom for "A
-systemd unit failed" (prometheus/rules.yml). Run each minute as Colin by failed-units.timer, from
-the checkout on the host's /usr/bin/python3: the security facts' writer runs as its own user,
-which cannot reach his user manager.
+systemd unit failed" (prometheus/rules.yml). Run each minute as Colin by
+observability-failed-units.timer, from the checkout on the host's /usr/bin/python3: the security
+facts' writer runs as its own user, which cannot reach his user manager.
 """
 
 from __future__ import annotations

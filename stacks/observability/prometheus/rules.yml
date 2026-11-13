@@ -617,8 +617,8 @@ groups:
           unit: ' min ago'
           harm: 'A failed systemd unit, the system''s or Colin''s, goes unseen while it is stopped.'
           action: >-
-            Check `systemctl --user status failed-units.service` and `systemctl --user list-timers
-            failed-units.timer` on the Beelink; deploy-main installs it with the observability stack.
+            Check `systemctl --user status observability-failed-units.service` and `systemctl --user list-timers
+            observability-failed-units.timer` on the Beelink; deploy-main installs it with the observability stack.
           dashboard: *home
           value: '{{ $value }}'
 
