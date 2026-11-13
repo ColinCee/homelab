@@ -1,10 +1,10 @@
-"""The intrusion alerts' facts (scripts/security_facts.py) turn the journal, `tailscale status`
-and the runner guard into security.prom."""
+"""The intrusion alerts' facts (beelink/security/security_facts.py) turn the journal, `tailscale
+status` and the runner guard into security.prom."""
 
 from pathlib import Path
 from typing import Any
 
-from scripts import security_facts
+import security_facts
 
 STATUS = {
     "Self": {"DNSName": "beelink.tail4f465e.ts.net.", "Created": "2026-01-31T18:28:12.625380059Z"},

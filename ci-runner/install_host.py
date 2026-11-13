@@ -5,7 +5,7 @@ deploys never touch these files:
     sudo ci-runner/install-host.sh
     sudo SLOTS=4 ci-runner/install-host.sh   (a new slot count, written to /etc/homelab-ci)
 
-update.py reruns it when main changes anything under ci-runner/ or scripts/. Runs as root with
+update.py reruns it when main changes anything under update.py's INSTALL_PATHS. Runs as root with
 the host's system Python: standard library only. It stays on /usr/bin/python3, not the
 homelab-python3 it installs: the repair path must not depend on what it repairs (as update.py).
 """
@@ -265,10 +265,11 @@ def install_vm_files(host: Host, here: Path) -> None:
     install(host, "0755", here / "tests" / "test-load.sh", f"{DEST}/test-load.sh")
 
 
-def install_timed_script(host: Host, here: Path, script: str, unit: str) -> None:
-    install(host, "0644", here.parent / "scripts" / script, f"{DEST}/{script}")
+def install_timed_script(host: Host, script: Path, unit: str, units: Path | None = None) -> None:
+    """The script and its timer's units, which sit beside it unless UNITS says where."""
+    install(host, "0644", script, f"{DEST}/{script.name}")
     for name in (f"{unit}.service", f"{unit}.timer"):
-        install(host, "0644", here / "systemd" / name, f"/etc/systemd/system/{name}")
+        install(host, "0644", (units or script.parent) / name, f"/etc/systemd/system/{name}")
     systemctl(host, "daemon-reload")
     systemctl(host, "enable", "--now", f"{unit}.timer")
 
@@ -350,12 +351,16 @@ def install_locked(
     # which keeps the script's folder on the path). Before the scripts that import it.
     install(host, "0644", here.parent / "stacks/telemetry/telemetry.py", f"{DEST}/telemetry.py")
     # The SSD's lifetime writes and wear, for Prometheus.
-    install_timed_script(host, here, "ssd_wear.py", "homelab-ssd-wear")
+    install_timed_script(host, here.parent / "beelink/ssd-wear/ssd_wear.py", "homelab-ssd-wear")
     # What the intrusion alerts read, as a user of its own in the journal's group.
     add_user(host, "homelab-facts")
-    install_timed_script(host, here, "security_facts.py", "homelab-security-facts")
+    install_timed_script(
+        host, here.parent / "beelink/security/security_facts.py", "homelab-security-facts"
+    )
     # CI and deploy run times, for the trace store and Prometheus.
-    install_timed_script(host, here, "ci_times.py", "homelab-ci-times")
+    install_timed_script(
+        host, here.parent / "scripts/ci_times.py", "homelab-ci-times", here / "systemd"
+    )
 
     # The supervisor, the network rules and the slot count take a restart. Running VMs carry
     # on through it (each is a unit of its own, taken back by the new supervisor), and the
