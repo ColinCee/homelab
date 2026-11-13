@@ -162,3 +162,14 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     kept = "".join(seen)
     assert "PR--" in kept and "reload requested" in kept
     assert " 200 9092" not in kept and "device" not in kept
+
+
+def test_container_logs_carry_their_service_name() -> None:
+    # The rules must be in the block that the log source reads, not another relabel block.
+    source = CONFIG[CONFIG.index('loki.source.docker "containers"') :]
+    rules = re.search(r"relabel_rules\s*=\s*discovery\.relabel\.(\w+)\.rules", source)
+    assert rules
+    block = CONFIG[CONFIG.index(f'discovery.relabel "{rules.group(1)}"') :]
+    block = block[: block.index("\n}\n")]
+    assert '"__meta_docker_container_label_com_docker_compose_service"' in block
+    assert 'target_label  = "service_name"' in block

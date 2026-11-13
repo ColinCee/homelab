@@ -2,6 +2,7 @@
 with a host folder can read the host's secrets, and nothing opens a way in without a login
 (stacks/observability/compose.yaml)."""
 
+import re
 import tomllib
 from pathlib import Path
 
@@ -122,3 +123,17 @@ def test_the_tests_tools_are_the_versions_the_stack_runs() -> None:
         image = SERVICES[service]["image"]
         tag = image.split("@")[0].rsplit(":", 1)[1].removeprefix("v")
         assert tools["tools"][name] == tag, f"mise.toml {name} is not compose.yaml's {image}"
+
+
+def test_obi_traces_every_container_but_the_telemetry_path() -> None:
+    obi = yaml.safe_load(
+        (Path(__file__).parent.parent / "stacks/observability/obi/obi.yaml").read_text("utf-8")
+    )
+    assert obi["discovery"]["instrument"] == [{"container_name": "*"}]
+    [excluded] = obi["discovery"]["exclude_instrument"]
+    names = set(excluded["container_name"].split("{")[1].split("}")[0].split(","))
+    assert names == {"alloy", "prometheus", "logs", "traces", "docker-socket-proxy"}
+    # Its profile is on (it runs only then).
+    settings = Path(__file__).parent.parent / "stacks/observability/settings.env"
+    profiles = re.search(r"^COMPOSE_PROFILES=(.*)$", settings.read_text("utf-8"), re.MULTILINE)
+    assert profiles and "obi" in profiles.group(1).split(",")
