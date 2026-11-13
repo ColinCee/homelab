@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
-from conftest import GIT, git
+from conftest import GIT, git, units
 
 CI_RUNNER = Path(__file__).parent.parent / "ci-runner"
 _spec = importlib.util.spec_from_file_location("ci_update", CI_RUNNER / "update.py")
@@ -326,7 +326,7 @@ def test_the_units_and_the_updater_run_the_same_python() -> None:
     spec.loader.exec_module(installer)
     commands = [
         line.split("=", 1)[1].split()
-        for unit in (CI_RUNNER / "systemd").glob("*.service")
+        for unit in units()
         for line in unit.read_text().splitlines()
         if line.startswith("ExecStart=") and "/usr/local/lib/homelab-ci/" in line and ".py" in line
     ]
