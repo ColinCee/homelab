@@ -122,7 +122,7 @@ def time_limits() -> int:
     return 1 if raised else 0
 
 
-# The one branch the claude.ai routine homelab-oncall pushes to, pinned in its settings on claude.ai.
+# The one branch the claude.ai routine homelab-oncall pushes to, pinned in its claude.ai settings.
 # Another branch is not held to the scope: change both together.
 ONCALL_BRANCH = "claude/brave-euler"
 
