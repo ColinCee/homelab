@@ -2,10 +2,10 @@ import json
 import os
 import shutil
 import subprocess
-import time
 from collections.abc import Callable, Mapping
 from functools import cache
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 import pytest
@@ -14,26 +14,51 @@ import yaml
 # CI's time limits, which fail the run in CI: one test process's run (checks/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
 # started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
+# Both are on own_clock: waiting counts, but not the seconds the host gave its CPUs to other VMs
+# or services (13 Nov: two VMs at once took every shard from 15 s to 30 s).
 RUN_LIMIT = 30.0
 TEST_LIMIT = 5.0
 
 # Each test's first start and its seconds over setup, call and teardown.
 TIMES: dict[str, list[float]] = {}
 CALLS: dict[str, float] = {}
-STARTED = [time.monotonic()]
+STARTED = [0.0]
+
+
+def stolen_seconds(stat: str, cpus: int) -> float:
+    """Seconds the host ran something else while one of this machine's CPUs wanted to run: the
+    steal column of /proc/stat's first line, in USER_HZ (100 a second) over all CPUs, per CPU."""
+    fields = stat.split("\n", 1)[0].split()
+    return int(fields[8]) / 100 / cpus if len(fields) > 8 and fields[0] == "cpu" else 0.0
+
+
+def own_clock() -> float:
+    """Monotonic seconds less the CPU time the host took (none outside a VM, or off Linux). Bound
+    at import, as tests fake time.monotonic."""
+    now = monotonic()
+    try:
+        stat = Path("/proc/stat").read_text(encoding="ascii")
+    except OSError:
+        return now
+    return now - stolen_seconds(stat, os.cpu_count() or 1)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    STARTED[0] = time.monotonic()
-    if os.name == "posix":
-        print("\nDIAG start", Path("/proc/stat").read_text().splitlines()[0])
+    STARTED[0] = own_clock()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> object:
+    start = own_clock()
+    try:
+        return (yield)
+    finally:
+        CALLS[item.nodeid] = own_clock() - start
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     start, took = TIMES.get(report.nodeid, [report.start, 0.0])
     TIMES[report.nodeid] = [min(start, report.start), took + report.stop - report.start]
-    if report.when == "call":
-        CALLS[report.nodeid] = report.stop - report.start
 
 
 def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
@@ -48,12 +73,7 @@ def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    over = over_limits(time.monotonic() - STARTED[0], CALLS)
-    tm = os.times()
-    stat = Path("/proc/stat").read_text().splitlines()[0].split() if os.name == "posix" else []
-    print(f"\nDIAG wall {time.monotonic() - STARTED[0]:.1f} user+sys {tm.user + tm.system:.1f}")
-    print(f"DIAG children {tm.children_user + tm.children_system:.1f} stat {stat}")
-    print("DIAG start", os.environ.get("DIAG0"))
+    over = over_limits(own_clock() - STARTED[0], CALLS)
     for line in over:
         print()
         print(f"{line}. Make it faster, or raise the limit here in a pull request saying why.")
