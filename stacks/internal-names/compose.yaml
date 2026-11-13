@@ -3,6 +3,7 @@ services:
   dns:
     image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
     restart: unless-stopped
+    read_only: true
     mem_limit: 128m
     security_opt:
       - no-new-privileges:true
