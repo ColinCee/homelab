@@ -8,8 +8,9 @@ import subprocess
 import threading
 from pathlib import Path
 
-import yaml
 from conftest import tool
+
+from stacks.observability.prometheus import slos
 
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
@@ -22,8 +23,7 @@ READERS = (
 
 def queries() -> list[str]:
     """Every alert and dashboard query, and the scripts that read metrics."""
-    rules = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))
-    texts = [str(rule["expr"]) for group in rules["groups"] for rule in group["rules"]]
+    texts = [str(rule["expr"]) for group in slos.rule_groups() for rule in group["rules"]]
     return texts + [reader.read_text(encoding="utf-8") for reader in READERS]
 
 
