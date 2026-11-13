@@ -3,11 +3,11 @@ import os
 import shutil
 import subprocess
 import sys
-import time
 from collections.abc import Callable, Mapping
 from functools import cache
 from pathlib import Path
-from typing import Any
+from time import monotonic
+from typing import Any, NamedTuple
 
 import pytest
 import yaml
@@ -15,24 +15,71 @@ import yaml
 # CI's time limits, which fail the run in CI: one test process's run (checks/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
 # started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
+# Both are own_seconds: waiting counts, but not the time the host gave the VM's CPUs to other VMs
+# or services (13 Nov: two VMs at once took every shard from 15 s to 30 s). So while other VMs run,
+# a test that only computes gets up to about twice the limit before it fails.
 RUN_LIMIT = 30.0
 TEST_LIMIT = 5.0
 
-# Each test's first start and its seconds over setup, call and teardown.
+# Each test's wall-clock first start and its seconds over setup, call and teardown.
 TIMES: dict[str, list[float]] = {}
 CALLS: dict[str, float] = {}
-STARTED = [time.monotonic()]
+
+
+class Mark(NamedTuple):
+    """A moment: seconds on the clock and of this process's CPU (with its finished children's),
+    and the whole machine's seconds stolen by the host and of CPU it got (all zero off Linux)."""
+
+    wall: float
+    cpu: float
+    stolen: float
+    busy: float
+
+
+def mark(stat: Path = Path("/proc/stat")) -> Mark:
+    # The clock bound at import, which a test faking time.monotonic does not change.
+    wall, used = monotonic(), os.times()
+    try:
+        fields = stat.read_text(encoding="ascii").split("\n", 1)[0].split()
+    except OSError:
+        fields = []
+    # The CPUs' total, in USER_HZ (100 a second): user nice system idle iowait irq softirq steal.
+    ticks = [int(f) / 100 for f in fields[1:9]] if fields[:1] == ["cpu"] else [0.0] * 8
+    busy = ticks[0] + ticks[1] + ticks[2] + ticks[5] + ticks[6]
+    cpu = used.user + used.system + used.children_user + used.children_system
+    return Mark(wall, cpu, ticks[7], busy)
+
+
+def own_seconds(start: Mark, end: Mark) -> float:
+    """Wall seconds less what the host took from this process: the machine's stolen share of the
+    seconds it was on a CPU, so a test that only waits gets nothing off. A VM's process CPU time
+    includes steal (13 Nov: shards 63.5 s, the VM's own 35.4 s), and children's CPU time can run
+    side by side, so it counts at most the wall time."""
+    wall, cpu = end.wall - start.wall, end.cpu - start.cpu
+    wanted = end.busy - start.busy + end.stolen - start.stolen
+    share = (end.stolen - start.stolen) / wanted if wanted > 0 else 0.0
+    return wall - share * max(0.0, min(cpu, wall))
+
+
+STARTED = [mark()]
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
-    STARTED[0] = time.monotonic()
+    STARTED[0] = mark()
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item: pytest.Item) -> object:
+    start = mark()
+    try:
+        return (yield)
+    finally:
+        CALLS[item.nodeid] = own_seconds(start, mark())
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     start, took = TIMES.get(report.nodeid, [report.start, 0.0])
     TIMES[report.nodeid] = [min(start, report.start), took + report.stop - report.start]
-    if report.when == "call":
-        CALLS[report.nodeid] = report.stop - report.start
 
 
 def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
@@ -47,7 +94,7 @@ def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
 
 
 def pytest_sessionfinish(session: pytest.Session) -> None:
-    over = over_limits(time.monotonic() - STARTED[0], CALLS)
+    over = over_limits(own_seconds(STARTED[0], mark()), CALLS)
     for line in over:
         print()
         print(f"{line}. Make it faster, or raise the limit here in a pull request saying why.")
