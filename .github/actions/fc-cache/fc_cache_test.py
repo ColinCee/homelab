@@ -6,7 +6,7 @@ import sys
 import tarfile
 from pathlib import Path
 
-import ci_supervisor as sup
+import cache_disks
 import pytest
 
 from conftest import ROOT, linux_only
@@ -16,7 +16,7 @@ ACTION = ROOT / ".github" / "actions" / "fc-cache"
 
 def test_the_pack_checks_the_supervisors_size_limit() -> None:
     script = (ACTION / "fc_cache.py").read_text()
-    assert f"MAX_UNPACKED = {sup.CACHE_MAX_UNPACKED_BYTES}\n" in script
+    assert f"MAX_UNPACKED = {cache_disks.CACHE_MAX_UNPACKED_BYTES}\n" in script
 
 
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
@@ -44,7 +44,7 @@ def test_saves_to_the_outbox_disk_what_the_supervisor_takes(tmp_path: Path) -> N
     assert result.returncode == 0, result.stderr
     assert other.read_bytes() == b"\0" * 4096
     with outbox.open("rb") as f:
-        header = sup.OUTBOX_HEADER.match(f.read(512))
+        header = cache_disks.OUTBOX_HEADER.match(f.read(512))
         assert header is not None and (header[1], header[2]) == (b"70", b"2")
         with tarfile.open(fileobj=f, mode="r|") as tar:
             assert [m.name for m in tar] == ["uv", "uv/wheel"]
@@ -91,7 +91,7 @@ def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_
     root = tmp_path / "unpacked"
     root.mkdir()
     with tarfile.open(tmp_path / "cache.tar") as tar:
-        tar.extractall(root, filter=sup.size_capped(sup.CACHE_MAX_UNPACKED_BYTES))
+        tar.extractall(root, filter=cache_disks.size_capped(cache_disks.CACHE_MAX_UNPACKED_BYTES))
     assert (root / "uv" / "wheel").read_text() == "w"
     assert (root / "venv" / "wheel").read_text() == "w"
     assert os.readlink(root / "venv" / "bin" / "python") == "/usr/bin/python3"

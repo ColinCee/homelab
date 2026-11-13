@@ -24,7 +24,6 @@ HEAVY = {
     "deploy_test.py": 1.4,
     "fc_cache_test.py": 1.0,
     "dashboards_test.py": 0.8,
-    "ci_supervisor_test.py": 0.8,
     "pin_only_test.py": 0.76,
     "install_host_test.py": 0.75,
     "gateway_test.py": 0.7,

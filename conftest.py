@@ -1,9 +1,10 @@
 import json
+import logging
 import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from functools import cache
 from pathlib import Path
 from time import monotonic
@@ -228,7 +229,7 @@ def linux_only(why: str) -> None:
 
 
 class NoGitHub:
-    """The CI supervisor's GitHub (ci_supervisor.py), for code that must not ask it. A fake
+    """The CI supervisor's GitHub (github_api.py, GitHubApi), for code that must not ask it. A fake
     subclasses it and gives `request` GitHub's answers."""
 
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> object:
@@ -239,6 +240,27 @@ class NoGitHub:
 
     def clone(self) -> NoGitHub:
         return self
+
+
+class Lines(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(logging.INFO)
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
+
+
+@pytest.fixture
+def supervisor_log() -> Generator[list[str]]:
+    """What the CI supervisor logs, line by line, as it logs it: its modules share one logger."""
+    logger, lines = logging.getLogger("ci-supervisor"), Lines()
+    level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(lines)
+    yield lines.lines
+    logger.removeHandler(lines)
+    logger.setLevel(level)
 
 
 @pytest.fixture(autouse=True)

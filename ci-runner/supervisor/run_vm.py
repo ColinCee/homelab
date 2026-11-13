@@ -36,7 +36,7 @@ from vm_disks import (
 
 USAGE = "usage: run_vm.py SLOT METADATA_JSON [TIMEOUT]"
 HERE = Path(__file__).parent
-# 6 GiB for the tar (CACHE_MAX_UNPACKED_BYTES in ci_supervisor.py) and its header.
+# 6 GiB for the tar (CACHE_MAX_UNPACKED_BYTES in cache_disks.py) and its header.
 OUTBOX_BYTES = 6 * 1024 * 1024 * 1024 + 1024 * 1024
 # The fc-cache action tells the outbox from any other disk by this first line.
 OUTBOX_MARK = b"homelab-ci-outbox\n"
@@ -414,7 +414,7 @@ def run_vm(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Sig
         mem_mib=mem_mib,
         cache_image=env.get("CACHE_IMAGE", ""),
         cache_out=env.get("CACHE_OUT", ""),
-        # Against the other VMs: a booting standby yields to running jobs (ci_supervisor.py).
+        # Against the other VMs: a booting standby yields to running jobs (vms.py).
         cpu_weight=positive(env, "CPU_WEIGHT", 20),
     )
     checked = dataclasses.replace(host, run=signals.checked(host.run))

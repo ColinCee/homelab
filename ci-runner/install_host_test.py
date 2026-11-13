@@ -159,11 +159,17 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     assert (root / "etc/homelab-ci").stat().st_mode & 0o777 == 0o700
     assert (dest / "ci_supervisor.py").stat().st_mode & 0o777 == 0o755
     assert (dest / "test_load.py").stat().st_mode & 0o777 == 0o755
-    # It runs from there (ci_supervisor.py, LOAD_TEST_SCRIPT) with only what is installed beside it.
-    found = subprocess.run(
-        [sys.executable, "-Es", "-c", "import test_load"], cwd=dest, capture_output=True, text=True
-    )
-    assert found.returncode == 0, found.stderr
+    # Each runs from there with only what is installed beside it, the load test too
+    # (load_testing.py, LOAD_TEST_SCRIPT); each alone, so none needs another imported first.
+    supervisor = [m.removesuffix(".py") for m in ("ci_supervisor.py", *ih.SUPERVISOR_MODULES)]
+    for module in (*supervisor, "test_load"):
+        found = subprocess.run(
+            [sys.executable, "-Es", "-c", f"import {module}"],
+            cwd=dest,
+            capture_output=True,
+            text=True,
+        )
+        assert found.returncode == 0, f"{module}: {found.stderr}"
     assert (dest / "net/setup_net.py").stat().st_mode & 0o777 == 0o755
     assert (dest / "vm_disks.py").stat().st_mode & 0o777 == 0o644
     for name in ("run_vm.py", "stop_vms.py", "update.py"):
@@ -201,6 +207,7 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     "changed",
     [
         "usr/local/lib/homelab-ci/ci_supervisor.py",
+        *(f"usr/local/lib/homelab-ci/{module}" for module in ih.SUPERVISOR_MODULES),
         "usr/local/lib/homelab-ci/net/homelab-ci.nft",
         "usr/local/lib/homelab-ci/net/setup_net.py",
         f"etc/systemd/system/{SERVICE}",
@@ -211,14 +218,14 @@ def test_a_changed_supervisor_or_network_file_restarts_the_supervisor(
     root: Path, changed: str
 ) -> None:
     recorder = installed_host(root)
-    (root / changed).write_text("old UNIT_PREFIX\n")
+    (root / changed).write_text("old\n")
 
     install(root, recorder)
 
     assert restarted(recorder)
     assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup_net.py"), "up")
     assert recorder.ran("systemctl", "enable", "--now", SERVICE)
-    assert (root / changed).read_bytes() != b"old UNIT_PREFIX\n"
+    assert (root / changed).read_bytes() != b"old\n"
 
 
 def test_a_new_slot_count_restarts_and_adds_its_users(root: Path) -> None:

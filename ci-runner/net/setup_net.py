@@ -51,7 +51,7 @@ def run_command(
 
 def slot_count(env: Mapping[str, str], root: Path) -> int:
     """The host's slot count (/etc/homelab-ci/slots, which install_host.py writes); an
-    explicit SLOTS wins. 5 when neither is a number, at least 1, as in ci_supervisor.py."""
+    explicit SLOTS wins. 5 when neither is a number, at least 1, as in load_testing.py."""
     text = env.get("SLOTS", "")
     if not text:
         try:
