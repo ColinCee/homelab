@@ -2,10 +2,10 @@
 request's base, from a real git server."""
 
 import importlib.util
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import git
 
 _spec = importlib.util.spec_from_file_location(
     "ci_checkout", Path(__file__).parent.parent / "ci-runner/rootfs/ci_checkout.py"
@@ -13,14 +13,6 @@ _spec = importlib.util.spec_from_file_location(
 assert _spec is not None and _spec.loader is not None
 checkout = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(checkout)
-
-GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"]
-
-
-def git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        [*GIT, "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
 
 
 @pytest.fixture

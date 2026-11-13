@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
+from conftest import git, services
 
 from scripts import deploy
 
@@ -286,9 +286,6 @@ secrets:
 def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
     tmp_path: Path,
 ) -> None:
-    def git(*args: str) -> None:
-        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
-
     stack_dir = _make_stack(tmp_path, "sample")
     (stack_dir / "compose.yaml").write_text(TWO_SERVICES, encoding="utf-8")
     (stack_dir / "app.conf").write_text("a\n", encoding="utf-8")
@@ -298,8 +295,8 @@ def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
     secret.parent.mkdir()
     secret.write_text("a", encoding="utf-8")
     os.utime(secret, (1, 1))
-    git("init", "-q")
-    git("add", "stacks")
+    git(tmp_path, "init", "-q")
+    git(tmp_path, "add", "stacks")
     before = deploy.config_hashes(tmp_path, stack_dir)
     assert set(before) == {"CONFIG_HASH_APP", "CONFIG_HASH_WEB"}
 
@@ -328,7 +325,7 @@ def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
     shared = tmp_path / "stacks" / "telemetry" / "telemetry.py"
     shared.parent.mkdir()
     shared.write_text("a\n", encoding="utf-8")
-    git("add", "stacks")
+    git(tmp_path, "add", "stacks")
     compose = TWO_SERVICES.replace(
         "./web:/etc/web:ro", "./web:/etc/web:ro, ../telemetry/telemetry.py:/t.py:ro"
     )
@@ -343,13 +340,11 @@ def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
 def test_each_service_reading_files_or_secrets_has_a_label_with_its_own_hash() -> None:
     # Without the label a changed file never restarts the service; with another's hash it restarts
     # on the wrong files. Home Assistant's config/ is its own runtime data, which it reloads itself.
-    for compose_file in (Path(__file__).parent.parent / "stacks").glob("*/compose.yaml"):
-        services = yaml.safe_load(compose_file.read_text(encoding="utf-8"))["services"]
-        for name, spec in services.items():
-            label = (spec.get("labels") or {}).get("homelab.config-hash")
-            reads = bool(deploy._bind_sources(spec) or spec.get("secrets"))
-            if (reads and name != "homeassistant") or label is not None:
-                assert label == "${" + deploy.hash_variable(name) + ":-}", (compose_file, name)
+    for stack, name, spec in services():
+        label = (spec.get("labels") or {}).get("homelab.config-hash")
+        reads = bool(deploy._bind_sources(spec) or spec.get("secrets"))
+        if (reads and name != "homeassistant") or label is not None:
+            assert label == "${" + deploy.hash_variable(name) + ":-}", (stack, name)
 
 
 def test_a_secret_mounted_but_missing_stops_the_deploy(tmp_path: Path) -> None:
@@ -361,26 +356,15 @@ def test_a_secret_mounted_but_missing_stops_the_deploy(tmp_path: Path) -> None:
         deploy.discover_stack_plans(tmp_path)
 
 
-def _git(repo_root: Path, *arguments: str) -> str:
-    ran = subprocess.run(
-        ["git", "-c", "user.name=t", "-c", "user.email=t@t", *arguments],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    assert ran.returncode == 0, f"git {' '.join(arguments)}: {ran.stderr}"
-    return ran.stdout.strip()
-
-
 def _commit_all(repo_root: Path) -> str:
-    _git(repo_root, "add", "-A")
-    _git(repo_root, "commit", "-qm", "change")
-    return _git(repo_root, "rev-parse", "HEAD")
+    git(repo_root, "add", "-A")
+    git(repo_root, "commit", "-qm", "change")
+    return git(repo_root, "rev-parse", "HEAD")
 
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    _git(tmp_path, "init", "-q")
+    git(tmp_path, "init", "-q")
     for name in ("gateway", "observability"):
         _make_stack(tmp_path, name)
     (tmp_path / "scripts").mkdir()
@@ -390,7 +374,7 @@ def repo(tmp_path: Path) -> Path:
 
 
 def test_a_change_to_one_stack_selects_only_that_stack(repo: Path) -> None:
-    before = _git(repo, "rev-parse", "HEAD")
+    before = git(repo, "rev-parse", "HEAD")
     (repo / "stacks" / "gateway" / "compose.yaml").write_text(
         "services: {app: {image: new}}\n", encoding="utf-8"
     )
@@ -400,7 +384,7 @@ def test_a_change_to_one_stack_selects_only_that_stack(repo: Path) -> None:
 
 
 def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
-    before = _git(repo, "rev-parse", "HEAD")
+    before = git(repo, "rev-parse", "HEAD")
     (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     (repo / "stacks" / "observability" / "extra.txt").write_text("x\n", encoding="utf-8")
     _commit_all(repo)
@@ -410,7 +394,7 @@ def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
 
 def test_a_change_to_a_shared_folder_under_stacks_selects_all_stacks(repo: Path) -> None:
     # stacks/telemetry is no stack, but any stack's services may mount it.
-    before = _git(repo, "rev-parse", "HEAD")
+    before = git(repo, "rev-parse", "HEAD")
     (repo / "stacks" / "telemetry").mkdir()
     (repo / "stacks" / "telemetry" / "telemetry.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
@@ -419,7 +403,7 @@ def test_a_change_to_a_shared_folder_under_stacks_selects_all_stacks(repo: Path)
 
 
 def test_a_change_to_another_script_deploys_no_stack(repo: Path) -> None:
-    before = _git(repo, "rev-parse", "HEAD")
+    before = git(repo, "rev-parse", "HEAD")
     (repo / "scripts" / "ci_supervisor.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
 
@@ -435,7 +419,7 @@ def test_deploys_changed_stacks_and_records_the_commit(
     repo: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state = tmp_path_factory.mktemp("state") / "last-deployed"
-    state.write_text(_git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
+    state.write_text(git(repo, "rev-parse", "HEAD") + "\n", encoding="utf-8")
     (repo / "stacks" / "gateway" / "compose.yaml").write_text(
         "services: {app: {image: new}}\n", encoding="utf-8"
     )
@@ -474,7 +458,7 @@ def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
 ) -> None:
     monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
     state = tmp_path_factory.mktemp("state") / "last-deployed"
-    before = _git(repo, "rev-parse", "HEAD")
+    before = git(repo, "rev-parse", "HEAD")
     state.write_text(before + "\n", encoding="utf-8")
     (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
@@ -525,7 +509,7 @@ def stacks(repo: Path) -> Path:
 
 
 def _change(repo_root: Path, *names: str) -> str:
-    before = _git(repo_root, "rev-parse", "HEAD")
+    before = git(repo_root, "rev-parse", "HEAD")
     for name in names:
         (repo_root / "stacks" / name / "extra.txt").write_text("x\n", encoding="utf-8")
     _commit_all(repo_root)

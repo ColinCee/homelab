@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import stacks as compose_stacks
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from stacks.observability import public_stats
@@ -26,8 +27,7 @@ KPIS = {"trackedAircraft": 237, "throughputLast60Min": 107, "apiHealth": "live"}
 
 
 def test_stacks_match_the_repository() -> None:
-    stacks = Path(__file__).parent.parent / "stacks"
-    assert sorted(p.parent.name for p in stacks.glob("*/compose.yaml")) == list(STACKS)
+    assert [stack.name for stack in compose_stacks()] == list(STACKS)
 
 
 def test_body_holds_only_named_numbers() -> None:

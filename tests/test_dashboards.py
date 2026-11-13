@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
+from conftest import services
 
 from tests.test_alert_rules import promtool
 
@@ -98,11 +99,9 @@ def prometheus_queries(page: dict[str, Any]) -> list[str]:
 def containers() -> dict[str, str]:
     """Each container compose starts, in its group's colour."""
     names: dict[str, str] = {}
-    for compose in STACK.parent.glob("*/compose.yaml"):
-        services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
-        for service, spec in services.items():
-            name = spec.get("container_name", f"{compose.parent.name}-{service}-1")
-            names[name] = GROUPS["Monitoring" if compose.parent.name == "observability" else "Apps"]
+    for stack, service, spec in services():
+        name = spec.get("container_name", f"{stack.name}-{service}-1")
+        names[name] = GROUPS["Monitoring" if stack.name == "observability" else "Apps"]
     return names
 
 

@@ -8,40 +8,12 @@ from typing import Any
 
 import pytest
 import yaml
-
-ROOT = Path(__file__).parent.parent
-STACKS = ROOT / "stacks"
-
-
-class ComposeLoader(yaml.SafeLoader):
-    """Reads Compose's own tags (`!reset`, `!override`) as plain values."""
-
-
-def _plain(loader: yaml.SafeLoader, _tag: str, node: yaml.Node) -> object:
-    if isinstance(node, yaml.MappingNode):
-        return loader.construct_mapping(node, deep=True)
-    if isinstance(node, yaml.SequenceNode):
-        return loader.construct_sequence(node, deep=True)
-    return loader.construct_scalar(node)
-
-
-ComposeLoader.add_multi_constructor("!", _plain)
-
-
-def load(path: Path) -> object:
-    return yaml.load(path.read_text(encoding="utf-8"), ComposeLoader)
-
-
-def load_compose(path: Path) -> dict[str, Any]:
-    spec = yaml.load(path.read_text(encoding="utf-8"), ComposeLoader)
-    assert isinstance(spec, dict), path
-    return spec
-
+from conftest import STACKS, load_yaml, stacks
 
 COMPOSE_FILES = sorted(
     path
     for path in [*STACKS.rglob("*.yaml"), *STACKS.rglob("*.yml")]
-    if isinstance(spec := load(path), dict) and "services" in spec
+    if isinstance(spec := load_yaml(path), dict) and "services" in spec
 )
 SECRET_NAME = re.compile(r"PASSWORD|SECRET|TOKEN|KEY|WEBHOOK|LOGIN|CREDENTIAL", re.IGNORECASE)
 # A path to a secret file, which programs name *_FILE (or Grafana's *__FILE).
@@ -79,7 +51,9 @@ def problems(compose: dict[str, Any]) -> list[str]:
 
 @pytest.mark.parametrize("path", COMPOSE_FILES, ids=lambda p: str(p.relative_to(STACKS)))
 def test_no_secret_in_a_containers_environment(path: Path) -> None:
-    assert problems(load_compose(path)) == []
+    spec = load_yaml(path)
+    assert isinstance(spec, dict), path
+    assert problems(spec) == []
 
 
 @pytest.mark.parametrize(
@@ -101,11 +75,10 @@ def test_each_way_a_secret_reaches_the_environment_is_caught(service: dict[str, 
 def mounted_secrets() -> set[str]:
     """Each secret file a stack mounts, all from the host's one secrets folder."""
     mounted: set[str] = set()
-    for compose in STACKS.glob("*/compose.yaml"):
-        spec = load_compose(compose)
+    for stack, spec in stacks().items():
         for secret in (spec.get("secrets") or {}).values():
             folder, _, name = secret["file"].rpartition("/")
-            assert folder == "../../secrets", compose
+            assert folder == "../../secrets", stack
             mounted.add(name)
     return mounted
 

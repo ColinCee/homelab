@@ -1,18 +1,13 @@
 import http.client
-import subprocess
 import threading
 from collections.abc import Iterator
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from conftest import git
 
 from stacks.deploy import deploy_main, doorbell
-
-
-def git(repo: Path, *args: str) -> str:
-    done = subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True)
-    return done.stdout.strip()
 
 
 class Lab:
@@ -24,8 +19,6 @@ class Lab:
         self.checkout = root / "checkout"
         git(root, "init", "-q", "--bare", "-b", "main", str(self.origin))
         git(root, "clone", "-q", str(self.origin), str(self.dev))
-        for key, value in (("user.name", "t"), ("user.email", "t@t"), ("commit.gpgsign", "false")):
-            git(self.dev, "config", key, value)
         self.merge("first")
         git(root, "clone", "-q", str(self.origin), str(self.checkout))
         self.marker = root / "last-deployed"

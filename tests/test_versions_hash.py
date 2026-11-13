@@ -1,7 +1,7 @@
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import git
 
 from scripts.versions_hash import VERSIONS, problems
 
@@ -10,24 +10,18 @@ OLD = f"GH_VERSION=v2.0.0\nGH_SHA256={'0' * 64}\nPYTHON_VERSION=3.15\n"
 GH_URL = "https://github.com/cli/cli/releases/download/v2.1.0/gh_2.1.0_linux_amd64.tar.gz"
 
 
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
-
-
 def _commit(repo: Path, text: str) -> str:
     path = repo / VERSIONS
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
-    return _git(repo, "rev-parse", "HEAD")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "c")
+    return git(repo, "rev-parse", "HEAD")
 
 
 @pytest.fixture
 def base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    _git(tmp_path, "init", "-q")
+    git(tmp_path, "init", "-q")
     monkeypatch.chdir(tmp_path)
     return _commit(tmp_path, OLD)
 
@@ -75,8 +69,8 @@ def test_a_new_tool_without_a_url_fails(base: str) -> None:
 def test_every_pinned_tool_here_has_a_url(monkeypatch: pytest.MonkeyPatch) -> None:
     repo = Path(__file__).parent.parent
     monkeypatch.chdir(repo)
-    head = _git(repo, "rev-parse", "HEAD")
-    empty = _git(repo, "hash-object", "-t", "tree", "/dev/null")
+    head = git(repo, "rev-parse", "HEAD")
+    empty = git(repo, "hash-object", "-t", "tree", "/dev/null")
     found = problems(empty, head, lambda url: "")
     assert found and all("wrong hash" in line for line in found), found
 
