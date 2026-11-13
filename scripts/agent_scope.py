@@ -1,5 +1,6 @@
-"""Say whether an agent's pull request changes only files that run no code on the Beelink, the
-only ones the on-call agent merges itself (docs/architecture.md, "Monitoring and alerts").
+"""Say whether the on-call agent's pull request (ci.py, ONCALL_BRANCH) changes only files that run
+no code on the Beelink, the only ones it merges itself (docs/architecture.md, "Monitoring and
+alerts").
 
 Usage: agent_scope.py BASE HEAD. Exits 0 when every changed path, and a rename's old one, is an
 alert rule, a dashboard, a doc or a test; exits 1 and names the rest otherwise. CI runs the base

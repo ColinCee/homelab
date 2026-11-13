@@ -1,27 +1,22 @@
-# Between Prometheus's rules (../prometheus/rules.yml) and Discord; the standard it keeps is in
-# docs/architecture.md ("Monitoring and alerts"). Prometheus sends each firing alert with an end time, and its end when it clears.
+# Between Prometheus's rules (../prometheus/rules.yml) and the relay (../incidents/relay.py), which gives each alert
+# one #incidents post; the standard it keeps is in docs/architecture.md ("Monitoring and alerts"). Prometheus sends
+# each firing alert with an end time, and its end when it clears.
 
 route:
-  receiver: discord
+  receiver: incidents
   # Every alert, and every series of a per-series rule, is its own post.
   group_by: ["..."]
   group_wait: 30s
   group_interval: 1m
+  # A repeat posts nothing; it tells the relay the alert still fires (relay.py, FORGET_AFTER).
   repeat_interval: 24h
   routes:
-    # Each alert also opens and clears its #incidents post (../incidents/relay.py), then goes on to the routes below.
-    - matchers: ['alertname!="watchdog"']
-      receiver: incidents
-      continue: true
-    # Never posts: a ping each minute, and Healthchecks.io posts to Discord when they stop.
+    # The relay passes it to Healthchecks.io as a ping, so the pings stop when the relay does.
     - matchers: ['alertname="watchdog"']
-      receiver: healthchecks
       group_wait: 0s
       group_interval: 1m
       # Under group_interval, so every flush pings: an equal one skips every other.
       repeat_interval: 30s
-    - matchers: ['level="now"']
-      repeat_interval: 4h
 
 # Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
 # rules on Prometheus's own health and the public probes read its own scrape, so they still post.
@@ -30,21 +25,7 @@ inhibit_rules:
     target_matchers: ['alertname!~"beelink-metrics-stopped|Prometheus.+|flight-tracker-down|site-down|watchdog"']
 
 receivers:
-  - name: discord
-    discord_configs:
-      - webhook_url_file: /run/secrets/discord_webhook
-        send_resolved: true
-        title: '{{ template "homelab.title" . }}'
-        message: '{{ template "homelab.message" . }}'
-        content: '{{ template "homelab.mention" . }}'
   - name: incidents
     webhook_configs:
       - url: http://incidents:8080/alert
         send_resolved: true
-  - name: healthchecks
-    webhook_configs:
-      - url_file: /run/secrets/healthchecks_ping
-        send_resolved: false
-
-templates:
-  - /etc/alertmanager/discord.tmpl

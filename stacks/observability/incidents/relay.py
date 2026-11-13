@@ -1,10 +1,11 @@
 """Gives each alert one post in Discord's #incidents forum and starts the cloud on-call agent on it
 (docs/architecture.md, "Monitoring and alerts").
 
-Alertmanager posts every firing alert here (alertmanager.yml, receiver `incidents`), one alert per
-notification. A new alert opens a post tagged Firing and fires the agent's routine; repeats change
-nothing; its end posts Cleared in the same post. Only Alertmanager reaches it, on a network of
-their own.
+Alertmanager sends every alert here (alertmanager.yml), one alert per notification. A new alert
+opens a post tagged Firing, mentioning Colin if it is `now`, and fires the agent's routine; repeats
+change nothing; its end posts Cleared in the same post. The watchdog is passed on to Healthchecks.io
+as a ping, so a dead relay stops the pings, and a failing one stops the watchdog (rules.yml). Only
+Alertmanager reaches it, on a network of their own.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 PORT = 8080
+COLIN = "124131392207454208"
 BODY_MAX = 1 << 20
 DISCORD = "https://discord.com/api/v10"
 # Anthropic's per-routine token starts runs only; the routine id is not a secret.
@@ -43,6 +45,7 @@ PLAIN = re.compile(r"[\w.:/@-]{0,64}")
 
 Discord = Callable[[str, str, dict[str, Any] | None], dict[str, Any]]
 Fire = Callable[[str], str]
+Ping = Callable[[], None]
 FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
@@ -81,13 +84,14 @@ def log_json() -> None:
 
 class Relay:
     def __init__(
-        self, state_file: Path, forum: str, guild: str, discord: Discord, fire: Fire
+        self, state_file: Path, forum: str, guild: str, discord: Discord, fire: Fire, ping: Ping
     ) -> None:
         self.state_file = state_file
         self.forum = forum
         self.guild = guild
         self.discord = discord
         self.fire = fire
+        self.ping = ping
         self._tags: dict[str, str] | None = None
         self.state = self._load()
 
@@ -96,11 +100,24 @@ class Relay:
         if not isinstance(alerts, list) or not alerts or not all(_is_alert(a) for a in alerts):
             return 400
         for alert in alerts:
+            if alert["labels"].get("alertname") == "watchdog":
+                self._watchdog(alert)
+                continue
             done = self._open(alert) if alert["status"] == "firing" else self._clear(alert)
             if not done:
                 # Alertmanager sends it again; what was saved lets the retry finish the job.
                 return 502
         return 200
+
+    def _watchdog(self, alert: dict[str, Any]) -> None:
+        if alert["status"] != "firing":
+            return
+        try:
+            self.ping()
+        except FAILED as e:
+            # Never a 502: Alertmanager would count the relay as failing and stop the watchdog
+            # for an hour, which Healthchecks.io would page as alerting down.
+            log(f"cannot ping Healthchecks.io: {e}")
 
     def _open(self, alert: dict[str, Any]) -> bool:
         post = self.state["posts"].get(alert["fingerprint"])
@@ -109,7 +126,7 @@ class Relay:
             self._save()
             return True
         if post and _now() - datetime.fromisoformat(post["cleared"]) < REOPEN_WITHIN:
-            if not self._retag(post["thread"], "Firing", "Firing again."):
+            if not self._retag(post["thread"], "Firing", "Firing again.", _mentions(alert)):
                 return False
             post.update(seen=_now().isoformat(), cleared=None)
             self._save()
@@ -120,7 +137,7 @@ class Relay:
                 f"/channels/{self.forum}/threads",
                 {
                     "name": _title(alert)[:100],
-                    "message": {"content": _post(alert), "allowed_mentions": {"parse": []}},
+                    "message": {"content": _post(alert), "allowed_mentions": _mentions(alert)},
                     **self._tags_for("Firing"),
                 },
             )["id"]
@@ -154,14 +171,19 @@ class Relay:
         log.info("cleared a post", extra={"post": post["thread"]})
         return True
 
-    def _retag(self, thread: str, tag: str, text: str) -> bool:
+    def _retag(
+        self, thread: str, tag: str, text: str, mentions: dict[str, list[str]] | None = None
+    ) -> bool:
         try:
             # Discord archives an idle post, and an archived one takes no message or tag change.
             self.discord("PATCH", f"/channels/{thread}", {"archived": False, **self._tags_for(tag)})
             self.discord(
                 "POST",
                 f"/channels/{thread}/messages",
-                {"content": text, "allowed_mentions": {"parse": []}},
+                {
+                    "content": _mention(mentions) + text,
+                    "allowed_mentions": mentions or {"parse": []},
+                },
             )
         except FAILED as e:
             log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
@@ -258,8 +280,17 @@ def _labels(alert: dict[str, Any]) -> dict[str, str]:
     }
 
 
+def _mentions(alert: dict[str, Any]) -> dict[str, list[str]]:
+    """Colin, while an alert that needs him now fires; no one else, whatever the text says."""
+    users = [COLIN] if alert["labels"].get("level") == "now" else []
+    return {"parse": [], "users": users}
+
+
+def _mention(mentions: dict[str, list[str]] | None) -> str:
+    return "".join(f"<@{u}> " for u in (mentions or {}).get("users", []))
+
+
 def _title(alert: dict[str, Any]) -> str:
-    # As the #alerts post's title (../alertmanager/discord.tmpl, homelab.title).
     labels = _labels(alert)
     extra = [v for k, v in sorted(labels.items()) if k not in ("alertname", "level")]
     return " · ".join(
@@ -278,7 +309,8 @@ def _post(alert: dict[str, Any]) -> str:
     ]
     if a.get("dashboard"):
         lines.append(f"[Dashboards]({a['dashboard']})")
-    return "\n".join(lines)[:2000]
+    # The mention first, so the cut never drops it.
+    return (_mention(_mentions(alert)) + "\n".join(lines))[:2000]
 
 
 def _snapshot(alert: dict[str, Any], post: str) -> str:
@@ -330,6 +362,7 @@ def main() -> None:
         "User-Agent": "homelab-incidents/1",
     }
     routine = os.environ.get("ONCALL_ROUTINE", "")
+    healthchecks = _secret("healthchecks_ping")
     fire_url = FIRE.format(routine=routine)
 
     def discord(method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
@@ -342,12 +375,20 @@ def main() -> None:
             _request(fire_url, "POST", fire_headers, {"text": text})["claude_code_session_url"]
         )
 
+    def ping() -> None:
+        req = urllib.request.Request(
+            healthchecks, method="POST", headers={"User-Agent": "homelab-incidents/1"}
+        )
+        with urllib.request.urlopen(req, timeout=10):
+            pass
+
     relay = Relay(
         Path("/state/state.json"),
         os.environ["INCIDENTS_FORUM"],
         os.environ["DISCORD_GUILD"],
         discord,
         fire,
+        ping,
     )
 
     class Handler(BaseHTTPRequestHandler):

@@ -20,7 +20,6 @@ GROUPS = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf
 RULES = {r["alert"]: r for g in GROUPS for r in g["rules"]}
 HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
-TEMPLATE = (STACK / "alertmanager/discord.tmpl").read_text(encoding="utf-8")
 COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
 HOME = "http://grafana.internal/d/home"
 
@@ -51,26 +50,6 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
-def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord() -> None:
-    assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "watchdog"} == {
-        "watchdog"
-    }
-    routes = ALERTMANAGER["route"]["routes"]
-    # Only the incidents route comes before it, and it skips the watchdog.
-    assert routes[0]["matchers"] == ['alertname!="watchdog"']
-    assert routes[1] == {
-        "matchers": ['alertname="watchdog"'],
-        "receiver": "healthchecks",
-        "group_wait": "0s",
-        "group_interval": "1m",
-        "repeat_interval": "30s",
-    }
-    [ping] = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "healthchecks")[
-        "webhook_configs"
-    ]
-    assert ping == {"url_file": "/run/secrets/healthchecks_ping", "send_resolved": False}
-
-
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
     # The rules on Prometheus itself and the public probes read its own scrape, not
     # Alloy's; the store rules read Alloy's.
@@ -86,14 +65,6 @@ def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metric
             ],
         }
     ]
-
-
-def test_only_a_firing_act_now_post_mentions_colin() -> None:
-    mention = re.search(r'define "homelab.mention" \}\}(.*?)\{\{ end \}\}\{\{ end \}\}', TEMPLATE)
-    assert mention and '(eq .Status "firing") (eq .CommonLabels.level "now")' in mention[1]
-    assert ALERTMANAGER["route"]["receiver"] == "discord"
-    discord = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "discord")
-    assert discord["discord_configs"][0]["send_resolved"] is True
 
 
 def test_no_data_is_kept_for_metrics_alloy_does_not_make() -> None:
@@ -265,8 +236,8 @@ CASES = {
             at(30, "ci-host-updated"),
         ],
     ),
-    "the watchdog fires while Discord takes posts and stops for an hour after one fails": (
-        [('alertmanager_notifications_failed_total{integration="discord"}', "0x10 1x80")],
+    "the watchdog fires while the relay takes alerts and stops for an hour after one fails": (
+        [('alertmanager_notifications_failed_total{integration="webhook"}', "0x10 1x80")],
         [
             at(5, "watchdog", posts("watchdog", "1")),
             # The failure at 11 min is in the last hour until 71, then the 10-minute hold.
@@ -642,9 +613,4 @@ def test_replay_posts_as_prometheus_and_alertmanager_would() -> None:
     # The query returns for 5 h, not for 4 minutes, for 5 h more, then stops.
     returned = {60 * m for m in [*range(0, 300), *range(304, 604)]}
     found = replay.posts(returned, RULES["high-ram"], 0, 60 * 620)
-    assert found == [
-        (60 * 5, "firing"),
-        (60 * 245, "repeat"),
-        (60 * 485, "repeat"),
-        (60 * 613, "cleared"),
-    ]
+    assert found == [(60 * 5, "firing"), (60 * 613, "cleared")]
