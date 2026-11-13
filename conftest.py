@@ -15,8 +15,9 @@ import yaml
 # CI's time limits, which fail the run in CI: one test process's run (checks/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
 # started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
-# Both are own_seconds: waiting counts, but not what the host gave the VM's CPUs to other VMs or
-# services (13 Nov: two VMs at once took every shard from 15 s to 30 s).
+# Both are own_seconds: waiting counts, but not the time the host gave the VM's CPUs to other VMs
+# or services (13 Nov: two VMs at once took every shard from 15 s to 30 s). So while other VMs run,
+# a test that only computes gets up to about twice the limit before it fails.
 RUN_LIMIT = 30.0
 TEST_LIMIT = 5.0
 
