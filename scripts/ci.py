@@ -122,10 +122,15 @@ def time_limits() -> int:
     return 1 if raised else 0
 
 
+# The one branch the claude.ai routine homelab-oncall pushes to, set in the routine (its outcomes).
+ONCALL_BRANCH = "claude/brave-euler"
+
+
 def agent_scope() -> int:
-    """An agent's branch (claude/) changes only what runs no code (agent_scope.py), so it can
-    merge itself; a guard against its mistakes, not against Colin's own login."""
-    if not os.environ.get("GITHUB_HEAD_REF", "").startswith("claude/"):
+    """The on-call agent's branch changes only what runs no code (agent_scope.py), so it can merge
+    itself; a guard against its mistakes, not against Colin's own login, which it uses. Colin's
+    other sessions merge once checks pass."""
+    if os.environ.get("GITHUB_HEAD_REF", "") != ONCALL_BRANCH:
         return 0
     return run_base_rule("agent_scope.py") or 0
 
