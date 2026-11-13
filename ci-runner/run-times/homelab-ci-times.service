@@ -1,5 +1,5 @@
 [Unit]
-Description=Record CI and deploy run times as traces and metrics (scripts/ci_times.py)
+Description=Record CI and deploy run times as traces and metrics (ci-runner/run-times/ci_times.py)
 After=network-online.target
 Wants=network-online.target
 

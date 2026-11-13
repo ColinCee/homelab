@@ -12,10 +12,9 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import IO, Any, ClassVar, Never, Protocol
 
+import ci_supervisor as sup
 import pytest
 from conftest import NoGitHub
-
-from scripts import ci_supervisor as sup
 
 # The real readers, kept before plenty_of_memory replaces them.
 READ_MEMORY, READ_RESERVE = sup.mem_available_mib, sup.memory_reserve_mib
@@ -1241,10 +1240,6 @@ def test_a_queued_jobs_workflow_comes_from_github() -> None:
     runs = [{"id": 1, "name": "ignored"}, {"id": 2, "name": "build"}]
     found = sup.queued_jobs("o/ok", runs, jobs.__getitem__)
     assert [job.workflow for job in found] == ["watch", "build"]
-
-
-def test_a_label_value_is_escaped() -> None:
-    assert sup.label_value('a "b" \\ c') == 'a \\"b\\" \\\\ c'
 
 
 def test_an_unwritable_wait_metrics_file_is_logged_once(

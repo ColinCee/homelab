@@ -123,24 +123,23 @@ def tailscale_status() -> dict[str, Any]:
     return json.loads(run.stdout)
 
 
-def label(value: str) -> str:
-    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
-
-
 def render(found: Events, added: dict[str, float], known: Set[str] = frozenset()) -> str:
     lines: list[str] = []
     for kind, names in LABELS.items():
         metric = f"homelab_{kind}_timestamp_seconds"
         lines += [f"# HELP {metric} {HELP[kind]}", f"# TYPE {metric} gauge"]
         for values, when in sorted(found[kind].items()):
-            pairs = ",".join(f'{n}="{label(v)}"' for n, v in zip(names, values, strict=True))
+            pairs = ",".join(
+                f'{n}="{telemetry.label(v)}"' for n, v in zip(names, values, strict=True)
+            )
             if kind == "ssh_login":
                 pairs += f',known="{str(values[2] in known).lower()}"'
             lines.append(f"{metric}{{{pairs}}} {when:.0f}")
     metric = "homelab_tailscale_device_created_timestamp_seconds"
     lines += [f"# HELP {metric} When each tailnet device was added.", f"# TYPE {metric} gauge"]
     lines += [
-        f'{metric}{{name="{label(name)}",known="{str(name in known).lower()}"}} {when:.0f}'
+        f'{metric}{{name="{telemetry.label(name)}",known="{str(name in known).lower()}"}}'
+        f" {when:.0f}"
         for name, when in sorted(added.items())
     ]
     return "\n".join(lines) + "\n"

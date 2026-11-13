@@ -52,7 +52,7 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
         print(f"{line}. Make it faster, or raise the limit here in a pull request saying why.")
     if over and os.environ.get("CI") and session.exitstatus == pytest.ExitCode.OK:
         session.exitstatus = pytest.ExitCode.TESTS_FAILED
-    # The slowest tests for scripts/ci_times.py, which ci.yaml posts as an annotation.
+    # The slowest tests for ci-runner/run-times/ci_times.py, which ci.yaml posts as an annotation.
     if out := os.environ.get("TEST_TIMES"):
         write_slowest(Path(out))
 
@@ -160,8 +160,8 @@ def tool(name: str) -> str:
 
 
 class NoGitHub:
-    """scripts/ci_supervisor.py's GitHub for code that must not ask it. A fake subclasses it and
-    gives `request` GitHub's answers."""
+    """The CI supervisor's GitHub (ci_supervisor.py), for code that must not ask it. A fake
+    subclasses it and gives `request` GitHub's answers."""
 
     def request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> object:
         raise AssertionError(f"GitHub was asked: {method} {path}")

@@ -3,10 +3,9 @@
 import json
 from pathlib import Path
 
+import ci_supervisor as sup
 import pytest
 from conftest import NoGitHub
-
-from scripts import ci_supervisor as sup
 
 # The commands the code under test ran through subprocess.run (systemctl), never run for real.
 CALLS: list[list[str]] = []
@@ -147,7 +146,7 @@ def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
 
 
 def test_the_unit_ends_the_drain_however_it_stops() -> None:
-    unit = Path("ci-runner/systemd/homelab-ci-load-test.service").read_text()
+    unit = Path("ci-runner/supervisor/homelab-ci-load-test.service").read_text()
     assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE}" in unit
 
 

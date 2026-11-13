@@ -155,12 +155,13 @@ def vm_tools() -> int:
 
 
 def annotation(text: str) -> str:
-    """A workflow command's message: one line, with % escaped."""
+    """A workflow command's message: one line, with % escaped. As runner_job_guard.py's
+    `command_value`, which runs on the VM image's newer Python, so neither imports the other."""
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 
 def slowest_tests() -> int:
-    """Post the slowest tests (tests/conftest.py) as an annotation, for scripts/ci_times.py."""
+    """Post the slowest tests (tests/conftest.py) as an annotation, for run-times/ci_times.py."""
     times = Path(os.environ["RUNNER_TEMP"]) / "test-times.json"
     if times.exists():
         print(f"::notice title=slowest tests::{annotation(times.read_text(encoding='utf-8'))}")

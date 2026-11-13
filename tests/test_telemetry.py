@@ -44,6 +44,19 @@ def test_files_are_replaced_only_through_telemetry() -> None:
             )
 
 
+def test_label_values_are_escaped_only_through_telemetry() -> None:
+    # Escaping or blanking a backslash by hand is how a second label escaper starts.
+    by_hand = r"""replace\(\s*(chr\(92\)|["']\\\\\\\\["'])|re\.sub\(\s*r?["']\[[^]]*\\\\"""
+    for path in programs():
+        if path != MODULE:
+            text = path.read_text(encoding="utf-8")
+            assert not re.search(by_hand, text), f"{path.relative_to(ROOT)}: telemetry.label"
+
+
+def test_a_label_value_reads_back_as_written() -> None:
+    assert telemetry.label('a "b" \\ c\nd') == 'a \\"b\\" \\\\ c\\nd'
+
+
 def imports_telemetry(script: Path) -> bool:
     return bool(re.search(r"^import telemetry\b", script.read_text(encoding="utf-8"), re.MULTILINE))
 
@@ -114,7 +127,7 @@ def test_a_failed_write_keeps_the_old_file(tmp_path: Path, monkeypatch: pytest.M
 OWN_HTTP = {
     # One kept-open connection per thread and conditional requests, so a poll of about 40 repos
     # every few seconds costs GitHub nothing when nothing changed.
-    "scripts/ci_supervisor.py": "http.client",
+    "ci-runner/supervisor/ci_supervisor.py": "http.client",
     # Runs in Colin's terminal with the OS's certificate store and refuses any redirect of the
     # admin login it sends.
     "scripts/tailscale_policy.py": "urllib.request",

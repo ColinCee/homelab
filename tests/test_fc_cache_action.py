@@ -6,9 +6,8 @@ import sys
 import tarfile
 from pathlib import Path
 
+import ci_supervisor as sup
 import pytest
-
-from scripts import ci_supervisor as sup
 
 ACTION = Path(__file__).parent.parent / ".github" / "actions" / "fc-cache"
 

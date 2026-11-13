@@ -31,7 +31,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 ## Network and access
 
 - Nothing accepts an internet connection. Admin pages bind to the Tailscale address, which Docker waits for
-  at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
+  at boot ([`tailscale.conf`](../beelink/docker/tailscale.conf)). Who may reach what is the tailnet policy
   ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
 - Public only through the [tunnel](../stacks/tunnel/compose.yaml), an outbound connection: routes set in Cloudflare's
@@ -48,7 +48,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 
 | `runs-on` | VM |
 |---|---|
-| `[self-hosted, linux, x64, homelab-fc]` | Its size by load ([`ci_supervisor.py`](../scripts/ci_supervisor.py), `vm_size`); the repo's cache disk |
+| `[self-hosted, linux, x64, homelab-fc]` | Its size by load ([`ci_supervisor.py`](../ci-runner/supervisor/ci_supervisor.py), `vm_size`); the repo's cache disk |
 | add `fc-cache-<owner>--<name>` | Another served repo's cache disk |
 
 - The image carries the usual tools ([`rootfs/`](../ci-runner/rootfs/), versions in
@@ -56,11 +56,11 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   at `/cache`, from the last green push to the default branch; a job saves it with
   [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
 - Served, with no other writer: private repos the token sees, and `PUBLIC_REPOS`
-  ([`ci_supervisor.py`](../scripts/ci_supervisor.py)) while GitHub holds outside contributors' runs for approval. A
+  ([`ci_supervisor.py`](../ci-runner/supervisor/ci_supervisor.py)) while GitHub holds outside contributors' runs for approval. A
   runner takes any queued job of its repo, so the VMs' guard ([`runner_job_guard.py`](../scripts/runner_job_guard.py))
   kills a public repo's job unless Colin started it from the repo.
 - The home's services come first: a VM starts only while it leaves the memory reserve and the disk is not busy, and
-  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../scripts/ci_times.py) traces each run and alerts
+  VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../ci-runner/run-times/ci_times.py) traces each run and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
   ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
@@ -84,7 +84,7 @@ reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/
 |---|---|
 | The Beelink off, or alerting stopped | `watchdog` (stops an hour after a failed alert post): the relay pings Healthchecks.io each minute; it emails and posts when pings stop |
 | A rule failing | "An alert rule is failing" |
-| Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
+| Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../beelink/security/security_facts.py) writes each minute |
 | A deploy failed | "Main not deployed" |
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post

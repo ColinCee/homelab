@@ -40,7 +40,10 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 testpaths = ["tests"]
 # Tests import scripts/ as a package, and ci-runner/'s modules and telemetry by name, whichever way pytest is
 # started.
-pythonpath = [".", "ci-runner", "ci-runner/tests", "stacks/telemetry"]
+pythonpath = [
+  ".", "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/run-times", "ci-runner/supervisor",
+  "ci-runner/tests", "stacks/telemetry",
+]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
 [tool.ty]
@@ -48,7 +51,10 @@ pythonpath = [".", "ci-runner", "ci-runner/tests", "stacks/telemetry"]
 [tool.ty.environment]
 # run_vm.py and stop_vms.py import vm_disks.py from their own folder; services import telemetry,
 # which their containers mount into site-packages.
-extra-paths = ["ci-runner", "ci-runner/tests", "stacks/telemetry"]
+extra-paths = [
+  "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/run-times", "ci-runner/supervisor",
+  "ci-runner/tests", "stacks/telemetry",
+]
 
 # Strict: no untyped value gets through, and a warning fails the check.
 [tool.ty.rules]

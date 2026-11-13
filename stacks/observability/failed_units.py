@@ -32,9 +32,8 @@ def render(units: dict[str, list[str]]) -> str:
         f"# HELP {METRIC} A unit systemd holds as failed (1), by its manager.",
         f"# TYPE {METRIC} gauge",
     ]
-    # A unit's name holds no quote or newline, only systemd-escape's backslashes.
     lines += [
-        f'{METRIC}{{manager="{manager}",unit="{name.replace(chr(92), chr(92) * 2)}"}} 1'
+        f'{METRIC}{{manager="{manager}",unit="{telemetry.label(name)}"}} 1'
         for manager, names in units.items()
         for name in names
     ]

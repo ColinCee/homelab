@@ -462,7 +462,7 @@ groups:
             on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
           dashboard: *home
           value: '{{ $value }}'
-      # The latest main run's seconds (scripts/ci_times.py), median over a day against its 14 days: half again and
+      # The latest main run's seconds (ci-runner/run-times/ci_times.py), median over a day against its 14 days: half again and
       # 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
       # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h.
       - alert: ci-slower
@@ -532,8 +532,8 @@ groups:
             `~/.local/state/homelab/last-deployed`. Retry with `systemctl --user start deploy-main`.
           dashboard: *home
           value: '{{ $value }}'
-      # unattended-upgrades installs security updates each morning (apt/52unattended-upgrades-local), so some waiting
-      # at every check for 3 days means it is failing. Written each minute (scripts/security_facts.py, host); the
+      # unattended-upgrades installs security updates each morning (beelink/auto-updates/52unattended-upgrades-local), so some waiting
+      # at every check for 3 days means it is failing. Written each minute (beelink/security/security_facts.py, host); the
       # offset keeps a series younger than the window quiet.
       - alert: security-updates-waiting
         expr: |
@@ -556,7 +556,7 @@ groups:
             --upgradable`, fix what stops it, then `sudo unattended-upgrade -v`.
           dashboard: *home
           value: '{{ $value }}'
-      # It reboots at 04:00 the day after an update needs it (apt/52unattended-upgrades-local), so 2 days is a missed
+      # It reboots at 04:00 the day after an update needs it (beelink/auto-updates/52unattended-upgrades-local), so 2 days is a missed
       # reboot. The flag lives in memory, so a reboot clears it.
       - alert: reboot-waiting
         expr: |
@@ -623,7 +623,7 @@ groups:
           value: '{{ $value }}'
 
   # CI jobs on the Beelink's VMs not starting while the supervisor runs (its stopping is ci-supervisor-stopped, so
-  # it counts only while ci-waits.prom is fresh), from write_wait_metrics in scripts/ci_supervisor.py.
+  # it counts only while ci-waits.prom is fresh), from write_wait_metrics in ci-runner/supervisor/ci_supervisor.py.
   - name: ci-jobs
     interval: 1m
     rules:
@@ -882,7 +882,7 @@ groups:
           value: '{{ $value }}'
 
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
-  # (scripts/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
+  # (beelink/security/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
   # minutes. A CI-host install by Colin or Renovate is every merge, so only another's posts. The install's author is
   # the commit's own text, so a forged one is caught only by main's ruleset.
   - name: intrusion
@@ -929,7 +929,7 @@ groups:
             did not add means someone else holds a login or a key.
           action: >-
             If you added or re-added it, run `sudo rm -r /var/lib/homelab-security-facts` on the Beelink, so the next
-            minute's check learns the tailnet as it is (scripts/security_facts.py). Otherwise remove it at
+            minute's check learns the tailnet as it is (beelink/security/security_facts.py). Otherwise remove it at
             https://login.tailscale.com/admin/machines and rotate your Tailscale login.
           dashboard: *home
           value: '{{ $value }}'
