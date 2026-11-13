@@ -64,6 +64,7 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
         "stacks/deploy/deploy_main.py",
         "stacks/observability/prometheus/replay.py",
         "stacks/backup/unit_metrics.py",
+        "stacks/observability/failed_units.py",
     ],
 )
 def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: Path) -> None:

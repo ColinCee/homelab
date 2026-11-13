@@ -1,0 +1,9 @@
+[Unit]
+Description=Write which systemd units have failed, each minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target

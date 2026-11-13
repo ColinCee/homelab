@@ -579,6 +579,48 @@ groups:
             unattended-upgrades`, then `sudo reboot` at a quiet time.
           dashboard: *home
           value: '{{ $value }}'
+      # Each unit systemd holds as failed, the system's and Colin's (../failed_units.py, each minute). A timer's unit
+      # that fails at every run is failed all but its seconds of running, which the 5-minute max covers.
+      - alert: unit-failed
+        expr: |
+          (
+            max by (manager, unit) (max_over_time(homelab_systemd_unit_failed[5m]))
+          ) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'A systemd unit failed'
+          measure: 'Failed (1 yes)'
+          unit: ''
+          harm: 'The job this unit runs has stopped, so whatever it keeps running or up to date is not.'
+          action: >-
+            Read why with `journalctl -u <unit> -n 50` on the Beelink (`journalctl --user -u` for manager "user"),
+            fix the cause and start it again. For a test unit you no longer need, `systemctl reset-failed <unit>`
+            (`systemctl --user` for manager "user").
+          dashboard: *home
+          value: '{{ $value }}'
+      - alert: failed-units-check-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m]))) / 60)
+          ) > 10
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Failed unit check stopped'
+          measure: 'Last check'
+          unit: ' min ago'
+          harm: 'A failed systemd unit, the system''s or Colin''s, goes unseen while it is stopped.'
+          action: >-
+            Check `systemctl --user status observability-failed-units.service` and `systemctl --user list-timers
+            observability-failed-units.timer` on the Beelink; deploy-main installs it with the observability stack.
+          dashboard: *home
+          value: '{{ $value }}'
 
   # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), with
   # their `for`, taken over all series so a post carries no labels, on Prometheus's own metrics (prometheus.yml, job
@@ -713,6 +755,95 @@ groups:
             Find the sender on Grafana's Traces page (http://grafana.internal/d/traces) or Logs page
             (http://grafana.internal/d/logs), then stop it or leave it out in stacks/observability/obi/obi.yaml or
             config.alloy.
+          dashboard: *home
+          value: '{{ $value }}'
+
+  # The way to the stores: what Alloy loses or queues on the way (its own metrics, config.alloy, which carry
+  # `component_id`), and host-metrics, which writes past Alloy (compose.yaml). Alloy's remote write to Prometheus
+  # backing up is not here: its own numbers queue behind the rest, so it shows as "Beelink metrics stopped".
+  - name: pipeline
+    interval: 1m
+    rules:
+      # Every counter of what Alloy dropped, failed to send or refused, summed per component, so two moving together are
+      # one post. Not loki.process's drop stages, which drop by design. The exporters' failure counters start at their
+      # first failure, so the zero arm gives each exporter a series that counts that first one.
+      - alert: telemetry-dropped
+        expr: |
+          (
+            round(max by (component_id) (increase((
+              sum by (job, component_id) ({
+                component_id!="",
+                __name__=~"otelcol_exporter_(send|enqueue)_failed_(log_records|spans|metric_points)_total|otelcol_receiver_(refused|failed)_(log_records|spans|metric_points)_total|otelcol_exporter_loki_entries_failed|prometheus_remote_storage_(samples|histograms|exemplars)_(failed|dropped)_total|loki_secretfilter_lines_dropped_total"
+              })
+              or sum by (job, component_id) (otelcol_exporter_queue_capacity{component_id!=""}) * 0
+            )[15m:1m])))
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Alloy is losing telemetry'
+          measure: 'Lost or refused in 15 min'
+          unit: ' logs, spans or samples'
+          harm: >-
+            What this component lost is gone for good, so the dashboards, and the alerts that read them, miss that
+            stretch.
+          action: >-
+            Read `docker logs --tail 100 observability-alloy-1` for the component named, then the store it sends to:
+            `docker logs --tail 50 observability-logs-1`, `observability-traces-1` or `observability-prometheus-1`.
+            Fix that store, or stop the sender flooding it.
+          dashboard: *home
+          value: '{{ $value }}'
+      # Each send queue holds 10,000 batches (config.alloy), and a full one drops what arrives. A store down is "A store
+      # is down", so only a queue whose store still answers is named.
+      - alert: telemetry-backing-up
+        expr: |
+          (
+            max by (component_id) (
+              round(100 * otelcol_exporter_queue_size{component_id!=""} / otelcol_exporter_queue_capacity{component_id!=""})
+            )
+          ) > 25
+          unless on (component_id) label_replace(
+            min by (job) (up{job=~"logs|traces"}) == 0, "component_id", "otelcol.exporter.otlphttp.$1", "job", "(.+)"
+          )
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Alloy is backing up'
+          measure: 'Send queue full'
+          unit: '%'
+          harm: >-
+            The store takes less than Alloy sends; once the queue is full, new logs or traces are dropped and lost.
+          action: >-
+            Read `docker logs --tail 100 observability-alloy-1` for slow or refused sends, and the store's own logs:
+            `docker logs --tail 100 observability-logs-1` or `observability-traces-1`. A flood shows on Grafana's Logs
+            page (http://grafana.internal/d/logs) or Traces page (http://grafana.internal/d/traces).
+          dashboard: *home
+          value: '{{ $value }}'
+      # host-metrics writes each scrape's `up` too, so all three jobs gone is host-metrics stopped or no longer writing;
+      # one target down is the probes' alerts.
+      - alert: host-metrics-stopped
+        expr: |
+          (
+            max(absent_over_time(up{job=~"caddy|coredns|homeassistant"}[10m]))
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Proxy, DNS and Home Assistant metrics stopped'
+          measure: 'Missing for'
+          unit: ' 10 min or more'
+          harm: >-
+            The .internal proxy's, DNS's and Home Assistant's numbers are not recorded, so their dashboards keep a gap
+            that is never filled.
+          action: >-
+            Check `docker ps -a --filter name=observability-host-metrics` and `docker logs --tail 50
+            observability-host-metrics-1`, then `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
           dashboard: *home
           value: '{{ $value }}'
 
