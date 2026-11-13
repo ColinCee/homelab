@@ -1,6 +1,6 @@
 """Validate every Compose service and profile with each stack's tracked settings, on Linux and
-Windows alike. Secret files need not exist, nor Docker's daemon: Compose checks them only when it
-starts a container.
+Windows alike, with the Docker CLI alone: `config` needs no daemon, and secret files need not exist,
+as Compose checks them only when it starts a container.
 
     python3 checks/validate_compose.py [compose.yaml ...]   (none means every stack's)
 

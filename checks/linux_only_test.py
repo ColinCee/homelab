@@ -28,7 +28,7 @@ def top_level_imports(source: str) -> set[str]:
 def test_no_module_imports_what_only_linux_has_at_its_top() -> None:
     """Imported in the function that uses it, so its tests import on Windows too."""
     found = {
-        path.name: sorted(top_level_imports(path.read_text(encoding="utf-8")) & LINUX_MODULES)
+        path.as_posix(): sorted(top_level_imports(path.read_text(encoding="utf-8")) & LINUX_MODULES)
         for path in tracked(".py")
     }
     assert {name: mods for name, mods in found.items() if mods} == {}
