@@ -80,7 +80,7 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 
 | Problem | Who warns |
 |---|---|
-| The Beelink off, or alerting stopped | `watchdog` (off an hour after a failed post): the relay pings Healthchecks.io each minute; it emails and posts when pings stop |
+| The Beelink off, or alerting stopped | `watchdog` (stops an hour after a failed alert post): the relay pings Healthchecks.io each minute; it emails and posts when pings stop |
 | A rule failing | "An alert rule is failing" |
 | Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 | A deploy failed | "Main not deployed" |

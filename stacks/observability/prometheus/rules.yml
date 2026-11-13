@@ -1,5 +1,6 @@
 # The alert rules, held to the alert standard in docs/architecture.md ("Monitoring and alerts"). Prometheus runs them each
-# minute and sends the firing ones to Alertmanager (../alertmanager), which posts to Discord, repeats and holds back.
+# minute and sends the firing ones to Alertmanager (../alertmanager), which repeats, holds back and sends them on to the
+# incidents relay (../incidents/relay.py) for #incidents.
 #
 # Each post shows `measure: value unit`, so a query gives display units, rounded. A rule that is not per series
 # takes `max` or `min` of its query, so its post carries no labels: the title prints every label but `alertname`

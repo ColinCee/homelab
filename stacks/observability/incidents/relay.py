@@ -338,9 +338,10 @@ def main() -> None:
         )
 
     def ping() -> None:
-        with urllib.request.urlopen(
-            urllib.request.Request(healthchecks, method="POST"), timeout=10
-        ):
+        req = urllib.request.Request(
+            healthchecks, method="POST", headers={"User-Agent": "homelab-incidents/1"}
+        )
+        with urllib.request.urlopen(req, timeout=10):
             pass
 
     relay = Relay(

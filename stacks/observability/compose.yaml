@@ -220,6 +220,9 @@ services:
     networks:
       - alerting
       - incidents
+    # The relay first: an old relay given the watchdog would open a post for it.
+    depends_on:
+      - incidents
 
   # Gives each alert one #incidents post and starts the cloud on-call agent on it; passes the watchdog on to
   # Healthchecks.io (incidents/relay.py).
