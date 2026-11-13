@@ -31,6 +31,7 @@ def _commit(repo: Path, files: list[str]) -> str:
         (["stacks/observability/prometheus/rules.yml", "tests/test_alert_rules.py"], []),
         (["stacks/observability/grafana/dashboards/disk.json", "docs/architecture.md"], []),
         (["README.md"], []),
+        (["AGENTS.md"], ["AGENTS.md"]),
         (["stacks/observability/compose.yaml"], ["stacks/observability/compose.yaml"]),
         (["scripts/ci.py", "docs/recovery.md"], ["scripts/ci.py"]),
         ([".github/skills/homelab-oncall/SKILL.md"], [".github/skills/homelab-oncall/SKILL.md"]),
@@ -46,3 +47,15 @@ def test_only_alert_rules_dashboards_docs_and_tests_pass(
     head = _commit(tmp_path, files)
     monkeypatch.chdir(tmp_path)
     assert outside(base, head) == held
+
+
+def test_a_rename_into_the_docs_is_held_by_its_old_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _git(tmp_path, "init", "-q")
+    base = _commit(tmp_path, ["scripts/ci.py"])
+    (tmp_path / "docs").mkdir()
+    _git(tmp_path, "mv", "scripts/ci.py", "docs/ci.md")
+    _git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "mv")
+    monkeypatch.chdir(tmp_path)
+    assert outside(base, "HEAD") == ["scripts/ci.py"]

@@ -1,9 +1,10 @@
 """Say whether an agent's pull request changes only files that run no code on the Beelink, the
-only ones the on-call agent merges itself (docs/architecture.md, "Incidents").
+only ones the on-call agent merges itself (docs/architecture.md, "Monitoring and alerts").
 
-Usage: agent_scope.py BASE HEAD. Exits 0 when every changed path is an alert rule, a dashboard, a
-doc or a test; exits 1 and names the rest otherwise. CI runs the base commit's copy, so a pull
-request cannot change the rule that judges it. Colin merges the rest past it as admin.
+Usage: agent_scope.py BASE HEAD. Exits 0 when every changed path, and a rename's old one, is an
+alert rule, a dashboard, a doc or a test; exits 1 and names the rest otherwise. CI runs the base
+commit's copy, so a pull request cannot change the rule that judges it. Colin merges the rest past
+it as admin.
 """
 
 from __future__ import annotations
@@ -12,12 +13,12 @@ import re
 import subprocess
 import sys
 
-# Tests run only in CI. Skills and workflows steer agents and CI, so they stay out.
+# Tests run only in CI. AGENTS.md, skills and workflows steer agents and CI, so they stay out.
 DATA = re.compile(
     r"stacks/observability/prometheus/rules\.yml"
     r"|stacks/observability/grafana/dashboards/[\w.-]+\.json"
     r"|docs/[\w./-]+\.(md|svg|png)"
-    r"|[\w-]+\.md"
+    r"|README\.md"
     r"|tests/[\w./-]+\.py"
 )
 
