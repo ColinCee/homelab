@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from conftest import STACKS, programs, services, tracked, units
+from conftest import STACKS, dockerfile, programs, services, tracked, units
 from telemetry import JsonLines
 
 # Where each image is told to log JSON: an argument in its command, or NAME=json in its environment;
@@ -87,9 +87,9 @@ def python_version(stack: Path, service: dict[str, Any]) -> str:
     """The image's Python as major.minor: from its tag, or its Dockerfile's FROM."""
     image = str(service["image"])
     if "build" in service:
-        dockerfile = stack / service["build"]["context"] / service["build"]["dockerfile"]
-        base = re.search(r"^FROM (\S+)", dockerfile.read_text("utf-8"), re.MULTILINE)
-        assert base, dockerfile
+        path = dockerfile(stack, service)
+        base = re.search(r"^FROM (\S+)", path.read_text("utf-8"), re.MULTILINE)
+        assert base, path
         image = base.group(1)
     version = re.match(r"python:(\d+\.\d+)", image)
     assert version, image
