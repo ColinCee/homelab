@@ -4,12 +4,11 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import public_stats
 import pytest
 from conftest import stacks as compose_stacks
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-
-from stacks.observability import public_stats
-from stacks.observability.public_stats import STACKS, StatsError, build_body, signed
+from public_stats import STACKS, StatsError, build_body, signed
 
 NOW = 1_800_000_000.0
 

@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from conftest import STACKS, programs, services, tracked, units
+from conftest import STACKS, dockerfile, programs, services, tracked, units
 from telemetry import JsonLines
 
 # Where each image is told to log JSON: an argument in its command, or NAME=json in its environment;
@@ -87,9 +87,9 @@ def python_version(stack: Path, service: dict[str, Any]) -> str:
     """The image's Python as major.minor: from its tag, or its Dockerfile's FROM."""
     image = str(service["image"])
     if "build" in service:
-        dockerfile = stack / service["build"]["context"] / service["build"]["dockerfile"]
-        base = re.search(r"^FROM (\S+)", dockerfile.read_text("utf-8"), re.MULTILINE)
-        assert base, dockerfile
+        path = dockerfile(stack, service)
+        base = re.search(r"^FROM (\S+)", path.read_text("utf-8"), re.MULTILINE)
+        assert base, path
         image = base.group(1)
     version = re.match(r"python:(\d+\.\d+)", image)
     assert version, image
@@ -232,7 +232,7 @@ def test_host_scripts_log_through_the_telemetry_module() -> None:
     scripts = host_scripts()
     # The units' scripts, and deploy.py through deploy-main's deploy.sh.
     assert {"ci-runner/supervisor/ci_supervisor.py", "stacks/deploy/deploy_main.py"} <= scripts
-    for name in sorted(scripts | {"scripts/deploy.py"}):
+    for name in sorted(scripts | {"stacks/deploy/deploy.py"}):
         tree = ast.parse((ROOT / name).read_text(encoding="utf-8"))
         calls = [n.func for n in ast.walk(tree) if isinstance(n, ast.Call)]
         printed = any(isinstance(f, ast.Name) and f.id == "print" for f in calls)

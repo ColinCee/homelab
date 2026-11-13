@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from conftest import git, services
 
-from scripts import deploy
+from stacks.deploy import deploy
 
 
 @functools.cache
@@ -374,8 +374,8 @@ def repo(tmp_path: Path) -> Path:
     git(tmp_path, "init", "-q")
     for name in ("gateway", "observability"):
         _make_stack(tmp_path, name)
-    (tmp_path / "scripts").mkdir()
-    (tmp_path / "scripts" / "deploy.py").write_text("", encoding="utf-8")
+    (tmp_path / "stacks" / "deploy").mkdir()
+    (tmp_path / "stacks" / "deploy" / "deploy.py").write_text("", encoding="utf-8")
     _commit_all(tmp_path)
     return tmp_path
 
@@ -392,7 +392,7 @@ def test_a_change_to_one_stack_selects_only_that_stack(repo: Path) -> None:
 
 def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
     before = git(repo, "rev-parse", "HEAD")
-    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    (repo / "stacks" / "deploy" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     (repo / "stacks" / "observability" / "extra.txt").write_text("x\n", encoding="utf-8")
     _commit_all(repo)
 
@@ -411,7 +411,7 @@ def test_a_change_to_a_shared_folder_under_stacks_selects_all_stacks(repo: Path)
 
 def test_a_change_to_another_script_deploys_no_stack(repo: Path) -> None:
     before = git(repo, "rev-parse", "HEAD")
-    (repo / "scripts" / "ci_supervisor.py").write_text("# changed\n", encoding="utf-8")
+    (repo / "ci_supervisor.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
 
     assert deploy.changed_stacks(repo, before) == ()
@@ -467,7 +467,7 @@ def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
     state = tmp_path_factory.mktemp("state") / "last-deployed"
     before = git(repo, "rev-parse", "HEAD")
     state.write_text(before + "\n", encoding="utf-8")
-    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    (repo / "stacks" / "deploy" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
     runner, _ = _recording_runner(fail_when="up")
 
@@ -480,7 +480,7 @@ def test_each_deploy_is_one_trace_with_its_commit_and_a_span_per_stack(
     repo: Path, tmp_path_factory: pytest.TempPathFactory, sent_traces: list[dict[str, Any]]
 ) -> None:
     state = tmp_path_factory.mktemp("state") / "last-deployed"
-    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    (repo / "stacks" / "deploy" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     head = _commit_all(repo)
     runner, _ = _recording_runner(fail_when="up")
 

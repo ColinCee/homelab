@@ -150,12 +150,12 @@ def test_every_page_marks_each_deploy_from_the_deploy_s_trace() -> None:
     [marker] = PAGES["home"]["annotations"]["list"]
     for name, page in PAGES.items():
         assert page["annotations"]["list"] == [marker], name
-    # It reads the root span scripts/deploy.py sends, by the names it sends.
+    # It reads the root span stacks/deploy/deploy.py sends, by the names it sends.
     assert marker["datasource"]["uid"] in SOURCES
     query = marker["target"]["expr"]
-    deploy = (STACK.parent.parent / "scripts/deploy.py").read_text(encoding="utf-8")
+    deploy = (STACK.parent.parent / "stacks/deploy/deploy.py").read_text(encoding="utf-8")
     sent = re.search(r'telemetry\.run\("(\w+)", "(\w+)", ((?:\w+=\w+, )*\w+=\w+)\)', deploy)
-    assert sent, "scripts/deploy.py no longer traces each deploy"
+    assert sent, "stacks/deploy/deploy.py no longer traces each deploy"
     service, span, attrs = sent.groups()
     assert f'"resource_attr:service.name":={service} name:={span} ' in query
     for attr in re.findall(r"(\w+)=", attrs):

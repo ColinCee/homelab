@@ -3,7 +3,7 @@
 import re
 from pathlib import Path
 
-from conftest import services
+from conftest import dockerfile, services
 
 from stacks.observability.probes import ADDRESS
 
@@ -104,8 +104,7 @@ def test_python_services_share_one_image_and_mount_their_code() -> None:
     for stack, name, service in services():
         image = str(service.get("image", ""))
         if "build" in service:
-            dockerfile = stack / service["build"]["context"] / service["build"]["dockerfile"]
-            text = dockerfile.read_text(encoding="utf-8")
+            text = dockerfile(stack, service).read_text(encoding="utf-8")
             base = re.search(r"^FROM (python:\S+)", text, re.M)
             if not base:
                 continue

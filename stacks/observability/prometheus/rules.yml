@@ -185,7 +185,7 @@ groups:
             100 <name>`; fix the cause and redeploy its stack.
           dashboard: *home
           value: '{{ $value }}'
-      # A service the last deploy started to keep running (scripts/deploy.py, record_running) with no running
+      # A service the last deploy started to keep running (stacks/deploy/deploy.py, record_running) with no running
       # container, which cAdvisor stops reporting once it exits, cleanly or not. One-shots are not on the list.
       - alert: container-stopped
         expr: |
@@ -348,7 +348,7 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
       # Due on the 1st at 05:00 (backup-upkeep.timer), so no run, good or not, in the 3 days since the last due time.
-      # The timer's systemd stamp (scripts/deploy.py, record_running) is when it was first enabled if it never fired,
+      # The timer's systemd stamp (stacks/deploy/deploy.py, record_running) is when it was first enabled if it never fired,
       # so a timer installed after a due time waits for the next one, and one that never fires still alerts. The due
       # time is 05:00 on the 1st of the month of 3 days and 5 hours ago (277200 s), so it moves on 3 days after each.
       - alert: upkeep-missed

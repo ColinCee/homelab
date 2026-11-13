@@ -126,6 +126,12 @@ def stacks() -> dict[Path, dict[str, Any]]:
     return found
 
 
+def dockerfile(stack: Path, service: dict[str, Any]) -> Path:
+    """A built service's Dockerfile, which Compose names Dockerfile unless told otherwise."""
+    build = service["build"]
+    return stack / str(build["context"]) / str(build.get("dockerfile", "Dockerfile"))
+
+
 def services() -> list[tuple[Path, str, dict[str, Any]]]:
     """Every Compose service: its stack's folder, its name and its spec."""
     return [

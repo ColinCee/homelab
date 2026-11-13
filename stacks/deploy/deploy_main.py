@@ -120,7 +120,7 @@ def deploy_main(host: Host) -> int:
 
 def deploy_with_script(repo: Path, marker: Path) -> Callable[[str | None], int]:
     def deploy(since: str | None) -> int:
-        command = [str(repo / "scripts/deploy.sh"), "--last-deployed", str(marker)]
+        command = [str(repo / "stacks/deploy/deploy.sh"), "--last-deployed", str(marker)]
         if since:
             command += ["--first-changed-since", since]
         return subprocess.run(command, cwd=repo, check=False).returncode

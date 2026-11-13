@@ -21,7 +21,7 @@ from typing import Any
 import yaml
 
 # The shared module, from the checkout it deploys (stacks/telemetry).
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stacks/telemetry"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "telemetry"))
 import telemetry
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
@@ -124,8 +124,8 @@ def discover_stack_plans(
 # Files every stack's deploy depends on: a change to any of them deploys all stacks. Only the
 # deploy's own scripts, so a change to another (the CI supervisor, say) deploys nothing.
 SHARED_PATHS = (
-    "scripts/deploy.sh",
-    "scripts/deploy.py",
+    "stacks/deploy/deploy.sh",
+    "stacks/deploy/deploy.py",
 )
 
 
@@ -648,7 +648,7 @@ def main() -> int:
     )
     parser.add_argument("stacks", nargs="*", help="stack names (default: all discovered stacks)")
     args = parser.parse_args()
-    repo_root = Path(__file__).resolve().parents[1]
+    repo_root = Path(__file__).resolve().parents[2]
     metrics_dir = METRICS_DIR if METRICS_DIR.is_dir() else None
     if metrics_dir is None:
         log.warning("no metrics folder: the alerts will not know what runs")

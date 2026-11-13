@@ -14,7 +14,10 @@ from conftest import tool
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"
 CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
-READERS = (*sorted((STACK / "grafana/dashboards").glob("*.json")), STACK / "public_stats.py")
+READERS = (
+    *sorted((STACK / "grafana/dashboards").glob("*.json")),
+    STACK / "public-stats/public_stats.py",
+)
 
 
 def queries() -> list[str]:
