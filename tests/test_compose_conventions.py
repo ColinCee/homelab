@@ -58,7 +58,6 @@ WRITABLE = {
         "installs the wiser custom integration's requirement (aioWiserHeatAPI) into the image's "
         "/usr/local/lib/python3.*/site-packages when its container is created"
     ),
-    "observability/obi": "the tracing work's service (stacks/observability/obi/): convert it there",
 }
 # Services with no healthcheck, and why. The deploy waits for a healthcheck to pass, so one is
 # added with its command tried in the running container.
