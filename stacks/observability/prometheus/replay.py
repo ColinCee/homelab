@@ -8,19 +8,20 @@ user:password). Runs each rule's query a minute apart and follows Prometheus and
 relay: a post once the query has returned for `for` and a "Cleared" once it has stayed empty for
 `keep_firing_for`; a repeat posts nothing. Inhibits are not replayed."""
 
-import base64
-import json
 import os
 import re
 import sys
 import time
 import urllib.parse
-import urllib.request
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# The shared module, from this checkout (stacks/telemetry).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "telemetry"))
+import telemetry
 
 STEP = 60
 RULES = Path(__file__).with_name("rules.yml")
@@ -36,12 +37,13 @@ def seconds(duration: str) -> int:
 def query_range(promql: str, start: int, end: int) -> list[dict[str, Any]]:
     url = os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
     query = urllib.parse.urlencode({"query": promql, "start": start, "end": end, "step": STEP})
-    login = base64.b64encode(os.environ["GATEWAY_LOGIN"].encode()).decode()
-    request = urllib.request.Request(
-        f"{url}/prometheus/api/v1/query_range?{query}", headers={"Authorization": f"Basic {login}"}
+    answer = telemetry.http_json(
+        f"{url}/prometheus/api/v1/query_range?{query}",
+        login=os.environ["GATEWAY_LOGIN"],
+        timeout=120,
+        tries=2,
     )
-    with urllib.request.urlopen(request, timeout=120) as response:
-        return json.load(response)["data"]["result"]
+    return answer["data"]["result"]
 
 
 def history(promql: str, start: int, end: int) -> dict[str, set[int]]:

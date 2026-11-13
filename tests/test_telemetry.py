@@ -1,11 +1,16 @@
-"""Files read while they change are replaced only through telemetry.replace_file, and every program
-importing the module can find it (stacks/telemetry/telemetry.py)."""
+"""Files read while they change, secrets and HTTP go only through telemetry (replace_file, secret,
+http), and every program importing the module can find it (stacks/telemetry/telemetry.py)."""
 
+import ast
+import http.server
 import re
 import shlex
 import stat
 import subprocess
 import sys
+import threading
+import urllib.error
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -52,7 +57,14 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
     assert checked >= 5
 
 
-@pytest.mark.parametrize("script", ["scripts/deploy.py", "stacks/deploy/deploy_main.py"])
+@pytest.mark.parametrize(
+    "script",
+    [
+        "scripts/deploy.py",
+        "stacks/deploy/deploy_main.py",
+        "stacks/observability/prometheus/replay.py",
+    ],
+)
 def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: Path) -> None:
     # As the oldest deploy-main.service runs them: -I, no PYTHONPATH, run from elsewhere.
     load = f"import runpy; runpy.run_path({str(ROOT / script)!r}, run_name='loaded')"
@@ -84,3 +96,120 @@ def test_a_failed_write_keeps_the_old_file(tmp_path: Path, monkeypatch: pytest.M
         telemetry.replace_file(out, "new\n")
     assert out.read_text() == "old\n"
     assert [p.name for p in tmp_path.iterdir()] == ["x.prom"]
+
+
+# Each calls HTTP its own way, for the reason given; any other file goes through telemetry.http.
+OWN_HTTP = {
+    # One kept-open connection per thread and conditional requests, so a poll of about 40 repos
+    # every few seconds costs GitHub nothing when nothing changed.
+    "scripts/ci_supervisor.py": "http.client",
+    # Runs in Colin's terminal with the OS's certificate store and refuses any redirect of the
+    # admin login it sends.
+    "scripts/tailscale_policy.py": "urllib.request",
+    # CI runs the base commit's copy alone from a temporary folder (scripts/ci.py, run_base_rule),
+    # where no shared module can be found.
+    "scripts/versions_hash.py": "urllib.request",
+}
+HTTP_MODULES = {"urllib.request", "http.client", "requests", "httpx", "aiohttp"}
+
+
+def python_files() -> list[Path]:
+    return [
+        p
+        for pattern in ("scripts/**/*.py", "stacks/**/*.py", "ci-runner/**/*.py")
+        for p in ROOT.glob(pattern)
+        if p != MODULE
+    ]
+
+
+def imported(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    froms = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    return names | froms
+
+
+def test_http_is_called_only_through_telemetry() -> None:
+    for path in python_files():
+        name = path.relative_to(ROOT).as_posix()
+        used = imported(path) & HTTP_MODULES
+        if name in OWN_HTTP:
+            assert OWN_HTTP[name] in used, f"{name} no longer calls HTTP itself: drop it"
+        else:
+            assert not used, f"{name}: {used}; use telemetry.http or http_json"
+
+
+def test_secret_files_are_read_only_through_telemetry() -> None:
+    # A secret read as text and trimmed: the way telemetry.secret reads one.
+    trimmed = re.compile(r"read_text\([^)]*\)\s*\.\s*r?strip\(")
+    named = re.compile(r"secret|token|password|credential|key_file|login", re.I)
+    for path in python_files():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if trimmed.search(line):
+                assert not named.search(line), f"{path.relative_to(ROOT)}: telemetry.secret"
+
+
+def test_a_secret_is_read_by_name_or_path_without_its_newline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(telemetry, "SECRETS", tmp_path)
+    (tmp_path / "token").write_text(" t0k\n", encoding="utf-8")
+    assert telemetry.secret("token") == "t0k"
+    assert telemetry.secret(tmp_path / "token") == "t0k"
+
+
+# What the test server answers, in turn (status, headers, body), and each request's login.
+ANSWERS: list[tuple[int, dict[str, str], bytes]] = []
+SEEN: list[str | None] = []
+
+
+class Server(http.server.BaseHTTPRequestHandler):
+    def answer(self) -> None:
+        SEEN.append(self.headers.get("Authorization"))
+        code, headers, body = ANSWERS.pop(0)
+        self.send_response(code)
+        for name, value in {"Content-Length": str(len(body)), **headers}.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
+
+    do_GET = do_POST = do_PUT = answer
+
+    def log_message(self, format: str, *args: object) -> None: ...
+
+
+@pytest.fixture
+def server(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
+    monkeypatch.setattr(telemetry.time, "sleep", lambda s: None)
+    ANSWERS.clear()
+    SEEN.clear()
+    httpd = http.server.HTTPServer(("127.0.0.1", 0), Server)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_port}"
+    httpd.shutdown()
+
+
+def test_json_goes_out_and_comes_back(server: str) -> None:
+    ANSWERS[:] = [(200, {}, b'{"ok": 1}'), (204, {}, b"")]
+    assert telemetry.http_json(server + "/a", method="POST", body={"x": 1}) == {"ok": 1}
+    assert telemetry.http_json(server + "/b") is None
+
+
+def test_a_login_is_never_passed_on_by_a_redirect(server: str) -> None:
+    ANSWERS[:] = [(302, {"Location": "/elsewhere"}, b""), (200, {}, b"body")]
+    assert telemetry.http(server + "/start", login="u:p", limit=2) == b"bo"
+    assert SEEN == ["Basic dTpw", None]
+
+
+def test_a_failure_is_tried_again_only_when_that_is_safe(server: str) -> None:
+    ANSWERS[:] = [(503, {}, b""), (200, {}, b"got")]
+    assert telemetry.http(server, tries=2) == b"got"
+    ANSWERS[:] = [(429, {"Retry-After": "1"}, b""), (200, {}, b"sent")]
+    assert telemetry.http(server, method="POST", tries=2) == b"sent"
+    # A POST that failed on the server may have been done: it is not sent twice.
+    ANSWERS[:] = [(500, {}, b""), (200, {}, b"")]
+    with pytest.raises(urllib.error.HTTPError):
+        telemetry.http(server, method="POST", tries=2)
+    ANSWERS[:] = [(404, {}, b""), (200, {}, b"")]
+    with pytest.raises(urllib.error.HTTPError):
+        telemetry.http(server, tries=2)

@@ -15,13 +15,11 @@ See docs/architecture.md, "CI runner".
 from __future__ import annotations
 
 import hashlib
-import http.client
 import json
 import logging
 import re
 import time
 import urllib.error
-import urllib.request
 from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -346,83 +344,39 @@ def poll(
 
 
 def github(token: str) -> Get:
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+
     def get(path: str) -> Any:  # noqa: ANN401 - GitHub's JSON, read as each endpoint documents it
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        request = urllib.request.Request(f"{API}{path}", headers=headers)
-        for tries_left in (1, 0):
-            try:
-                with urllib.request.urlopen(request, timeout=30) as response:
-                    return json.load(response)
-            except OSError:
-                if not tries_left:
-                    raise
-                time.sleep(2)
+        return telemetry.http_json(f"{API}{path}", headers=headers, tries=2)
 
     return get
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args: object, **kwargs: object) -> None:
-        return None
-
-
-# Where GitHub's signed log links point; a test points it at its own server.
-SIGNED = "https://"
-LOG_ERRORS = (OSError, ValueError, http.client.HTTPException)
-
-
 def github_logs(token: str) -> Logs:
-    """A job's log: GitHub answers with a signed link to it, fetched without the token. "" when the
-    log is gone (404, 410) at either step: a skipped job gets a link to a log never written. Any
-    other failure, after one retry, stops the pass as GitHub's other failures do, so the run is
-    traced next pass with its log."""
+    """A job's log: GitHub answers with a signed link to it, followed without the token (telemetry
+    sends no header on through a redirect). "" when the log is gone (404, 410) at either step: a
+    skipped job gets a link to a log never written. Any other failure, after one retry, stops the
+    pass as GitHub's other failures do, so the run is traced next pass with its log."""
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-    gone = (404, 410)
-
-    def fetch(job_id: int) -> str:
-        url = f"{API}/repos/{REPO}/actions/jobs/{job_id}/logs"
-        request = urllib.request.Request(url, headers=headers)
-        try:
-            urllib.request.build_opener(_NoRedirect).open(request, timeout=30).close()
-            return ""
-        except urllib.error.HTTPError as e:
-            if e.code in gone:
-                return ""
-            if e.code != 302:
-                raise
-            link = e.headers.get("Location") or ""
-        if not link.startswith(SIGNED):
-            return ""
-        try:
-            response = urllib.request.urlopen(link, timeout=30)
-        except urllib.error.HTTPError as e:
-            if e.code in gone:
-                return ""
-            raise
-        with response:
-            body = response.read(LOG_MAX)
-        assert isinstance(body, bytes)
-        return body.decode("utf-8", "replace")
 
     def logs(job_id: int) -> str:
+        url = f"{API}/repos/{REPO}/actions/jobs/{job_id}/logs"
         try:
-            return fetch(job_id)
-        except LOG_ERRORS:
-            time.sleep(2)
-        try:
-            return fetch(job_id)
-        except LOG_ERRORS as e:
+            body = telemetry.http(url, headers=headers, tries=2, limit=LOG_MAX)
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410):
+                return ""
             raise OSError(f"log of job {job_id}: {e}") from e
+        except OSError as e:
+            raise OSError(f"log of job {job_id}: {e}") from e
+        return body.decode("utf-8", "replace")
 
     return logs
 
 
 def send_trace(body: Json) -> None:
     data = json.dumps(body).encode()
-    headers = {"Content-Type": "application/json"}
-    request = urllib.request.Request(TRACES, data, headers, method="POST")
-    with urllib.request.urlopen(request, timeout=30):
-        pass
+    telemetry.http(TRACES, method="POST", data=data, headers={"Content-Type": "application/json"})
 
 
 def main() -> int:
@@ -431,7 +385,7 @@ def main() -> int:
     def keep(state: Json) -> None:
         telemetry.replace_file(STATE, json.dumps(state), 0o600)
 
-    token = TOKEN_FILE.read_text().strip()
+    token = telemetry.secret(TOKEN_FILE)
     state = poll(github(token), send_trace, state, keep, github_logs(token))
     keep(state)
     if not state["done"]:

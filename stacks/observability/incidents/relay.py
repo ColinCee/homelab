@@ -14,9 +14,6 @@ import json
 import logging
 import os
 import re
-import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -298,40 +295,26 @@ def _snapshot(alert: dict[str, Any], post: str) -> str:
 def _request(
     url: str, method: str, headers: dict[str, str], body: dict[str, Any] | None
 ) -> dict[str, Any]:
-    data = None if body is None else json.dumps(body).encode()
     # Two tries at most: Alertmanager stops waiting after about a minute, and retries itself.
-    for _ in range(2):
-        req = urllib.request.Request(
-            url, data=data, method=method, headers={**headers, "Content-Type": "application/json"}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=10) as response:
-                raw = response.read()
-                return json.loads(raw) if raw else {}
-        except urllib.error.HTTPError as e:
-            if e.code != 429:
-                raise
-            time.sleep(min(float(e.headers.get("Retry-After") or 1), 5))
-    raise OSError(f"{method} {url}: still rate limited")
-
-
-def _secret(name: str) -> str:
-    return Path(f"/run/secrets/{name}").read_text(encoding="utf-8").strip()
+    answer = telemetry.http_json(
+        url, method=method, body=body, headers=headers, timeout=10, tries=2
+    )
+    return answer or {}
 
 
 def main() -> None:
     bot = {
-        "Authorization": f"Bot {_secret('incidents_discord_bot_token')}",
+        "Authorization": f"Bot {telemetry.secret('incidents_discord_bot_token')}",
         "User-Agent": "DiscordBot (homelab, 1)",
     }
     fire_headers = {
-        "Authorization": f"Bearer {_secret('oncall_fire_token')}",
+        "Authorization": f"Bearer {telemetry.secret('oncall_fire_token')}",
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "experimental-cc-routine-2026-04-01",
         "User-Agent": "homelab-incidents/1",
     }
     routine = os.environ.get("ONCALL_ROUTINE", "")
-    healthchecks = _secret("healthchecks_ping")
+    healthchecks = telemetry.secret("healthchecks_ping")
     fire_url = FIRE.format(routine=routine)
 
     def discord(method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
@@ -345,11 +328,7 @@ def main() -> None:
         )
 
     def ping() -> None:
-        req = urllib.request.Request(
-            healthchecks, method="POST", headers={"User-Agent": "homelab-incidents/1"}
-        )
-        with urllib.request.urlopen(req, timeout=10):
-            pass
+        telemetry.http(healthchecks, method="POST", timeout=10)
 
     relay = Relay(
         Path("/state/state.json"),

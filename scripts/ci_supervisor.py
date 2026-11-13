@@ -34,7 +34,6 @@ import tempfile
 import threading
 import time
 import urllib.error
-import urllib.request
 from collections import Counter
 from collections.abc import Callable, Generator, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -2144,7 +2143,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--once", action="store_true", help="one poll, for testing")
     args = parser.parse_args(argv)
-    gh = GitHub(TOKEN_FILE.read_text().strip())
+    gh = GitHub(telemetry.secret(TOKEN_FILE))
     repos: list[str] = []
     listed = 0.0
     STATE_DIR.mkdir(mode=0o700, exist_ok=True)

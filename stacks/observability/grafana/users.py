@@ -2,54 +2,33 @@
 file provisioning for users, and its admin login is set by compose.yaml (grafana_admin_password).
 Reads GRAFANA_ADMIN_USER and the secret files grafana_admin_password and agents_password."""
 
-import base64
-import json
 import logging
 import os
 import time
 import urllib.error
-import urllib.request
-from pathlib import Path
 from typing import Any
 
 import telemetry
 
 URL = "http://grafana:3000"
 # Grafana redirects any other name to its own (compose.yaml, GF_SERVER_ENFORCE_DOMAIN).
-HOST = "grafana.internal"
+HEADERS = {"Host": "grafana.internal"}
 LOGIN = "agents"
-SECRETS = Path("/run/secrets")
 log = logging.getLogger("grafana-users")
 
 
-def secret(name: str) -> str:
-    return (SECRETS / name).read_text(encoding="utf-8").strip()
-
-
 def call(method: str, path: str, body: object = None, auth: str = "") -> Any:  # noqa: ANN401 - Grafana's JSON
-    auth = auth or f"{os.environ['GRAFANA_ADMIN_USER']}:{secret('grafana_admin_password')}"
-    request = urllib.request.Request(
-        URL + path,
-        data=None if body is None else json.dumps(body).encode(),
-        method=method,
-        headers={
-            "Authorization": "Basic " + base64.b64encode(auth.encode()).decode(),
-            "Content-Type": "application/json",
-            "Host": HOST,
-        },
-    )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        text = response.read().decode()
-    return json.loads(text) if text else None
+    admin = os.environ["GRAFANA_ADMIN_USER"]
+    auth = auth or f"{admin}:{telemetry.secret('grafana_admin_password')}"
+    return telemetry.http_json(URL + path, method=method, body=body, headers=HEADERS, login=auth)
 
 
 def wait_until_ready(timeout: float = 90) -> None:
     deadline = time.monotonic() + timeout
     while True:
         try:
-            health = urllib.request.Request(URL + "/api/health", headers={"Host": HOST})
-            with urllib.request.urlopen(health, timeout=5):
-                return
+            telemetry.http(URL + "/api/health", headers=HEADERS, timeout=5)
+            return
         except OSError:
             if time.monotonic() > deadline:
                 raise SystemExit(f"Grafana did not answer in {timeout:.0f} s") from None
@@ -57,7 +36,7 @@ def wait_until_ready(timeout: float = 90) -> None:
 
 
 def main() -> None:
-    password = secret("agents_password")
+    password = telemetry.secret("agents_password")
     if not password:
         raise SystemExit("agents_password is empty")
     wait_until_ready()
