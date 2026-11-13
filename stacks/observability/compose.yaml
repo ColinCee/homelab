@@ -404,8 +404,10 @@ services:
       homelab.config-hash: ${CONFIG_HASH_OBI:-}
     volumes:
       - ./obi/obi.yaml:/etc/obi/obi.yaml:ro
-      # The host's cgroups, where it attaches the header writer; its own namespace shows only its own.
+      # The host's cgroups, where it attaches the header writer; its own namespace shows only its own. Kernels from
+      # 6.6.128, 6.12.75 and 6.18.14 also turn the writer off without the tracing folder.
       - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /sys/kernel/tracing:/sys/kernel/tracing:ro
     networks:
       - otlp
       - docker-api

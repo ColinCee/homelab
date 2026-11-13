@@ -146,3 +146,4 @@ def test_obi_links_calls_by_header_where_it_can_attach() -> None:
     spec = SERVICES["obi"]
     assert spec["environment"]["OTEL_EBPF_BPF_CONTEXT_PROPAGATION"] == "headers"
     assert "/sys/fs/cgroup:/sys/fs/cgroup:ro" in spec["volumes"]
+    assert "/sys/kernel/tracing:/sys/kernel/tracing:ro" in spec["volumes"]
