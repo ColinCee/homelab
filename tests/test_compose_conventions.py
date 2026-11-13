@@ -53,9 +53,11 @@ def test_every_service_has_a_memory_limit() -> None:
 
 # Services that write outside their volumes and tmpfs mounts, so cannot run read-only yet.
 WRITABLE = {
-    "home-assistant/homeassistant": "its s6 init writes /run and /etc at start",
-    "internal-names/proxy": "Caddy writes its locks and id to /data and /config: tmpfs first",
-    "observability/grafana": "writes its plugins' sockets to /tmp: give it a tmpfs first",
+    # A tmpfs would hide the image's packages; a volume would keep old ones past an image update.
+    "home-assistant/homeassistant": (
+        "installs the wiser custom integration's requirement (aioWiserHeatAPI) into the image's "
+        "/usr/local/lib/python3.14/site-packages at each start"
+    ),
     "observability/obi": "the tracing work's service (stacks/observability/obi/): convert it there",
 }
 # Services with no healthcheck, and why. The deploy waits for a healthcheck to pass, so one is
@@ -70,16 +72,6 @@ NO_HEALTHCHECK = {
     "tunnel/cloudflared": "distroless image",
     "observability/alloy": "no wget or curl in the image",
     "flight-tracker/backend": "no wget or curl in the image",
-    # wget is there; the check's URL is not yet tried.
-    "deploy/doorbell": "untried",
-    "internal-names/proxy": "untried",
-    "observability/grafana": "untried",
-    "observability/alertmanager": "untried",
-    "observability/incidents": "untried",
-    "observability/gateway": "untried",
-    "observability/docker-socket-proxy": "untried",
-    "observability/probes": "untried",
-    "observability/host-metrics": "untried",
 }
 
 

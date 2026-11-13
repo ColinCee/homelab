@@ -105,6 +105,18 @@ services:
     # Built here only: never pulled, so no registry image of that name can stand in.
     pull_policy: build
     restart: unless-stopped
+    read_only: true
+    # Its plugins' sockets, and the log file of the entrypoint's `grafana cli`.
+    tmpfs:
+      - /tmp
+      - /var/log/grafana
+    # Also checks its database.
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -222,6 +234,12 @@ services:
     # it (alerting); it reaches nothing outside, only the relay (incidents).
     labels:
       homelab.config-hash: ${CONFIG_HASH_ALERTMANAGER:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
     volumes:
       - ./alertmanager:/etc/alertmanager:ro
       # What it has posted and its silences, so a restart does not post firing alerts again.
@@ -264,6 +282,13 @@ services:
       - incidents-data:/state
     labels:
       homelab.config-hash: ${CONFIG_HASH_INCIDENTS:-}
+    # Answered at all: a POST to / gets 404, which neither logs nor counts as a failed request; a GET's 501 would.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qS -O /dev/null --post-data '' http://127.0.0.1:8080/ 2>&1 | grep -q ' 404 '"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     # incidents: only Alertmanager reaches it; incidents-out: its way out to Discord, Anthropic and Healthchecks.io.
     networks:
       - incidents
@@ -290,6 +315,13 @@ services:
       - agents_password
     labels:
       homelab.config-hash: ${CONFIG_HASH_GATEWAY:-}
+    # It has no open path: a request with no login gets its 403, without reaching a store.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qS -O /dev/null http://127.0.0.1:5080/ 2>&1 | grep -q ' 403 '"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     tmpfs:
       - /data:uid=65534,gid=65534
       - /config:uid=65534,gid=65534
@@ -435,6 +467,13 @@ services:
     read_only: true
     tmpfs:
       - /run:uid=65534,gid=65534
+    # Through to Docker; Alloy drops the log line of each answered one.
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:2375/_ping"]
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 2s
     # What they ask for: container lists, inspects and events (cAdvisor, the log tailer and OBI need them), logs,
     # networks for discovery, info and version. An inspect shows every container's environment and labels, so no secret
     # goes in either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
@@ -467,6 +506,14 @@ services:
     network_mode: host
     labels:
       homelab.config-hash: ${CONFIG_HASH_PROBES:-}
+    # Its loop writes each minute. The file is on the host, so after a restart the last container's write passes for up
+    # to 3 minutes.
+    healthcheck:
+      test: ["CMD-SHELL", "find /metrics/probes.prom -mmin -3 | grep -q ."]
+      interval: 60s
+      timeout: 5s
+      start_period: 90s
+      start_interval: 2s
     volumes:
       - ./probes.py:/probes.py:ro
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
@@ -497,6 +544,12 @@ services:
     network_mode: host
     labels:
       homelab.config-hash: ${CONFIG_HASH_HOST_METRICS:-}
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:9095/-/ready"]
+      interval: 60s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
     secrets:
       - homeassistant_metrics_token
     tmpfs:
