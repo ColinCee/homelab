@@ -189,15 +189,17 @@ def block(kind: str, label: str) -> str:
 
 def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
     alloy = tool("alloy")
-    # Two containers as Docker's API lists them: one reached on its network, one at the host port
-    # it publishes; a label's text that looks like the printed targets' own must not leak in.
+    # Containers as Docker's API lists them: one reached on its network, one at the host port it
+    # publishes, one on the host's network; a label's text that looks like the printed targets'
+    # own must not leak in.
     service = "__meta_docker_container_label_com_docker_compose_service"
     containers = (
         f'[{{__meta_docker_network_ip = "172.31.0.3", {service} = "prometheus", '
         '__meta_docker_container_name = "/a\\"=\\"b} {"}, '
         '{__meta_docker_network_ip = "172.26.0.3", '
         '__meta_docker_port_public_ip = "100.100.146.119", __meta_docker_port_public = "5080", '
-        f'{service} = "grafana"}}]'
+        f'{service} = "grafana"}}, {{__meta_docker_container_network_mode = "host", '
+        f'__meta_docker_container_name = "/observability-proxy-1", {service} = "proxy"}}]'
     )
     with socket.socket() as free:
         free.bind(("127.0.0.1", 0))
@@ -215,11 +217,12 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    def span(span_id: str, address: str, server_port: int) -> dict[str, Any]:
-        attributes = {
-            "network.peer.address": {"stringValue": address},
-            "server.port": {"intValue": server_port},
-        }
+    def span(
+        span_id: str, address: str, server_port: int, connected: bool = True
+    ) -> dict[str, Any]:
+        # A call that never connected has only the address it was sent to.
+        key = "network.peer.address" if connected else "server.address"
+        attributes = {key: {"stringValue": address}, "server.port": {"intValue": server_port}}
         return {
             "traceId": "0" * 31 + "1",
             "spanId": span_id,
@@ -234,8 +237,20 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
         span("000000000000000a", "172.31.0.3", 9090),
         span("000000000000000b", "100.100.146.119", 5080),
         span("000000000000000c", "100.100.146.119", 80),
+        span("000000000000000d", "172.31.0.3", 9090, connected=False),
     ]
-    body = json.dumps({"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}).encode()
+    senders = [
+        {"key": "container.name", "value": {"stringValue": name}}
+        for name in ("observability-proxy-1", "observability-grafana-1")
+    ]
+    body = json.dumps(
+        {
+            "resourceSpans": [
+                {"resource": {"attributes": [sender]}, "scopeSpans": [{"spans": spans[i::2]}]}
+                for i, sender in enumerate(senders)
+            ]
+        }
+    ).encode()
     # The debug exporter is experimental; test_the_config_loads holds the live config to GA.
     data = f"--storage.path={tmp_path / 'data'}"
     command = [alloy, "run", "--stability.level=experimental", data, str(tmp_path / "test.alloy")]
@@ -254,21 +269,24 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
                     )
                     urllib.request.urlopen(request, timeout=10).close()
                 if "component_id=otelcol.exporter.debug.out" in out and "Span #0" in out:
-                    printed = out
-                    break
+                    printed += out
+                    if printed.count("ResourceSpans #") == len(senders):
+                        break
         finally:
             deadline.cancel()
             run.kill()
-    named = re.findall(
-        r"Name +: (\w+).*?Attributes:(.*?)(?=Span #|$)", printed.replace("\\n", "\n"), re.S
-    )
+    printed = printed.replace("\\n", "\n")
+    named = re.findall(r"Name +: (\w+).*?Attributes:(.*?)(?=Span #|ResourceSpans|$)", printed, re.S)
     assert {
         span_id[-1]: re.findall(r"peer.service: Str\((\w+)\)", attrs) for span_id, attrs in named
     } == {
         "a": ["prometheus"],
         "b": ["grafana"],
         "c": [],
+        "d": ["prometheus"],
     }
+    marked = re.findall(r"container.name: Str\(([\w-]+)\)\n.*?container.network.mode", printed)
+    assert marked == ["observability-proxy-1"]
 
 
 def test_container_logs_carry_their_service_name() -> None:

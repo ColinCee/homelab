@@ -486,10 +486,13 @@ otelcol.exporter.prometheus "programs" {
 // Who each call reached, as `peer.service`: the Compose service at the address it connected to, from Docker's API.
 // OBI's `server.address` is the Host header the caller sent, which a proxy passes on (Caddy sends Prometheus the
 // gateway's own), or else an IP; and the stores answer with no span to name them (obi/obi.yaml). A container is
-// reached at its address on any of its networks, or at the host address and port it publishes. The statements
-// follow the containers as they start and stop.
+// reached at its address on any of its networks, or at the host address and port it publishes; a call that never
+// connected has no peer address, only the one it was sent to. The statements follow the containers as they start and
+// stop. Docker's API cannot say which ports a container on the host's network serves, so its spans are marked, for
+// the Traces page to read those from its server spans.
 discovery.docker "peers" {
-  host                = "tcp://docker-socket-proxy:2375"
+  host = "tcp://docker-socket-proxy:2375"
+  // A target for each network a container is on, not only its first: a caller may reach it on any.
   match_first_network = false
 }
 
@@ -500,18 +503,24 @@ discovery.relabel "peers" {
     source_labels = ["__meta_docker_network_ip", "__meta_docker_container_label_com_docker_compose_service"]
     regex         = "(.+);(.+)"
     target_label  = "by_address"
-    replacement   = "set(attributes[\"peer.service\"], \"$2\") where kind == SPAN_KIND_CLIENT and attributes[\"network.peer.address\"] == \"$1\""
+    replacement   = "set(attributes[\"peer.service\"], \"$2\") where kind == SPAN_KIND_CLIENT and (attributes[\"network.peer.address\"] == \"$1\" or (attributes[\"network.peer.address\"] == nil and attributes[\"server.address\"] == \"$1\"))"
   }
   rule {
     source_labels = ["__meta_docker_port_public_ip", "__meta_docker_port_public", "__meta_docker_container_label_com_docker_compose_service"]
     regex         = "(.+);(.+);(.+)"
     target_label  = "by_port"
-    replacement   = "set(attributes[\"peer.service\"], \"$3\") where kind == SPAN_KIND_CLIENT and attributes[\"network.peer.address\"] == \"$1\" and attributes[\"server.port\"] == $2"
+    replacement   = "set(attributes[\"peer.service\"], \"$3\") where kind == SPAN_KIND_CLIENT and (attributes[\"network.peer.address\"] == \"$1\" or (attributes[\"network.peer.address\"] == nil and attributes[\"server.address\"] == \"$1\")) and attributes[\"server.port\"] == $2"
   }
-  // Only the statements, so no Docker label's text reaches the step below.
+  rule {
+    source_labels = ["__meta_docker_container_network_mode", "__meta_docker_container_name"]
+    regex         = "host;/(.+)"
+    target_label  = "on_host"
+    replacement   = "set(resource.attributes[\"container.network.mode\"], \"host\") where resource.attributes[\"container.name\"] == \"$1\""
+  }
+  // Only the statements, so no other Docker label's text reaches the step below.
   rule {
     action = "labelkeep"
-    regex  = "by_address|by_port"
+    regex  = "by_address|by_port|on_host"
   }
 }
 
@@ -526,6 +535,7 @@ otelcol.processor.transform "peers" {
     statements = array.concat(
       json_path(string.replace(string.replace(string.format("%v", discovery.relabel.peers.output), "\"=\"", "\":\""), "} {", "}, {"), "[*].by_address"),
       json_path(string.replace(string.replace(string.format("%v", discovery.relabel.peers.output), "\"=\"", "\":\""), "} {", "}, {"), "[*].by_port"),
+      json_path(string.replace(string.replace(string.format("%v", discovery.relabel.peers.output), "\"=\"", "\":\""), "} {", "}, {"), "[*].on_host"),
     )
   }
 
