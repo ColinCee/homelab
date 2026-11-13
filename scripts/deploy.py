@@ -7,6 +7,7 @@ import argparse
 import contextlib
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -24,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stacks/telemetry")
 import telemetry
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
+log = logging.getLogger("deploy")
 
 # Alloy's textfile folder (prometheus/rules.yml reads what the deploy writes there).
 METRICS_DIR = Path("/var/lib/homelab-metrics")
@@ -354,24 +356,21 @@ def deploy(
         except (OSError, ValueError, subprocess.CalledProcessError) as exc:
             reason = _failure_reason(exc)
             failed[plan.name] = reason
-            print(f"Deployment failed for {plan.name}: {reason}", file=sys.stderr)
+            log.error("deploy failed", extra={"stack": plan.name, "reason": reason})
             continue
 
         completed.append(plan.name)
         ready_at[plan.name] = ready
-        print(f"Deployed: {plan.name}", flush=True)
+        log.info("deployed", extra={"stack": plan.name})
 
     report = DeploymentReport(tuple(completed), failed, ready_at)
     if report.partial:
-        print(
-            "Partial deployment: completed "
-            + ", ".join(report.completed)
-            + "; failed "
-            + ", ".join(report.failed),
-            file=sys.stderr,
+        log.error(
+            "partial deploy",
+            extra={"completed": list(report.completed), "failed": list(report.failed)},
         )
     elif report.failed:
-        print("Deployment failed for all selected stacks", file=sys.stderr)
+        log.error("deploy failed for every stack", extra={"failed": list(report.failed)})
     return report
 
 
@@ -650,7 +649,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     metrics_dir = METRICS_DIR if METRICS_DIR.is_dir() else None
     if metrics_dir is None:
-        print(f"No {METRICS_DIR}: the alerts will not know what runs", file=sys.stderr)
+        log.warning("no metrics folder: the alerts will not know what runs")
     with one_deploy_at_a_time(args.last_deployed):
         return run(
             repo_root,
@@ -675,7 +674,7 @@ def one_deploy_at_a_time(last_deployed: Path | None) -> Generator[None]:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
-            print("Waiting for another deploy to finish", flush=True)
+            log.info("waiting for another deploy to finish")
             fcntl.flock(lock, fcntl.LOCK_EX)
         yield
 
@@ -700,15 +699,13 @@ def run(
         if selected is not None and last_deployed.is_file():
             renewed = stacks_with_secrets_since(repo_root, last_deployed.stat().st_mtime_ns)
             selected = tuple(sorted({*selected, *renewed}))
-        print(
-            "Deploying " + ("all stacks" if selected is None else ", ".join(selected) or "nothing")
-        )
+        log.info("deploying", extra={"stacks": "all" if selected is None else list(selected)})
 
     try:
         plans = discover_stack_plans(repo_root, selected) if selected != () else ()
         if plans:
             plans = changed_first(repo_root, plans, first_changed_since, runner=runner)
-            print("In order: " + ", ".join(plan.name for plan in plans), flush=True)
+            log.info("deploy order", extra={"stacks": [plan.name for plan in plans]})
         report = (
             deploy(
                 repo_root,
@@ -721,7 +718,7 @@ def run(
             else DeploymentReport((), {})
         )
     except (DeploymentInputError, OSError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        log.error("cannot deploy", extra={"error": str(exc)})
         return 2
 
     if report.failed:
@@ -733,4 +730,5 @@ def run(
 
 
 if __name__ == "__main__":
+    telemetry.start()
     raise SystemExit(main())

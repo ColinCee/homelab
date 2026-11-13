@@ -376,23 +376,11 @@ loki.source.journal "host" {
   forward_to = [loki.secretfilter.journal.receiver]
 }
 
-// Before the lines become JSON, whose escaped quotes the filter's password rules do not match.
+// Before the lines become JSON, whose escaped quotes the filter's password rules do not match. Then the containers'
+// pipeline: a host script's JSON line keeps its own level, any other line is wrapped with the journal's.
 loki.secretfilter "journal" {
   redact_percent = 100
-  forward_to     = [loki.process.journal.receiver]
-}
-
-// The host's lines as JSON too (loki.process "docker"); their level is the journal's.
-loki.process "journal" {
-  forward_to = [otelcol.receiver.loki.logs.receiver]
-
-  stage.template {
-    source   = "json_line"
-    template = "{{ toJson (dict \"msg\" .Entry) }}"
-  }
-  stage.output {
-    source = "json_line"
-  }
+  forward_to     = [loki.process.docker.receiver]
 }
 
 // ================================
