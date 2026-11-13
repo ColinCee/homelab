@@ -8,7 +8,6 @@ on:
     paths:
       - ci-runner/rootfs/**
       - ci-runner/versions.env
-      - scripts/runner_job_guard.py
       - scripts/ci.py
       - .github/workflows/ci-image.yaml
 
