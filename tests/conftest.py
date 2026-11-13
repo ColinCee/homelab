@@ -23,21 +23,10 @@ CALLS: dict[str, float] = {}
 STARTED = [time.monotonic()]
 
 
-def _steal() -> tuple[float, int]:
-    try:
-        f = Path("/proc/stat").read_text().split("
-")[0].split()
-        return int(f[8]) / os.sysconf("SC_CLK_TCK"), os.cpu_count() or 1
-    except Exception:
-        return 0.0, 1
-
-
-STEAL0 = [0.0]
-
-
 def pytest_sessionstart(session: pytest.Session) -> None:
     STARTED[0] = time.monotonic()
-    STEAL0[0] = _steal()[0]
+    if os.name == "posix":
+        print("\nDIAG start", Path("/proc/stat").read_text().splitlines()[0])
 
 
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
@@ -61,9 +50,10 @@ def over_limits(run_seconds: float, calls: dict[str, float]) -> list[str]:
 def pytest_sessionfinish(session: pytest.Session) -> None:
     over = over_limits(time.monotonic() - STARTED[0], CALLS)
     tm = os.times()
-    s, n = _steal()
-    print(f"
-DIAG wall {time.monotonic() - STARTED[0]:.1f} cpu {tm.user + tm.system:.1f} children {tm.children_user + tm.children_system:.1f} steal_all_cpus {s - STEAL0[0]:.1f} ncpu {n}")
+    stat = Path("/proc/stat").read_text().splitlines()[0].split() if os.name == "posix" else []
+    print(f"\nDIAG wall {time.monotonic() - STARTED[0]:.1f} user+sys {tm.user + tm.system:.1f}")
+    print(f"DIAG children {tm.children_user + tm.children_system:.1f} stat {stat}")
+    print("DIAG start", os.environ.get("DIAG0"))
     for line in over:
         print()
         print(f"{line}. Make it faster, or raise the limit here in a pull request saying why.")
