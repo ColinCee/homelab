@@ -34,9 +34,8 @@ def pc_received(folder: Path, out: Path) -> None:
 def upkeep(service_result: str, now: float, out: Path) -> None:
     # SERVICE_RESULT, which systemd gives ExecStopPost.
     result = "success" if service_result == "success" else "failure"
-    telemetry.replace_file(
-        out / f"upkeep-{result}.prom", f"homelab_upkeep_last_{result}_timestamp_seconds {int(now)}\n"
-    )
+    line = f"homelab_upkeep_last_{result}_timestamp_seconds {int(now)}\n"
+    telemetry.replace_file(out / f"upkeep-{result}.prom", line)
 
 
 def main(argv: list[str]) -> int:
