@@ -1,0 +1,10 @@
+[Unit]
+Description=Write which systemd units, the system's and this user's, have failed
+Documentation=https://github.com/ColinCee/homelab/blob/main/docs/architecture.md#monitoring-and-alerts
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I %h/code/homelab/stacks/observability/failed_units.py
+# Two systemctl calls, well under a second.
+TimeoutStartSec=1min
+Nice=10
