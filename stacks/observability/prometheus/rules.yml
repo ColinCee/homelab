@@ -649,9 +649,10 @@ groups:
           harm: 'Private repositories'' checks sit queued, so nothing of theirs merges or deploys.'
           action: >-
             On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting on "a VM booting for
-            it": VMs die at start, `sudo journalctl -t homelab-ci-vm -n 30` says why; fix it and merge. "Rate
-            limited until": it clears by itself then. "Poll failed": fix the error it names. See
-            docs/architecture.md, "CI runner".
+            it": VMs die at start, `sudo journalctl -t homelab-ci-vm -n 30` says why; fix it and merge. "A VM
+            ready for it": its runner is up but GitHub sends it no job; check githubstatus.com. "Rate limited
+            until": it clears by itself then. "Poll failed": fix the error it names. See docs/architecture.md, "CI
+            runner".
           dashboard: *home
           value: '{{ $value }}'
 

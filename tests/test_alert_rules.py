@@ -368,7 +368,7 @@ CASES = {
             at(27, "ci-supervisor-stopped", posts("ci-supervisor-stopped", "17")),
         ],
     ),
-    "CI jobs whose VMs never boot fire after 5 minutes and `for`, as on 13 Nov": (
+    "CI jobs whose VMs never boot fire after 5 minutes and `for`": (
         [
             (CI_WAITS, "0+60x30"),
             ('homelab_ci_wait_seconds{kind="booting"}', "0+60x30"),
