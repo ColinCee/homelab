@@ -118,7 +118,7 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
     try:
         kpis = get_json(flights).get("kpis")
     except (OSError, ValueError, AttributeError) as error:
-        print(f"flight tracker: {error}", file=sys.stderr)
+        print(f"ERROR: flight tracker: {error}", file=sys.stderr)
         kpis = None
     return build_body(results, kpis, time.time())
 
@@ -162,7 +162,7 @@ def main() -> None:
         except Exception as error:
             # Anything odd in a response skips one push, not the process.
             # HTTPError's message says why the Worker refused.
-            print(f"push failed: {error!r}", file=sys.stderr)
+            print(f"ERROR: push failed: {error!r}", file=sys.stderr)
             wait = RETRY_S
         time.sleep(wait)
 

@@ -1,4 +1,18 @@
 // ================================
+// Alloy's own metrics
+// ================================
+
+// What it receives, queues, retries and drops on the way to each store.
+prometheus.exporter.self "alloy" {}
+
+prometheus.scrape "alloy" {
+  targets         = prometheus.exporter.self.alloy.targets
+  job_name        = "alloy"
+  scrape_interval = "15s"
+  forward_to      = [prometheus.remote_write.default.receiver]
+}
+
+// ================================
 // Host Metrics (node_exporter)
 // ================================
 
@@ -192,6 +206,56 @@ loki.process "docker" {
     expression = "^[\\x00\\s]*$"
   }
 
+  // Alloy's and OBI's polls, answered: nearly every line the log store would take. Refusals (403) and errors stay.
+  stage.match {
+    selector = "{container_name=\"observability-docker-socket-proxy-1\"}"
+
+    stage.drop {
+      expression = "\\s[0-9/]+ (200|404) \\d+ "
+    }
+  }
+
+  // The CI VMs' cAdvisor (prometheus.exporter.cadvisor "ci_vms") finds the containers too and logs, each minute for
+  // each, that it cannot read their disks, which it is not asked for.
+  stage.match {
+    selector = "{container_name=\"observability-alloy-1\"}"
+
+    stage.drop {
+      expression = "unable to determine device info for dir: /rootfs/var/lib/docker/overlay2/"
+    }
+  }
+
+  // Terminal colours, which Home Assistant writes around each line.
+  stage.replace {
+    expression = "(\\x1b\\[[0-9;]*m)"
+    replace    = ""
+  }
+
+  // Each line's level, for programs that do not log JSON: logfmt and Go's slog (`level=INFO`), cloudflared
+  // (`2026-11-13T13:27:28Z INF`), VictoriaTraces (`<time>\tinfo\t`), Python's logging and uvicorn (`ERROR:`), Home
+  // Assistant (`<date> <time> WARNING (`). A stage that does not match leaves the level as it was.
+  stage.regex {
+    expression = "(?:^|\\s)level=\"?(?P<level>[A-Za-z]+)"
+  }
+  stage.regex {
+    expression = "^\\S+ (?P<level>DBG|INF|WRN|ERR|FTL) "
+  }
+  stage.regex {
+    expression = "^\\S+\\t(?P<level>debug|info|warn|error|fatal|panic)\\t"
+  }
+  stage.regex {
+    expression = "^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL):"
+  }
+  stage.regex {
+    expression = "^\\S+ \\S+ (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) \\("
+  }
+
+  // One vocabulary, the journal's included (loki.relabel "journal"), which the Services dashboard's error counts read.
+  stage.template {
+    source   = "level"
+    template = "{{ $l := ToLower .Value }}{{ if regexMatch \"^(emerg|alert|crit|critical|fatal|ftl|panic)$\" $l }}fatal{{ else if regexMatch \"^(err|error|eror)$\" $l }}error{{ else if regexMatch \"^(warn|warning|wrn)$\" $l }}warn{{ else if regexMatch \"^(info|inf|notice)$\" $l }}info{{ else if regexMatch \"^(debug|dbg|trace)$\" $l }}debug{{ else }}{{ $l }}{{ end }}"
+  }
+
   // The label and the metadata below reach the log store as fields of each line.
   stage.labels {
     values = {
@@ -230,9 +294,36 @@ loki.relabel "journal" {
     source_labels = ["__journal__systemd_unit"]
     target_label  = "unit"
   }
+  // The containers' level words (loki.process "docker").
   rule {
     source_labels = ["__journal_priority_keyword"]
+    regex         = "emerg|alert|crit"
     target_label  = "level"
+    replacement   = "fatal"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    regex         = "err"
+    target_label  = "level"
+    replacement   = "error"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    regex         = "warning"
+    target_label  = "level"
+    replacement   = "warn"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    regex         = "notice|info"
+    target_label  = "level"
+    replacement   = "info"
+  }
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    regex         = "debug"
+    target_label  = "level"
+    replacement   = "debug"
   }
 }
 

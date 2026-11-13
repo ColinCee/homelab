@@ -31,7 +31,7 @@ class Doorbell(BaseHTTPRequestHandler):
             # Its content changes, so PathModified fires even on a bind mount.
             RING.write_text(f"{time.time()}\n", encoding="utf-8")
         except OSError as e:
-            print(f"cannot ring: {e}", flush=True)
+            print(f"ERROR: cannot ring: {e}", flush=True)
             self._answer(500)
             return
         self._answer(202)

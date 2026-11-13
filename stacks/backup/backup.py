@@ -72,7 +72,7 @@ def say(message: str) -> None:
 
 
 def warn(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
+    print(f"ERROR: {message}", file=sys.stderr, flush=True)
 
 
 def json_number(text: str, key: str) -> int | None:

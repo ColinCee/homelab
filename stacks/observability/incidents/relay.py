@@ -46,7 +46,7 @@ FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
 def log(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
+    print(f"ERROR: {message}", file=sys.stderr, flush=True)
 
 
 class Relay:
