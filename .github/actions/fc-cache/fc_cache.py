@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Save a CI VM's cache disk (action.yml): pack /cache and the job's named workspace paths into a
 tar, and write it to the VM's outbox disk, which the CI supervisor turns into the repo's next
 cache disk once GitHub shows the job passed (ci-runner/supervisor/cache_disks.py, take_outbox).

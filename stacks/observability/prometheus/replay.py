@@ -10,7 +10,6 @@ relay: a post once the query has returned for `for` and a "Cleared" once it has 
 `keep_firing_for`; a repeat posts nothing. Inhibits are not replayed."""
 
 import os
-import re
 import sys
 import time
 import urllib.parse
@@ -26,13 +25,6 @@ import telemetry
 from stacks.observability.prometheus import slos
 
 STEP = 60
-
-
-def seconds(duration: str) -> int:
-    match = re.fullmatch(r"(\d+)([smh])", duration)
-    if not match:
-        raise SystemExit(f"{duration}: not a duration like 10m")
-    return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
 
 
 def query_range(promql: str, start: int, end: int) -> list[dict[str, Any]]:
@@ -60,7 +52,7 @@ def history(promql: str, start: int, end: int) -> dict[str, set[int]]:
 
 
 def posts(returned: set[int], rule: dict[str, Any], start: int, end: int) -> list[tuple[int, str]]:
-    wait, hold = seconds(rule["for"]), seconds(rule.get("keep_firing_for", "0m"))
+    wait, hold = slos.seconds(rule["for"]), slos.seconds(rule.get("keep_firing_for", "0m"))
     out: list[tuple[int, str]] = []
     since: int | None = None
     last_true = 0

@@ -6,17 +6,15 @@ from pathlib import Path
 import pytest
 
 from checks.agent_scope import outside
-from conftest import git
+from conftest import commit, git
 
 
 def _commit(repo: Path, files: list[str]) -> str:
-    for name in files:
-        path = repo / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"{name} {len(path.read_text()) if path.exists() else 0}\n")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-qm", "c")
-    return git(repo, "rev-parse", "HEAD")
+    """Change each file, so every commit touches all of them."""
+    sizes = {
+        name: len((repo / name).read_text()) if (repo / name).exists() else 0 for name in files
+    }
+    return commit(repo, {name: f"{name} {size}\n" for name, size in sizes.items()})
 
 
 @pytest.mark.parametrize(

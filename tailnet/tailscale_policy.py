@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Interactively validate and apply one Tailscale policy using a scoped OAuth client."""
 
 import argparse

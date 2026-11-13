@@ -207,6 +207,7 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     "changed",
     [
         "usr/local/lib/homelab-ci/ci_supervisor.py",
+        "usr/local/lib/homelab-ci/telemetry.py",
         *(f"usr/local/lib/homelab-ci/{module}" for module in ih.SUPERVISOR_MODULES),
         "usr/local/lib/homelab-ci/net/homelab-ci.nft",
         "usr/local/lib/homelab-ci/net/setup_net.py",

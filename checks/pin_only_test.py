@@ -3,37 +3,24 @@ from pathlib import Path
 import pytest
 
 from checks.pin_only import is_pin_only
-from conftest import git
+from conftest import commit, git
 
 OLD = "ghcr.io/colincee/app:latest@sha256:" + "a" * 64
 NEW = "ghcr.io/colincee/app:latest@sha256:" + "b" * 64
 COMPOSE = f"services:\n  app:\n    image: {OLD}\n    restart: unless-stopped\n"
 
 
-def _commit(repo: Path, files: dict[str, str | None]) -> str:
-    for name, text in files.items():
-        path = repo / name
-        if text is None:
-            path.unlink()
-            continue
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-qm", "c")
-    return git(repo, "rev-parse", "HEAD")
-
-
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     git(tmp_path, "init", "-q")
-    _commit(tmp_path, {"stacks/app/compose.yaml": COMPOSE, "stacks/web/compose.yaml": COMPOSE})
+    commit(tmp_path, {"stacks/app/compose.yaml": COMPOSE, "stacks/web/compose.yaml": COMPOSE})
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
 def _changed(repo: Path, files: dict[str, str | None]) -> bool:
     base = git(repo, "rev-parse", "HEAD")
-    return is_pin_only(base, _commit(repo, files))
+    return is_pin_only(base, commit(repo, files))
 
 
 def test_digest_bumps_in_compose_files_are_quick(repo: Path) -> None:

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Record how long this repo's CI and deploy runs take.
 
 Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and,

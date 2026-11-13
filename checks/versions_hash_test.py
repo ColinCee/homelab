@@ -3,27 +3,18 @@ from pathlib import Path
 import pytest
 
 from checks.versions_hash import VERSIONS, problems
-from conftest import ROOT, git
+from conftest import ROOT, commit, git
 
 RIGHT = "a" * 64
 OLD = f"GH_VERSION=v2.0.0\nGH_SHA256={'0' * 64}\nPYTHON_VERSION=3.15\n"
 GH_URL = "https://github.com/cli/cli/releases/download/v2.1.0/gh_2.1.0_linux_amd64.tar.gz"
 
 
-def _commit(repo: Path, text: str) -> str:
-    path = repo / VERSIONS
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8")
-    git(repo, "add", "-A")
-    git(repo, "commit", "-qm", "c")
-    return git(repo, "rev-parse", "HEAD")
-
-
 @pytest.fixture
 def base(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
     git(tmp_path, "init", "-q")
     monkeypatch.chdir(tmp_path)
-    return _commit(tmp_path, OLD)
+    return commit(tmp_path, {VERSIONS: OLD})
 
 
 def _fetch(url: str) -> str:
@@ -32,17 +23,21 @@ def _fetch(url: str) -> str:
 
 
 def test_new_version_with_wrong_hash_fails_naming_the_right_one(base: str) -> None:
-    head = _commit(Path.cwd(), f"GH_VERSION=v2.1.0\nGH_SHA256={'b' * 64}\nPYTHON_VERSION=3.15\n")
+    head = commit(
+        Path.cwd(), {VERSIONS: f"GH_VERSION=v2.1.0\nGH_SHA256={'b' * 64}\nPYTHON_VERSION=3.15\n"}
+    )
     assert problems(base, head, _fetch) == [f"GH v2.1.0: wrong hash; set GH_SHA256={RIGHT}"]
 
 
 def test_new_version_with_right_hash_passes(base: str) -> None:
-    head = _commit(Path.cwd(), f"GH_VERSION=v2.1.0\nGH_SHA256={RIGHT}\nPYTHON_VERSION=3.16\n")
+    head = commit(
+        Path.cwd(), {VERSIONS: f"GH_VERSION=v2.1.0\nGH_SHA256={RIGHT}\nPYTHON_VERSION=3.16\n"}
+    )
     assert problems(base, head, _fetch) == []
 
 
 def test_unchanged_tools_are_not_downloaded(base: str) -> None:
-    head = _commit(Path.cwd(), OLD + "# a comment\n")
+    head = commit(Path.cwd(), {VERSIONS: OLD + "# a comment\n"})
 
     def no_fetch(url: str) -> str:
         raise AssertionError(url)
@@ -51,7 +46,7 @@ def test_unchanged_tools_are_not_downloaded(base: str) -> None:
 
 
 def test_a_failed_download_fails_naming_the_tool(base: str) -> None:
-    head = _commit(Path.cwd(), f"GH_VERSION=v2.1.0\nGH_SHA256={RIGHT}\n")
+    head = commit(Path.cwd(), {VERSIONS: f"GH_VERSION=v2.1.0\nGH_SHA256={RIGHT}\n"})
 
     def offline(url: str) -> str:
         raise OSError("HTTP Error 404")
@@ -60,7 +55,7 @@ def test_a_failed_download_fails_naming_the_tool(base: str) -> None:
 
 
 def test_a_new_tool_without_a_url_fails(base: str) -> None:
-    head = _commit(Path.cwd(), OLD + f"NEWTOOL_VERSION=1\nNEWTOOL_SHA256={RIGHT}\n")
+    head = commit(Path.cwd(), {VERSIONS: OLD + f"NEWTOOL_VERSION=1\nNEWTOOL_SHA256={RIGHT}\n"})
     assert problems(base, head, _fetch) == [
         "NEWTOOL: no download URL known; add it to URLS in checks/versions_hash.py"
     ]
@@ -72,15 +67,15 @@ def test_every_pinned_tool_here_has_a_url(tmp_path: Path, monkeypatch: pytest.Mo
     pinned = (ROOT / VERSIONS).read_text(encoding="utf-8")
     git(tmp_path, "init", "-q")
     monkeypatch.chdir(tmp_path)
-    empty = _commit(tmp_path, "")
-    head = _commit(tmp_path, pinned)
+    empty = commit(tmp_path, {VERSIONS: ""})
+    head = commit(tmp_path, {VERSIONS: pinned})
     found = problems(empty, head, lambda url: "")
     assert found and all("wrong hash" in line for line in found), found
 
 
 def test_the_python_build_standalone_asset_is_named_by_python_version_and_tag(base: str) -> None:
     pbs = "PBS_VERSION=20261110\nPBS_SHA256=" + "b" * 64 + "\nPBS_PYTHON=3.15.2\n"
-    head = _commit(Path.cwd(), OLD + pbs)
+    head = commit(Path.cwd(), {VERSIONS: OLD + pbs})
     urls: list[str] = []
 
     def fetch(url: str) -> str:
