@@ -10,8 +10,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 - **Merging is deploying.** GitHub's push webhook (no secret, set by hand) rings the
   [doorbell](../stacks/deploy/doorbell.py) through the tunnel.
   [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
-  that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
-  full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. No code
+  that dropped the deployed commit, and runs [`deploy.sh`](../stacks/deploy/deploy.sh) for stacks changed since the last
+  full deploy ([`deploy.py`](../stacks/deploy/deploy.py)) or reading a changed secret, until `main` stops moving. No code
   from GitHub runs on the Beelink to deploy.
 - **Who may deploy.** Whoever lands a commit on `main`, which takes a pull request with checks green, admins included.
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
@@ -134,5 +134,5 @@ encrypted: Home Assistant's config and a consistent copy of its history, the fli
 
 The `public-stats` container pushes a few numbers every 5 minutes, signed with an Ed25519 key, to the blog's
 Worker at colincheung.dev/homelab.json, which the home page shows. They are coarse on purpose, since anyone can poll
-and keep a history: the fields and why are in [`public_stats.py`](../stacks/observability/public_stats.py), the key
-and its rotation in [`public_stats_key.py`](../scripts/public_stats_key.py).
+and keep a history: the fields and why are in [`public_stats.py`](../stacks/observability/public-stats/public_stats.py), the key
+and its rotation in [`public_stats_key.py`](../stacks/observability/public-stats/public_stats_key.py).

@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-# Shared deployment logic lives in typed Python; this wrapper preserves the
-# stable command used by manual operations and GitHub Actions.
-repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-# System python3, not homelab-python3: deploy.py imports yaml, which only the host's apt python3-yaml has.
-exec python3 "$repo_root/scripts/deploy.py" "$@"
+# Moved to stacks/deploy/deploy.sh. Kept one release: the deploy-main run that pulls this change was
+# started by the old deploy_main.py, which calls this path. Delete with scripts/.
+exec "$(dirname "$0")/../stacks/deploy/deploy.sh" "$@"

@@ -81,7 +81,7 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
 @pytest.mark.parametrize(
     "script",
     [
-        "scripts/deploy.py",
+        "stacks/deploy/deploy.py",
         "stacks/deploy/deploy_main.py",
         "stacks/observability/prometheus/replay.py",
         "stacks/backup/unit_metrics.py",

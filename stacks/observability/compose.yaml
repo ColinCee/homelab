@@ -567,8 +567,7 @@ services:
   # docs/architecture.md, "Public stats" for what it publishes.
   public-stats:
     build:
-      context: .
-      dockerfile: public-stats.Dockerfile
+      context: ./public-stats
     image: homelab/public-stats
     # Built here only: never pulled, since a registry image of that name
     # would run with the signing key.
@@ -608,7 +607,7 @@ services:
     tmpfs:
       - /tmp
     volumes:
-      - ./public_stats.py:/public_stats.py:ro
+      - ./public-stats/public_stats.py:/public_stats.py:ro
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
     # Its own network, shared with the gateway only, where its login reads one query; outbound, the
     # internet. otlp: Alloy, for its traces.

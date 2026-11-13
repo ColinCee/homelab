@@ -28,7 +28,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 # Code that runs on the host's /usr/bin/python3 (3.12): the installer and updater, which must not
 # depend on homelab-python3, and the deploy scripts, which need that python's apt python3-yaml.
 [tool.ruff.per-file-target-version]
-"scripts/deploy.py" = "py312"
+"stacks/deploy/deploy.py" = "py312"
 "stacks/deploy/deploy_main.py" = "py312"
 "ci-runner/install_host.py" = "py312"
 "ci-runner/update.py" = "py312"
@@ -43,7 +43,7 @@ testpaths = ["tests"]
 pythonpath = [
   ".", "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",
   "ci-runner/supervisor",
-  "ci-runner/host-tests", "stacks/telemetry",
+  "ci-runner/host-tests", "stacks/observability/public-stats", "stacks/telemetry",
 ]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
@@ -55,7 +55,7 @@ pythonpath = [
 extra-paths = [
   "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",
   "ci-runner/supervisor",
-  "ci-runner/host-tests", "stacks/telemetry",
+  "ci-runner/host-tests", "stacks/observability/public-stats", "stacks/telemetry",
 ]
 
 # Strict: no untyped value gets through, and a warning fails the check.
