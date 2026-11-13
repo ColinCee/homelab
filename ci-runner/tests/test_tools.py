@@ -12,12 +12,13 @@ import io
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from host_commands import start_process
 
 RUN_VM = "/usr/local/lib/homelab-ci/run-vm.sh"
 # Expands inside the VM, not here. The Docker check builds with BuildKit (RUN --mount),
@@ -43,12 +44,7 @@ echo "TOTAL ${#tools[@]}"'''  # noqa: E501
 
 
 def boot(command: list[str], log: Path, env: Mapping[str, str]) -> None:
-    with log.open("w") as out:
-        try:
-            subprocess.run(command, stdout=out, stderr=subprocess.STDOUT, env=env, check=False)
-        except OSError as e:
-            # Into the log, as a shell's "not found" would be, so the verdict fails and shows it.
-            out.write(f"{command[0]}: {e}\n")
+    start_process(command, log, env).wait()
 
 
 @dataclass

@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from host_commands import run_command, start_process
+
 RUN_VM = "/usr/local/lib/homelab-ci/run-vm.sh"
 BUSYBOX = "busybox:1.37"
 LISTEN_SECONDS = 120
@@ -32,20 +34,6 @@ class Run(Protocol):
 
 class Waitable(Protocol):
     def wait(self) -> int: ...
-
-
-def run_command(
-    command: list[str], *, check: bool = False, quiet: bool = False
-) -> subprocess.CompletedProcess[str]:
-    stderr = subprocess.DEVNULL if quiet else None
-    return subprocess.run(
-        command, text=True, errors="replace", stdout=subprocess.PIPE, stderr=stderr, check=check
-    )
-
-
-def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:
-    with log.open("w") as out:
-        return subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, env=env)
 
 
 @dataclass

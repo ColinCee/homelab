@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from host_commands import run_command, start_process
+
 LIB = "/usr/local/lib/homelab-ci"
 RUN_VM = f"{LIB}/run-vm.sh"
 IMAGE = "/var/lib/homelab-ci/images/rootfs.ext4"
@@ -53,26 +55,6 @@ class Run(Protocol):
 
 class Waitable(Protocol):
     def wait(self) -> int: ...
-
-
-def run_command(
-    command: list[str], *, env: Mapping[str, str] | None = None, quiet: bool = False
-) -> subprocess.CompletedProcess[str]:
-    stderr = subprocess.DEVNULL if quiet else None
-    return subprocess.run(
-        command,
-        text=True,
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=stderr,
-        env=env,
-        check=False,
-    )
-
-
-def start_process(command: list[str], log: Path) -> Waitable:
-    with log.open("w") as out:
-        return subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
 
 
 def owner_of(path: Path) -> tuple[str, str]:

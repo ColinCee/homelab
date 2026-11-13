@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from host_commands import run_command, start_process
+
 DEFAULT_SLOTS = 5
 QUIET_SECONDS = 15
 # vm_size in ci_supervisor.py for a job started while others run.
@@ -39,15 +41,6 @@ class Run(Protocol):
 
 class Waitable(Protocol):
     def wait(self) -> int: ...
-
-
-def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, text=True, errors="replace", stdout=subprocess.PIPE, check=False)
-
-
-def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:
-    with log.open("w") as out:
-        return subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, env=env)
 
 
 @dataclass
