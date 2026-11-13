@@ -429,7 +429,7 @@ services:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
       OTEL_EBPF_LOG_FORMAT: json
       # Request rate, errors and duration per service. Not `application_service_graph`: with no Kubernetes to name a
-      # peer's address, most callers were `incoming`; the Traces page maps calls from the linked spans instead.
+      # peer's address, most callers were `incoming`, while the spans, linked across services, name them.
       OTEL_EBPF_METRICS_FEATURES: application
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
