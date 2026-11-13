@@ -112,12 +112,14 @@ def test_python_services_log_through_the_telemetry_module() -> None:
         text = script.read_text(encoding="utf-8")
         calls = [n.func for n in ast.walk(ast.parse(text)) if isinstance(n, ast.Call)]
         assert not any(isinstance(f, ast.Name) and f.id == "print" for f in calls), script
-        if not any(isinstance(f, ast.Attribute) and f.attr in LOG_CALLS for f in calls):
+        logs = any(isinstance(f, ast.Attribute) and f.attr in LOG_CALLS for f in calls)
+        if logs:
+            started = [f for f in calls if isinstance(f, ast.Attribute) and f.attr == "start"]
+            assert any(
+                isinstance(f.value, ast.Name) and f.value.id == "telemetry" for f in started
+            ), script
+        elif "\nimport telemetry\n" not in text:
             continue
-        started = [f for f in calls if isinstance(f, ast.Attribute) and f.attr == "start"]
-        assert any(isinstance(f.value, ast.Name) and f.value.id == "telemetry" for f in started), (
-            script
-        )
         # Its container has the module where `python -I` finds it: its Python's site-packages.
         stack, _ = by_name[name]
         site = f"/usr/local/lib/python{python_version(stack, service)}/site-packages/telemetry.py"

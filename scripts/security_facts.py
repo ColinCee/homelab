@@ -24,6 +24,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import telemetry
+
 OUT = Path("/var/lib/homelab-metrics/security.prom")
 # The unit's StateDirectory. Delete it to learn the tailnet as it is now.
 STATE = Path("/var/lib/homelab-security-facts/known-devices.json")
@@ -110,7 +112,7 @@ def tailnet(status: dict[str, Any]) -> tuple[dict[str, float], dict[str, str]]:
 def known_devices(current: Iterable[str], state: Path = STATE) -> set[str]:
     """The devices on the tailnet when the state was first written; a later one stays unknown."""
     if not state.exists():
-        _replace(state, json.dumps(sorted(current)) + chr(10), 0o600)
+        telemetry.replace_file(state, json.dumps(sorted(current)) + chr(10), 0o600)
     return set(json.loads(state.read_text(encoding="utf-8")))
 
 
@@ -167,14 +169,7 @@ def host_facts(reboot: Path = REBOOT, updates: Path = UPDATES) -> str:
 
 
 def write(text: str, out: Path = OUT) -> None:
-    _replace(out, text, 0o644)
-
-
-def _replace(path: Path, text: str, mode: int) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.chmod(mode)
-    tmp.rename(path)
+    telemetry.replace_file(out, text)
 
 
 def main() -> None:

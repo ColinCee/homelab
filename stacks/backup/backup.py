@@ -131,19 +131,11 @@ class Backup:
 
     def _private(self, name: str, text: str) -> None:
         # Replaced whole, so a `docker exec` run never leaves the loop's restic an empty file.
-        file = self.path(name)
-        temporary = file.with_name(file.name + ".tmp")
-        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as handle:
-            handle.write(text)
-        os.replace(temporary, file)
+        telemetry.replace_file(self.path(name), text, 0o600)
 
     def write_metric(self, name: str, metric: str, value: int) -> None:
-        file = self.path(name)
-        temporary = file.with_name(file.name + ".tmp")
         try:
-            temporary.write_text(f"{metric} {value}\n")
-            os.replace(temporary, file)
+            telemetry.replace_file(self.path(name), f"{metric} {value}\n")
         except OSError:
             log.error("could not write a metrics file", extra={"file": name})
 

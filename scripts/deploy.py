@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from collections.abc import Callable, Generator, Mapping, Sequence
@@ -18,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import telemetry
 import yaml
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
@@ -415,10 +415,7 @@ def record_running(
         if stamp.is_file():
             lines.append(f'{metric}{{timer="{timer.stem}"}} {stamp.stat().st_mtime:.0f}')
     out = metrics_dir / f"deploy-{plan.name}.prom"
-    temporary = out.with_name(f".{out.name}.{os.getpid()}.tmp")
-    temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    temporary.chmod(0o644)
-    os.replace(temporary, out)
+    telemetry.replace_file(out, "\n".join(lines) + "\n")
 
 
 def hash_variable(service: str) -> str:
@@ -540,7 +537,7 @@ def install_systemd_units(
     target_dir.mkdir(parents=True, exist_ok=True)
     for trigger in triggers:
         for unit in (trigger.with_suffix(".service"), trigger):
-            _atomic_copy(unit, target_dir / unit.name)
+            telemetry.replace_file(target_dir / unit.name, unit.read_bytes())
 
     environment = _systemctl_environment()
     runner(["systemctl", "--user", "daemon-reload"], env=environment, check=True)
@@ -606,16 +603,6 @@ def _compose_environment() -> dict[str, str]:
     }
     # No COMPOSE_PROFILES: a stack's settings.env turns its profiles on, which this would override.
     return {key: value for key, value in os.environ.items() if key in allowed}
-
-
-def _atomic_copy(source: Path, destination: Path) -> None:
-    temporary = destination.with_name(f".{destination.name}.{os.getpid()}.tmp")
-    try:
-        shutil.copyfile(source, temporary)
-        shutil.copymode(source, temporary)
-        os.replace(temporary, destination)
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _failure_reason(error: BaseException) -> str:
@@ -738,9 +725,7 @@ def run(
         return 1
     if head and last_deployed is not None:
         last_deployed.parent.mkdir(parents=True, exist_ok=True)
-        temporary = last_deployed.with_name(f".{last_deployed.name}.tmp")
-        temporary.write_text(head + "\n")
-        os.replace(temporary, last_deployed)
+        telemetry.replace_file(last_deployed, head + "\n")
     return 0
 
 

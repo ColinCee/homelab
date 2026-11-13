@@ -344,6 +344,9 @@ def install_locked(
     # timers (PC backups) write here too.
     install_dirs(host, "1777", "/var/lib/homelab-metrics")
     install_dirs(host, "0755", DEST)
+    # The scripts' shared module, beside them, where Python finds it (their units run `-Es`,
+    # which keeps the script's folder on the path). Before the scripts that import it.
+    install(host, "0644", here.parent / "stacks/telemetry/telemetry.py", f"{DEST}/telemetry.py")
     # The SSD's lifetime writes and wear, for Prometheus.
     install_timed_script(host, here, "ssd_wear.py", "homelab-ssd-wear")
     # What the intrusion alerts read, as a user of its own in the journal's group.

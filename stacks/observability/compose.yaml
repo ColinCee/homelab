@@ -457,6 +457,7 @@ services:
       homelab.config-hash: ${CONFIG_HASH_PROBES:-}
     volumes:
       - ./probes.py:/probes.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       # Read by Alloy's textfile collector.
       - /var/lib/homelab-metrics:/metrics
 

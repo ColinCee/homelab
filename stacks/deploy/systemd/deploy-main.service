@@ -6,6 +6,8 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/python3 -I %h/code/homelab/stacks/deploy/deploy_main.py
+# The shared module (stacks/telemetry); -s, not -I, so Python reads PYTHONPATH.
+Environment=PYTHONPATH=%h/code/homelab/stacks/telemetry
+ExecStart=/usr/bin/python3 -s %h/code/homelab/stacks/deploy/deploy_main.py
 # Above a full deploy of every stack, so a hung build cannot hold every later ring.
 TimeoutStartSec=30min
