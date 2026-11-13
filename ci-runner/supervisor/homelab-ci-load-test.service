@@ -2,7 +2,7 @@
 Description=Drain the CI runner, run its load test at every slot and keep the result (ci_supervisor.py load-test)
 After=homelab-ci-supervisor.service
 # At most 3 runs in 6 hours (a FAIL at 5, then 4, then 3), whatever goes wrong, even a record that
-# cannot be written: update.sh asks every minute, and each run drains the host.
+# cannot be written: update.py asks every minute, and each run drains the host.
 StartLimitIntervalSec=6h
 StartLimitBurst=3
 

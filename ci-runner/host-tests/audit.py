@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
+#!/usr/local/bin/homelab-python3 -Es
 """Blast-radius audit for the CI runner. Must pass before the supervisor runs, every
 quarter, and after any Firecracker, kernel or runner upgrade:
-  sudo ci-runner/host-tests/audit.sh
+  sudo ci-runner/host-tests/audit.py
 Checks what a job could reach if it broke out of its VM, or out of Firecracker into the
 slot user. Read-only apart from one throwaway VM.
 """
@@ -26,7 +26,7 @@ from typing import Protocol
 from host_commands import run_command, start_process
 
 LIB = "/usr/local/lib/homelab-ci"
-RUN_VM = f"{LIB}/run-vm.sh"
+RUN_VM = f"{LIB}/run_vm.py"
 IMAGE = "/var/lib/homelab-ci/images/rootfs.ext4"
 CACHES = "/var/lib/homelab-ci/caches"
 SLOT_USER = re.compile(r"fc-slot[0-9]+")
@@ -299,7 +299,7 @@ class Audit:
             tmp = Path(tmp_name)
             metadata = tmp / "metadata.json"
             metadata.write_text(json.dumps({"task": "probe", "probe": MMDS_PROBE}))
-            # A missing run-vm.sh leaves no Firecracker to find, and the checks below fail.
+            # A missing run_vm.py leaves no Firecracker to find, and the checks below fail.
             vm = h.start([run_vm, "0", str(metadata), "90"], tmp / "console.log")
             pid = ""
             for _ in range(30):

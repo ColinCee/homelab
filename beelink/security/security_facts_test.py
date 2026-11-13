@@ -48,7 +48,7 @@ def test_each_event_keeps_its_newest_time_and_who() -> None:
     sha = "0123456789abcdef0123456789abcdef01234567"
     entries = [
         entry("homelab-ci-update", f"installed commit={sha} author=Colin Cheung", 120),
-        # update.sh's other lines are not installs.
+        # update.py's other lines are not installs.
         entry("homelab-ci-update", f"on {sha}, image built at {sha}", 130),
         entry(
             "sshd",

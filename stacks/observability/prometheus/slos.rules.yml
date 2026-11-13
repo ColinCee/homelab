@@ -84,7 +84,7 @@ groups:
           unit: ' min ago'
           harm: CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.
           action: Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with
-            `sudo ci-runner/install-host.sh`.
+            `sudo ci-runner/install_host.py`.
           dashboard: http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: main-deploy-stopped
@@ -142,7 +142,7 @@ groups:
           unit: ' min ago'
           harm: A wearing SSD would go unnoticed.
           action: Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
-            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+            on the Beelink; it starts with `sudo ci-runner/install_host.py`.
           dashboard: http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: ci-times-stale
@@ -161,7 +161,7 @@ groups:
           unit: ' min ago'
           harm: A slower CI or deploy would go unnoticed, and no run is traced.
           action: Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times`
-            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+            on the Beelink; it starts with `sudo ci-runner/install_host.py`.
           dashboard: http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: backup-missed

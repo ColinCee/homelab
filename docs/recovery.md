@@ -39,7 +39,7 @@ snapshots with `restic forget --prune <id>`.
 3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (folder 700, files 444), then
    `stacks/deploy/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty; `deploy-main`
    follows. Deploy `backup` last and restore as above.
-4. CI runner: `sudo ci-runner/install-host.sh`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/host-tests/test-tools.sh`, `sudo ci-runner/host-tests/audit.sh`
+4. CI runner: `sudo ci-runner/install_host.py`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/host-tests/test_tools.py`, `sudo ci-runner/host-tests/audit.py`
    (must pass), store the GitHub token as the supervisor's `TOKEN_FILE` says, then
    `sudo systemctl enable --now homelab-ci-supervisor.service`.
 
@@ -48,7 +48,7 @@ the `.internal` nameserver in Tailscale's DNS settings.
 
 ## CI runner rollback
 
-`sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.sh <commit>` pins the host to that commit until
+`sudo ROLLBACK=1 /usr/local/lib/homelab-ci/update.py <commit>` pins the host to that commit until
 `sudo rm /etc/homelab-ci/pinned`. After a kernel upgrade, rebuild the image: `sudo ci-runner/build-rootfs.sh`.
 
 ## Containers without networking

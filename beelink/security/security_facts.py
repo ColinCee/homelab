@@ -9,7 +9,7 @@ A device, or an SSH login's device, is known="true" only if it was on the tailne
 
 A host job, not a container, so no container needs a path to the host or its Tailscale. (Alloy
 reads the journal too, for the log store, without sudo's or tailscaled's lines.) Installed by
-ci-runner/install-host.sh, run each minute by
+ci-runner/install_host.py, run each minute by
 homelab-security-facts.timer. On any error the old file stays and the unit fails, so "Security
 checks stopped" fires.
 """
@@ -35,7 +35,7 @@ REBOOT = Path("/run/reboot-required")
 UPDATES = Path("/var/lib/update-notifier/updates-available")
 # ESM's updates are counted on lines of their own, and those not enabled cannot be installed.
 SECURITY = re.compile(r"(\d+) of these updates (?:is a|are) standard security update")
-# update.sh after an install, sshd, and Tailscale SSH.
+# update.py after an install, sshd, and Tailscale SSH.
 IDENTIFIERS = (
     "homelab-ci-update",
     "sshd",
@@ -53,7 +53,7 @@ LABELS = {
     "ssh_login": ("user", "from", "device"),
 }
 HELP = {
-    "ci_host_install": "When update.sh last installed this commit as root, in the last hour.",
+    "ci_host_install": "When update.py last installed this commit as root, in the last hour.",
     "ssh_login": "When this user last logged in over SSH from this address, in the last hour.",
 }
 

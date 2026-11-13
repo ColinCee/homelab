@@ -1,7 +1,7 @@
 #!/bin/bash
 # Runs inside a CI microVM. Prints one PASS or FAIL line per check; the host
-# side (test-network.sh) counts them. Internet must work; nothing private may.
-# Placeholders filled by test-network.sh: @HOST_LAN@ @TAILNET@.
+# side (test_network.py) counts them. Internet must work; nothing private may.
+# Placeholders filled by test_network.py: @HOST_LAN@ @TAILNET@.
 
 total=0
 # expect ok|blocked NAME COMMAND...

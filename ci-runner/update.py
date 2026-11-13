@@ -1,12 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Bring the Beelink's CI to one commit of homelab's main:
 
-    sudo ci-runner/update.sh --follow     (its timer, every minute: takes main)
-    sudo ci-runner/update.sh <commit>     (by hand)
+    sudo ci-runner/update.py --follow     (its timer, every minute: takes main)
+    sudo ci-runner/update.py <commit>     (by hand)
 
 Code comes from git itself, never a tarball: the commit must be on main and not older than the one
 installed. A changed image is rebuilt. Runs as its own unit (homelab-ci-update): installing
-restarts the services that would otherwise run it. Installed beside update.sh, alone: standard
+restarts the services that would otherwise run it. Installed alone: standard
 library only.
 """
 
@@ -32,8 +32,8 @@ LOCK = "/run/homelab-ci-update.lock"
 # The units run homelab-python3 (install_host.py, PYTHON_LINK); this file stays on /usr/bin/python3,
 # so a broken pinned Python cannot stop the updater that would repair it.
 SUPERVISOR = ["/usr/local/bin/homelab-python3", "-Es", "/usr/local/lib/homelab-ci/ci_supervisor.py"]
-USAGE = "update.sh: usage: update.sh <commit> [reason] | --follow"
-# What install-host.sh installs, and what goes into the image; tests sit beside the code they test
+USAGE = "update.py: usage: update.py <commit> [reason] | --follow"
+# What install_host.py installs, and what goes into the image; tests sit beside the code they test
 # but are neither.
 NOT_TESTS = ":(glob,exclude)**/*_test.py"
 INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "stacks/telemetry", NOT_TESTS]
@@ -141,7 +141,7 @@ def failed_once(host: Host, change: str, now: float) -> None:
 
 
 def shipped(subjects: str) -> str:
-    """The pull requests a change ships, for install-host.sh's restart reason: the first five."""
+    """The pull requests a change ships, for install_host.py's restart reason: the first five."""
     found = [str(m) for m in re.findall(r"\(#[0-9]*\)", subjects)]
     return " ".join(m.strip("()") for m in found[:5])
 
@@ -235,7 +235,7 @@ def update_locked(
             # minute.
             pinned.write_text(f"{want}\n")
         host.git("checkout", "-q", "--detach", "--force", want)
-        # Main moves for many reasons: only a change to what install-host.sh installs is installed.
+        # Main moves for many reasons: only a change to what install_host.py installs is installed.
         if not have or host.git("diff", "--quiet", have, want, "--", *INSTALL_PATHS, check=False):
             change = host.git_out("log", "-1", "--format=%H", want, "--", *INSTALL_PATHS).strip()
             if gave_up(host, change, now):
@@ -245,7 +245,12 @@ def update_locked(
             subjects = host.git_out("log", "--format=%s", span, "--", *INSTALL_PATHS, check=False)
             given = args[1] if len(args) > 1 else ""
             reason = plain(given or env.get("REASON") or f"homelab {shipped(subjects)}")
-            install = [str(host.path(f"{SRC}/ci-runner/install-host.sh"))]
+            # A rollback can check out a commit where the installer is not executable, or is still
+            # the shell script.
+            installer = host.path(f"{SRC}/ci-runner/install_host.py")
+            install = ["/usr/bin/python3", "-I", str(installer)]
+            if not installer.exists():
+                install = [str(host.path(f"{SRC}/ci-runner/install-host.sh"))]
             if host.run(install, check=False, env={**env, "REASON": reason}).returncode:
                 failed_once(host, change, now)
                 return 1

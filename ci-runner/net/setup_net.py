@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/local/bin/homelab-python3 -Es
 """Bring up or tear down the CI microVM network: one tap per slot, the nftables rules
 (homelab-ci.nft, which also holds the container wall), and the iptables accept Docker's
 FORWARD chain needs. Idempotent; run by homelab-ci-net.service after Docker.
-  setup-net.sh [up|down|wan]
+  setup_net.py [up|down|wan]
 "wan" refreshes the blocked public address; run_vm.py calls it before each VM.
 """
 
@@ -50,7 +50,7 @@ def run_command(
 
 
 def slot_count(env: Mapping[str, str], root: Path) -> int:
-    """The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
+    """The host's slot count (/etc/homelab-ci/slots, which install_host.py writes); an
     explicit SLOTS wins. 5 when neither is a number, at least 1, as in ci_supervisor.py."""
     text = env.get("SLOTS", "")
     if not text:
@@ -229,7 +229,7 @@ def main(
     here = here or Path(__file__).resolve().parent
     mode = (argv[0] if argv else "") or "up"
     if mode not in ("up", "down", "wan"):
-        print("usage: setup-net.sh [up|down|wan]", file=sys.stderr)
+        print("usage: setup_net.py [up|down|wan]", file=sys.stderr)
         return 2
     try:
         network = Network(run, root, here, slot_count(env, root))

@@ -1,4 +1,6 @@
-"""Stop every CI VM and remove its files: to clear the host by hand. Restarting the supervisor
+#!/usr/local/bin/homelab-python3 -Es
+"""Stop every CI VM and remove its files: to clear the host by hand (sudo
+/usr/local/lib/homelab-ci/stop_vms.py). Restarting the supervisor
 leaves VMs running (each is a unit of its own) and takes them back."""
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ def stop_vms(host: Host) -> int:
             if action() is False:
                 raise RuntimeError("something stayed")
         except Exception as e:
-            print(f"stop-vms: {name}: {e}", file=sys.stderr)
+            print(f"stop_vms: {name}: {e}", file=sys.stderr)
             failed = True
 
     def kill_cgroups() -> None:

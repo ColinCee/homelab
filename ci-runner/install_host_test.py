@@ -152,7 +152,7 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     install(root, recorder)
 
     dest = root / "usr/local/lib/homelab-ci"
-    assert recorder.ran(str(dest / "net/setup-net.sh"), "up")
+    assert recorder.ran(str(dest / "net/setup_net.py"), "up")
     assert not recorder.ran("systemctl", "enable", "--now", SERVICE)
     assert not recorder.active
     assert (root / "etc/homelab-ci/slots").read_text() == "5\n"
@@ -165,8 +165,9 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     )
     assert found.returncode == 0, found.stderr
     assert (dest / "net/setup_net.py").stat().st_mode & 0o777 == 0o755
-    for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
-        assert (dest / name).stat().st_mode & 0o777 == 0o644
+    assert (dest / "vm_disks.py").stat().st_mode & 0o777 == 0o644
+    for name in ("run_vm.py", "stop_vms.py", "update.py"):
+        assert (dest / name).stat().st_mode & 0o777 == 0o755
     assert (dest / "update.py").read_bytes() == (CI_RUNNER / "update.py").read_bytes()
     assert (root / "sys/kernel/mm/ksm/run").read_text() == "0\n"
     assert {f"fc-slot{n}" for n in range(5)} | {"homelab-facts"} == recorder.users
@@ -176,14 +177,19 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     )
 
 
-def test_the_old_vm_disks_script_goes_only_after_the_wrappers_that_no_longer_need_it(
-    root: Path,
-) -> None:
-    recorder = Recorder(active=False)
-    stale = root / "usr/local/lib/homelab-ci/vm-disks.sh"
-    stale.parent.mkdir(parents=True)
-    stale.write_text("old")
-    stale_at_wrapper_install: list[bool] = []
+def old_wrappers(root: Path) -> list[Path]:
+    """The shell wrappers an older install left, each a file that runs what is installed now."""
+    found = [Path(root, "usr/local/lib/homelab-ci", name) for name in ih.OLD_WRAPPERS]
+    for wrapper in found:
+        wrapper.parent.mkdir(parents=True, exist_ok=True)
+        wrapper.write_text("old")
+    return found
+
+
+def test_the_old_wrappers_go_only_after_the_units_that_named_them(root: Path) -> None:
+    recorder = installed_host(root)
+    wrappers = old_wrappers(root)
+    there_at_last_unit: list[bool] = []
 
     def watching(
         command: list[str],
@@ -193,14 +199,26 @@ def test_the_old_vm_disks_script_goes_only_after_the_wrappers_that_no_longer_nee
         quiet: bool = False,
         input: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        if command[0] == "install" and command[-1] == str(stale.with_name("run-vm.sh")):
-            stale_at_wrapper_install.append(stale.exists())
+        if command[-1].endswith("/etc/systemd/system/homelab-ci-update.service"):
+            there_at_last_unit.append(all(w.exists() for w in wrappers))
         return recorder(command, check=check, capture=capture, quiet=quiet, input=input)
 
     ih.install_host(ih.Host(root=root, run=watching), CI_RUNNER, {})
 
-    assert stale_at_wrapper_install == [True]
-    assert not stale.exists()
+    assert there_at_last_unit == [True]
+    assert not any(w.exists() for w in wrappers)
+
+
+def test_a_failed_install_keeps_the_old_wrappers(root: Path) -> None:
+    recorder = installed_host(root)
+    (root / "usr/local/lib/homelab-ci/ci_supervisor.py").write_text("old\n")
+    wrappers = old_wrappers(root)
+    recorder.fail = str(root / "usr/local/lib/homelab-ci/net/setup_net.py")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        install(root, recorder)
+
+    assert all(w.exists() for w in wrappers)
 
 
 def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
@@ -209,20 +227,17 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     recorder = installed_host(root)
     capsys.readouterr()
 
-    stale = root / "usr/local/lib/homelab-ci/vm-disks.sh"
-    stale.write_text("old")
     install(root, recorder)
 
     assert not restarted(recorder)
     assert not any(c[-1] == "up" for c in recorder.calls)
     dest = root / "usr/local/lib/homelab-ci"
-    assert recorder.installed(dest / "run-vm.sh")
-    assert not (dest / "vm-disks.sh").exists()
-    # Each wrapper is installed after the Python it runs.
-    for py, sh in (("run_vm.py", "run-vm.sh"), ("stop_vms.py", "stop-vms.sh")):
-        assert installed_at(recorder, dest / py) < installed_at(recorder, dest / sh)
-    # The wrapper the timer starts is never installed before the file it runs.
-    assert installed_at(recorder, dest / "update.py") < installed_at(recorder, dest / "update.sh")
+    assert recorder.installed(dest / "run_vm.py")
+    # Each script is installed after the module it imports, and the timer's before its unit.
+    for script in ("run_vm.py", "stop_vms.py"):
+        assert installed_at(recorder, dest / "vm_disks.py") < installed_at(recorder, dest / script)
+    unit = root / "etc/systemd/system/homelab-ci-update.service"
+    assert installed_at(recorder, dest / "update.py") < installed_at(recorder, unit)
     assert "installed while jobs ran, no restart needed." in capsys.readouterr().out
 
 
@@ -231,7 +246,6 @@ def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     [
         "usr/local/lib/homelab-ci/ci_supervisor.py",
         "usr/local/lib/homelab-ci/net/homelab-ci.nft",
-        "usr/local/lib/homelab-ci/net/setup-net.sh",
         "usr/local/lib/homelab-ci/net/setup_net.py",
         f"etc/systemd/system/{SERVICE}",
         "etc/systemd/system/homelab-ci-net.service",
@@ -246,24 +260,9 @@ def test_a_changed_supervisor_or_network_file_restarts_the_supervisor(
     install(root, recorder)
 
     assert restarted(recorder)
-    assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup-net.sh"), "up")
+    assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup_net.py"), "up")
     assert recorder.ran("systemctl", "enable", "--now", SERVICE)
     assert (root / changed).read_bytes() != b"old UNIT_PREFIX\n"
-
-
-def test_the_network_code_is_installed_before_its_wrapper(root: Path) -> None:
-    recorder = installed_host(root)
-    (root / "usr/local/lib/homelab-ci/net/setup_net.py").write_text("old\n")
-
-    install(root, recorder)
-
-    dest = root / "usr/local/lib/homelab-ci/net"
-    order = [
-        c[-1]
-        for c in recorder.calls
-        if c[-1] in (str(dest / "setup_net.py"), str(dest / "setup-net.sh"))
-    ]
-    assert order == [str(dest / "setup_net.py"), str(dest / "setup-net.sh")]
 
 
 def test_a_new_slot_count_restarts_and_adds_its_users(root: Path) -> None:
@@ -303,7 +302,7 @@ def test_a_stopped_supervisor_restarts_the_network_but_stays_stopped(root: Path)
 
     install(root, recorder)
 
-    assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup-net.sh"), "up")
+    assert recorder.ran(str(root / "usr/local/lib/homelab-ci/net/setup_net.py"), "up")
     assert not recorder.ran("systemctl", "stop", SERVICE)
     assert not recorder.ran("systemctl", "enable", "--now", SERVICE)
     assert not recorder.ran("systemctl", "start", SERVICE)
@@ -312,7 +311,7 @@ def test_a_stopped_supervisor_restarts_the_network_but_stays_stopped(root: Path)
 def test_a_failed_install_starts_the_supervisor_it_stopped(root: Path) -> None:
     recorder = installed_host(root)
     (root / "usr/local/lib/homelab-ci/ci_supervisor.py").write_text("old\n")
-    recorder.fail = str(root / "usr/local/lib/homelab-ci/net/setup-net.sh")
+    recorder.fail = str(root / "usr/local/lib/homelab-ci/net/setup_net.py")
 
     with pytest.raises(subprocess.CalledProcessError):
         install(root, recorder, REASON="homelab #1")

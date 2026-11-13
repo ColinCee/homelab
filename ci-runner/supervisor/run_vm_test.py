@@ -252,8 +252,8 @@ def test_a_failure_at_any_stage_cleans_up_and_says_how_it_ended(
 @pytest.mark.parametrize(
     ("failing", "status", "message"),
     [
-        (str(run_vm.HERE / "net" / "setup-net.sh"), 1, "public address not blocked"),
-        ("nft", 1, "fc-slot3 is not in the network wall; run setup-net.sh up"),
+        (str(run_vm.HERE / "net" / "setup_net.py"), 1, "public address not blocked"),
+        ("nft", 1, "fc-slot3 is not in the network wall; run setup_net.py up"),
     ],
 )
 def test_without_the_network_wall_no_vm_starts_and_nothing_is_cleared(
@@ -513,7 +513,7 @@ def test_stop_vms_carries_on_past_a_failed_step_and_says_so(
     status = stop_vms.stop_vms(dataclasses.replace(host, run=no_systemctl))
 
     assert status == 1
-    assert "stop-vms: stop units: systemctl" in capsys.readouterr().err
+    assert "stop_vms: stop units: systemctl" in capsys.readouterr().err
     assert len(run.ran("dmsetup remove")) == 3
     assert not jail.parent.exists()
 

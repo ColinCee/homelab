@@ -1,9 +1,9 @@
-#!/usr/bin/env python3
+#!/usr/bin/python3 -I
 """Prepare the Beelink to run CI jobs in Firecracker microVMs. Run from a checkout of main;
 deploys never touch these files:
 
-    sudo ci-runner/install-host.sh
-    sudo SLOTS=4 ci-runner/install-host.sh   (a new slot count, written to /etc/homelab-ci)
+    sudo ci-runner/install_host.py
+    sudo SLOTS=4 ci-runner/install_host.py   (a new slot count, written to /etc/homelab-ci)
 
 update.py reruns it when main changes anything under update.py's INSTALL_PATHS. Runs as root with
 the host's system Python: standard library only. It stays on /usr/bin/python3, not the
@@ -248,20 +248,26 @@ def install_vm_files(host: Host, here: Path) -> None:
     get them, running ones keep the copies they opened (install writes a new file, never the old
     one in place)."""
     install_dirs(host, "0755", DEST, f"{DEST}/net")
-    # The Python first: a new wrapper runs only what is already there.
-    for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
-        install(host, "0644", here / "supervisor" / name, f"{DEST}/{name}")
-    install(host, "0755", here / "supervisor" / "run-vm.sh", f"{DEST}/run-vm.sh")
-    install(host, "0755", here / "supervisor" / "stop-vms.sh", f"{DEST}/stop-vms.sh")
-    # After the new wrappers: a VM started before them runs the old run-vm.sh, which sources it.
-    host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
-    # Before its wrapper, which the timer may start at any time.
-    install(host, "0644", here / "update.py", f"{DEST}/update.py")
-    install(host, "0755", here / "update.sh", f"{DEST}/update.sh")
-    # Its shared module first, beside it.
+    # Each shared module before the scripts that import it from beside them.
+    install(host, "0644", here / "supervisor" / "vm_disks.py", f"{DEST}/vm_disks.py")
+    for name in ("run_vm.py", "stop_vms.py"):
+        install(host, "0755", here / "supervisor" / name, f"{DEST}/{name}")
+    # Before its unit, installed last.
+    install(host, "0755", here / "update.py", f"{DEST}/update.py")
     install(host, "0644", here / "host-tests" / "host_commands.py", f"{DEST}/host_commands.py")
     install(host, "0755", here / "host-tests" / "test_load.py", f"{DEST}/test_load.py")
-    install(host, "0755", here / "host-tests" / "test-load.sh", f"{DEST}/test-load.sh")
+
+
+# Shell wrappers older installs left beside the scripts above, which they run. Removed only after a
+# whole install: a failed one restarts the old supervisor and keeps the old units, which name them.
+OLD_WRAPPERS = (
+    "vm-disks.sh",
+    "run-vm.sh",
+    "stop-vms.sh",
+    "update.sh",
+    "test-load.sh",
+    "net/setup-net.sh",
+)
 
 
 def install_timed_script(host: Host, script: Path, unit: str, units: Path | None = None) -> None:
@@ -308,7 +314,7 @@ def install_host(host: Host, here: Path, env: Mapping[str, str]) -> None:
                 whose = "reason unknown"
             say(f"Another install is running ({whose}); waiting for it.")
             fcntl.flock(lock, fcntl.LOCK_EX)
-        reason = env.get("REASON") or f"{env.get('SUDO_USER') or 'root'}: install-host.sh"
+        reason = env.get("REASON") or f"{env.get('SUDO_USER') or 'root'}: install_host.py"
         host.path(REASON_FILE).write_text(f"{reason}\n")
         supervisor = Supervisor()
         # However this ends, the reason goes and a supervisor that was running runs again.
@@ -368,7 +374,6 @@ def install_locked(
         here / "supervisor" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
         here / "net" / "homelab-ci.nft": f"{DEST}/net/homelab-ci.nft",
         here / "net" / "setup_net.py": f"{DEST}/net/setup_net.py",
-        here / "net" / "setup-net.sh": f"{DEST}/net/setup-net.sh",
         here / "net" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
         here / "supervisor" / SERVICE: f"/etc/systemd/system/{SERVICE}",
     }
@@ -406,23 +411,21 @@ def install_locked(
 
         install_vm_files(host, here)
         install(host, "0644", here / "net" / "homelab-ci.nft", f"{DEST}/net/homelab-ci.nft")
-        # The code before its wrapper: run-vm.sh calls setup-net.sh at any time.
         install(host, "0755", here / "net" / "setup_net.py", f"{DEST}/net/setup_net.py")
-        install(host, "0755", here / "net" / "setup-net.sh", f"{DEST}/net/setup-net.sh")
         install(host, "0755", here / "supervisor" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py")
         for unit in (here / "net" / "homelab-ci-net.service", here / "supervisor" / SERVICE):
             install(host, "0644", unit, f"/etc/systemd/system/{unit.name}")
         systemctl(host, "daemon-reload")
         systemctl(host, "enable", "--now", "homelab-ci-net.service")
         # Apply rule changes in place; restarting the unit would remove the taps.
-        host.run([str(dest / "net" / "setup-net.sh"), "up"])
+        host.run([str(dest / "net" / "setup_net.py"), "up"])
         if supervisor.was_running:
             systemctl(host, "enable", "--now", SERVICE)
             how = "network up, supervisor restarted"
         else:
             how = "network up, supervisor not running"
 
-    # The Beelink takes main on its own (update.sh --follow, every minute).
+    # The Beelink takes main on its own (update.py --follow, every minute).
     for unit in ("homelab-ci-update.service", "homelab-ci-update.timer"):
         install(host, "0644", here / unit, f"/etc/systemd/system/{unit}")
     # The Beelink's load test, which update.py starts when its slot count has no result
@@ -431,6 +434,8 @@ def install_locked(
     install(host, "0644", here / "supervisor" / unit, f"/etc/systemd/system/{unit}")
     systemctl(host, "daemon-reload")
     systemctl(host, "enable", "--now", "homelab-ci-update.timer")
+    for name in OLD_WRAPPERS:
+        host.path(f"{DEST}/{name}").unlink(missing_ok=True)
 
     firecracker = (
         host.run(

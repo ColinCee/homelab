@@ -23,7 +23,7 @@ SPEC.loader.exec_module(audit)
 PID = "4242"
 JAIL = audit.JAIL_FILES.split()
 # Host settings 13, each of two slot users 13, the wall 1, the image 4, the live VM 9, the
-# network test 1: as many as audit.sh ran on a host with one cache disk and one slot user.
+# network test 1: as many as audit.py ran on a host with one cache disk and one slot user.
 CHECKS = 54
 
 
@@ -117,7 +117,7 @@ def host(tmp_path: Path) -> FakeHost:
     write(root, audit.IMAGE, 0o644)
     folder(root, audit.CACHES, 0o755)
     write(root, f"{audit.CACHES}/o__r.ext4", 0o644)
-    write(root, f"{audit.LIB}/run-vm.sh", 0o755)
+    write(root, f"{audit.LIB}/run_vm.py", 0o755)
     folder(root, audit.LIB, 0o755)
     for unit in ("homelab-ci-net.service", "homelab-ci-supervisor.service"):
         write(root, f"/etc/systemd/system/{unit}", 0o644)
@@ -184,7 +184,7 @@ BREAKS: dict[str, Callable[[FakeHost], object]] = {
         h.root / audit.CACHES.lstrip("/") / "o__r.ext4"
     ).chmod(0o666),
     "only root can change /usr/local/lib/homelab-ci": lambda h: (
-        h.root / audit.LIB.lstrip("/") / "run-vm.sh"
+        h.root / audit.LIB.lstrip("/") / "run_vm.py"
     ).chmod(0o775),
     "fc-slot0 cannot read /etc/homelab-ci/github-token": lambda h: h.answers.update(
         {("sudo", "-u", "fc-slot0", "test", "-r", "/etc/homelab-ci/github-token"): 0}

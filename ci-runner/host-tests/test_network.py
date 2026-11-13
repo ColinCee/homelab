@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+#!/usr/local/bin/homelab-python3 -Es
 """Prove the microVM network rules from inside a real VM:
-  sudo ci-runner/host-tests/test-network.sh
+  sudo ci-runner/host-tests/test_network.py
 Boots a VM in slot 0 running network-probe.sh, and while it listens tries to connect to
 it from a Docker container. Exits non-zero on any failure.
 """
@@ -21,7 +21,7 @@ from typing import Protocol
 
 from host_commands import run_command, start_process
 
-RUN_VM = "/usr/local/lib/homelab-ci/run-vm.sh"
+RUN_VM = "/usr/local/lib/homelab-ci/run_vm.py"
 BUSYBOX = "busybox:1.37"
 LISTEN_SECONDS = 120
 
