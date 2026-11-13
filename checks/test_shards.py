@@ -4,7 +4,7 @@ pytest-xdist had every worker import and collect every test file, about 4 s of a
 test step; here each process collects only its share, which cut the checks by 1.3 s (12 Nov,
 CI VMs). Shares are balanced by each file's measured seconds, so a heavy file is not left last.
 
-    uv run python -m scripts.test_shards [pytest args...]
+    uv run python -m checks.test_shards [pytest args...]
 """
 
 from __future__ import annotations

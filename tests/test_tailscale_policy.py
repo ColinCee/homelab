@@ -10,7 +10,7 @@ from unittest.mock import Mock
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "tailscale_policy", Path(__file__).parents[1] / "scripts/tailscale_policy.py"
+    "tailscale_policy", Path(__file__).parents[1] / "tailnet/tailscale_policy.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 policy = importlib.util.module_from_spec(SPEC)

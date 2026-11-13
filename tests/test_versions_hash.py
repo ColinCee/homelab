@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from conftest import git
 
-from scripts.versions_hash import VERSIONS, problems
+from checks.versions_hash import VERSIONS, problems
 
 RIGHT = "a" * 64
 OLD = f"GH_VERSION=v2.0.0\nGH_SHA256={'0' * 64}\nPYTHON_VERSION=3.15\n"
@@ -62,7 +62,7 @@ def test_a_failed_download_fails_naming_the_tool(base: str) -> None:
 def test_a_new_tool_without_a_url_fails(base: str) -> None:
     head = _commit(Path.cwd(), OLD + f"NEWTOOL_VERSION=1\nNEWTOOL_SHA256={RIGHT}\n")
     assert problems(base, head, _fetch) == [
-        "NEWTOOL: no download URL known; add it to URLS in scripts/versions_hash.py"
+        "NEWTOOL: no download URL known; add it to URLS in checks/versions_hash.py"
     ]
 
 

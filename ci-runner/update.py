@@ -35,7 +35,7 @@ LOCK = "/run/homelab-ci-update.lock"
 SUPERVISOR = ["/usr/local/bin/homelab-python3", "-Es", "/usr/local/lib/homelab-ci/ci_supervisor.py"]
 USAGE = "update.sh: usage: update.sh <commit> [reason] | --follow"
 # What install-host.sh installs, and what goes into the image.
-INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "scripts", "stacks/telemetry"]
+INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "stacks/telemetry"]
 IMAGE_INPUTS = [
     "ci-runner/build-rootfs.sh",
     "ci-runner/rootfs",

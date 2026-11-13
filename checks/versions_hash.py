@@ -17,7 +17,7 @@ import urllib.request
 from collections.abc import Callable
 
 VERSIONS = "ci-runner/versions.env"
-SCRIPT = "scripts/versions_hash.py"
+SCRIPT = "checks/versions_hash.py"
 LINE = re.compile(r"([A-Z]+)_(VERSION|SHA256|PYTHON)=(\S+)")
 GH = "https://github.com"
 

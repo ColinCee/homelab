@@ -38,7 +38,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Tests import scripts/ as a package, and ci-runner/'s modules and telemetry by name, whichever way pytest is
+# Tests import checks/ and stacks/ as packages, and host programs and telemetry by name, whichever way pytest is
 # started.
 pythonpath = [
   ".", "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",

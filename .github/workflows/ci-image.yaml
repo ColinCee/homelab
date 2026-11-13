@@ -8,7 +8,7 @@ on:
     paths:
       - ci-runner/rootfs/**
       - ci-runner/versions.env
-      - scripts/ci.py
+      - checks/ci.py
       - .github/workflows/ci-image.yaml
 
 permissions:
@@ -28,4 +28,4 @@ jobs:
           persist-credentials: false
 
       - name: Build the CI job image
-        run: python3 scripts/ci.py build-image
+        run: python3 checks/ci.py build-image

@@ -1,9 +1,9 @@
-"""The test runner (scripts/test_shards.py): balanced shares and one slowest-tests list."""
+"""The test runner (checks/test_shards.py): balanced shares and one slowest-tests list."""
 
 import json
 from pathlib import Path
 
-from scripts import test_shards
+from checks import test_shards
 
 
 def test_the_shares_are_balanced_and_hold_every_file_once() -> None:
