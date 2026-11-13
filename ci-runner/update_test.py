@@ -312,12 +312,16 @@ def test_no_argument_is_a_usage_error(host: Host) -> None:
 
 
 def test_the_installed_copy_runs_alone(tmp_path: Path) -> None:
-    linux_only("it runs by its #! line, on /usr/bin/python3")
+    linux_only("it asks for root with os.geteuid")
     # Installed alone in /usr/local/lib/homelab-ci: an import from the checkout would fail there.
+    # -I as its #! line runs it; CI's image has no /usr/bin/python3 to run that line itself.
     shutil.copy(CI_RUNNER / "update.py", tmp_path / "update.py")
 
     result = subprocess.run(
-        [str(tmp_path / "update.py")], cwd=tmp_path, capture_output=True, text=True
+        [sys.executable, "-I", str(tmp_path / "update.py")],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
     )
 
     assert result.returncode == 1
