@@ -22,6 +22,8 @@ route:
       repeat_interval: 30s
     - matchers: ['level="now"']
       repeat_interval: 4h
+    # Every other level: once the incidents route matches, the root's own receiver no longer applies.
+    - receiver: discord
 
 # Every other alert reads the Beelink's metrics through Alloy, so while they are missing only this one posts; the
 # rules on Prometheus's own health and the public probes read its own scrape, so they still post.

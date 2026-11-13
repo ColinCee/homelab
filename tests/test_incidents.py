@@ -2,6 +2,7 @@
 starts the on-call agent once, clears the same post and survives a restart; Alertmanager sends
 it every alert but the watchdog and still posts each to #alerts."""
 
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -191,9 +192,31 @@ def test_anything_but_an_alertmanager_alert_is_refused(parts: Parts, payload: ob
     assert not discord.calls
 
 
-def test_every_alert_but_the_watchdog_reaches_the_relay_and_still_posts_to_alerts() -> None:
-    first = ALERTMANAGER["route"]["routes"][0]
-    assert first["receiver"] == "incidents" and first["continue"] is True
-    assert first["matchers"] == ['alertname!="watchdog"']
+def receivers(route: dict[str, Any], labels: dict[str, str]) -> list[str]:
+    """Alertmanager's routing for the `=` and `!=` matchers alertmanager.yml uses: the first
+    matching child and any after it while each continues; the route's own receiver if none."""
+    found: list[str] = []
+    for child in route.get("routes", []):
+        if all(_matches(m, labels) for m in child.get("matchers", [])):
+            found += receivers({"receiver": route["receiver"], **child}, labels)
+            if not child.get("continue"):
+                return found
+    return found or [route["receiver"]]
+
+
+def _matches(matcher: str, labels: dict[str, str]) -> bool:
+    found = re.fullmatch(r'(\w+)(!?=)"(.*)"', matcher)
+    assert found, matcher
+    name, op, value = found.groups()
+    return (labels.get(name) == value) == (op == "=")
+
+
+@pytest.mark.parametrize("level", ["now", "week"])
+def test_every_alert_but_the_watchdog_reaches_the_relay_and_still_posts_to_alerts(
+    level: str,
+) -> None:
+    labels = {"alertname": "disk-filling", "level": level}
+    assert receivers(ALERTMANAGER["route"], labels) == ["incidents", "discord"]
+    assert receivers(ALERTMANAGER["route"], {"alertname": "watchdog"}) == ["healthchecks"]
     receiver = next(r for r in ALERTMANAGER["receivers"] if r["name"] == "incidents")
     assert receiver["webhook_configs"][0]["send_resolved"] is True
