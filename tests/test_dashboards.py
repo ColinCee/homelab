@@ -132,6 +132,23 @@ def test_every_link_opens_a_page_and_every_page_has_the_same_link_bar() -> None:
             assert opened in PAGES, name
 
 
+def test_every_page_marks_each_deploy_from_the_deploy_s_trace() -> None:
+    # One marker on every chart of every page: a new page without it shows no deploys.
+    [marker] = PAGES["home"]["annotations"]["list"]
+    for name, page in PAGES.items():
+        assert page["annotations"]["list"] == [marker], name
+    # It reads the root span scripts/deploy.py sends, by the names it sends.
+    assert marker["datasource"]["uid"] in SOURCES
+    query = marker["target"]["expr"]
+    deploy = (STACK.parent.parent / "scripts/deploy.py").read_text(encoding="utf-8")
+    sent = re.search(r'telemetry\.run\("(\w+)", "(\w+)", ((?:\w+=\w+, )*\w+=\w+)\)', deploy)
+    assert sent, "scripts/deploy.py no longer traces each deploy"
+    service, span, attrs = sent.groups()
+    assert f'"resource_attr:service.name":={service} name:={span} ' in query
+    for attr in re.findall(r"(\w+)=", attrs):
+        assert f'"span_attr:{attr}"' in query, attr
+
+
 @every_page
 def test_every_panel_reads_a_provisioned_source(page: dict[str, Any]) -> None:
     ids = [p["id"] for p in panels(page)]
