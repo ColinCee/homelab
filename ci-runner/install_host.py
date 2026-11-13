@@ -112,7 +112,7 @@ def versions(text: str) -> dict[str, str]:
 
 def slot_count(env: Mapping[str, str], host: Host) -> int:
     """SLOTS if given, else the host's file from the last run: 5 when not a number, at least 1,
-    as in ci_supervisor.py."""
+    as in load_testing.py."""
     text = env.get("SLOTS") or ""
     if not text:
         try:
