@@ -192,6 +192,7 @@ services:
       - /tmp
     volumes:
       - ./grafana/users.py:/users.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
     networks:
       - grafana
     depends_on:
@@ -254,6 +255,7 @@ services:
       - healthchecks_ping
     volumes:
       - ./incidents/relay.py:/relay.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       # Which post each firing alert has, so a restart opens none again.
       - incidents-data:/state
     labels:
@@ -533,6 +535,7 @@ services:
       - /tmp
     volumes:
       - ./public_stats.py:/public_stats.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
     # Its own network, shared with the gateway only, where its login reads one query; outbound, the
     # internet.
     networks:

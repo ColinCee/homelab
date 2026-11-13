@@ -11,8 +11,8 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   [doorbell](../stacks/deploy/doorbell.py) through the tunnel.
   [`deploy-main`](../stacks/deploy/deploy_main.py), on each ring and every 15 minutes, fetches `main`, refuses one
   that dropped the deployed commit, and runs [`deploy.sh`](../scripts/deploy.sh) for stacks changed since the last
-  full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. A forged
-  ring deploys nothing new. No code from GitHub runs on the Beelink to deploy.
+  full deploy ([`deploy.py`](../scripts/deploy.py)) or reading a changed secret, until `main` stops moving. No code
+  from GitHub runs on the Beelink to deploy.
 - **Who may deploy.** Whoever lands a commit on `main`, which takes a pull request with checks green, admins included.
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
@@ -76,8 +76,9 @@ Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observabi
 VictoriaLogs and VictoriaTraces, 30 days each;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards come from Git: the building-dashboards skill. Signals link up: one service name per
-store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text.
+agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: one service name per
+store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python services log only through
+[`telemetry.start()`](../stacks/telemetry/telemetry.py), mounted, never copied.
 
 | Problem | Who warns |
 |---|---|

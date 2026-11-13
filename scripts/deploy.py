@@ -128,13 +128,26 @@ def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None
     """Name the stacks with files changed between ``since`` and HEAD.
 
     None means deploy every stack: no earlier deploy is known, git does not
-    know the commit, or shared deploy files changed. Deleted stacks are left
-    out, as deploys never remove a stack.
+    know the commit, or shared files changed: the deploy's own, or a folder under stacks/ that is
+    no stack (stacks/telemetry), which any stack may mount. Deleted stacks are left out, as deploys
+    never remove a stack.
     """
     paths = _changed_paths(repo_root, since)
     if paths is None or any(path.startswith(SHARED_PATHS) for path in paths):
         return None
+    if any(_shared_under_stacks(repo_root, path) for path in paths):
+        return None
     return _stacks_in(repo_root, paths)
+
+
+def _shared_under_stacks(repo_root: Path, path: str) -> bool:
+    parts = path.split("/")
+    return (
+        len(parts) >= 3
+        and parts[0] == "stacks"
+        and (repo_root / "stacks" / parts[1]).is_dir()
+        and not (repo_root / "stacks" / parts[1] / "compose.yaml").is_file()
+    )
 
 
 def _changed_paths(repo_root: Path, since: str | None) -> list[str] | None:
@@ -414,7 +427,7 @@ def hash_variable(service: str) -> str:
 
 
 def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
-    """Each service's hash of the tracked files it bind-mounts from its stack folder, and when each
+    """Each service's hash of the tracked files it bind-mounts from the stacks folder, and when each
     of its secret files last changed, by hash_variable.
 
     Compose does not notice edits to bind-mounted files, so a service that should restart on them
@@ -426,7 +439,7 @@ def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
     compose = yaml.safe_load((stack_dir / "compose.yaml").read_text(encoding="utf-8")) or {}
     services = compose.get("services") or {}
     listed = subprocess.run(
-        ["git", "ls-files", "-z", "--", str(stack_dir.relative_to(repo_root))],
+        ["git", "ls-files", "-z", "--", str(stack_dir.parent.relative_to(repo_root))],
         cwd=repo_root,
         capture_output=True,
         check=False,
@@ -461,11 +474,11 @@ def config_hashes(repo_root: Path, stack_dir: Path) -> dict[str, str]:
 
 
 def _bind_sources(spec: Mapping[str, Any]) -> list[str]:
-    """A service's bind-mounted host paths inside its stack folder (./name)."""
+    """A service's bind-mounted host paths relative to its stack folder (./name, ../telemetry)."""
     sources: list[str] = []
     for volume in spec.get("volumes") or []:
         source = volume.split(":")[0] if isinstance(volume, str) else str(volume.get("source", ""))
-        if source.startswith("./"):
+        if source.startswith(("./", "../")):
             sources.append(source)
     return sources
 

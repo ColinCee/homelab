@@ -17,6 +17,7 @@ services:
     pids_limit: 32
     volumes:
       - ./doorbell.py:/doorbell.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       - /home/colin/.local/state/homelab/ring:/ring
     labels:
       homelab.config-hash: ${CONFIG_HASH_DOORBELL:-}

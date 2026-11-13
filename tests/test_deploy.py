@@ -324,6 +324,21 @@ def test_a_service_s_hash_follows_only_the_tracked_files_and_secrets_it_mounts(
     assert isinstance(up_env, dict)
     assert up_env["CONFIG_HASH_WEB"] == after["CONFIG_HASH_WEB"]
 
+    # A shared file mounted from beside the stack changes the hash of the service mounting it.
+    shared = tmp_path / "stacks" / "telemetry" / "telemetry.py"
+    shared.parent.mkdir()
+    shared.write_text("a\n", encoding="utf-8")
+    git("add", "stacks")
+    compose = TWO_SERVICES.replace(
+        "./web:/etc/web:ro", "./web:/etc/web:ro, ../telemetry/telemetry.py:/t.py:ro"
+    )
+    (stack_dir / "compose.yaml").write_text(compose, encoding="utf-8")
+    mounted = deploy.config_hashes(tmp_path, stack_dir)
+    shared.write_text("b\n", encoding="utf-8")
+    assert (
+        deploy.config_hashes(tmp_path, stack_dir)["CONFIG_HASH_WEB"] != mounted["CONFIG_HASH_WEB"]
+    )
+
 
 def test_each_service_reading_files_or_secrets_has_a_label_with_its_own_hash() -> None:
     # Without the label a changed file never restarts the service; with another's hash it restarts
@@ -388,6 +403,16 @@ def test_a_change_to_shared_deploy_files_selects_all_stacks(repo: Path) -> None:
     before = _git(repo, "rev-parse", "HEAD")
     (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
     (repo / "stacks" / "observability" / "extra.txt").write_text("x\n", encoding="utf-8")
+    _commit_all(repo)
+
+    assert deploy.changed_stacks(repo, before) is None
+
+
+def test_a_change_to_a_shared_folder_under_stacks_selects_all_stacks(repo: Path) -> None:
+    # stacks/telemetry is no stack, but any stack's services may mount it.
+    before = _git(repo, "rev-parse", "HEAD")
+    (repo / "stacks" / "telemetry").mkdir()
+    (repo / "stacks" / "telemetry" / "telemetry.py").write_text("# changed\n", encoding="utf-8")
     _commit_all(repo)
 
     assert deploy.changed_stacks(repo, before) is None

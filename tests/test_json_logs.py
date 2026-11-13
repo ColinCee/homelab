@@ -1,6 +1,6 @@
 """Every container logs JSON (docs/architecture.md, "Monitoring and alerts"): each program that can
-is set to, our Python services through the JsonLines block each one copies, and Alloy wraps the
-rest."""
+is set to, our Python services through the one telemetry module (stacks/telemetry/telemetry.py),
+and Alloy wraps the rest."""
 
 import ast
 import json
@@ -11,8 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
-from stacks.observability.incidents.relay import JsonLines
+from telemetry import JsonLines
 
 ROOT = Path(__file__).parent.parent
 STACKS = ROOT / "stacks"
@@ -82,17 +81,30 @@ def test_alloy_logs_json() -> None:
     assert re.search(r'^logging \{\n  format = "json"\n\}', config, re.MULTILINE)
 
 
-def python_services() -> list[Path]:
+def python_services() -> list[tuple[str, dict[str, Any], Path]]:
     """Each Python file a container runs: the path its command names, and the volume mounting it."""
-    found: list[Path] = []
+    found: list[tuple[str, dict[str, Any], Path]] = []
     for stack, name, service in services():
         parts = [*_listed(service.get("entrypoint")), *_listed(service.get("command"))]
         for script in re.findall(r"(/[\w./-]+\.py)\b", " ".join(parts)):
             mounts = [v.split(":") for v in service.get("volumes", [])]
             sources = [m[0] for m in mounts if len(m) > 1 and m[1] == script]
             assert sources, f"{name}: no volume mounts {script}"
-            found.append((stack / sources[0]).resolve())
+            found.append((name, service, (stack / sources[0]).resolve()))
     return found
+
+
+def python_version(stack: Path, service: dict[str, Any]) -> str:
+    """The image's Python as major.minor: from its tag, or its Dockerfile's FROM."""
+    image = str(service["image"])
+    if "build" in service:
+        dockerfile = stack / service["build"]["context"] / service["build"]["dockerfile"]
+        base = re.search(r"^FROM (\S+)", dockerfile.read_text("utf-8"), re.MULTILINE)
+        assert base, dockerfile
+        image = base.group(1)
+    version = re.match(r"python:(\d+\.\d+)", image)
+    assert version, image
+    return str(version.group(1))
 
 
 def _listed(value: object) -> list[str]:
@@ -103,29 +115,31 @@ def _listed(value: object) -> list[str]:
     return [str(value)]
 
 
-def test_python_services_log_through_the_json_formatter() -> None:
-    scripts = python_services()
-    assert scripts
-    for script in scripts:
+def test_python_services_log_through_the_telemetry_module() -> None:
+    found = python_services()
+    assert found
+    by_name = {name: (stack, service) for stack, name, service in services()}
+    for name, service, script in found:
         text = script.read_text(encoding="utf-8")
         calls = [n.func for n in ast.walk(ast.parse(text)) if isinstance(n, ast.Call)]
         assert not any(isinstance(f, ast.Name) and f.id == "print" for f in calls), script
-        if any(isinstance(f, ast.Attribute) and f.attr in LOG_CALLS for f in calls):
-            assert "handler.setFormatter(JsonLines())" in text, script
-            assert any(isinstance(f, ast.Name) and f.id == "log_json" for f in calls), script
+        if not any(isinstance(f, ast.Attribute) and f.attr in LOG_CALLS for f in calls):
+            continue
+        started = [f for f in calls if isinstance(f, ast.Attribute) and f.attr == "start"]
+        assert any(isinstance(f.value, ast.Name) and f.value.id == "telemetry" for f in started), (
+            script
+        )
+        # Its container has the module where `python -I` finds it: its Python's site-packages.
+        stack, _ = by_name[name]
+        site = f"/usr/local/lib/python{python_version(stack, service)}/site-packages/telemetry.py"
+        mounts = [v.split(":")[:2] for v in service.get("volumes", [])]
+        assert ["../telemetry/telemetry.py", site] in mounts, f"{name}: mount {site}"
 
 
-def block(path: Path) -> str:
-    text = path.read_text(encoding="utf-8")
-    start = text.index("# One JSON object per line")
-    end = text.index("\n\n\n", text.index("def log_json"))
-    return text[start:end]
-
-
-def test_every_service_has_the_same_copy() -> None:
-    copies = [p for p in python_services() if "JsonLines" in p.read_text(encoding="utf-8")]
-    for path in copies[1:]:
-        assert block(path) == block(copies[0]), path
+def test_the_formatter_lives_in_the_telemetry_module_alone() -> None:
+    for path in STACKS.glob("**/*.py"):
+        if path != STACKS / "telemetry/telemetry.py":
+            assert "logging.Formatter" not in path.read_text(encoding="utf-8"), path
 
 
 def line(record: logging.LogRecord) -> str:
