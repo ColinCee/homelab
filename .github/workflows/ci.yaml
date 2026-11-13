@@ -18,7 +18,7 @@ concurrency:
 
 # Each run takes exactly one of the two jobs: main requires both, and a skipped job counts as passed. They are apart
 # because GitHub looks up every action a job names before it starts, and the VM's job names none.
-# Each step's logic is in scripts/ci.py, which says why. A rule judging a pull request comes from its base commit;
+# Each step's logic is in checks/ci.py, which says why. A rule judging a pull request comes from its base commit;
 # the checks still run when a rule fails, so a pull request Colin merges past it was tested.
 jobs:
   homelab:
@@ -38,11 +38,11 @@ jobs:
       - name: Check the pull request's rules (pin-only change, versions.env hashes, test time limits)
         id: pins
         if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py pull-request-rules
+        run: python3 checks/ci.py pull-request-rules
 
       - name: Validate Compose (image pins only)
         if: "!cancelled() && steps.pins.outputs.only == 'true'"
-        run: python3 scripts/ci.py validate-changed-compose
+        run: python3 checks/ci.py validate-changed-compose
 
       # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
       - name: Install tools from the cache disk
@@ -50,7 +50,7 @@ jobs:
         env:
           # Downloads not yet on the cache disk come from GitHub, whose anonymous limit the home's address shares.
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci.py vm-tools
+        run: python3 checks/ci.py vm-tools
 
       - name: Run checks (lint + typecheck + test + validate)
         if: "!cancelled() && steps.pins.outputs.only != 'true'"
@@ -61,11 +61,11 @@ jobs:
       # Its own step: a workflow command must start its line, and mise prefixes each line of its tasks.
       - name: Report the slowest tests
         if: always()
-        run: python3 scripts/ci.py slowest-tests
+        run: python3 checks/ci.py slowest-tests
 
       - name: Check whether the cache disk would change
         id: cache
-        run: python3 scripts/ci.py cache-changed
+        run: python3 checks/ci.py cache-changed
 
       - uses: ./.github/actions/fc-cache
         if: steps.cache.outputs.changed == 'true'
@@ -87,11 +87,11 @@ jobs:
       - name: Check the pull request's rules (pin-only change, versions.env hashes, test time limits)
         id: pins
         if: github.event_name == 'pull_request'
-        run: python3 scripts/ci.py pull-request-rules
+        run: python3 checks/ci.py pull-request-rules
 
       - name: Validate Compose (image pins only)
         if: "!cancelled() && steps.pins.outputs.only == 'true'"
-        run: python3 scripts/ci.py validate-changed-compose
+        run: python3 checks/ci.py validate-changed-compose
 
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
         if: "!cancelled() && steps.pins.outputs.only != 'true'"
@@ -112,4 +112,4 @@ jobs:
 
       - name: Report the slowest tests
         if: always()
-        run: python3 scripts/ci.py slowest-tests
+        run: python3 checks/ci.py slowest-tests

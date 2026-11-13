@@ -3,7 +3,7 @@
 
 actions/checkout spent about a second in Node and in writing then removing a token the job never
 keeps; this runs three git commands. The repo is public, so the fetch needs no token. A pull
-request also gets its base (the merge commit's first parent), which scripts/ci.py diffs against.
+request also gets its base (the merge commit's first parent), which checks/ci.py diffs against.
 Standard library only: it runs before the job has any code.
 """
 

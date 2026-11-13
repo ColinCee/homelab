@@ -1,4 +1,4 @@
-from scripts.docs_size import grown
+from checks.docs_size import grown
 
 
 def test_growth_and_new_docs_fail_shrinking_passes() -> None:

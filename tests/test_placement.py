@@ -24,7 +24,7 @@ FOLDERS = {
 }
 
 # Each entry fails once it is fixed, so these only shrink.
-TODO_FOLDERS = {"scripts", "tests"}
+TODO_FOLDERS = {"tests"}
 TODO_UNITS: set[str] = set()
 
 # Named in docs, but kept on the host, not in git.

@@ -345,7 +345,7 @@ def test_a_bad_firecracker_download_stops_before_installing_it(root: Path) -> No
 
 
 def test_the_installer_imports_nothing_from_the_checkout(tmp_path: Path) -> None:
-    # A break in scripts/ must not stop the installer that would install its fix.
+    # A break in the code it installs must not stop the installer that would install its fix.
     shutil.copy(CI_RUNNER / "install_host.py", tmp_path / "install_host.py")
     load = f"import sys; sys.path.insert(0, {str(tmp_path)!r}); import install_host"
 
