@@ -25,7 +25,7 @@ from typing import Any
 import telemetry
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-# The stacks in this repository; tests/test_public_stats.py keeps it in step.
+# The stacks in this repository; public_stats_test.py keeps it in step.
 STACKS = (
     "backup",
     "deploy",

@@ -36,7 +36,7 @@ No panel has its own time range; write a window into the query (`[7d]`, `_time:1
 
 ## Colour and order
 
-Each colour means one thing; hexes are in `tests/test_dashboards.py`.
+Each colour means one thing; hexes are in `stacks/observability/dashboards_test.py`.
 
 | Colour | Means |
 |---|---|
@@ -71,4 +71,4 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
   with a colon is quoted (`"span_attr:event":*`), and a span's attributes tell a run from a job, a
   step or a test (`ci-runner/run-times/ci_times.py`).
 
-Check: `uv run pytest tests/test_dashboards.py`.
+Check: `uv run pytest stacks/observability/dashboards_test.py`.

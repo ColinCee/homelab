@@ -479,7 +479,7 @@ services:
       start_interval: 2s
     # What they ask for: container lists, inspects and events (cAdvisor, the log tailer and OBI need them), logs,
     # networks for discovery, info and version. An inspect shows every container's environment and labels, so no secret
-    # goes in either (tests/test_no_secret_in_env.py); a container's files (archive, export) stay refused.
+    # goes in either (checks/no_secret_in_env_test.py); a container's files (archive, export) stay refused.
     environment:
       ALLOW_LOGS: 1
       CONTAINERS: 1

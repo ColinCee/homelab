@@ -36,7 +36,7 @@ RUN_DIR = "/run/homelab-ci"
 REASON_FILE = f"{RUN_DIR}/restart-reason"
 GH = "https://github.com/firecracker-microvm/firecracker/releases/download"
 # The Python every repo unit runs, a link to the pinned build in PYTHON_DIR. update.py's
-# SUPERVISOR and the units' ExecStart name it too (tests/test_install_host.py checks they agree).
+# SUPERVISOR and the units' ExecStart name it too (install_host_test.py checks they agree).
 PYTHON_LINK = "/usr/local/bin/homelab-python3"
 PYTHON_DIR = "/usr/local/lib/homelab-python"
 # The URL checks/versions_hash.py builds for CI's hash check: change them together.

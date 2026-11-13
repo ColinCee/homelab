@@ -1,6 +1,6 @@
 #!/bin/sh
 # Turns each login into the Basic header the Caddyfile compares, then runs Caddy. A missing or empty password stops
-# it, since an empty one would match an empty login. SECRETS_DIR and CADDYFILE let tests/test_gateway.py run it as is,
+# it, since an empty one would match an empty login. SECRETS_DIR and CADDYFILE let stacks/observability/gateway_test.py run it as is,
 # outside the container.
 set -eu
 secrets=${SECRETS_DIR:-/run/secrets}

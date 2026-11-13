@@ -3,11 +3,11 @@ reads its secrets and calls HTTP. Call `start()` once, when the program starts, 
 `logging.getLogger(name)` with values as `extra` fields. Write a metrics file for Alloy, or any
 file read while it changes, with `replace_file`; read a secret with `secret`; call a URL with
 `http` or `http_json`; trace a job's run with `run` and its steps with `step`, or send spans
-timed after the fact with `otlp_span` and `send_traces`. tests/test_telemetry.py fails a second
+timed after the fact with `otlp_span` and `send_traces`. telemetry_test.py fails a second
 way to do these.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
-volumes), so services run alone with `python -I` still import it; tests/test_json_logs.py fails a
+volumes), so services run alone with `python -I` still import it; json_logs_test.py fails a
 service that does not. Host scripts find it beside them (ci-runner/install_host.py) or
 by a path into the checkout (stacks/deploy/deploy.py, deploy_main.py). Each line is one JSON object,
 which Alloy reads (config.alloy, loki.process "docker"); an exception is kept under

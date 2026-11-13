@@ -10,6 +10,8 @@ on:
       - ci-runner/versions.env
       - checks/ci.py
       - .github/workflows/ci-image.yaml
+      # Last: a later pattern would match a test again.
+      - '!**/*_test.py'
 
 permissions:
   contents: read

@@ -20,7 +20,7 @@ DATA = re.compile(
     r"|stacks/observability/grafana/dashboards/[\w.-]+\.json"
     r"|docs/[\w./-]+\.(md|svg|png)"
     r"|README\.md"
-    r"|tests/[\w./-]+\.py"
+    r"|[\w./-]+_test\.py|conftest\.py"
 )
 
 

@@ -1,0 +1,313 @@
+"""Grafana's dashboards (stacks/observability/grafana/dashboards/) keep the layout, colours, links
+and queries in .github/skills/building-dashboards/SKILL.md."""
+
+import json
+import re
+from functools import cache
+from pathlib import Path
+from typing import Any
+
+import pytest
+import yaml
+
+from conftest import ROOT, promtool, services
+from stacks.observability.prometheus import slos
+
+STACK = ROOT / "stacks/observability"
+PAGES: dict[str, dict[str, Any]] = {
+    path.stem: json.loads(path.read_text(encoding="utf-8"))
+    for path in sorted((STACK / "grafana/dashboards").glob("*.json"))
+}
+SOURCES = {
+    source["uid"]
+    for source in yaml.safe_load((STACK / "grafana/datasources.yaml").read_text(encoding="utf-8"))[
+        "datasources"
+    ]
+}
+
+# These dataviz steps pass contrast checks on Grafana's light and dark themes.
+GROUPS = {"Monitoring": "#2a78d6", "System": "#199e70", "Apps": "#d95926"}
+NOW, WEEK, NEUTRAL, FINE = "#d03b3b", "#fab219", "#898781", "#2f8f46"
+GRAY = {"mode": "fixed", "fixedColor": NEUTRAL}
+
+# Alloy sends these in mixed case; a lower-case copy finds nothing.
+MIXED_CASE = {
+    name.lower(): name
+    for name in (
+        "node_memory_MemAvailable_bytes",
+        "node_memory_MemTotal_bytes",
+        "node_memory_SwapTotal_bytes",
+        "node_memory_SwapFree_bytes",
+        "node_netstat_TcpExt_TCPSynRetrans",
+        "node_netstat_Tcp_OutRsts",
+        "node_netstat_TcpExt_ListenDrops",
+    )
+}
+
+every_page = pytest.mark.parametrize("page", PAGES.values(), ids=PAGES)
+
+
+def panels(page: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every panel, those inside collapsed rows included."""
+    found = []
+    for panel in page["panels"]:
+        found.append(panel)
+        found += panel.get("panels", [])
+    return found
+
+
+def charts(page: dict[str, Any]) -> list[dict[str, Any]]:
+    return [p for p in panels(page) if p["type"] != "row"]
+
+
+def uid(panel: dict[str, Any]) -> str:
+    return str((panel.get("datasource") or {}).get("uid", ""))
+
+
+def named_colours(panel: dict[str, Any]) -> dict[str, str]:
+    return {
+        o["matcher"]["options"]: prop["value"]["fixedColor"]
+        for o in panel.get("fieldConfig", {}).get("overrides", [])
+        if o["matcher"]["id"] == "byName"
+        for prop in o["properties"]
+        if prop["id"] == "color"
+    }
+
+
+def colour(panel: dict[str, Any], series: str) -> str | None:
+    """The colour the panel's overrides give a series, by its name or by a pattern."""
+    for override in panel.get("fieldConfig", {}).get("overrides", []):
+        matcher = override["matcher"]
+        named = matcher["id"] == "byName" and matcher["options"] == series
+        matched = matcher["id"] == "byRegexp" and re.search(matcher["options"].strip("/"), series)
+        for prop in override["properties"]:
+            if (named or matched) and prop["id"] == "color":
+                return str(prop["value"]["fixedColor"])
+    return None
+
+
+def prometheus_queries(page: dict[str, Any]) -> list[str]:
+    return [
+        t["expr"]
+        for p in charts(page)
+        for t in p["targets"]
+        if t.get("datasource", p.get("datasource", {})).get("uid") == "prometheus"
+    ]
+
+
+@cache  # Read once: the colour test asks for it per panel.
+def containers() -> dict[str, str]:
+    """Each container compose starts, in its group's colour."""
+    names: dict[str, str] = {}
+    for stack, service, spec in services():
+        name = spec.get("container_name", f"{stack.name}-{service}-1")
+        names[name] = GROUPS["Monitoring" if stack.name == "observability" else "Apps"]
+    return names
+
+
+def levels() -> dict[str, str]:
+    """Each alert rule, in its level's colour."""
+    found = {r["alert"]: r["labels"]["level"] for g in slos.rule_groups() for r in g["rules"]}
+    # Always firing, so the dashboards leave it out.
+    found.pop("watchdog")
+    return {name: NOW if level == "now" else WEEK for name, level in found.items()}
+
+
+def test_each_page_is_read_only_and_log_panels_read_victorialogs() -> None:
+    for name, page in PAGES.items():
+        # A dashboard exported from Grafana's editor comes back editable and with an id.
+        assert page["editable"] is False and "id" not in page, name
+        assert page["uid"] == name
+    logs = [p for page in PAGES.values() for p in charts(page) if uid(p) == "logs"]
+    assert logs and all(p["datasource"]["type"] == "victoriametrics-logs-datasource" for p in logs)
+
+
+def test_every_link_opens_a_page_and_every_page_has_the_same_link_bar() -> None:
+    bar = PAGES["home"]["links"]
+    assert {link["url"] for link in bar} >= {f"/d/{name}" for name in PAGES}
+    for name, page in PAGES.items():
+        assert page["links"] == bar, name
+        for opened in re.findall(r'"/d/([^"/?]*)', json.dumps(page)):
+            assert opened in PAGES, name
+
+
+def test_the_map_gives_the_node_graph_its_edges() -> None:
+    # The node graph draws arrows only from fields named id, source and target; with any missing it
+    # draws a grid of unnamed circles.
+    [graph] = [p for page in PAGES.values() for p in charts(page) if p["type"] == "nodeGraph"]
+    queries = {t["refId"]: t["expr"] for t in graph["targets"]}
+    edges, nodes = queries.pop("edges"), queries.pop("nodes")
+    assert not queries
+    assert "stats by (source, target)" in edges and '" as id' in edges
+    # A client span with several server spans under it counts once.
+    assert "uniq by (span_id, " in edges
+    # Both name each call the same way.
+    calls = edges[: edges.index(" | stats ")]
+    assert nodes.startswith(calls + " | ")
+    steps = {t["id"]: t["options"] for t in graph["transformations"]}
+    assert (
+        steps == {"extractFields": steps["extractFields"]}
+        and steps["extractFields"]["replace"] is True
+    )
+    # The graph prints a number to two places (decimals 0 reads as unset) and shows a legend of
+    # any node stat: the counts arrive as text, and a node's in its subtitle.
+    assert re.search(
+        r'format "<calls> calls" as mainstat .*format "<failed> failed" as secondarystat', edges
+    )
+    assert " as subtitle" in nodes and "mainstat" not in nodes
+
+
+def test_the_map_names_whom_each_call_reached() -> None:
+    # `server.address` is the Host header, which a proxy passes on: it names a call only when
+    # neither Docker (config.alloy, `peer.service`), the answering span nor a host port has.
+    [graph] = [p for page in PAGES.values() for p in charts(page) if p["type"] == "nodeGraph"]
+    edges = graph["targets"][0]["expr"]
+    names = re.findall(r'(?:"span_attr:peer\.service" as target|"<\w+>" as target)', edges)
+    assert names == [
+        '"span_attr:peer.service" as target',
+        '"<answered>" as target',
+        '"<listener>" as target',
+        '"<host>" as target',
+    ]
+    alloy = (STACK / "config.alloy").read_text("utf-8")
+    assert 'set(attributes[\\"peer.service\\"]' in alloy
+    # A failed call is one the server failed, as the tables count server spans: OBI fails a
+    # client span on any 4xx, such as the 403 the probes expect from home.internal.
+    assert 'count() if (status_code:=2 -http_status:~"^4") failed' in edges
+
+
+def test_every_page_marks_each_deploy_from_the_deploy_s_trace() -> None:
+    # One marker on every chart of every page: a new page without it shows no deploys.
+    [marker] = PAGES["home"]["annotations"]["list"]
+    for name, page in PAGES.items():
+        assert page["annotations"]["list"] == [marker], name
+    # It reads the root span stacks/deploy/deploy.py sends, by the names it sends.
+    assert marker["datasource"]["uid"] in SOURCES
+    query = marker["target"]["expr"]
+    deploy = (STACK.parent.parent / "stacks/deploy/deploy.py").read_text(encoding="utf-8")
+    sent = re.search(r'telemetry\.run\("(\w+)", "(\w+)", ((?:\w+=\w+, )*\w+=\w+)\)', deploy)
+    assert sent, "stacks/deploy/deploy.py no longer traces each deploy"
+    service, span, attrs = sent.groups()
+    assert f'"resource_attr:service.name":={service} name:={span} ' in query
+    for attr in re.findall(r"(\w+)=", attrs):
+        assert f'"span_attr:{attr}"' in query, attr
+
+
+@every_page
+def test_every_panel_reads_a_provisioned_source(page: dict[str, Any]) -> None:
+    ids = [p["id"] for p in panels(page)]
+    assert len(ids) == len(set(ids))
+    for panel in charts(page):
+        assert uid(panel) in SOURCES, panel["title"]
+        assert panel["targets"], panel["title"]
+        refs = [t["refId"] for t in panel["targets"]]
+        assert len(refs) == len(set(refs)), panel["title"]
+        for target in panel["targets"]:
+            assert target["datasource"]["uid"] in SOURCES, panel["title"]
+
+
+@every_page
+def test_no_two_panels_overlap_and_all_fit_the_width(page: dict[str, Any]) -> None:
+
+    def place(group: list[dict[str, Any]]) -> None:
+        cells: set[tuple[int, int]] = set()
+        for panel in group:
+            box = panel["gridPos"]
+            assert box["x"] + box["w"] <= 24, panel["title"]
+            mine = {
+                (x, y)
+                for x in range(box["x"], box["x"] + box["w"])
+                for y in range(box["y"], box["y"] + box["h"])
+            }
+            assert not cells & mine, panel["title"]
+            cells |= mine
+
+    # What shows with every row closed, then each closed row's panels as it opens.
+    place(page["panels"])
+    for row in page["panels"]:
+        if row["type"] == "row" and row["collapsed"]:
+            assert all(p["gridPos"]["y"] > row["gridPos"]["y"] for p in row["panels"])
+            place(row["panels"])
+        elif row["type"] == "row":
+            assert row["panels"] == []
+
+
+def test_groups_containers_and_rules_wear_one_colour_on_every_panel() -> None:
+    every = [p for page in PAGES.values() for p in charts(page)]
+    by_container = [p for p in every if any(colour(p, name) for name in containers())]
+    assert by_container
+    for panel in by_container:
+        assert {name: colour(panel, name) for name in containers()} == containers(), panel["title"]
+    for panel in every:
+        for group, its in GROUPS.items():
+            assert colour(panel, group) in (None, its), panel["title"]
+    rules = next(p for p in every if p["title"] == "Rules firing, by hour")
+    assert named_colours(rules) == levels()
+
+
+@every_page
+def test_state_colours_are_the_shared_ones_and_unlisted_series_gray(page: dict[str, Any]) -> None:
+    for panel in charts(page):
+        defaults = panel.get("fieldConfig", {}).get("defaults", {})
+        mode = defaults.get("color", {}).get("mode")
+        if panel["type"] in ("stat", "gauge") or mode == "thresholds":
+            worn = {s["color"] for s in defaults["thresholds"]["steps"]}
+            # Only a tile that is not filled may wear the text colour: filled, it is a white block.
+            filled = panel["options"].get("colorMode", "").startswith("background")
+            plain = {"text"} if panel["type"] == "stat" and not filled else set()
+            assert worn <= {NOW, WEEK, FINE, NEUTRAL} | plain, panel["title"]
+            assert set(named_colours(panel).values()) <= {NOW, WEEK}, panel["title"]
+        elif mode != "palette-classic":
+            # Past a line per container, each its own colour, a series no list names is gray.
+            assert defaults.get("color", GRAY) == GRAY, panel["title"]
+
+
+@every_page
+def test_prometheus_queries_name_metrics_as_alloy_sends_them(page: dict[str, Any]) -> None:
+    for query in prometheus_queries(page):
+        bare = re.sub(r'"[^"]*"', '""', query)
+        for name in re.findall(r"\b[a-zA-Z_:][a-zA-Z0-9_:]*\b", bare):
+            assert MIXED_CASE.get(name.lower(), name) == name, query
+        for left, right in ("()", "[]", "{}"):
+            assert bare.count(left) == bare.count(right), query
+    # Grafana's legends are `{{label}}`; a single-braced `{label}` shows as text.
+    for panel in charts(page):
+        for target in panel["targets"]:
+            legend = target.get("legendFormat", "")
+            assert not re.search(r"(?<!\{)\{\w+\}(?!\})", legend), panel["title"]
+
+
+def test_prometheus_parses_every_query(tmp_path: Path) -> None:
+    # Grafana shows a query Prometheus cannot parse only as an error on its panel. Grafana fills in
+    # its duration macros before Prometheus sees the query.
+    macros = re.compile(r"\$__(range|rate_interval|interval)\b")
+    queries = [macros.sub("1h", q) for page in PAGES.values() for q in prometheus_queries(page)]
+    rules = [{"record": f"page:{i}", "expr": q} for i, q in enumerate(queries)]
+    (tmp_path / "pages.yml").write_text(json.dumps({"groups": [{"name": "pages", "rules": rules}]}))
+    checked = promtool("check", "rules", str(tmp_path / "pages.yml"))
+    assert checked.returncode == 0, checked.stdout + checked.stderr
+
+
+@every_page
+def test_log_patterns_hold_no_control_characters(page: dict[str, Any]) -> None:
+    # A "\b" written through a non-raw string becomes a backspace and the pattern matches nothing.
+    for panel in charts(page):
+        for target in panel["targets"]:
+            assert target.get("expr", "").isprintable(), panel["title"]
+
+
+def test_data_source_links_name_real_data_sources_and_fields() -> None:
+    # A span opens its logs and metrics, a log line its trace (docs/architecture.md, "Monitoring and
+    # alerts"): each link names a data source that exists, and the field Alloy gives each line.
+    path = ROOT / "stacks/observability/grafana/datasources.yaml"
+    sources = yaml.safe_load(path.read_text(encoding="utf-8"))["datasources"]
+    uids = {source["uid"] for source in sources}
+    linked = re.findall(r"datasourceUid: (\w+)", path.read_text(encoding="utf-8"))
+    assert {"logs", "prometheus", "traces"} <= set(linked) <= uids
+    # The field both links read is one Alloy gives each container line.
+    traces = next(source for source in sources if source["uid"] == "traces")
+    assert traces["jsonData"]["tracesToLogsV2"]["query"].startswith("trace_id:=")
+    alloy = (ROOT / "stacks/observability/config.alloy").read_text("utf-8")
+    docker = alloy[alloy.index('loki.process "docker"') :]
+    kept = re.search(r"stage\.structured_metadata \{(.*?)\n  \}", docker, re.DOTALL)
+    assert kept and re.search(r"^\s*trace_id\s*=", kept.group(1), re.MULTILINE)
