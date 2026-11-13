@@ -1,17 +1,19 @@
 # What the homelab promises, one entry per alert; slos.py turns them into slos.rules.yml (docs/architecture.md,
 # "Monitoring and alerts"). Each needs `file`, the metrics file its data comes from, and either:
-# - fresh: `timer` (the writer's systemd timer, read for its interval) or `every`, and `metric` when the file holds a
-#   success time that can be late while the file itself is rewritten;
-# - good minutes: `bad`, a PromQL condition true in a bad minute, and `promise`, what a good minute means.
+# - fresh: `timer` (the writer's systemd timer, read for its interval) or `every`, `metric` when the file holds a
+#   success time that can be late while the file itself is rewritten, and `late` once baseline.py has enough history;
+# - good minutes: `measure`, `target` (a minute is bad when measure is over it) and `promise`, what a good minute means.
+# `late` and `target` come from the normal baseline.py measures, with its evidence on the line.
 # Every metrics file the code writes has a fresh promise or is under `unwatched` with why.
 slos:
   - alert: ci-jobs-not-starting
     level: now
     title: CI jobs not starting
     file: ci-waits.prom
-    promise: CI jobs start within 10 min of GitHub queueing them
-    # Polls failing hide new jobs, so they count as late too.
-    bad: homelab_ci_queued_seconds > 600 or homelab_ci_poll_failed_seconds > 600
+    promise: CI jobs start within {target} of GitHub queueing them
+    # The oldest queued job's wait; polls failing hide new jobs, so they count as waiting too.
+    measure: max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)
+    target: 2m  # baseline.py, 11-13 Nov: normal at most 1.0 min
     harm: Private repositories' checks sit queued, so nothing of theirs merges or deploys.
     action: >-
       On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting on "a VM booting for it":
@@ -25,6 +27,7 @@ slos:
     title: CI supervisor stopped
     file: ci-waits.prom
     every: 15s  # ci-runner/supervisor/ci_supervisor.py, WAIT_METRICS_SECONDS
+    late: 2m  # baseline.py, 11-13 Nov: normal at most 0.9 min old
     harm: No CI machine starts, so private repositories' checks wait and nothing of theirs merges.
     action: >-
       Read `sudo journalctl -u homelab-ci-supervisor -n 100` on the Beelink, fix the cause, then `sudo systemctl
@@ -35,6 +38,7 @@ slos:
     title: Health checks stopped
     file: probes.prom
     every: 1m  # stacks/observability/probes.py
+    late: 3m  # baseline.py, 11-13 Nov: normal at most 1.5 min old
     harm: Home Assistant and the .internal names going down would go unseen.
     action: >-
       Check `docker ps -a --filter name=observability-probes` and `docker logs --tail 50 observability-probes-1`,
@@ -45,6 +49,7 @@ slos:
     title: Security checks stopped
     file: security.prom
     timer: beelink/security/homelab-security-facts.timer
+    late: 3m  # baseline.py, 11-13 Nov: normal at most 1.4 min old
     harm: CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.
     action: >-
       Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
@@ -86,6 +91,7 @@ slos:
     title: CI run times stopped
     file: ci-times.prom
     timer: ci-runner/run-times/homelab-ci-times.timer
+    late: 17m  # baseline.py, 11-13 Nov: normal at most 10.9 min old
     harm: A slower CI or deploy would go unnoticed, and no run is traced.
     action: >-
       Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times` on the Beelink; it
@@ -122,6 +128,15 @@ slos:
     action: >-
       Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl --user status
       backup-pc-receive` on the Beelink; see docs/architecture.md, "Backups".
+
+# Outages, left out of each promise's normal (baseline.py).
+incidents:
+  - from: 2026-11-12T15:35:00Z
+    to: 2026-11-12T18:50:00Z
+    what: ci_times.py exited on a job log GitHub no longer had (HTTP 404), so run times stopped.
+  - from: 2026-11-13T18:30:00Z
+    to: 2026-11-13T19:15:00Z
+    what: Every CI VM died at start, so jobs sat queued.
 
 unwatched:
   ci-vm-memory.prom: The CI supervisor writes it as VMs end; ci-supervisor-stopped watches the same writer.

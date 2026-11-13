@@ -104,9 +104,9 @@ starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-o
 gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin, merging only fixes that run
 no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes, not his login.
 
-- A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
-  means the number recovered.
-- New alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml);
+- A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert.
+- New alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml), with thresholds from
+  their normal ([`baseline.py`](../stacks/observability/prometheus/baseline.py));
   [`slos.py`](../stacks/observability/prometheus/slos.py) makes their rules and tests. CI fails on an unwatched
   metrics file.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics.
