@@ -10,9 +10,9 @@ discovery:
   exclude_instrument:
     - container_name: "observability-{alloy,prometheus,logs,traces,docker-socket-proxy}-*"
   # Go programs get the tracer every program gets: Go's own also turns on the OpenTelemetry calls built into a program,
-  # so a busy one, such as promtool testing the rules, sends about 10,000 spans a second. Tried again beside the live
-  # one for 4 minutes: twice the spans (Grafana's SQLite queries and plugin calls, Prometheus's scrape steps) and
-  # 80 MiB more, while no Go 1.26+ program got them: OBI v1.0.0 has no runtime ABI for those.
+  # so a busy one, such as promtool testing the rules, sends about 10,000 spans a second. For the rest, it adds detail
+  # inside one program (Grafana's SQLite queries) at about 1.8 times the spans and 80 MiB, and none for Go 1.26+, for
+  # which OBI v1.0.0 has no runtime ABI.
   skip_go_specific_tracers: true
 ebpf:
   # Half the default map sizes halves the kernel memory its maps take (about 330 to 170 MiB); one host's traffic needs
