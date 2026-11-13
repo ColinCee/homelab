@@ -1,10 +1,9 @@
-"""The SSD wear reader (scripts/ssd_wear.py) turns an NVMe health log into ssd.prom."""
+"""The SSD wear reader (beelink/ssd-wear/ssd_wear.py) turns an NVMe health log into ssd.prom."""
 
 from pathlib import Path
 
 import pytest
-
-from scripts import ssd_wear
+import ssd_wear
 
 
 def health_log() -> bytes:

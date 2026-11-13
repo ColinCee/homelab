@@ -12,8 +12,8 @@ zizmor = "1.32.0"
 [tasks.lint]
 description = "Lint Python, shell, YAML, and Actions"
 run = [
-  "uv run ruff check scripts/ ci-runner/ stacks/ tests/ .github/actions/ && uv run ruff format --check scripts/ ci-runner/ stacks/ tests/ .github/actions/",
-  "shellcheck scripts/*.sh ci-runner/*.sh ci-runner/net/*.sh ci-runner/tests/*.sh ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch ci-runner/rootfs/runner-job-guard-vm.sh",
+  "uv run ruff check && uv run ruff format --check",
+  "shellcheck $(git ls-files '*.sh') ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
   # GitHub Actions' security practices (pinned actions, no persisted token, no template injection), from files alone.
@@ -22,11 +22,11 @@ run = [
 
 [tasks.format]
 description = "Format Python"
-run = "uv run ruff format scripts/ ci-runner/ stacks/ tests/ .github/actions/"
+run = "uv run ruff format"
 
 [tasks.typecheck]
 description = "Type-check Python"
-run = "uv run ty check scripts ci-runner stacks tests .github/actions --python-platform linux"
+run = "uv run ty check --python-platform linux"
 
 [tasks.test]
 description = "Run unit tests"
