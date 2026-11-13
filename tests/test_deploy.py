@@ -476,6 +476,30 @@ def test_a_failed_deploy_keeps_the_old_marker_so_the_next_retries_in_full(
     assert state.read_text(encoding="utf-8").strip() == before
 
 
+def test_each_deploy_is_one_trace_with_its_commit_and_a_span_per_stack(
+    repo: Path, tmp_path_factory: pytest.TempPathFactory, sent_traces: list[dict[str, Any]]
+) -> None:
+    state = tmp_path_factory.mktemp("state") / "last-deployed"
+    (repo / "scripts" / "deploy.py").write_text("# changed\n", encoding="utf-8")
+    head = _commit_all(repo)
+    runner, _ = _recording_runner(fail_when="up")
+
+    assert deploy.run(repo, (), last_deployed=state, runner=runner) == 1
+    # The 15-minute check finding nothing new sends no trace, so marks no deploy on the pages.
+    state.write_text(head + "\n", encoding="utf-8")
+    assert deploy.run(repo, (), last_deployed=state, runner=_recording_runner()[0]) == 0
+
+    [body] = sent_traces
+    spans = {
+        s["name"]: s for r in body["resourceSpans"] for c in r["scopeSpans"] for s in c["spans"]
+    }
+    assert set(spans) == {"deploy", "gateway", "observability"}
+    root = spans["deploy"]
+    assert {"key": "commit", "value": {"stringValue": head}} in root["attributes"]
+    assert spans["gateway"]["parentSpanId"] == root["spanId"]
+    assert spans["gateway"]["status"]["code"] == root["status"]["code"] == 2
+
+
 # What `docker compose config --format json` reports for each stack's networks and volumes.
 _COMPOSE_CONFIG = {
     "backup": {"volumes": {"data": {"name": "observability_data", "external": True}}},

@@ -134,16 +134,21 @@ def main() -> None:
     key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
     while True:
-        try:
-            push(url, key, gather(prometheus, flights))
-            # The healthcheck: fresh while pushes succeed.
-            HEARTBEAT.touch()
-            wait = EVERY_S
-        except Exception:
-            # Anything odd in a response skips one push, not the process.
-            # HTTPError's message says why the Worker refused.
-            log.exception("push failed")
-            wait = RETRY_S
+        with telemetry.run("public-stats", "push") as trace:
+            try:
+                with telemetry.step("gather"):
+                    body = gather(prometheus, flights)
+                with telemetry.step("push"):
+                    push(url, key, body)
+                # The healthcheck: fresh while pushes succeed.
+                HEARTBEAT.touch()
+                wait = EVERY_S
+            except Exception as e:
+                # Anything odd in a response skips one push, not the process.
+                # HTTPError's message says why the Worker refused.
+                trace.fail(type(e).__name__)
+                log.exception("push failed")
+                wait = RETRY_S
         time.sleep(wait)
 
 

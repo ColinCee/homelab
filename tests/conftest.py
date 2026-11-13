@@ -151,6 +151,17 @@ class NoGitHub:
 
 
 @pytest.fixture(autouse=True)
+def sent_traces(monkeypatch: pytest.MonkeyPatch) -> list[Mapping[str, Any]]:
+    """What a traced run would have sent Alloy: no test reaches it, or joins its caller's trace."""
+    import telemetry
+
+    sent: list[Mapping[str, Any]] = []
+    monkeypatch.setattr(telemetry, "send_traces", lambda body, **_: sent.append(body))
+    monkeypatch.delenv("TRACEPARENT", raising=False)
+    return sent
+
+
+@pytest.fixture(autouse=True)
 def _no_outer_git(monkeypatch: pytest.MonkeyPatch) -> None:
     # An inherited GIT_DIR or GIT_WORK_TREE sends a test's `git init` into the caller's repository.
     for name in list(os.environ):

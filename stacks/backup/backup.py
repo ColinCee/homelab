@@ -231,14 +231,22 @@ class Backup:
             ("check", self.verify),
         )
         for step, passed in steps:
-            if not passed():
-                return step
-        self.record_size()
+            with telemetry.step(step) as span:
+                if not passed():
+                    span.fail(f"{step} failed")
+                    return step
+        with telemetry.step("measure"):
+            self.record_size()
         return None
 
     def report(self) -> int:
+        with telemetry.run("backup", "backup") as trace:
+            return self._report(trace)
+
+    def _report(self, trace: telemetry.Span) -> int:
         step = self.run_backup()
         if step is not None:
+            trace.fail(f"{step} failed")
             log.error("backup failed", extra={"step": step})
             self.record_failure(step)
             return 1
@@ -279,6 +287,14 @@ class Backup:
         return self.path(METRICS_FILE).is_file()
 
     def restore_test(self) -> int:
+        """Restore one file from the latest snapshot: the monthly upkeep's step, in its trace."""
+        with telemetry.run("backup", "restore test") as trace:
+            passed = self._restore_test()
+            if not passed:
+                trace.fail("file not restored")
+            return 0 if passed else 1
+
+    def _restore_test(self) -> bool:
         target = self.path(RESTORE_TARGET)
         shutil.rmtree(target, ignore_errors=True)
         # restic exits non-zero because the container cannot chown restored files, so the restored
@@ -296,7 +312,7 @@ class Backup:
                 "restore test failed: could not restore the file", extra={"file": str(RESTORE_FILE)}
             )
         shutil.rmtree(target, ignore_errors=True)
-        return 0 if passed else 1
+        return passed
 
     def loop(self, sleep: Callable[[float], None] = time.sleep) -> None:
         if not self.seed_metric():

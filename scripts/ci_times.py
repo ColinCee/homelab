@@ -33,8 +33,6 @@ OWNER_ID = 11246116
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
 OUT = Path("/var/lib/homelab-metrics/ci-times.prom")
 STATE = Path("/var/lib/homelab-ci/ci-times.json")
-# Alloy's OTLP receiver at its fixed address on host-otlp (stacks/observability/compose.yaml).
-TRACES = "http://10.201.0.10:4318/v1/traces"
 # The run attempts already sent, newest kept: older ones have left GitHub's first page.
 SENT_KEEP = 500
 # The tests' annotation (ci.yaml, "Report the slowest tests"). A run's own code writes it, so it is
@@ -111,21 +109,6 @@ def span_id(*parts: object) -> str:
     return hashlib.sha256("/".join(map(str, parts)).encode()).hexdigest()[:16]
 
 
-def span(
-    trace: str, sid: str, parent: str, name: str, start: float, end: float, **attrs: object
-) -> Json:
-    return {
-        "traceId": trace,
-        "spanId": sid,
-        "parentSpanId": parent,
-        "name": name[:NAME_MAX],
-        "kind": 1,
-        "startTimeUnixNano": str(int(start * 1e9)),
-        "endTimeUnixNano": str(int(max(start, end) * 1e9)),
-        "attributes": [{"key": k, "value": {"stringValue": str(v)}} for k, v in attrs.items()],
-    }
-
-
 def log_time(text: str) -> float:
     whole, _, fraction = text.partition(".")
     return datetime.fromisoformat(f"{whole}+00:00").timestamp() + float(f"0.{fraction or 0}")
@@ -157,7 +140,8 @@ def log_spans(trace: str, job: str, log: str) -> list[Json]:
         for n, (at, name) in enumerate(starts)
     ]
     spans = [
-        span(trace, sid, job, name, at, until, source="log") for sid, name, at, until in phases
+        telemetry.otlp_span(trace, sid, job, name, at, until, source="log")
+        for sid, name, at, until in phases
     ]
 
     def phase(at: float) -> str:
@@ -174,16 +158,26 @@ def log_spans(trace: str, job: str, log: str) -> list[Json]:
         tid, start = tasks[task]
         if task in commands and (command is not None or m.group(3)):
             cid, began, said = commands.pop(task)
-            spans.append(span(trace, cid, tid, said, began, at, source="log"))
+            spans.append(telemetry.otlp_span(trace, cid, tid, said, began, at, source="log"))
         if command is not None:
             commands[task] = (span_id(tid, "command", n), at, command)
         else:
-            spans.append(span(trace, tid, phase(start), f"task: {task}", start, at, source="log"))
+            spans.append(
+                telemetry.otlp_span(
+                    trace, tid, phase(start), f"task: {task}", start, at, source="log"
+                )
+            )
             del tasks[task]
     for task, (cid, began, said) in commands.items():
-        spans.append(span(trace, cid, tasks[task][0], said, began, end, source="log", ended="no"))
+        spans.append(
+            telemetry.otlp_span(
+                trace, cid, tasks[task][0], said, began, end, source="log", ended="no"
+            )
+        )
     for task, (tid, start) in tasks.items():
-        spans.append(span(trace, tid, phase(start), f"task: {task}", start, end, ended="no"))
+        spans.append(
+            telemetry.otlp_span(trace, tid, phase(start), f"task: {task}", start, end, ended="no")
+        )
     return spans
 
 
@@ -215,13 +209,13 @@ def trace(
         "attempt": attempt,
         "url": run.get("html_url"),
     }
-    spans = [("ci", span(tid, root, "", str(run.get("name")), start, end, **about))]
+    spans = [("ci", telemetry.otlp_span(tid, root, "", str(run.get("name")), start, end, **about))]
     for job, (job_start, job_end) in timed:
         jid = span_id(run["id"], attempt, job["id"])
         runner = runner_kind(job.get("labels", []))
         conclusion = job.get("conclusion")
         name = str(job.get("name"))
-        job_span = span(
+        job_span = telemetry.otlp_span(
             tid, jid, root, name, job_start, job_end, runner=runner, conclusion=conclusion
         )
         spans.append(("ci job", job_span))
@@ -230,7 +224,9 @@ def trace(
                 continue
             sid = span_id(jid, step.get("number"))
             name = str(step.get("name"))
-            step_span = span(tid, sid, jid, name, *w, conclusion=step.get("conclusion"))
+            step_span = telemetry.otlp_span(
+                tid, sid, jid, name, *w, conclusion=step.get("conclusion")
+            )
             spans.append(("ci step", step_span))
             if not name.startswith("Run checks"):
                 continue
@@ -238,7 +234,9 @@ def trace(
                 # The test host's clock, kept inside its step's.
                 t_start = min(max(test["start"], w[0]), w[1])
                 t_end = min(t_start + test["seconds"], w[1])
-                test_span = span(tid, span_id(sid, test["test"]), sid, test["test"], t_start, t_end)
+                test_span = telemetry.otlp_span(
+                    tid, span_id(sid, test["test"]), sid, test["test"], t_start, t_end
+                )
                 spans.append(("ci test", test_span))
     for job, _ in timed:
         jid = span_id(run["id"], attempt, job["id"])
@@ -247,20 +245,7 @@ def trace(
     by_service: dict[str, list[Json]] = {}
     for service, one in spans[:SPANS_MAX]:
         by_service.setdefault(service, []).append(one)
-    return {
-        "resourceSpans": [
-            {
-                "resource": {
-                    "attributes": [
-                        {"key": "service.name", "value": {"stringValue": service}},
-                        {"key": "repository", "value": {"stringValue": REPO}},
-                    ]
-                },
-                "scopeSpans": [{"spans": group}],
-            }
-            for service, group in by_service.items()
-        ]
-    }
+    return telemetry.otlp_traces(by_service, repository=REPO)
 
 
 def label(text: str) -> str:
@@ -374,11 +359,6 @@ def github_logs(token: str) -> Logs:
     return logs
 
 
-def send_trace(body: Json) -> None:
-    data = json.dumps(body).encode()
-    telemetry.http(TRACES, method="POST", data=data, headers={"Content-Type": "application/json"})
-
-
 def main() -> int:
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
 
@@ -386,7 +366,7 @@ def main() -> int:
         telemetry.replace_file(STATE, json.dumps(state), 0o600)
 
     token = telemetry.secret(TOKEN_FILE)
-    state = poll(github(token), send_trace, state, keep, github_logs(token))
+    state = poll(github(token), telemetry.send_traces, state, keep, github_logs(token))
     keep(state)
     if not state["done"]:
         return 1

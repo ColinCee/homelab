@@ -588,6 +588,8 @@ services:
       PROMETHEUS_URL: http://gateway:5080/prometheus
       PROMETHEUS_USER: stats@homelab.internal
       PROMETHEUS_PASSWORD_FILE: /run/secrets/stats_password
+      # Each push's trace (telemetry.run).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
     secrets:
       - public_stats_key
       - stats_password
@@ -606,9 +608,10 @@ services:
       - ./public_stats.py:/public_stats.py:ro
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
     # Its own network, shared with the gateway only, where its login reads one query; outbound, the
-    # internet.
+    # internet. otlp: Alloy, for its traces.
     networks:
       - public-stats
+      - otlp
     depends_on:
       - gateway
 

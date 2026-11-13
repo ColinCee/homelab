@@ -78,7 +78,7 @@ Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observabili
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
 agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: one service name per
 store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python logs, writes metrics,
-reads secrets, calls HTTP only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
+reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
 
 | Problem | Who warns |
 |---|---|

@@ -328,36 +328,38 @@ def deploy(
     for plan in plans:
         environment = _compose_environment()
         environment |= config_hashes(repo_root, plan.compose_file.parent)
-        try:
-            runner(
-                compose_command(plan, "build", all_profiles=True),
-                cwd=repo_root,
-                env=_compose_environment(),
-                check=True,
-            )
-            runner(
-                compose_command(
-                    plan,
-                    "up",
-                    "-d",
-                    "--remove-orphans",
-                    "--wait",
-                    "--wait-timeout",
-                    str(readiness_timeout),
-                ),
-                cwd=repo_root,
-                env=environment,
-                check=True,
-            )
-            ready = datetime.now(UTC).isoformat()
-            install_systemd_units(plan.triggers, unit_dir=unit_dir, runner=runner)
-            if metrics_dir is not None:
-                record_running(repo_root, plan, metrics_dir, stamp_dir=stamp_dir, runner=runner)
-        except (OSError, ValueError, subprocess.CalledProcessError) as exc:
-            reason = _failure_reason(exc)
-            failed[plan.name] = reason
-            log.error("deploy failed", extra={"stack": plan.name, "reason": reason})
-            continue
+        with telemetry.step(plan.name, stack=plan.name) as step:
+            try:
+                runner(
+                    compose_command(plan, "build", all_profiles=True),
+                    cwd=repo_root,
+                    env=_compose_environment(),
+                    check=True,
+                )
+                runner(
+                    compose_command(
+                        plan,
+                        "up",
+                        "-d",
+                        "--remove-orphans",
+                        "--wait",
+                        "--wait-timeout",
+                        str(readiness_timeout),
+                    ),
+                    cwd=repo_root,
+                    env=environment,
+                    check=True,
+                )
+                ready = datetime.now(UTC).isoformat()
+                install_systemd_units(plan.triggers, unit_dir=unit_dir, runner=runner)
+                if metrics_dir is not None:
+                    record_running(repo_root, plan, metrics_dir, stamp_dir=stamp_dir, runner=runner)
+            except (OSError, ValueError, subprocess.CalledProcessError) as exc:
+                reason = _failure_reason(exc)
+                step.fail(reason)
+                failed[plan.name] = reason
+                log.error("deploy failed", extra={"stack": plan.name, "reason": reason})
+                continue
 
         completed.append(plan.name)
         ready_at[plan.name] = ready
@@ -706,17 +708,15 @@ def run(
         if plans:
             plans = changed_first(repo_root, plans, first_changed_since, runner=runner)
             log.info("deploy order", extra={"stacks": [plan.name for plan in plans]})
-        report = (
-            deploy(
+            report = traced_deploy(
                 repo_root,
                 plans,
                 readiness_timeout=readiness_timeout,
                 metrics_dir=metrics_dir,
                 runner=runner,
             )
-            if plans
-            else DeploymentReport((), {})
-        )
+        else:
+            report = DeploymentReport((), {})
     except (DeploymentInputError, OSError) as exc:
         log.error("cannot deploy", extra={"error": str(exc)})
         return 2
@@ -727,6 +727,34 @@ def run(
         last_deployed.parent.mkdir(parents=True, exist_ok=True)
         telemetry.replace_file(last_deployed, head + "\n")
     return 0
+
+
+def traced_deploy(
+    repo_root: Path,
+    plans: Sequence[StackPlan],
+    *,
+    readiness_timeout: int,
+    metrics_dir: Path | None,
+    runner: CommandRunner,
+) -> DeploymentReport:
+    """`deploy` as one trace with a span per stack and its commit: only a run that deploys
+    something, so each trace is one deploy."""
+    try:
+        commit = head_commit(repo_root)
+    except (OSError, subprocess.CalledProcessError):
+        commit = ""
+    stacks = ",".join(plan.name for plan in plans)
+    with telemetry.run("deploy", "deploy", commit=commit, stacks=stacks) as trace:
+        report = deploy(
+            repo_root,
+            plans,
+            readiness_timeout=readiness_timeout,
+            metrics_dir=metrics_dir,
+            runner=runner,
+        )
+        if report.failed:
+            trace.fail(f"failed: {', '.join(report.failed)}")
+        return report
 
 
 if __name__ == "__main__":

@@ -4,10 +4,8 @@ Documentation=https://github.com/ColinCee/homelab/blob/main/docs/architecture.md
 
 [Service]
 Type=oneshot
-# Only what has been unused for a week, so a deploy running alongside loses nothing.
-ExecStart=/usr/bin/docker image prune -af --filter until=168h
-ExecStart=/usr/bin/docker builder prune -af --filter until=168h
-ExecStart=/usr/bin/docker exec backup python3 -I /backup.py restore-test
+# Each step a span of one trace.
+ExecStart=/usr/bin/python3 -I %h/code/homelab/stacks/backup/upkeep.py
 # The result's time, for the Monthly upkeep failed alert.
 ExecStopPost=/usr/bin/python3 -I %h/code/homelab/stacks/backup/unit_metrics.py upkeep
 # Above the prunes and a test restore.
