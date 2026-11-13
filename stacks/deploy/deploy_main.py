@@ -7,6 +7,7 @@ Standard library only: it runs on the host's /usr/bin/python3.
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import time
@@ -29,6 +30,7 @@ FETCH_EVERY_SECONDS = 10
 # Merges landing during a deploy are deployed in the same run: their ring arrives while this service
 # is still active, and systemd does not start it again for it.
 MAX_ROUNDS = 5
+log = logging.getLogger("deploy-main")
 
 Run = Callable[[list[str]], subprocess.CompletedProcess[str]]
 
@@ -94,7 +96,10 @@ def deploy_main(host: Host) -> int:
         since = host.deployed()
         if since and since != target and not host.follows(since, target):
             # Merges only add to main; a main that lost the deployed commit was force-pushed.
-            print(f"refused: main {target} does not contain the deployed {since}", flush=True)
+            log.error(
+                "refused: main does not contain the deployed commit",
+                extra={"main": target, "deployed": since},
+            )
             host.record(behind=True)
             return 1
         host.git("reset", "--hard", target)
@@ -102,9 +107,9 @@ def deploy_main(host: Host) -> int:
         code = host.deploy(since)
         host.record(behind=code != 0)
         if code:
-            print(f"deploy of {target} failed with {code}", flush=True)
+            log.error("deploy failed", extra={"commit": target, "code": code})
             return code
-        print(f"deployed {target}", flush=True)
+        log.info("deployed", extra={"commit": target})
         latest = host.fetch_main()
         if latest == target:
             return 0
@@ -134,9 +139,10 @@ def main() -> int:
         return deploy_main(host)
     except (OSError, RuntimeError) as e:
         # Nothing recorded: the check's time goes stale, which "Main not deployed" reads.
-        print(f"stopped: {e}", file=sys.stderr, flush=True)
+        log.error("stopped", extra={"error": str(e)})
         return 1
 
 
 if __name__ == "__main__":
+    telemetry.start()
     raise SystemExit(main())

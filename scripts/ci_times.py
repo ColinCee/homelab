@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
+import logging
 import re
 import time
 import urllib.error
@@ -54,6 +55,7 @@ LOG_MAX = 2_000_000
 # A job unseen this long (renamed, removed) drops out of the metrics.
 ROW_DAYS = 30
 
+log = logging.getLogger("ci-times")
 Get = Callable[[str], Any]
 # A job's log text by job id, "" when it cannot be had.
 Logs = Callable[[int], str]
@@ -325,15 +327,15 @@ def poll(
             send(trace(run, attempt, jobs, tests, texts))
         except urllib.error.HTTPError as e:
             if not 400 <= e.code < 500:
-                print(f"stopped at run {key}: HTTP {e.code}")
+                log.warning("stopped at a run", extra={"run": key, "status": e.code})
                 return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
             # Refused for what it is (too big, say): skipped, so it cannot hold up newer runs.
-            print(f"skipped run {key}: HTTP {e.code}")
+            log.warning("skipped a run", extra={"run": key, "status": e.code})
             sent.append(key)
             keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
             continue
         except OSError as e:
-            print(f"stopped at run {key}: {type(e).__name__}: {e}")
+            log.warning("stopped at a run", extra={"run": key, "error": f"{type(e).__name__}: {e}"})
             return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
         if own and run.get("conclusion") == "success":
             # A job this run did not have (deploy, skipped) keeps its row from the last that did.
@@ -440,4 +442,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    telemetry.start()
     raise SystemExit(main())

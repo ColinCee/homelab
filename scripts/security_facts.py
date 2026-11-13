@@ -179,4 +179,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    telemetry.start()
     main()

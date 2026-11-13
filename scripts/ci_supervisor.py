@@ -23,6 +23,7 @@ import hashlib
 import http.client
 import io
 import json
+import logging
 import os
 import re
 import signal
@@ -370,7 +371,7 @@ class Wait:
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    logging.getLogger("ci-supervisor").info(message)
 
 
 def cache_label_repo(label: str) -> str | None:
@@ -1999,7 +2000,9 @@ def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
         ) as proc:
             assert proc.stdout is not None
             for out in proc.stdout:
-                print(out, end="", flush=True)
+                if out.strip():
+                    level = logging.ERROR if out.startswith("FAIL ") else logging.INFO
+                    logging.getLogger("ci-supervisor").log(level, out.rstrip("\n"))
                 if out.startswith(("PASS ", "FAIL ")):
                     line = out.strip()
         code = proc.returncode
@@ -2239,4 +2242,5 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
+    telemetry.start()
     sys.exit(main())
