@@ -1,4 +1,4 @@
-"""The network test's verdict (ci-runner/tests/test_network.py) on network-probe.sh's lines."""
+"""The network test's verdict (ci-runner/host-tests/test_network.py) on network-probe.sh's lines."""
 
 import importlib.util
 import json
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "network_test_script", Path(__file__).parents[1] / "ci-runner/tests/test_network.py"
+    "network_test_script", Path(__file__).parents[1] / "ci-runner/host-tests/test_network.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 network = importlib.util.module_from_spec(SPEC)

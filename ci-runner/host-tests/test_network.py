@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Prove the microVM network rules from inside a real VM:
-  sudo ci-runner/tests/test-network.sh
+  sudo ci-runner/host-tests/test-network.sh
 Boots a VM in slot 0 running network-probe.sh, and while it listens tries to connect to
 it from a Docker container. Exits non-zero on any failure.
 """

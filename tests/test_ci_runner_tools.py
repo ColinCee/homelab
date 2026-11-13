@@ -1,4 +1,4 @@
-"""The image tools check (ci-runner/tests/test_tools.py)."""
+"""The image tools check (ci-runner/host-tests/test_tools.py)."""
 
 import importlib.util
 import json
@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "tools_test_script", Path(__file__).parents[1] / "ci-runner/tests/test_tools.py"
+    "tools_test_script", Path(__file__).parents[1] / "ci-runner/host-tests/test_tools.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 tools = importlib.util.module_from_spec(SPEC)

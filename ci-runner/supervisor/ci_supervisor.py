@@ -204,7 +204,7 @@ WAIT_METRICS_SECONDS = 15.0
 # (the wait log's reason), at most this many, oldest first: ci-boot writes it to
 # /etc/homelab-ci/waits.json for the job's own record.
 VM_WAITS_MAX = 50
-# The host's own load test (ci-runner/tests/test_load.py), run by LOAD_TEST_UNIT once for each
+# The host's own load test (ci-runner/host-tests/test_load.py), run by LOAD_TEST_UNIT once for each
 # slot count and version of the test (docs/architecture.md, "CI runner"). Its
 # result goes in the status file and in each VM at /etc/homelab-ci/load-test.json.
 LOAD_TEST_FILE = Path("/var/lib/homelab-ci/load-test.json")

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Blast-radius audit for the CI runner. Must pass before the supervisor runs, every
 quarter, and after any Firecracker, kernel or runner upgrade:
-  sudo ci-runner/tests/audit.sh
+  sudo ci-runner/host-tests/audit.sh
 Checks what a job could reach if it broke out of its VM, or out of Firecracker into the
 slot user. Read-only apart from one throwaway VM.
 """

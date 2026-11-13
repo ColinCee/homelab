@@ -1,6 +1,6 @@
 #!/usr/local/bin/homelab-python3 -Es
 """Check that a VM in every slot at full tilt leaves the services responsive:
-  sudo ci-runner/tests/test-load.sh [SECONDS]
+  sudo ci-runner/host-tests/test-load.sh [SECONDS]
 Boots a VM in every slot at the size the supervisor gives a job when others run
 (2 vCPUs, 2 GiB), each burning all its CPUs and holding nearly all its memory,
 while timing Home Assistant and Grafana once a second against a quiet baseline.

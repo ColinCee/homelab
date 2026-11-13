@@ -1,6 +1,6 @@
 #!/usr/local/bin/homelab-python3 -Es
 """Prove the container wall (homelab-ci.nft, table homelab_wall):
-  sudo ci-runner/tests/test-wall.sh
+  sudo ci-runner/host-tests/test-wall.sh
 A throwaway container on its own Docker network must be stopped by the wall on the ports
 Docker publishes on the Tailscale address, the router, the tailnet and the public address,
 yet reach the internet and its network peer, and a container on the default bridge must
