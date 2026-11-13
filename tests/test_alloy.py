@@ -1,6 +1,8 @@
 """Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
 loads (its validate command)."""
 
+import ast
+import json
 import re
 import subprocess
 import threading
@@ -115,7 +117,8 @@ NOISE = {
 
 def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> None:
     alloy = tool("alloy")
-    starts = [CONFIG[CONFIG.index(f'loki.process "{name}"') :] for name in ("noise", "docker")]
+    names = ("noise", "docker", "journal")
+    starts = [CONFIG[CONFIG.index(f'loki.process "{name}"') :] for name in names]
     block = "".join(start[: start.index("\n}\n") + 3] for start in starts)
     # Without the secret filter between them, which needs no testing here.
     block = block.replace("loki.secretfilter.docker.receiver", "loki.process.docker.receiver")
@@ -126,10 +129,15 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         path = tmp_path / f"{name}.log"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         targets.append(f'{{__path__ = "{path.as_posix()}", container_name = "{name}"}}')
+    journal = tmp_path / "journal.txt"
+    journal.write_text("Started homelab-ci-update.service.\n", encoding="utf-8")
     (tmp_path / "test.alloy").write_text(
         f'local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
         'loki.source.file "s" {\n  targets = local.file_match.s.targets\n'
         "  forward_to = [loki.process.noise.receiver]\n  tail_from_end = false\n}\n"
+        f'local.file_match "j" {{\n  path_targets = [{{__path__ = "{journal.as_posix()}"}}]\n}}\n'
+        'loki.source.file "j" {\n  targets = local.file_match.j.targets\n'
+        "  forward_to = [loki.process.journal.receiver]\n  tail_from_end = false\n}\n"
         f'{block}\nloki.echo "out" {{}}\n',
         encoding="utf-8",
     )
@@ -144,7 +152,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
             for out in run.stderr:
                 if "component_id=loki.echo.out" in out:
                     seen.append(out)
-                if len(seen) == len(LINES) + 2:
+                if len(seen) == len(LINES) + 3:
                     break
         finally:
             deadline.cancel()
@@ -152,6 +160,22 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     for line, word, level in LINES:
         got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]
         assert got == [[level] if level else []], line
+    # Every line leaves as one JSON object, whatever its program wrote.
+    for out in seen:
+        entry = re.search(r' entry=("(?:[^"\\]|\\.)*")', out)
+        assert entry, out
+        assert isinstance(json.loads(ast.literal_eval(entry.group(1))), dict), out
     kept = "".join(seen)
-    assert "PR--" in kept and "reload requested" in kept
+    assert "PR--" in kept and "reload requested" in kept and "homelab-ci-update" in kept
     assert " 200 9092" not in kept and "device" not in kept
+
+
+def test_container_logs_carry_their_service_name() -> None:
+    # The rules must be in the block that the log source reads, not another relabel block.
+    source = CONFIG[CONFIG.index('loki.source.docker "containers"') :]
+    rules = re.search(r"relabel_rules\s*=\s*discovery\.relabel\.(\w+)\.rules", source)
+    assert rules
+    block = CONFIG[CONFIG.index(f'discovery.relabel "{rules.group(1)}"') :]
+    block = block[: block.index("\n}\n")]
+    assert '"__meta_docker_container_label_com_docker_compose_service"' in block
+    assert re.search(r'target_label\s*=\s*"service_name"', block)

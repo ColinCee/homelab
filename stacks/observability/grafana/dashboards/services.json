@@ -765,7 +765,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "(i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): `) | stats by (container_name) count() as lines",
+          "expr": "(i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`(^|\"msg\":\").{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(^|\"msg\":\")(\\w+\\.)+[A-Z]\\w*: |(^|\"msg\":\")[A-Z]\\w*(Error|Exception): `) | stats by (container_name) count() as lines",
           "legendFormat": "{{container_name}}",
           "queryType": "statsRange",
           "step": "1h",
@@ -860,7 +860,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "_time:1h (i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`^.{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(?i:level=(error|fatal|crit))|^(\\w+\\.)+[A-Z]\\w*: |^[A-Z]\\w*(Error|Exception): `) | uniq by (_time, container_name, _msg) | replace_regexp (\"^observability-|-1$\", \"\") at container_name | replace_regexp (\"^[{].*?\\\"(?:msg|message)\\\":\\\"([^\\\"]*)\\\".*$\", \"$1\") at _msg | replace_regexp (`\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*`, \"\") at _msg | replace_regexp (\"[0-9a-f]*[0-9][0-9a-f]*\", \"#\") at _msg | extract_regexp `^(?P<line>.{0,80})` from _msg | stats by (container_name, line) count() as hits | sort by (hits desc) limit 20",
+          "expr": "_time:1h (i(error) or i(fatal) or i(panic) or i(crit) or i(critical) or i(exception) or i(limited)) (level:in(error, fatal, critical) or _msg:~`(^|\"msg\":\").{0,40}\\b(ERROR|FATAL|PANIC|CRITICAL)\\b|(^|\"msg\":\")(\\w+\\.)+[A-Z]\\w*: |(^|\"msg\":\")[A-Z]\\w*(Error|Exception): `) | uniq by (_time, container_name, _msg) | replace_regexp (\"^observability-|-1$\", \"\") at container_name | replace_regexp (\"^[{].*?\\\"(?:msg|message)\\\":\\\"([^\\\"]*)\\\".*$\", \"$1\") at _msg | replace_regexp (`\\x1b\\[[0-9;]*m|^\\S*\\d{4}-\\d\\d-\\d\\d[T ][0-9:.,]+\\S*\\s*`, \"\") at _msg | replace_regexp (\"[0-9a-f]*[0-9][0-9a-f]*\", \"#\") at _msg | extract_regexp `^(?P<line>.{0,80})` from _msg | stats by (container_name, line) count() as hits | sort by (hits desc) limit 20",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 20

@@ -18,14 +18,13 @@ import json
 import logging
 import math
 import os
-import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import telemetry
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 # The stacks in this repository; tests/test_public_stats.py keeps it in step.
@@ -59,36 +58,6 @@ class StatsError(Exception):
 
 
 log = logging.getLogger("public-stats")
-
-
-# One JSON object per line, which Alloy reads (config.alloy, loki.process "docker"); an exception
-# under OpenTelemetry's names. Each service runs alone with `python -I`, so each has a copy;
-# tests/test_json_logs.py keeps them the same.
-_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
-
-
-class JsonLines(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        # A value passed as `extra` never takes the place of these.
-        line: dict[str, object] = {
-            k: v for k, v in vars(record).items() if k not in _RECORD_FIELDS
-        } | {
-            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
-            "level": record.levelname,
-            "logger": record.name,
-            "msg": record.getMessage(),
-        }
-        if record.exc_info and record.exc_info[1]:
-            line["exception.type"] = type(record.exc_info[1]).__name__
-            line["exception.message"] = str(record.exc_info[1])
-            line["exception.stacktrace"] = self.formatException(record.exc_info)
-        return json.dumps(line, default=str)
-
-
-def log_json() -> None:
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(JsonLines())
-    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 def get_json(url: str, login: str | None = None) -> Any:  # noqa: ANN401 - the server's JSON
@@ -203,5 +172,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    log_json()
+    telemetry.start()
     main()

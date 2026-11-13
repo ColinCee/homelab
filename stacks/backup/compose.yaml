@@ -48,6 +48,7 @@ services:
       - /tmp
     volumes:
       - ./backup.py:/backup.py:ro
+      - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       - restic-cache:/cache
       # Read by Alloy's textfile collector (observability stack).
       - /var/lib/homelab-metrics:/metrics
