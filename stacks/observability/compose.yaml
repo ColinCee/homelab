@@ -86,7 +86,7 @@ services:
     security_opt:
       - no-new-privileges:true
     # It held at most 106 MiB at ten times the real span rate.
-    mem_limit: 512m
+    mem_limit: 768m
     labels:
       homelab.config-hash: ${CONFIG_HASH_TRACES:-}
     volumes:
@@ -112,7 +112,7 @@ services:
     # People use grafana.internal; only its proxy (stacks/internal-names) and the runner's load test use 5080.
     ports:
       - "100.100.146.119:5080:3000"
-    mem_limit: 512m
+    mem_limit: 1g
     # Grafana applies its admin password only when it makes its database, so each start sets it from the secret.
     entrypoint:
       - sh
@@ -370,7 +370,7 @@ services:
     cap_drop:
       - ALL
     user: "65534:65534"
-    mem_limit: 32m
+    mem_limit: 64m
     labels:
       homelab.config-hash: ${CONFIG_HASH_BLACKBOX:-}
     volumes:
@@ -392,7 +392,7 @@ services:
     pid: host
     # It holds about 270 MiB, two thirds of it its maps' kernel memory, and more while it reads every program at start,
     # which 384 MiB did not hold.
-    mem_limit: 512m
+    mem_limit: 1g
     environment:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
       OTEL_EBPF_LOG_FORMAT: json
