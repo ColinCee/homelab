@@ -30,11 +30,10 @@ def test_every_service_has_the_same_copy() -> None:
         assert block(path) == first, path
 
 
-def line(record: logging.LogRecord) -> dict[str, object]:
+def line(record: logging.LogRecord) -> str:
     out = JsonLines().format(record)
     assert "\n" not in out
-    parsed: dict[str, object] = json.loads(out)
-    return parsed
+    return out
 
 
 def test_a_line_carries_its_fields_and_no_record_internals() -> None:
@@ -43,7 +42,7 @@ def test_a_line_carries_its_fields_and_no_record_internals() -> None:
         "relay-test", logging.ERROR, __file__, 1, "cannot post", (), None,
         extra={"post": "123", "error": "timed out"},
     )  # fmt: skip
-    got = line(record)
+    got = json.loads(line(record))
     assert got.pop("time")
     assert got == {
         "level": "ERROR",
@@ -61,7 +60,7 @@ def test_an_exception_is_kept_by_its_semantic_convention_names() -> None:
         record = logging.getLogger("x").makeRecord(
             "x", logging.ERROR, __file__, 1, "crashed", (), sys.exc_info()
         )
-    got = line(record)
+    got = json.loads(line(record))
     assert got["exception.type"] == "ValueError"
     assert got["exception.message"] == "bad"
     assert "raise ValueError" in str(got["exception.stacktrace"])
