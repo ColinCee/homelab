@@ -15,11 +15,11 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 import telemetry
 
@@ -33,6 +33,18 @@ EXCLUDES = (
     "/data/home-assistant/.cache",
     "/data/home-assistant/deps",
     "/data/home-assistant/tts",
+)
+# A run's numbers from restic's summary, logged as fields of "restic backup ran".
+SUMMARY_FIELDS = (
+    "files_new",
+    "files_changed",
+    "files_unmodified",
+    "data_added",
+    "data_added_packed",
+    "total_files_processed",
+    "total_bytes_processed",
+    "total_duration",
+    "snapshot_id",
 )
 FORGET = ("--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "6")
 # R2 bills past 10 GB and has no server-side quota, so the cap is enforced here: a run that would
@@ -72,16 +84,27 @@ def run(
     return subprocess.run(command, stdout=stdout, stderr=stderr, text=True, check=False)
 
 
-def json_number(text: str, key: str) -> int | None:
-    """The first integer `key` in any JSON object line of restic's output."""
+def json_objects(text: str) -> Iterator[dict[str, Any]]:
+    """Each JSON object line of restic's `--json` output, skipping any other line."""
     for line in text.splitlines():
         try:
             value = json.loads(line)
         except ValueError:
             continue
-        if isinstance(value, dict) and isinstance(number := value.get(key), int):
-            return number
-    return None
+        if isinstance(value, dict):
+            yield value
+
+
+def json_number(text: str, key: str) -> int | None:
+    """The first integer `key` in any JSON object line of restic's output."""
+    numbers = (n for o in json_objects(text) if isinstance(n := o.get(key), int))
+    return next(numbers, None)
+
+
+def summary(text: str) -> dict[str, Any]:
+    """The summary object `restic backup --json` prints last, or {} when it printed none."""
+    found = [o for o in json_objects(text) if o.get("message_type") == "summary"]
+    return found[-1] if found else {}
 
 
 def seconds_until(clock: str, now: datetime) -> int:
@@ -143,7 +166,8 @@ class Backup:
 
     def backup_args(self, *extra: str) -> list[str]:
         excludes = [arg for pattern in EXCLUDES for arg in ("--exclude", pattern)]
-        return ["backup", "/data", "--host", HOST, *excludes, *extra]
+        # --quiet leaves only the summary on stdout; errors still reach stderr, as JSON.
+        return ["backup", "/data", "--host", HOST, *excludes, "--json", "--quiet", *extra]
 
     def repo_bytes(self) -> int | None:
         return json_number(self.output("stats", "--mode", "raw-data", "--json"), "total_size")
@@ -153,12 +177,9 @@ class Backup:
 
     def within_cap(self) -> bool:
         stored = self.repo_bytes()
-        dry_run = self.output(*self.backup_args("--dry-run", "--json"), stderr=subprocess.DEVNULL)
-        summary = "\n".join(
-            line for line in dry_run.splitlines() if '"message_type":"summary"' in line
-        )
-        pending = json_number(summary, "data_added")
-        if stored is None or pending is None:
+        dry_run = self.output(*self.backup_args("--dry-run"), stderr=subprocess.DEVNULL)
+        pending = summary(dry_run).get("data_added")
+        if stored is None or not isinstance(pending, int):
             log.error("backup skipped: could not measure the repository or upload size")
             return False
         limit = self.max_bytes()
@@ -193,11 +214,19 @@ class Backup:
         log.info("repository measured", extra={"size_bytes": size, "cap_bytes": self.max_bytes()})
         self.write_metric(SIZE_FILE, "homelab_backup_repository_bytes", size)
 
+    def back_up(self) -> bool:
+        finished = self.run(["restic", *self.backup_args()], stdout=subprocess.PIPE)
+        numbers = summary(finished.stdout or "")
+        fields = {name: numbers[name] for name in SUMMARY_FIELDS if name in numbers}
+        level = logging.INFO if finished.returncode == 0 else logging.WARNING
+        log.log(level, "restic backup ran", extra=fields | {"exit_code": finished.returncode})
+        return finished.returncode == 0
+
     def run_backup(self) -> str | None:
         """The step that failed, so a failed run records where it stopped; None when all pass."""
         steps: Sequence[tuple[str, Callable[[], bool]]] = (
             ("cap", self.within_cap),
-            ("backup", lambda: self.restic(*self.backup_args()) == 0),
+            ("backup", self.back_up),
             ("forget", lambda: self.restic("forget", "--host", HOST, "--prune", *FORGET) == 0),
             ("check", self.verify),
         )

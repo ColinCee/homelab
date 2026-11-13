@@ -489,8 +489,9 @@ services:
     networks:
       - docker-api
 
-  # Checks Home Assistant and the .internal names each minute (probes.py) for their alerts. On the host's network: the
-  # firewall admits only Tailscale and loopback, so from a Docker network the host's services are out of reach.
+  # Checks Home Assistant and the .internal names each minute (probes.py) for their alerts, and the blog's numbers' age.
+  # On the host's network: the firewall admits only Tailscale and loopback, so from a Docker network the host's
+  # services are out of reach.
   probes:
     image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     restart: unless-stopped
