@@ -1791,7 +1791,7 @@
     {
       "id": 16,
       "type": "stat",
-      "title": "Entities down",
+      "title": "Down",
       "description": "Entities Home Assistant reports unavailable or unknown, from its Prometheus endpoint; entities with no state of their own (buttons, events, notify, tts) are left out. No rule reads it.",
       "datasource": {
         "type": "prometheus",
@@ -1860,7 +1860,7 @@
       "id": 17,
       "type": "table",
       "title": "Entities down now",
-      "description": "Each entity counted in Entities down: its domain, id and name. Unknown and unavailable look the same here; Home Assistant's own page tells them apart.",
+      "description": "Each entity the Down panel counts: its domain, id and name. Unknown and unavailable look the same here; Home Assistant's own page tells them apart.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -2077,7 +2077,7 @@
     {
       "id": 20,
       "type": "stat",
-      "title": "Blog data age",
+      "title": "Blog age",
       "description": "How old the home-lab numbers colincheung.dev/homelab.json serves are (public_stats.py pushes every 5 minutes; probes.py reads them back). Amber past 30 minutes. A failing push already alerts as public-stats unhealthy; no data means the blog could not be read.",
       "datasource": {
         "type": "prometheus",
