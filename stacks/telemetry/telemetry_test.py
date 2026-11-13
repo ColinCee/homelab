@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 import telemetry
 
-from conftest import ROOT, programs, units
+from conftest import ROOT, linux_only, programs, units
 
 # Before conftest's sent_traces stands in for it.
 SEND_TRACES = telemetry.send_traces
@@ -99,9 +99,9 @@ def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: 
     assert done.returncode == 0, done.stderr
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")
 @pytest.mark.parametrize("mode", [0o644, 0o600])
 def test_a_replaced_file_has_its_mode_and_leaves_no_temporary(tmp_path: Path, mode: int) -> None:
+    linux_only("POSIX file modes")
     out = tmp_path / "x.prom"
     out.write_text("old\n")
     telemetry.replace_file(out, "new\n", mode)

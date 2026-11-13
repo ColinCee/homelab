@@ -9,7 +9,6 @@ by homelab-ssd-wear.timer. On any error the old file stays and the unit fails.
 from __future__ import annotations
 
 import ctypes
-import fcntl
 import os
 import struct
 from pathlib import Path
@@ -36,6 +35,8 @@ def read_health_log(device: str = DEVICE) -> bytes:
             cdw10, 0, 0, 0, 0, 0, 0, 0,
         )
     )  # fmt: skip
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
     fd = os.open(device, os.O_RDONLY)
     try:
         status = fcntl.ioctl(fd, NVME_IOCTL_ADMIN_CMD, cmd)

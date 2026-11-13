@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, linux_only
 
 SPEC = importlib.util.spec_from_file_location(
     "audit_script", ROOT / "ci-runner/host-tests/audit.py"
@@ -108,6 +108,7 @@ def folder(root: Path, path: str, mode: int) -> Path:
 
 @pytest.fixture
 def host(tmp_path: Path) -> FakeHost:
+    linux_only("the audit judges file modes, and owners by uid")
     root = tmp_path
     write(root, "/sys/kernel/mm/ksm/run", 0o644, "0\n")
     folder(root, "/etc/homelab-ci", 0o700)

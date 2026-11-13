@@ -12,7 +12,6 @@ homelab-python3 it installs: the repair path must not depend on what it repairs 
 
 from __future__ import annotations
 
-import fcntl
 import os
 import re
 import shlex
@@ -296,6 +295,8 @@ def install_host(host: Host, here: Path, env: Mapping[str, str]) -> None:
         add_user(host, f"fc-slot{n}")
 
     # One install at a time: a second waits its turn and is told whose is running.
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
     install_dirs(host, "0700", RUN_DIR)
     with host.path(f"{RUN_DIR}/install.lock").open("w") as lock:
         try:

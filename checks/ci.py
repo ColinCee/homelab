@@ -82,7 +82,8 @@ def versions_hash() -> int:
 
 def validate_changed_compose() -> int:
     files = [p for p in changed([]) if p.endswith("compose.yaml")]
-    return subprocess.run(["checks/validate-compose.sh", *files]).returncode if files else 0
+    command = [sys.executable, "checks/validate_compose.py", *files]
+    return subprocess.run(command).returncode if files else 0
 
 
 def limits(text: str) -> dict[str, float]:

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Mapping
 from functools import cache
@@ -167,6 +168,16 @@ def tool(name: str) -> str:
     if os.environ.get("CI"):
         pytest.fail(f"{name} is not on PATH; mise.toml installs it")
     pytest.skip(f"needs {name} (mise install)")
+
+
+def linux_only(why: str) -> None:
+    """Skip the rest of the test, or the module, off Linux (Colin's Windows PC) when it needs
+    what only Linux has, such as file modes, flock or uids; CI runs Linux, so there it fails."""
+    if sys.platform == "linux":
+        return
+    if os.environ.get("CI"):
+        pytest.fail(f"needs Linux ({why}), which CI runs")
+    pytest.skip(f"needs Linux: {why}", allow_module_level=True)
 
 
 class NoGitHub:
