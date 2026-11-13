@@ -78,10 +78,11 @@ NOISE = {
 
 def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> None:
     alloy = tool("alloy")
-    block = CONFIG[CONFIG.index('loki.process "docker"') :]
-    block = block[: block.index("\n}\n") + 3].replace(
-        "otelcol.receiver.loki.logs.receiver", "loki.echo.out.receiver"
-    )
+    starts = [CONFIG[CONFIG.index(f'loki.process "{name}"') :] for name in ("noise", "docker")]
+    block = "".join(start[: start.index("\n}\n") + 3] for start in starts)
+    # Without the secret filter between them, which needs no testing here.
+    block = block.replace("loki.secretfilter.docker.receiver", "loki.process.docker.receiver")
+    block = block.replace("otelcol.receiver.loki.logs.receiver", "loki.echo.out.receiver")
     files = {"app": [line for line, _, _ in LINES], **NOISE}
     targets = []
     for name, lines in files.items():
@@ -91,7 +92,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     (tmp_path / "test.alloy").write_text(
         f'local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
         'loki.source.file "s" {\n  targets = local.file_match.s.targets\n'
-        "  forward_to = [loki.process.docker.receiver]\n  tail_from_end = false\n}\n"
+        "  forward_to = [loki.process.noise.receiver]\n  tail_from_end = false\n}\n"
         f'{block}\nloki.echo "out" {{}}\n',
         encoding="utf-8",
     )

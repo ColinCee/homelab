@@ -173,7 +173,31 @@ loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
   targets       = discovery.docker.containers.targets
   relabel_rules = discovery.relabel.docker_logs.rules
-  forward_to    = [loki.secretfilter.docker.receiver]
+  forward_to    = [loki.process.noise.receiver]
+}
+
+// Lines dropped before the secret filter, which costs the most per line.
+loki.process "noise" {
+  forward_to = [loki.secretfilter.docker.receiver]
+
+  // Alloy's and OBI's polls, answered: nearly every line the log store would take. Refusals (403) and errors stay.
+  stage.match {
+    selector = "{container_name=\"observability-docker-socket-proxy-1\"}"
+
+    stage.drop {
+      expression = "\\s[0-9/]+ (200|404) \\d+ "
+    }
+  }
+
+  // The CI VMs' cAdvisor (prometheus.exporter.cadvisor "ci_vms") finds the containers too and logs, each minute for
+  // each, that it cannot read their disks, which it is not asked for.
+  stage.match {
+    selector = "{container_name=\"observability-alloy-1\"}"
+
+    stage.drop {
+      expression = "unable to determine device info for dir: /rootfs/var/lib/docker/overlay2/"
+    }
+  }
 }
 
 // As loki.secretfilter "logs" below, but before the fields of each line are copied out (next block).
@@ -206,25 +230,6 @@ loki.process "docker" {
     expression = "^[\\x00\\s]*$"
   }
 
-  // Alloy's and OBI's polls, answered: nearly every line the log store would take. Refusals (403) and errors stay.
-  stage.match {
-    selector = "{container_name=\"observability-docker-socket-proxy-1\"}"
-
-    stage.drop {
-      expression = "\\s[0-9/]+ (200|404) \\d+ "
-    }
-  }
-
-  // The CI VMs' cAdvisor (prometheus.exporter.cadvisor "ci_vms") finds the containers too and logs, each minute for
-  // each, that it cannot read their disks, which it is not asked for.
-  stage.match {
-    selector = "{container_name=\"observability-alloy-1\"}"
-
-    stage.drop {
-      expression = "unable to determine device info for dir: /rootfs/var/lib/docker/overlay2/"
-    }
-  }
-
   // Terminal colours, which Home Assistant writes around each line.
   stage.replace {
     expression = "(\\x1b\\[[0-9;]*m)"
@@ -253,7 +258,7 @@ loki.process "docker" {
   // One vocabulary, the journal's included (loki.relabel "journal"), which the Services dashboard's error counts read.
   stage.template {
     source   = "level"
-    template = "{{ $l := ToLower .Value }}{{ if regexMatch \"^(emerg|alert|crit|critical|fatal|ftl|panic)$\" $l }}fatal{{ else if regexMatch \"^(err|error|eror)$\" $l }}error{{ else if regexMatch \"^(warn|warning|wrn)$\" $l }}warn{{ else if regexMatch \"^(info|inf|notice)$\" $l }}info{{ else if regexMatch \"^(debug|dbg|trace)$\" $l }}debug{{ else }}{{ $l }}{{ end }}"
+    template = "{{ $l := ToLower .Value }}{{ get (dict \"emerg\" \"fatal\" \"alert\" \"fatal\" \"crit\" \"fatal\" \"critical\" \"fatal\" \"fatal\" \"fatal\" \"ftl\" \"fatal\" \"panic\" \"fatal\" \"err\" \"error\" \"error\" \"error\" \"eror\" \"error\" \"warn\" \"warn\" \"warning\" \"warn\" \"wrn\" \"warn\" \"info\" \"info\" \"inf\" \"info\" \"notice\" \"info\" \"debug\" \"debug\" \"dbg\" \"debug\" \"trace\" \"debug\") $l | default $l }}"
   }
 
   // The label and the metadata below reach the log store as fields of each line.
