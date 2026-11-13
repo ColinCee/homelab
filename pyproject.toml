@@ -32,6 +32,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 "stacks/deploy/deploy_main.py" = "py312"
 "ci-runner/install_host.py" = "py312"
 "ci-runner/update.py" = "py312"
+# Imported by the deploy scripts above.
+"stacks/telemetry/telemetry.py" = "py312"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

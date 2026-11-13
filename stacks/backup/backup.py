@@ -115,9 +115,8 @@ class Backup:
     def write_login(self) -> None:
         """The repository and its S3 login, in the files restic reads (compose.yaml), from the R2
         secrets. Owner-only, as they hold the keys."""
-        secrets = self.path("/run/secrets")
         account, key, secret = (
-            (secrets / name).read_text().rstrip("\n")
+            telemetry.secret(self.path(f"/run/secrets/{name}"))
             for name in ("r2_account_id", "r2_access_key_id", "r2_secret_access_key")
         )
         self._private(

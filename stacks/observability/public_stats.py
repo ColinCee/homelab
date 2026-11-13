@@ -13,14 +13,12 @@ newer than the ones it has, so a drifting clock shows as refused pushes here.
 See docs/architecture.md, "Public stats".
 """
 
-import base64
 import json
 import logging
 import math
 import os
 import time
 import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -42,8 +40,6 @@ EVERY_S = 300
 # readiness wait sees the container healthy.
 RETRY_S = 15
 TIMEOUT_S = 15
-# Cloudflare refuses the default Python-urllib user agent.
-USER_AGENT = "homelab-public-stats/1"
 HEARTBEAT = Path("/tmp/ready")
 
 QUERIES = {
@@ -60,28 +56,18 @@ class StatsError(Exception):
 log = logging.getLogger("public-stats")
 
 
-def get_json(url: str, login: str | None = None) -> Any:  # noqa: ANN401 - the server's JSON
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    if login:
-        # Never passed on by a redirect, which could lead off the stack's network.
-        auth = "Basic " + base64.b64encode(login.encode()).decode()
-        request.add_unredirected_header("Authorization", auth)
-    with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
-        return json.load(response)
-
-
 def prometheus_login() -> str | None:
     """The gateway's `user:password`, from PROMETHEUS_USER and PROMETHEUS_PASSWORD_FILE."""
     password_file = os.environ.get("PROMETHEUS_PASSWORD_FILE")
     if not password_file:
         return None
-    password = Path(password_file).read_text(encoding="utf-8").strip()
+    password = telemetry.secret(password_file)
     return f"{os.environ['PROMETHEUS_USER']}:{password}"
 
 
 def query(prometheus: str, promql: str) -> list[dict[str, Any]]:
     url = f"{prometheus}/api/v1/query?" + urllib.parse.urlencode({"query": promql})
-    body = get_json(url, prometheus_login())
+    body = telemetry.http_json(url, login=prometheus_login(), timeout=TIMEOUT_S)
     if body.get("status") != "success":
         raise StatsError(f"prometheus: {body.get('error', 'query failed')}")
     return body["data"]["result"]
@@ -120,7 +106,7 @@ def build_body(
 def gather(prometheus: str, flights: str) -> dict[str, Any]:
     results = {name: query(prometheus, promql) for name, promql in QUERIES.items()}
     try:
-        kpis = get_json(flights).get("kpis")
+        kpis = telemetry.http_json(flights, timeout=TIMEOUT_S).get("kpis")
     except (OSError, ValueError, AttributeError) as error:
         log.error("cannot read the flight tracker", extra={"error": str(error)})
         kpis = None
@@ -136,18 +122,8 @@ def signed(key: Ed25519PrivateKey, body: dict[str, Any]) -> tuple[bytes, str]:
 
 def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
     data, signature = signed(key, body)
-    request = urllib.request.Request(
-        url,
-        data=data,
-        method="PUT",
-        headers={
-            "Signature": signature,
-            "Content-Type": "application/json",
-            "User-Agent": USER_AGENT,
-        },
-    )
-    with urllib.request.urlopen(request, timeout=TIMEOUT_S):
-        pass
+    headers = {"Signature": signature, "Content-Type": "application/json"}
+    telemetry.http(url, method="PUT", data=data, headers=headers, timeout=TIMEOUT_S)
 
 
 def main() -> None:
@@ -155,7 +131,7 @@ def main() -> None:
     flights = os.environ["FLIGHTS_URL"]
     url = os.environ["PUBLIC_STATS_URL"]
     # The only copy of the private key is the PUBLIC_STATS_KEY GitHub secret.
-    key_hex = Path(os.environ["PUBLIC_STATS_KEY_FILE"]).read_text(encoding="utf-8").strip()
+    key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
     while True:
         try:

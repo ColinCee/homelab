@@ -330,7 +330,6 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
 
     api = serve(GitHub)
     monkeypatch.setattr(ci_times, "API", api)
-    monkeypatch.setattr(ci_times, "SIGNED", store)
     monkeypatch.setattr(ci_times.time, "sleep", lambda s: None)
     logs = ci_times.github_logs("secret")
     assert logs(1) == "the log" and seen == [None]

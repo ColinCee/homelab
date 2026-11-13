@@ -8,7 +8,6 @@ import socket
 import struct
 import time
 import urllib.error
-import urllib.request
 from pathlib import Path
 
 import telemetry
@@ -18,15 +17,14 @@ OUT = Path("/metrics/probes.prom")
 
 
 def http_status(url: str, host: str | None = None) -> int:
-    """The response's status, or 0 when nothing answered."""
-    request = urllib.request.Request(url, headers={"Host": host} if host else {})
+    """The response's status, 200 for any success after redirects, or 0 when nothing answered."""
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            return int(response.status)
+        telemetry.http(url, headers={"Host": host} if host else {}, timeout=10, limit=0)
     except urllib.error.HTTPError as error:
         return error.code
     except OSError:
         return 0
+    return 200
 
 
 def resolves(name: str, server: str, address: str, port: int = 53, timeout: float = 5) -> bool:
