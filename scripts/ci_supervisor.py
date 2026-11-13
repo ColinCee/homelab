@@ -1782,6 +1782,17 @@ def note_poll(state: State, ok: bool, now: float) -> None:
         write_wait_metrics(state, now)
 
 
+def rest(state: State, seconds: float) -> None:
+    """Sleep between polls, rewriting the wait metrics when due: a rate limit holds the poll
+    for up to an hour, and a file left unwritten that long reads as a stopped supervisor
+    rather than as polls failing."""
+    end = time.monotonic() + seconds
+    while (left := end - time.monotonic()) > 0:
+        time.sleep(min(left, WAIT_METRICS_SECONDS))
+        if time.time() - state.wait_metrics_written >= WAIT_METRICS_SECONDS:
+            write_wait_metrics(state, time.time())
+
+
 def label_value(text: str) -> str:
     """Text as a Prometheus label value."""
     return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
@@ -2215,6 +2226,7 @@ def main(argv: list[str] | None = None) -> int:
             note_poll(state, True, time.time())
         except RateLimited as e:
             log(str(e))
+            note_poll(state, False, time.time())
             wait = max(POLL_SECONDS, e.until - time.time() + 1)
         except Exception as e:
             log(f"poll failed: {type(e).__name__}: {e}")
@@ -2237,7 +2249,7 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(POLL_SECONDS)
                 reap(gh, state, time.time())
             return 0
-        time.sleep(wait)
+        rest(state, wait)
 
 
 if __name__ == "__main__":

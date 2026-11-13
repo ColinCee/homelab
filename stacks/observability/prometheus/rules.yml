@@ -622,6 +622,39 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
 
+  # CI jobs on the Beelink's VMs not starting while the supervisor runs (its stopping is ci-supervisor-stopped, so
+  # it counts only while ci-waits.prom is fresh), from write_wait_metrics in scripts/ci_supervisor.py.
+  - name: ci-jobs
+    interval: 1m
+    rules:
+      # A job whose VM never boots or never takes it (normal: under 3 min), polls of GitHub failing or rate limited
+      # (normal: under 7 min), or any job queued 2 h. A wait for slots, memory, disk or the load test is capacity in
+      # use and backlogs reach an hour; `unseen` restarts counting at each supervisor restart.
+      - alert: ci-jobs-not-starting
+        expr: |
+          round(max(
+            max(homelab_ci_wait_seconds{kind=~"booting|ready"}) > 300
+            or max(homelab_ci_poll_failed_seconds) > 600
+            or max(homelab_ci_queued_seconds) > 7200
+          ) / 60)
+          and on() (time() - max(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"})) < 600
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'CI jobs not starting'
+          measure: 'Stuck for'
+          unit: ' min'
+          harm: 'Private repositories'' checks sit queued, so nothing of theirs merges or deploys.'
+          action: >-
+            On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting on "a VM booting for
+            it": VMs die at start, `sudo journalctl -t homelab-ci-vm -n 30` says why; fix it and merge. "Rate
+            limited until": it clears by itself then. "Poll failed": fix the error it names. See
+            docs/architecture.md, "CI runner".
+          dashboard: *home
+          value: '{{ $value }}'
+
   # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), with
   # their `for`, taken over all series so a post carries no labels, on Prometheus's own metrics (prometheus.yml, job
   # "prometheus").

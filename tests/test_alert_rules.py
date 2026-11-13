@@ -113,6 +113,7 @@ def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
 
 CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
 CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
+CI_WAITS = 'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-waits.prom"}'
 # Alloy's own series, as config.alloy's scrape of itself labels them.
 RECEIVER_ID = "otelcol.receiver.otlp.programs"
 RECEIVER = f'job="alloy",component_id="{RECEIVER_ID}"'
@@ -366,6 +367,44 @@ CASES = {
             at(25, "ci-supervisor-stopped"),
             at(27, "ci-supervisor-stopped", posts("ci-supervisor-stopped", "17")),
         ],
+    ),
+    "CI jobs whose VMs never boot fire after 5 minutes and `for`, as on 13 Nov": (
+        [
+            (CI_WAITS, "0+60x30"),
+            ('homelab_ci_wait_seconds{kind="booting"}', "0+60x30"),
+            ('homelab_ci_wait_seconds{kind="slots"}', "0x30"),
+            ("homelab_ci_vms_busy", "3x30"),
+        ],
+        [
+            at(10, "ci-jobs-not-starting"),
+            at(11, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "11")),
+        ],
+    ),
+    "CI polls failing fire after 10 minutes and `for`; a 2 h queue fires": (
+        [
+            (CI_WAITS, "0+60x30"),
+            ("homelab_ci_poll_failed_seconds", "0+60x30"),
+            ('homelab_ci_queued_seconds{repo="o/r",workflow="CI"}', "7000+60x30"),
+        ],
+        [
+            at(8, "ci-jobs-not-starting"),
+            # The queue arm from 4 min.
+            at(9, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "126")),
+            # Both arms: the first one's minutes.
+            at(16, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "16")),
+        ],
+    ),
+    "CI backlogs, the load test, restarts, a spike and a stopped supervisor never fire": (
+        [
+            (CI_WAITS, "0+60x5 300x40"),
+            ('homelab_ci_wait_seconds{kind="slots"}', "3000+60x40"),
+            ('homelab_ci_wait_seconds{kind="memory"}', "3000+60x40"),
+            ('homelab_ci_wait_seconds{kind="other"}', "3180+60x40"),
+            ('homelab_ci_wait_seconds{kind="unseen"}', "1800x40"),
+            ('homelab_ci_wait_seconds{kind="booting"}', "0x3 2100 0x10 400+60x30"),
+            ('homelab_ci_queued_seconds{repo="o/r",workflow="CI"}', "3600+60x40"),
+        ],
+        [at(m, "ci-jobs-not-starting") for m in (4, 8, 12, 20, 35)],
     ),
     "a deep check over 8 days old fires after `for`": (
         [("homelab_backup_last_deep_check_timestamp_seconds", "-734400x40")],
