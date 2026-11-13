@@ -10,6 +10,8 @@ import pytest
 import yaml
 from conftest import STACKS, load_yaml, stacks
 
+# Not conftest.stacks(): any YAML file with services, override files included, as Compose
+# reads them too.
 COMPOSE_FILES = sorted(
     path
     for path in [*STACKS.rglob("*.yaml"), *STACKS.rglob("*.yml")]

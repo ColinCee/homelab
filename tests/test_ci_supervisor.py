@@ -11,9 +11,9 @@ from pathlib import Path
 from typing import IO, Any, ClassVar, Never, Protocol
 
 import pytest
+from conftest import NoGitHub
 
 from scripts import ci_supervisor as sup
-from tests.conftest import NoGitHub
 
 # The real readers, kept before plenty_of_memory replaces them.
 READ_MEMORY, READ_RESERVE = sup.mem_available_mib, sup.memory_reserve_mib

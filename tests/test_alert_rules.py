@@ -12,15 +12,14 @@ from typing import Any
 
 import pytest
 import yaml
-
-from tests.conftest import tool
+from conftest import stacks, tool
 
 STACK = Path(__file__).parent.parent / "stacks/observability"
 GROUPS = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
 RULES = {r["alert"]: r for g in GROUPS for r in g["rules"]}
 HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
-COMPOSE = yaml.safe_load((STACK / "compose.yaml").read_text(encoding="utf-8"))
+COMPOSE = stacks()[STACK]
 HOME = "http://grafana.internal/d/home"
 
 

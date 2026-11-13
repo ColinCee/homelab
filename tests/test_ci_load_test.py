@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import NoGitHub
 
 from scripts import ci_supervisor as sup
-from tests.conftest import NoGitHub
 
 # The commands the code under test ran through subprocess.run (systemctl), never run for real.
 CALLS: list[list[str]] = []

@@ -9,8 +9,7 @@ import threading
 from pathlib import Path
 
 import yaml
-
-from tests.conftest import tool
+from conftest import tool
 
 ROOT = Path(__file__).parent.parent
 STACK = ROOT / "stacks/observability"

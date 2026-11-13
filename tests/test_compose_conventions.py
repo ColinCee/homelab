@@ -35,5 +35,10 @@ def test_tests_read_compose_and_run_git_through_conftest() -> None:
         if path == Path(__file__):
             continue
         text = path.read_text(encoding="utf-8")
-        assert not re.search(r"^\s*def _?git\(", text, re.MULTILINE), f"{path.name}: conftest.git"
-        assert 'glob("*/compose.yaml")' not in text, f"{path.name}: conftest.stacks"
+        assert not re.search(r"def \w*git\(|\[\s*[\"']git[\"']\s*,", text), (
+            f"{path.name}: conftest.git"
+        )
+        assert not re.search(r"glob\([^)]*compose\.ya?ml|compose\.ya?ml.*read_text", text), (
+            f"{path.name}: conftest.stacks"
+        )
+        assert "tests.conftest" not in text, f"{path.name}: import conftest, as pytest does"
