@@ -810,7 +810,8 @@ def start_vm(run: Launch, timeout: int, env: Mapping[str, str]) -> None:
             "--property=SyslogIdentifier=homelab-ci-vm",
             *(f"--setenv={k}={v}" for k, v in env.items()),
             sys.executable,
-            "-I",
+            # As the units run it: -I would drop its folder, where telemetry.py is installed.
+            "-Es",
             str(Path(__file__).resolve()),
             "vm",
             *vm,

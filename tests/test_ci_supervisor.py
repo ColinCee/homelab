@@ -3,6 +3,8 @@ import http.client
 import io
 import json
 import os
+import subprocess
+import sys
 import tarfile
 import threading
 import urllib.error
@@ -823,6 +825,23 @@ def test_every_vm_reports_its_memory(monkeypatch: pytest.MonkeyPatch) -> None:
     run = sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, Path("m1"))
     START_VM(run, 60, {})
     assert started[0][-2:] == ["--memory", str(run.memory_file)]
+
+
+def test_a_vm_unit_finds_the_modules_installed_beside_the_supervisor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started: list[list[str]] = []
+    monkeypatch.setattr(sup.subprocess, "run", lambda cmd, **k: started.append(cmd))
+    START_VM(sup.Launch(1, "ColinCee/servo", 2, "fc-1", 0.0, Path("m1")), 60, {})
+    monkeypatch.undo()
+    command = started[0]
+    at = command.index(sys.executable)
+    script = command.index(str(Path(sup.__file__).resolve()))
+    (tmp_path / "telemetry.py").write_text("", encoding="utf-8")
+    (tmp_path / "probe.py").write_text("import telemetry\n", encoding="utf-8")
+    probe = [*command[at:script], str(tmp_path / "probe.py")]
+    done = subprocess.run(probe, cwd="/", capture_output=True, text=True, check=False)
+    assert done.returncode == 0, done.stderr
 
 
 def test_reads_available_memory_and_the_reserve_from_the_host(
