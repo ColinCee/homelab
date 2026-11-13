@@ -3,10 +3,11 @@
 import re
 from pathlib import Path
 
+from conftest import units
+
 ROOT = Path(__file__).parent.parent
-UNITS = sorted(
-    [*ROOT.glob("ci-runner/systemd/*.service"), *ROOT.glob("stacks/*/systemd/*.service")]
-)
+# The host's own: the CI VM image's units (rootfs/) run inside a VM.
+UNITS = sorted(u for u in units() if "rootfs" not in u.parts)
 # System units that change the host itself, so cannot run read-only or without privileges.
 CHANGE_THE_HOST = {
     # Runs the Firecracker VMs as root, through the jailer.
@@ -43,7 +44,8 @@ def test_every_oneshot_has_a_start_limit() -> None:
 
 
 def test_system_units_run_read_only_without_new_privileges_unless_they_change_the_host() -> None:
-    system = [u for u in UNITS if u.parent == ROOT / "ci-runner/systemd"]
+    # A stack's units run in the user's systemd; the rest are root's.
+    system = [u for u in UNITS if u.relative_to(ROOT).parts[0] != "stacks"]
     assert {u.name for u in system} >= CHANGE_THE_HOST
     for unit in system:
         hardened = {"NoNewPrivileges": ["yes"], "ProtectSystem": ["strict"]}

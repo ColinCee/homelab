@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from conftest import STACKS, services
+from conftest import STACKS, programs, services, tracked, units
 from telemetry import JsonLines
 
 # Where each image is told to log JSON: an argument in its command, or NAME=json in its environment;
@@ -141,7 +141,7 @@ def test_traced_services_reach_alloy() -> None:
 
 
 def test_the_formatter_lives_in_the_telemetry_module_alone() -> None:
-    for path in STACKS.glob("**/*.py"):
+    for path in programs():
         if path != STACKS / "telemetry/telemetry.py":
             assert "logging.Formatter" not in path.read_text(encoding="utf-8"), path
 
@@ -202,14 +202,13 @@ OWN_OUTPUT = {
 def host_scripts() -> set[str]:
     """Each Python file a systemd unit runs on the host, directly or through its .sh wrapper."""
     found: set[str] = set()
-    units = [*ROOT.glob("ci-runner/systemd/*.service"), *STACKS.glob("*/systemd/*.service")]
-    for unit in units:
+    for unit in units():
         for line in re.findall(r"^ExecStart\S*=(.*)$", unit.read_text(encoding="utf-8"), re.M):
             if "docker exec" in line:
                 continue  # a container's, which test_python_services_log_... checks
             for target in re.findall(r"(\S+\.(?:py|sh))\b", line):
                 name = target.rsplit("/", 1)[-1]
-                sources = [p for p in ROOT.glob(f"*/**/{name}") if ".git" not in p.parts]
+                sources = [p for p in tracked() if p.name == name]
                 assert len(sources) == 1, f"{unit.name}: {name} is {sources}"
                 source = sources[0]
                 if name.endswith(".sh"):
