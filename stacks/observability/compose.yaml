@@ -396,7 +396,9 @@ services:
     environment:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
       OTEL_EBPF_LOG_FORMAT: json
-      OTEL_EBPF_METRICS_FEATURES: application
+      # Request rate, errors and duration per service, and per pair of services that call each other (the service map
+      # on the Traces page).
+      OTEL_EBPF_METRICS_FEATURES: application,application_service_graph
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
       # Calls on this host already link (OBI sees both ends), except some it misses, such as the gateway's to
