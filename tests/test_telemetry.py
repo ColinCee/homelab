@@ -3,6 +3,8 @@ http), and every program importing the module can find it (stacks/telemetry/tele
 
 import ast
 import http.server
+import json
+import logging
 import re
 import shlex
 import stat
@@ -10,17 +12,26 @@ import subprocess
 import sys
 import threading
 import urllib.error
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 import telemetry
+
+# Before conftest's sent_traces stands in for it.
+SEND_TRACES = telemetry.send_traces
 
 ROOT = Path(__file__).parent.parent
 MODULE = ROOT / "stacks/telemetry/telemetry.py"
 INSTALLED = "/usr/local/lib/homelab-ci/"
 # The installer repairs homelab-python3, so it imports nothing from the checkout (install_host.py).
-OWN_REPLACE = {MODULE, ROOT / "ci-runner/install_host.py"}
+OWN_REPLACE = {
+    MODULE,
+    ROOT / "ci-runner/install_host.py",
+    # Its copy runs in Home Assistant's own Python, which has no shared module.
+    ROOT / "stacks/home-assistant/history.py",
+}
 
 
 def test_files_are_replaced_only_through_telemetry() -> None:
@@ -64,6 +75,8 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
         "stacks/deploy/deploy_main.py",
         "stacks/observability/prometheus/replay.py",
         "stacks/backup/unit_metrics.py",
+        "stacks/backup/upkeep.py",
+        "stacks/home-assistant/history.py",
     ],
 )
 def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: Path) -> None:
@@ -177,11 +190,13 @@ def test_a_secret_is_read_by_name_or_path_without_its_newline(
 # What the test server answers, in turn (status, headers, body), and each request's login.
 ANSWERS: list[tuple[int, dict[str, str], bytes]] = []
 SEEN: list[str | None] = []
+PATHS: list[str] = []
 
 
 class Server(http.server.BaseHTTPRequestHandler):
     def answer(self) -> None:
         SEEN.append(self.headers.get("Authorization"))
+        PATHS.append(self.path)
         code, headers, body = ANSWERS.pop(0)
         self.send_response(code)
         for name, value in {"Content-Length": str(len(body)), **headers}.items():
@@ -199,6 +214,7 @@ def server(monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
     monkeypatch.setattr(telemetry.time, "sleep", lambda s: None)
     ANSWERS.clear()
     SEEN.clear()
+    PATHS.clear()
     httpd = http.server.HTTPServer(("127.0.0.1", 0), Server)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     yield f"http://127.0.0.1:{httpd.server_port}"
@@ -229,3 +245,114 @@ def test_a_failure_is_tried_again_only_when_that_is_safe(server: str) -> None:
     ANSWERS[:] = [(404, {}, b""), (200, {}, b"")]
     with pytest.raises(urllib.error.HTTPError):
         telemetry.http(server, tries=2)
+
+
+def spans_of(body: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Each span in an OTLP body by name, with the service it is filed under."""
+    return {
+        span["name"]: {**span, "service": resource["resource"]["attributes"][0]["value"]}
+        for resource in body["resourceSpans"]
+        for scope in resource["scopeSpans"]
+        for span in scope["spans"]
+    }
+
+
+def test_a_run_is_one_trace_its_steps_nested_and_failures_marked(
+    sent_traces: list[Mapping[str, Any]],
+) -> None:
+    with telemetry.run("job", "nightly", commit="abc") as run:
+        with telemetry.step("first"), telemetry.step("inner", stack="x"):
+            pass
+        with telemetry.step("second") as second:
+            second.fail("exit 1")
+    [body] = sent_traces
+    spans = spans_of(body)
+    assert set(spans) == {"nightly", "first", "inner", "second"}
+    assert {s["traceId"] for s in spans.values()} == {run.trace_id}
+    assert spans["nightly"]["parentSpanId"] == ""
+    assert spans["first"]["parentSpanId"] == spans["second"]["parentSpanId"] == run.span_id
+    assert spans["inner"]["parentSpanId"] == spans["first"]["spanId"]
+    assert spans["second"]["status"] == {"code": 2, "message": "exit 1"}
+    assert "status" not in spans["first"]
+    assert spans["nightly"]["service"] == {"stringValue": "job"}
+    assert {"key": "commit", "value": {"stringValue": "abc"}} in spans["nightly"]["attributes"]
+
+
+def test_an_exception_fails_its_step_and_run_and_the_trace_still_goes(
+    sent_traces: list[Mapping[str, Any]],
+) -> None:
+    with pytest.raises(KeyError), telemetry.run("job", "run"), telemetry.step("step"):
+        raise KeyError("x")
+    spans = spans_of(sent_traces[0])
+    assert spans["step"]["status"]["message"] == spans["run"]["status"]["message"] == "KeyError"
+
+
+def test_lines_logged_in_a_run_carry_its_trace_and_others_none() -> None:
+    def line() -> dict[str, Any]:
+        record = logging.makeLogRecord({"msg": "hi", "levelname": "INFO"})
+        return json.loads(telemetry.JsonLines().format(record))
+
+    assert "trace_id" not in line()
+    with telemetry.run("job", "run") as run, telemetry.step("step") as step:
+        assert line()["trace_id"] == run.trace_id
+        assert line()["span_id"] == step.span_id
+    assert "trace_id" not in line()
+
+
+def test_a_child_process_run_joins_its_parent_s_trace(
+    sent_traces: list[Mapping[str, Any]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with telemetry.run("upkeep", "upkeep") as parent, telemetry.step("restore test") as step:
+        monkeypatch.setenv("TRACEPARENT", step.traceparent())
+        with telemetry.run("backup", "restore test"):
+            pass
+    child = spans_of(sent_traces[0])["restore test"]
+    assert child["traceId"] == parent.trace_id
+    assert child["parentSpanId"] == step.span_id
+
+
+def test_a_failed_send_is_logged_and_the_job_goes_on(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def down(body: object, **_: object) -> None:
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(telemetry, "send_traces", down)
+    with telemetry.run("job", "run"):
+        pass
+    assert "trace not sent" in caplog.text
+
+
+def test_a_command_is_a_step_its_child_can_join(
+    sent_traces: list[Mapping[str, Any]], tmp_path: Path
+) -> None:
+    seen = tmp_path / "traceparent"
+    write = f"import os, pathlib; pathlib.Path({str(seen)!r}).write_text(os.environ['TRACEPARENT'])"
+    with telemetry.run("job", "run"):
+        assert telemetry.command("ok", [sys.executable, "-c", write])
+        assert not telemetry.command("fails", [sys.executable, "-c", "raise SystemExit(3)"])
+        assert not telemetry.command("missing", [str(tmp_path / "no-such-program")])
+    spans = spans_of(sent_traces[0])
+    assert seen.read_text() == f"00-{spans['ok']['traceId']}-{spans['ok']['spanId']}-01"
+    assert spans["fails"]["status"]["message"] == "exit 3"
+    assert "status" in spans["missing"] and "status" not in spans["ok"]
+
+
+def test_steps_outside_a_run_record_nothing(sent_traces: list[Mapping[str, Any]]) -> None:
+    with telemetry.step("alone") as alone:
+        alone.fail("no run")
+    assert sent_traces == []
+
+
+def test_traces_go_to_alloy_s_otlp_path(server: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", server + "/")
+    ANSWERS[:] = [(200, {}, b"")]
+    SEND_TRACES(telemetry.otlp_traces({"job": [telemetry.otlp_span("t", "s", "", "n", 1, 2)]}))
+    assert PATHS == ["/v1/traces"]
+
+
+def test_spans_are_built_and_sent_only_through_telemetry() -> None:
+    # A second builder or sender drifts from the first: the store's names, the receiver's address.
+    for path in python_files():
+        text = path.read_text(encoding="utf-8")
+        assert not re.search(r"resourceSpans|/v1/traces|:4318\b", text), path.relative_to(ROOT)

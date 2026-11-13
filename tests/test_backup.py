@@ -1,10 +1,13 @@
 import logging
 import subprocess
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from stacks.backup import upkeep
 from stacks.backup.backup import SUMMARY_FIELDS, Backup, seconds_until
 
 SUNDAY = datetime(2026, 11, 15, 2, 30, 5, tzinfo=UTC)
@@ -125,7 +128,11 @@ def test_a_good_run_backs_up_without_the_live_database_and_records_success(
     ],
 )
 def test_a_failed_step_is_recorded_and_fails_the_run(
-    tmp_path: Path, answers: dict[str, tuple[int, str]], env: dict[str, str], step: str
+    tmp_path: Path,
+    answers: dict[str, tuple[int, str]],
+    env: dict[str, str],
+    step: str,
+    sent_traces: list[Mapping[str, Any]],
 ) -> None:
     restic = Restic(**answers)
     assert make(tmp_path, restic, env=env).main(["once"]) == 1
@@ -136,6 +143,11 @@ def test_a_failed_step_is_recorded_and_fails_the_run(
     assert not (tmp_path / "metrics/backup.prom").exists()
     if step == "cap":
         assert not restic.ran("backup")  # nothing is uploaded past the cap
+    # The night's trace shows where it stopped.
+    [body] = sent_traces
+    [spans] = [scope["spans"] for r in body["resourceSpans"] for scope in r["scopeSpans"]]
+    failed = {s["name"]: s["status"]["message"] for s in spans if "status" in s}
+    assert failed == {step: f"{step} failed", "backup": f"{step} failed"}
 
 
 @pytest.mark.parametrize(
@@ -308,3 +320,23 @@ def test_the_login_files_are_replaced_whole_and_stay_owner_only(tmp_path: Path) 
     assert repository.stat().st_ino != before  # renamed over, never truncated in place
     assert repository.stat().st_mode & 0o777 == 0o600
     assert not list((tmp_path / "tmp").glob("*.tmp"))
+
+
+def test_upkeep_runs_every_step_and_fails_if_any_did(
+    monkeypatch: pytest.MonkeyPatch, sent_traces: list[Mapping[str, Any]]
+) -> None:
+    ran: list[str] = []
+
+    def command(name: str, argv: list[str]) -> bool:
+        ran.append(name)
+        return name != "prune images"
+
+    monkeypatch.setattr(upkeep.telemetry, "command", command)
+    assert upkeep.main() == 1
+    assert ran == ["prune images", "prune build cache", "restore test"]
+    [span] = [
+        s for r in sent_traces[0]["resourceSpans"] for c in r["scopeSpans"] for s in c["spans"]
+    ]
+    assert span["status"]["message"] == "prune images failed"
+    # The restore test's own run joins this trace.
+    assert "TRACEPARENT" in dict(upkeep.STEPS)["restore test"]

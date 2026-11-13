@@ -31,6 +31,12 @@ services:
       RESTIC_REPOSITORY_FILE: /tmp/restic_repository
       AWS_SHARED_CREDENTIALS_FILE: /tmp/r2_credentials
       RESTIC_CACHE_DIR: /cache
+      # Each run's trace (telemetry.run).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
+    # default: its way out to R2; observability-otlp: Alloy, for its traces.
+    networks:
+      - default
+      - observability-otlp
     secrets:
       - restic_password
       - r2_account_id
@@ -69,6 +75,11 @@ secrets:
     file: ../../secrets/r2_access_key_id
   r2_secret_access_key:
     file: ../../secrets/r2_secret_access_key
+
+networks:
+  # Owned by the observability stack; deploy it first on a fresh host.
+  observability-otlp:
+    external: true
 
 volumes:
   restic-cache:

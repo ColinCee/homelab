@@ -53,7 +53,7 @@ def test_the_tunnel_reaches_only_the_gateway_here() -> None:
 
 
 def test_programs_that_send_traces_reach_alloy_alone() -> None:
-    assert members("otlp") == {"alloy", "obi"}
+    assert members("otlp") == {"alloy", "obi", "public-stats"}
     assert COMPOSE["networks"]["otlp"]["internal"] is True
 
 

@@ -127,6 +127,19 @@ def test_python_services_log_through_the_telemetry_module() -> None:
         assert ["../telemetry/telemetry.py", site] in mounts, f"{name}: mount {site}"
 
 
+def test_traced_services_reach_alloy() -> None:
+    # A trace that cannot reach Alloy is only a warning, and its lines' trace_id opens nothing.
+    traced = [
+        (name, service)
+        for name, service, script in python_services()
+        if "telemetry.run(" in script.read_text(encoding="utf-8")
+    ]
+    assert {name for name, _ in traced} >= {"backup", "public-stats"}
+    for name, service in traced:
+        assert service["environment"]["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://alloy:4318", name
+        assert {"otlp", "observability-otlp"} & set(service["networks"]), name
+
+
 def test_the_formatter_lives_in_the_telemetry_module_alone() -> None:
     for path in STACKS.glob("**/*.py"):
         if path != STACKS / "telemetry/telemetry.py":
