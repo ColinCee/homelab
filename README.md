@@ -21,4 +21,4 @@ mise run check
 - [Decisions](docs/adr/): comparisons that were run.
 
 The repository alone does not prove the live security posture: firewall rules, Tailscale's policy and running
-services are checked on the host (`scripts/security-audit.sh`).
+services are checked on the host (`beelink/security/security-audit.sh`).

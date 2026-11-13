@@ -155,7 +155,8 @@ def vm_tools() -> int:
 
 
 def annotation(text: str) -> str:
-    """A workflow command's message: one line, with % escaped."""
+    """A workflow command's message: one line, with % escaped. As runner_job_guard.py's
+    `command_value`, which runs on the VM image's newer Python, so neither imports the other."""
     return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
 
 

@@ -30,9 +30,9 @@ snapshots with `restic forget --prune <id>`.
 2. From a clone of `main` at `/home/colin/code/homelab`, once:
 
    ```bash
-   sudo install -D -m 644 systemd/docker.service.d/tailscale.conf /etc/systemd/system/docker.service.d/tailscale.conf
-   sudo install -m 644 apt/52unattended-upgrades-local /etc/apt/apt.conf.d/
-   sudo install -m 644 apt/docker-major.pref /etc/apt/preferences.d/
+   sudo install -D -m 644 beelink/docker/tailscale.conf /etc/systemd/system/docker.service.d/tailscale.conf
+   sudo install -m 644 beelink/auto-updates/52unattended-upgrades-local /etc/apt/apt.conf.d/
+   sudo install -m 644 beelink/auto-updates/docker-major.pref /etc/apt/preferences.d/
    sudo systemctl daemon-reload
    ```
 
@@ -62,5 +62,5 @@ docker compose --env-file stacks/observability/settings.env -f stacks/observabil
 
 ## Suspected compromise
 
-Run `scripts/security-audit.sh` on the host, read-only so it keeps the evidence, and compare with the expected results
+Run `beelink/security/security-audit.sh` on the host, read-only so it keeps the evidence, and compare with the expected results
 in the private notes.

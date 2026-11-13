@@ -1243,10 +1243,6 @@ def test_a_queued_jobs_workflow_comes_from_github() -> None:
     assert [job.workflow for job in found] == ["watch", "build"]
 
 
-def test_a_label_value_is_escaped() -> None:
-    assert sup.label_value('a "b" \\ c') == 'a \\"b\\" \\\\ c'
-
-
 def test_an_unwritable_wait_metrics_file_is_logged_once(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

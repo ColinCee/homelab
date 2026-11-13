@@ -31,7 +31,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 ## Network and access
 
 - Nothing accepts an internet connection. Admin pages bind to the Tailscale address, which Docker waits for
-  at boot ([`tailscale.conf`](../systemd/docker.service.d/tailscale.conf)). Who may reach what is the tailnet policy
+  at boot ([`tailscale.conf`](../beelink/docker/tailscale.conf)). Who may reach what is the tailnet policy
   ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
 - Public only through the [tunnel](../stacks/tunnel/compose.yaml), an outbound connection: routes set in Cloudflare's
@@ -84,7 +84,7 @@ reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/
 |---|---|
 | The Beelink off, or alerting stopped | `watchdog` (stops an hour after a failed alert post): the relay pings Healthchecks.io each minute; it emails and posts when pings stop |
 | A rule failing | "An alert rule is failing" |
-| Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
+| Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../beelink/security/security_facts.py) writes each minute |
 | A deploy failed | "Main not deployed" |
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
