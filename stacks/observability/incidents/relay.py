@@ -117,7 +117,7 @@ class Relay:
         except FAILED as e:
             # Never a 502: Alertmanager would count the relay as failing and stop the watchdog
             # for an hour, which Healthchecks.io would page as alerting down.
-            log(f"cannot ping Healthchecks.io: {e}")
+            log.error("cannot ping Healthchecks.io", extra={"error": str(e)})
 
     def _open(self, alert: dict[str, Any]) -> bool:
         post = self.state["posts"].get(alert["fingerprint"])
