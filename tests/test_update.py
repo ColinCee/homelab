@@ -122,9 +122,9 @@ def test_a_change_to_the_host_code_installs_with_its_pull_requests_as_the_reason
     host: Host,
 ) -> None:
     host.at(host.first)
-    commit(host.origin, "scripts/ci_times.py", "Times (#12)")
+    commit(host.origin, "ci-runner/run-times/ci_times.py", "Times (#12)")
     commit(host.origin, "stacks/x/compose.yaml", "A stack (#13)")
-    want = commit(host.origin, "ci-runner/run-vm.sh", "VMs; rm -rf / `x` (#14)")
+    want = commit(host.origin, "ci-runner/supervisor/run-vm.sh", "VMs; rm -rf / `x` (#14)")
 
     assert host.update(want) == 0
 

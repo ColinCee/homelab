@@ -25,12 +25,7 @@ FOLDERS = {
 
 # Each entry fails once it is fixed, so these only shrink.
 TODO_FOLDERS = {"scripts", "tests"}
-TODO_UNITS = {
-    "ci-runner/systemd/homelab-ci-load-test.service",
-    "ci-runner/systemd/homelab-ci-net.service",
-    "ci-runner/systemd/homelab-ci-supervisor.service",
-    "ci-runner/systemd/homelab-ci-times.service",
-}
+TODO_UNITS: set[str] = set()
 
 # Named in docs, but kept on the host, not in git.
 HOST_ONLY = {"stacks/home-assistant/config"}

@@ -231,7 +231,7 @@ def starts_telemetry_when_run(tree: ast.Module) -> bool:
 def test_host_scripts_log_through_the_telemetry_module() -> None:
     scripts = host_scripts()
     # The units' scripts, and deploy.py through deploy-main's deploy.sh.
-    assert {"scripts/ci_supervisor.py", "stacks/deploy/deploy_main.py"} <= scripts
+    assert {"ci-runner/supervisor/ci_supervisor.py", "stacks/deploy/deploy_main.py"} <= scripts
     for name in sorted(scripts | {"scripts/deploy.py"}):
         tree = ast.parse((ROOT / name).read_text(encoding="utf-8"))
         calls = [n.func for n in ast.walk(tree) if isinstance(n, ast.Call)]

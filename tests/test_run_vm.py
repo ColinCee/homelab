@@ -1,5 +1,5 @@
-"""A CI VM's boot path (ci-runner/run_vm.py, vm_disks.py, stop_vms.py), through its seam: every
-command is recorded, and files go under tmp_path."""
+"""A CI VM's boot path (ci-runner/supervisor/run_vm.py, vm_disks.py, stop_vms.py), through its seam:
+every command is recorded, and files go under tmp_path."""
 
 import dataclasses
 import fcntl
@@ -11,13 +11,12 @@ import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+import ci_supervisor as sup
 import pytest
 import run_vm
 import stop_vms
 import vm_disks
 from vm_disks import Host
-
-from scripts import ci_supervisor as sup
 
 Answer = tuple[int, str]
 

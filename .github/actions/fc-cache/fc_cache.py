@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Save a CI VM's cache disk (action.yml): pack /cache and the job's named workspace paths into a
 tar, and write it to the VM's outbox disk, which the CI supervisor turns into the repo's next
-cache disk once GitHub shows the job passed (scripts/ci_supervisor.py, take_outbox).
+cache disk once GitHub shows the job passed (ci-runner/supervisor/ci_supervisor.py, take_outbox).
 
     fc_cache.py                      the action: both, from PATHS; never fails the job
     fc_cache.py pack CACHE OUT [PATH...]
@@ -19,9 +19,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-# scripts/ci_supervisor.py, CACHE_MAX_UNPACKED_BYTES.
+# ci-runner/supervisor/ci_supervisor.py, CACHE_MAX_UNPACKED_BYTES.
 MAX_UNPACKED = 6442450944
-# ci-runner/run_vm.py writes it as the outbox disk's first line.
+# ci-runner/supervisor/run_vm.py writes it as the outbox disk's first line.
 OUTBOX_MARK = b"homelab-ci-outbox\n"
 
 
