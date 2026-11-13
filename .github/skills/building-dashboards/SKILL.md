@@ -69,6 +69,6 @@ Each colour means one thing; hexes are in `tests/test_dashboards.py`.
   allowed in a range query, which then counts repeats).
 - Spans (`uid: spans`): the trace store in LogsQL. `duration` is nanoseconds, a field
   with a colon is quoted (`"span_attr:event":*`), and a span's attributes tell a run from a job, a
-  step or a test (`scripts/ci_times.py`).
+  step or a test (`ci-runner/run-times/ci_times.py`).
 
 Check: `uv run pytest tests/test_dashboards.py`.

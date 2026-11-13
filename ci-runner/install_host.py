@@ -251,9 +251,9 @@ def install_vm_files(host: Host, here: Path) -> None:
     install_dirs(host, "0755", DEST, f"{DEST}/net")
     # The Python first: a new wrapper runs only what is already there.
     for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
-        install(host, "0644", here / name, f"{DEST}/{name}")
-    install(host, "0755", here / "run-vm.sh", f"{DEST}/run-vm.sh")
-    install(host, "0755", here / "stop-vms.sh", f"{DEST}/stop-vms.sh")
+        install(host, "0644", here / "supervisor" / name, f"{DEST}/{name}")
+    install(host, "0755", here / "supervisor" / "run-vm.sh", f"{DEST}/run-vm.sh")
+    install(host, "0755", here / "supervisor" / "stop-vms.sh", f"{DEST}/stop-vms.sh")
     # After the new wrappers: a VM started before them runs the old run-vm.sh, which sources it.
     host.path(f"{DEST}/vm-disks.sh").unlink(missing_ok=True)
     # Before its wrapper, which the timer may start at any time.
@@ -338,8 +338,8 @@ def install_locked(
     # The SSD is trimmed hourly (the reason is in the file). Restarted only when it changes,
     # as a restart can run a trim missed under the weekly schedule at once.
     trim = "/etc/systemd/system/fstrim.timer.d/hourly.conf"
-    if differs(here / "systemd" / "fstrim-hourly.conf", host.path(trim)):
-        install(host, "0644", here / "systemd" / "fstrim-hourly.conf", trim, parents=True)
+    if differs(here / "fstrim-hourly.conf", host.path(trim)):
+        install(host, "0644", here / "fstrim-hourly.conf", trim, parents=True)
         systemctl(host, "daemon-reload")
         systemctl(host, "restart", "fstrim.timer")
     # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to
@@ -358,20 +358,18 @@ def install_locked(
         host, here.parent / "beelink/security/security_facts.py", "homelab-security-facts"
     )
     # CI and deploy run times, for the trace store and Prometheus.
-    install_timed_script(
-        host, here.parent / "scripts/ci_times.py", "homelab-ci-times", here / "systemd"
-    )
+    install_timed_script(host, here / "run-times/ci_times.py", "homelab-ci-times")
 
     # The supervisor, the network rules and the slot count take a restart. Running VMs carry
     # on through it (each is a unit of its own, taken back by the new supervisor), and the
     # rules reload in one transaction, so a restart takes seconds and cuts off nothing.
     restart_files = {
-        here.parent / "scripts" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
+        here / "supervisor" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
         here / "net" / "homelab-ci.nft": f"{DEST}/net/homelab-ci.nft",
         here / "net" / "setup_net.py": f"{DEST}/net/setup_net.py",
         here / "net" / "setup-net.sh": f"{DEST}/net/setup-net.sh",
-        here / "systemd" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
-        here / "systemd" / SERVICE: f"/etc/systemd/system/{SERVICE}",
+        here / "net" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
+        here / "supervisor" / SERVICE: f"/etc/systemd/system/{SERVICE}",
     }
     restart = any(differs(src, host.path(dst)) for src, dst in restart_files.items())
     try:
@@ -410,11 +408,9 @@ def install_locked(
         # The code before its wrapper: run-vm.sh calls setup-net.sh at any time.
         install(host, "0755", here / "net" / "setup_net.py", f"{DEST}/net/setup_net.py")
         install(host, "0755", here / "net" / "setup-net.sh", f"{DEST}/net/setup-net.sh")
-        install(
-            host, "0755", here.parent / "scripts" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py"
-        )
-        for unit in ("homelab-ci-net.service", SERVICE):
-            install(host, "0644", here / "systemd" / unit, f"/etc/systemd/system/{unit}")
+        install(host, "0755", here / "supervisor" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py")
+        for unit in (here / "net" / "homelab-ci-net.service", here / "supervisor" / SERVICE):
+            install(host, "0644", unit, f"/etc/systemd/system/{unit.name}")
         systemctl(host, "daemon-reload")
         systemctl(host, "enable", "--now", "homelab-ci-net.service")
         # Apply rule changes in place; restarting the unit would remove the taps.
@@ -427,11 +423,11 @@ def install_locked(
 
     # The Beelink takes main on its own (update.sh --follow, every minute).
     for unit in ("homelab-ci-update.service", "homelab-ci-update.timer"):
-        install(host, "0644", here / "systemd" / unit, f"/etc/systemd/system/{unit}")
+        install(host, "0644", here / unit, f"/etc/systemd/system/{unit}")
     # The Beelink's load test, which update.py starts when its slot count has no result
     # (docs/architecture.md, "CI runner").
     unit = "homelab-ci-load-test.service"
-    install(host, "0644", here / "systemd" / unit, f"/etc/systemd/system/{unit}")
+    install(host, "0644", here / "supervisor" / unit, f"/etc/systemd/system/{unit}")
     systemctl(host, "daemon-reload")
     systemctl(host, "enable", "--now", "homelab-ci-update.timer")
 

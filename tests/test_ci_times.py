@@ -1,5 +1,5 @@
-"""CI run times (scripts/ci_times.py): one trace per run attempt, the latest of Colin's own runs as
-metrics, and others' runs' own words kept out."""
+"""CI run times (ci-runner/run-times/ci_times.py): one trace per run attempt, the latest of Colin's
+own runs as metrics, and others' runs' own words kept out."""
 
 import email.message
 import http.server
@@ -10,9 +10,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
+import ci_times
 import pytest
-
-from scripts import ci_times
 
 COLIN = {"id": ci_times.OWNER_ID, "login": "ColinCee"}
 OTHER = {"id": 1, "login": "someone"}

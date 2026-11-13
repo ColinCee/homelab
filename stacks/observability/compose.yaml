@@ -385,7 +385,7 @@ services:
       docker-api: {}
       ingest: {}
       otlp: {}
-      # A fixed address for the host's programs (scripts/ci_times.py), which have no Docker DNS. They could already
+      # A fixed address for the host's programs (ci-runner/run-times/ci_times.py), which have no Docker DNS. They could already
       # write to Prometheus (host-writes), so this lets them do nothing new.
       host-otlp:
         ipv4_address: 10.201.0.10

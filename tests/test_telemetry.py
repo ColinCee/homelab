@@ -127,7 +127,7 @@ def test_a_failed_write_keeps_the_old_file(tmp_path: Path, monkeypatch: pytest.M
 OWN_HTTP = {
     # One kept-open connection per thread and conditional requests, so a poll of about 40 repos
     # every few seconds costs GitHub nothing when nothing changed.
-    "scripts/ci_supervisor.py": "http.client",
+    "ci-runner/supervisor/ci_supervisor.py": "http.client",
     # Runs in Colin's terminal with the OS's certificate store and refuses any redirect of the
     # admin login it sends.
     "scripts/tailscale_policy.py": "urllib.request",
