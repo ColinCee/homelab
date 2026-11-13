@@ -96,7 +96,16 @@ def test_the_pull_request_rules_all_run_and_any_failure_fails_the_step(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ran: list[str] = []
-    for name, verdict in [("pins_only", 0), ("versions_hash", 1), ("time_limits", 0)]:
+    names = ["pins_only", "versions_hash", "time_limits", "agent_scope"]
+    for name, verdict in zip(names, [0, 1, 0, 0], strict=True):
         monkeypatch.setattr(ci, name, lambda n=name, v=verdict: ran.append(n) or v)
     assert ci.pull_request_rules() == 1
-    assert ran == ["pins_only", "versions_hash", "time_limits"]
+    assert ran == names
+
+
+def test_only_an_agent_branch_is_held_to_its_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(ci, "run_base_rule", lambda script: 1)
+    monkeypatch.setenv("GITHUB_HEAD_REF", "fix-disk-alert")
+    assert ci.agent_scope() == 0
+    monkeypatch.setenv("GITHUB_HEAD_REF", "claude/fix-disk-alert")
+    assert ci.agent_scope() == 1
