@@ -300,8 +300,10 @@ def test_no_argument_is_a_usage_error(host: Host) -> None:
     assert host.update() == 1
 
 
+@pytest.mark.skipif(
+    not Path("/usr/bin/python3").exists(), reason="the wrapper runs /usr/bin/python3"
+)
 def test_the_installed_copy_runs_alone(tmp_path: Path) -> None:
-    linux_only("the wrapper runs /usr/bin/python3")
     # Installed alone in /usr/local/lib/homelab-ci: an import from the checkout would fail there.
     for name in ("update.py", "update.sh"):
         shutil.copy(CI_RUNNER / name, tmp_path / name)
