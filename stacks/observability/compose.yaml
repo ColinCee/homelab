@@ -241,7 +241,7 @@ services:
       INCIDENTS_FORUM: "1567861139142877295"
       DISCORD_GUILD: "1467218689245053010"
       # The claude.ai routine that runs the homelab-oncall skill on the alert it is given; empty starts none.
-      ONCALL_ROUTINE: ""
+      ONCALL_ROUTINE: trig_012QtfdKg7fygsfKECcGZYPU
     secrets:
       - incidents_discord_bot_token
       - oncall_fire_token
