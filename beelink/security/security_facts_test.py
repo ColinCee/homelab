@@ -6,6 +6,8 @@ from typing import Any
 
 import security_facts
 
+from conftest import linux_only
+
 STATUS = {
     "Self": {"DNSName": "beelink.tail4f465e.ts.net.", "Created": "2026-01-31T18:28:12.625380059Z"},
     "Peer": {
@@ -111,6 +113,7 @@ def test_the_first_run_learns_the_tailnet_and_a_later_device_stays_unknown(tmp_p
         "desktop",
         "phone",
     }
+    linux_only("POSIX file modes")
     assert state.stat().st_mode & 0o777 == 0o600
 
 

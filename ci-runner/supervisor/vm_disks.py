@@ -165,7 +165,8 @@ def detach_disks(host: Host, slot: int | None) -> bool:
             removed = host.run(["dmsetup", "remove", "--retry", dm]).returncode == 0 and removed
     # A write file, or a loop device on one, left when a run died before the snapshot took them
     # over. A deleted file shows as "PATH (deleted)".
-    files = f"{host.cow_dir}/slot{'' if slot is None else f'{slot}-'}"
+    names = f"slot{'' if slot is None else f'{slot}-'}"
+    files = f"{host.cow_dir}/{names}"
     loops = host.run(["losetup", "-nO", "NAME,BACK-FILE"], out=True).stdout or ""
     left = [
         f[0] for f in map(str.split, loops.splitlines()) if len(f) > 1 and f[1].startswith(files)
@@ -174,7 +175,7 @@ def detach_disks(host: Host, slot: int | None) -> bool:
         host.run(["losetup", "-d", *left])
     if host.cow_dir.is_dir():
         for cow in host.cow_dir.iterdir():
-            if str(cow).startswith(files):
+            if cow.name.startswith(names):
                 cow.unlink(missing_ok=True)
     return removed
 

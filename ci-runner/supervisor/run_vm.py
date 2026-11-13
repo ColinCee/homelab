@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import fcntl
 import os
 import re
 import shutil
@@ -365,6 +364,8 @@ def boot(slot: Slot, job: Job, signals: Signals, ended: list[End]) -> int:
 def lock_slot(host: Host, slot: int) -> int:
     """One VM per slot at a time. The VM does not inherit the lock: if this run dies, the next
     one kills the orphan."""
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
     run_dir = host.path("/run/homelab-ci")
     make_dir(host, run_dir, 0o700)
     fd = os.open(run_dir / f"slot{slot}.lock", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o666)

@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from conftest import linux_only
 from stacks.backup import upkeep
 from stacks.backup.backup import SUMMARY_FIELDS, Backup, seconds_until
 
@@ -83,6 +84,7 @@ def test_start_writes_the_login_owner_only_and_creates_a_missing_repository(
     assert credentials.read_text() == (
         "[default]\naws_access_key_id = key\naws_secret_access_key = secret\n"
     )
+    linux_only("POSIX file modes")
     assert {repository.stat().st_mode & 0o777, credentials.stat().st_mode & 0o777} == {0o600}
 
 
@@ -318,8 +320,9 @@ def test_the_login_files_are_replaced_whole_and_stay_owner_only(tmp_path: Path) 
     before = repository.stat().st_ino
     job.write_login()
     assert repository.stat().st_ino != before  # renamed over, never truncated in place
-    assert repository.stat().st_mode & 0o777 == 0o600
     assert not list((tmp_path / "tmp").glob("*.tmp"))
+    linux_only("POSIX file modes")
+    assert repository.stat().st_mode & 0o777 == 0o600
 
 
 def test_upkeep_runs_every_step_and_fails_if_any_did(

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, linux_only
 
 SPEC = importlib.util.spec_from_file_location(
     "tools_test_script", ROOT / "ci-runner/host-tests/test_tools.py"
@@ -59,6 +59,7 @@ def test_a_failed_or_uncounted_tool_fails(
 
 
 def test_a_busy_slot_fails_and_says_why(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    linux_only("runs a script by its #! line")
     run_vm = tmp_path / "run-vm.sh"  # what run-vm.sh does when a job holds slot 0
     run_vm.write_text('#!/usr/bin/env bash\necho "slot $1 is busy" >&2\nexit 75\n')
     run_vm.chmod(0o755)

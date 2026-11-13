@@ -208,7 +208,12 @@ def test_failed_stack_is_reported_while_other_stacks_continue(tmp_path: Path) ->
     assert report.partial
 
 
-def test_installs_and_enables_discovered_timer_pairs(tmp_path: Path) -> None:
+def test_installs_and_enables_discovered_timer_pairs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The login's systemd, as the deploy user has it: without one the deploy asks for its uid,
+    # which Windows has none of.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     stack_dir = _make_stack(tmp_path, "alpha")
     systemd_dir = stack_dir / "systemd"
     systemd_dir.mkdir()
@@ -228,7 +233,12 @@ def test_installs_and_enables_discovered_timer_pairs(tmp_path: Path) -> None:
     )
 
 
-def test_records_the_services_to_keep_running_and_each_timers_stamp(tmp_path: Path) -> None:
+def test_records_the_services_to_keep_running_and_each_timers_stamp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The login's systemd, as the deploy user has it: without one the deploy asks for its uid,
+    # which Windows has none of.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/1000")
     stack_dir = _make_stack(tmp_path, "alpha")
     systemd_dir = stack_dir / "systemd"
     systemd_dir.mkdir()

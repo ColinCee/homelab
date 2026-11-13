@@ -6,7 +6,7 @@ from pathlib import Path
 import ci_supervisor as sup
 import pytest
 
-from conftest import NoGitHub
+from conftest import NoGitHub, linux_only
 
 # The commands the code under test ran through subprocess.run (systemctl), never run for real.
 CALLS: list[list[str]] = []
@@ -46,6 +46,12 @@ def write_test_script(folder: Path, result: str) -> None:
     script.chmod(0o755)
 
 
+def drained_test() -> int:
+    """The load test run past its drain, to the end."""
+    linux_only("flock, and a script run by its #! line")
+    return sup.run_load_test()
+
+
 def started(host: Path) -> bool:
     sup.start_load_test_if_due()
     return ["systemctl", "start", "--no-block", sup.LOAD_TEST_UNIT] in CALLS
@@ -65,7 +71,7 @@ def test_a_start_refused_by_its_start_limit_is_left_for_a_later_pass(
 
 
 def test_a_pass_for_the_same_slots_and_test_does_not_start_it_again(host: Path) -> None:
-    assert sup.run_load_test() == 0
+    assert drained_test() == 0
     record = json.loads((host / "load-test.json").read_text())
     assert record["slots"] == 5 and record["passed"] is True and record["commit"] == "a" * 40
     assert record["line"] == "PASS 5 slots: every VM booted and finished"
@@ -74,7 +80,7 @@ def test_a_pass_for_the_same_slots_and_test_does_not_start_it_again(host: Path) 
 
 @pytest.mark.parametrize("change", ["slots", "test"])
 def test_a_new_slot_count_or_a_changed_test_starts_it_again(host: Path, change: str) -> None:
-    sup.run_load_test()
+    drained_test()
     if change == "slots":
         (host / "slots").write_text("4\n")
     else:
@@ -84,7 +90,7 @@ def test_a_new_slot_count_or_a_changed_test_starts_it_again(host: Path, change: 
 
 def test_a_fail_lowers_the_count_by_one_and_the_lower_count_is_tested_next(host: Path) -> None:
     write_test_script(host, 'echo "FAIL $SLOTS slots: loaded Grafana: 1.4s over 1s"; exit 1')
-    assert sup.run_load_test() == 1
+    assert drained_test() == 1
     assert (host / "slots").read_text() == "4\n"
     assert json.loads((host / "load-test.json").read_text())["passed"] is False
     assert started(host)
@@ -93,7 +99,7 @@ def test_a_fail_lowers_the_count_by_one_and_the_lower_count_is_tested_next(host:
 def test_a_fail_never_lowers_the_count_below_three_nor_runs_again(host: Path) -> None:
     (host / "slots").write_text("3\n")
     write_test_script(host, 'echo "FAIL $SLOTS slots: slot 2: VM did not boot (exit 1)"; exit 1')
-    sup.run_load_test()
+    drained_test()
     assert (host / "slots").read_text() == "3\n"
     assert not started(host)
 
@@ -111,10 +117,10 @@ def test_the_drain_ends_when_the_test_breaks_and_it_waits_to_try_again(
     if broken is None:
         (host / "test_load.py").chmod(0o644)
         with pytest.raises(PermissionError):
-            sup.run_load_test()
+            drained_test()
     else:
         write_test_script(host, broken)
-        assert sup.run_load_test() == 1
+        assert drained_test() == 1
     assert not sup.DRAIN_FILE.exists()
     record = json.loads((host / "load-test.json").read_text())
     assert record["ran"] is False and record["line"].startswith("not run:")
@@ -127,7 +133,7 @@ def test_a_fail_kept_is_not_overwritten_when_lowering_the_count_breaks(
     write_test_script(host, 'echo "FAIL $SLOTS slots: slot 4: VM did not boot (exit 1)"; exit 1')
     monkeypatch.setattr(sup, "SLOTS_FILE", host / "no-such-folder" / "slots")
     with pytest.raises(FileNotFoundError):
-        sup.run_load_test()
+        drained_test()
     record = json.loads((host / "load-test.json").read_text())
     assert record["ran"] is True and record["line"].startswith("FAIL 5 slots")
 
@@ -148,7 +154,7 @@ def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
 
 def test_the_unit_ends_the_drain_however_it_stops() -> None:
     unit = Path("ci-runner/supervisor/homelab-ci-load-test.service").read_text()
-    assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE}" in unit
+    assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE.as_posix()}" in unit
 
 
 def queued_job(monkeypatch: pytest.MonkeyPatch, repo: str = "o/ok") -> None:
@@ -201,5 +207,5 @@ def test_after_the_drain_the_supervisor_takes_the_lowered_count_and_jobs_again(
 
 
 def test_the_last_result_reads_back_as_written(host: Path) -> None:
-    sup.run_load_test()
+    drained_test()
     assert sup.read_load_test() == json.loads((host / "load-test.json").read_text())

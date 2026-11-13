@@ -2,7 +2,6 @@
 every command is recorded, and files go under tmp_path."""
 
 import dataclasses
-import fcntl
 import json
 import os
 import signal
@@ -17,6 +16,8 @@ import run_vm
 import stop_vms
 import vm_disks
 from vm_disks import Host
+
+from conftest import linux_only
 
 Answer = tuple[int, str]
 
@@ -131,6 +132,7 @@ class Box:
 
 @pytest.fixture
 def box(tmp_path: Path) -> Box:
+    linux_only("a VM boots with flock, chown and uids")
     return Box(tmp_path)
 
 
@@ -269,6 +271,8 @@ def test_without_the_network_wall_no_vm_starts_and_nothing_is_cleared(
 def test_a_busy_slot_exits_75_and_leaves_the_running_vm_alone(
     box: Box, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    import fcntl  # Linux only, as the box is.
+
     lock_dir = box.root / "run/homelab-ci"
     with (lock_dir / "slot3.lock").open("w") as held:
         fcntl.flock(held, fcntl.LOCK_EX)
@@ -405,6 +409,7 @@ def end_line_host(tmp_path: Path, stat_text: str | None) -> Host:
 
 
 def test_the_end_line_gives_memory_peak_and_bytes_written(tmp_path: Path) -> None:
+    linux_only("st_blocks, a sparse file's blocks on disk")
     host = end_line_host(tmp_path, "  100  0  800  5  2000  0  409600  90  0  50  95\n")
     outbox = tmp_path / "outbox.img"
     outbox.write_bytes(b"x" * 3 * 1048576)

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import ROOT, stacks
+from conftest import ROOT, linux_only, stacks
 
 CI_RUNNER = ROOT / "ci-runner"
 _spec = importlib.util.spec_from_file_location("install_host", CI_RUNNER / "install_host.py")
@@ -105,6 +105,7 @@ class Recorder:
 
 @pytest.fixture
 def root(tmp_path: Path) -> Path:
+    linux_only("symlinks, which Windows lets only admins make")
     (tmp_path / "sys/kernel/mm/ksm").mkdir(parents=True)
     (tmp_path / "etc/tmpfiles.d").mkdir(parents=True)
     # The pinned Python is already there; the tests of installing it start from `link_to`.
@@ -355,6 +356,7 @@ def test_the_installer_imports_nothing_from_the_checkout(tmp_path: Path) -> None
     )
 
     assert result.returncode == 0, result.stderr
+    linux_only("a user without root, by uid")
     if os.geteuid() != 0:
         result = subprocess.run(
             [sys.executable, "-I", str(tmp_path / "install_host.py")],

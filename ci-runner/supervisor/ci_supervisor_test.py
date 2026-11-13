@@ -15,7 +15,7 @@ from typing import IO, Any, ClassVar, Never, Protocol
 import ci_supervisor as sup
 import pytest
 
-from conftest import NoGitHub
+from conftest import NoGitHub, linux_only
 
 # The real readers, kept before plenty_of_memory replaces them.
 READ_MEMORY, READ_RESERVE = sup.mem_available_mib, sup.memory_reserve_mib
@@ -262,6 +262,7 @@ def test_the_cache_unpacker_refuses_paths_outside_its_folder(tmp_path: Path) -> 
 
 
 def test_the_cache_unpacker_refuses_a_hard_link_out_through_a_symlink(tmp_path: Path) -> None:
+    linux_only("symlinks, which Windows lets only admins make")
     root, outside = tmp_path / "root", tmp_path / "outside"
     root.mkdir()
     outside.mkdir()
@@ -793,6 +794,7 @@ def test_the_status_file_is_replaced_whole_and_readable_by_all(tmp_path: Path) -
     sup.write_status(path, {"in_use": 2})
 
     assert json.loads(path.read_text()) == {"in_use": 2}
+    linux_only("POSIX file modes")
     assert path.stat().st_mode & 0o777 == 0o644
     assert path.parent.stat().st_mode & 0o777 == 0o755
     assert [p.name for p in path.parent.iterdir()] == ["machines.json"]  # no temp file left
@@ -1114,6 +1116,7 @@ def test_a_held_job_is_recorded_with_its_seconds_per_kind_when_it_starts(
          "memory": 60, "disk": 10, "slots": 0, "booting": 30, "ready": 0, "unseen": 0,
          "other": 0, "why": "memory (2047 MiB free above the 3072 MiB reserve, a VM needs 4096)"}
     ]  # fmt: skip
+    linux_only("POSIX file modes")
     assert waits_file.stat().st_mode & 0o777 == 0o644
 
 
@@ -1189,6 +1192,7 @@ def test_the_longest_waits_seconds_per_kind_go_to_prometheus(
         "homelab_ci_poll_failures 0",
         "homelab_ci_poll_failed_seconds 0",
     ]
+    linux_only("POSIX file modes")
     assert wait_metrics.stat().st_mode & 0o777 == 0o644
     queue(jobs=0, free_mib=1 << 20)  # the job started: nothing waits
     sup.tick(NoGitHub(), state, ["o/ok"], 170.0)
@@ -2088,6 +2092,7 @@ def test_an_idle_standby_booted_before_the_image_was_rebuilt_is_replaced(
 def test_a_vm_stopped_by_a_signal_exits_as_a_shell_reports_it(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    linux_only("a script run by its #! line kills itself with SIGTERM")
     # run_vm.py re-raises the stop signal; a negative code from sys.exit would read as 241.
     script = tmp_path / "run_vm.py"
     script.write_text("#!/bin/sh\nkill -TERM $$\n")

@@ -9,11 +9,9 @@ slot user. Read-only apart from one throwaway VM.
 from __future__ import annotations
 
 import fnmatch
-import grp
 import io
 import json
 import os
-import pwd
 import re
 import stat
 import subprocess
@@ -60,6 +58,9 @@ class Waitable(Protocol):
 def owner_of(path: Path) -> tuple[str, str]:
     """The user and group that own PATH, as GNU stat names them: a link is judged as
     itself, and an id with no name is UNKNOWN."""
+    import grp  # Linux only, and only here, so the tests import this module on any system.
+    import pwd
+
     info = path.lstat()
     try:
         user = pwd.getpwuid(info.st_uid).pw_name

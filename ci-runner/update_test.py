@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import GIT, ROOT, git, units
+from conftest import GIT, ROOT, git, linux_only, units
 
 CI_RUNNER = ROOT / "ci-runner"
 _spec = importlib.util.spec_from_file_location("ci_update", CI_RUNNER / "update.py")
@@ -105,6 +105,7 @@ class Host:
 
 @pytest.fixture
 def host(tmp_path: Path) -> Host:
+    linux_only("an update takes its lock with flock")
     return Host(tmp_path)
 
 
