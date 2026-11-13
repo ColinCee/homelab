@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-import conftest
 import pytest
+
+import conftest
 from conftest import Mark
 
 
