@@ -585,14 +585,14 @@ groups:
   - name: prometheus
     interval: 1m
     rules:
-      # Always firing while rules run and posts reach Discord. Alertmanager pings Healthchecks.io with it each minute
-      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts to #alerts when the pings stop: the Beelink,
-      # Prometheus or Alertmanager is down, or Discord refused a post in the last hour. Not a GitHub cron: GitHub ran
-      # 15-minute schedules hours late.
+      # Always firing while rules run and alerts reach Discord. Alertmanager sends it each minute to the incidents
+      # relay, which pings Healthchecks.io with it (../incidents/relay.py), and Healthchecks.io pages Colin when the
+      # pings stop: the Beelink, Prometheus, Alertmanager or the relay is down, or the relay failed to post an alert
+      # in the last hour. Not a GitHub cron: GitHub ran 15-minute schedules hours late.
       - alert: watchdog
         expr: |
           vector(1)
-          unless on() sum(increase(alertmanager_notifications_failed_total{integration="discord"}[1h])) > 0.5
+          unless on() sum(increase(alertmanager_notifications_failed_total{integration="webhook"}[1h])) > 0.5
         for: 0m
         keep_firing_for: 10m
         labels:

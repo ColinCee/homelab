@@ -4,9 +4,9 @@ noise budget in docs/architecture.md ("Monitoring and alerts"), which has the co
     replay.py [days] [rule ...]
 
 Reads Prometheus through the read-only gateway (GATEWAY_URL, default the Beelink's; GATEWAY_LOGIN,
-user:password). Runs each rule's query a minute apart and follows Prometheus and Alertmanager: a
-post once the query has returned for `for`, a repeat every 4 h (now) or 24 h (week) while it fires,
-and a "Cleared" once it has stayed empty for `keep_firing_for`. Inhibits are not replayed."""
+user:password). Runs each rule's query a minute apart and follows Prometheus and the incidents
+relay: a post once the query has returned for `for` and a "Cleared" once it has stayed empty for
+`keep_firing_for`; a repeat posts nothing. Inhibits are not replayed."""
 
 import base64
 import json
@@ -23,7 +23,6 @@ from typing import Any
 import yaml
 
 STEP = 60
-REPEAT = {"now": 4 * 3600, "week": 24 * 3600}
 RULES = Path(__file__).with_name("rules.yml")
 
 
@@ -59,21 +58,17 @@ def history(promql: str, start: int, end: int) -> dict[str, set[int]]:
 
 def posts(returned: set[int], rule: dict[str, Any], start: int, end: int) -> list[tuple[int, str]]:
     wait, hold = seconds(rule["for"]), seconds(rule.get("keep_firing_for", "0m"))
-    level = rule["labels"]["level"]
     out: list[tuple[int, str]] = []
     since: int | None = None
-    last_true = last_post = 0
+    last_true = 0
     firing = False
     for t in range(start - start % STEP, end, STEP):
         if t in returned:
             since = t if since is None else since
             last_true = t
             if not firing and t - since >= wait:
-                firing, last_post = True, t
+                firing = True
                 out.append((t, "firing"))
-            elif firing and t - last_post >= REPEAT[level]:
-                last_post = t
-                out.append((t, "repeat"))
         else:
             since = None
             if firing and t - last_true >= hold:
@@ -92,7 +87,7 @@ def main() -> None:
     start = end - days * 86400
     total = 0
     for rule in rules:
-        # The watchdog pings Healthchecks.io, never Discord.
+        # The watchdog pings Healthchecks.io, never posts.
         if (only and rule["alert"] not in only) or rule["labels"]["level"] == "watchdog":
             continue
         found = [

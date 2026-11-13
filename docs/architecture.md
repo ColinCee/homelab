@@ -80,7 +80,7 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 
 | Problem | Who warns |
 |---|---|
-| The Beelink off, or alerting stopped | The always-firing `watchdog` rule, which Alertmanager sends to Healthchecks.io each minute; Healthchecks.io emails and posts when it stops |
+| The Beelink off, or alerting stopped | `watchdog` (off an hour after a failed post): the relay pings Healthchecks.io each minute; it emails and posts when pings stop |
 | A rule failing | "An alert rule is failing" |
 | Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../scripts/security_facts.py) writes each minute |
 | A deploy failed | "Main not deployed" |
@@ -88,21 +88,21 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
 its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #alerts. Alertmanager has no port
-(its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) and the relay to Discord's #incidents.
+Alertmanager has no port (its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
 
 | Level | When | Post |
 |---|---|---|
-| `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h |
-| `week` | Something is running out or slipping | No mention, again daily |
+| `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin |
+| `week` | Something is running out or slipping | No mention |
 
 **Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert one #incidents post and
 starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)), which reads the
-gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin and merges only fixes that run
-no code ([`agent_scope.py`](../scripts/agent_scope.py)), a guard against mistakes, not against his login.
+gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin, merging only fixes that run
+no code ([`agent_scope.py`](../scripts/agent_scope.py)): a guard against mistakes, not his login.
 
-- A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
+- A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
   means the number recovered.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
   arm, except a job's that may not have run yet.
