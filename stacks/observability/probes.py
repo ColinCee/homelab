@@ -76,7 +76,10 @@ def write(results: dict[str, bool], now: float, published: int | None = None) ->
     lines += [f'homelab_probe_success{{target="{t}"}} {int(ok)}' for t, ok in results.items()]
     lines += [f"homelab_probe_timestamp_seconds {now:.0f}"]
     if published is not None:
-        lines += [f"homelab_public_stats_published_timestamp_seconds {published}"]
+        lines += [
+            "# HELP homelab_public_stats_published_timestamp_seconds The blog numbers' time.",
+            f"homelab_public_stats_published_timestamp_seconds {published}",
+        ]
     lines += [""]
     telemetry.replace_file(OUT, "\n".join(lines))
 

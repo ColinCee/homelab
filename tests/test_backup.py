@@ -159,10 +159,11 @@ def test_a_runs_bytes_and_files_are_fields_of_its_log_line(
     restic = Restic(**({"backup": answer} if answer else {}))
     make(tmp_path, restic).main(["once"])
     assert restic.ran("backup")[0][-2:] == ["--json", "--quiet"]
-    [record] = [r for r in caplog.records if r.getMessage() == "backup uploaded"]
+    [record] = [r for r in caplog.records if r.getMessage() == "restic backup ran"]
     keys = {*SUMMARY_FIELDS, "exit_code", "message_type"}
     logged = {k: v for k, v in vars(record).items() if k in keys}
     assert logged == fields  # restic's own keys, never its message_type
+    assert record.levelname == ("INFO" if fields["exit_code"] == 0 else "WARNING")
 
 
 def test_the_cap_allows_a_run_that_reaches_it_exactly(tmp_path: Path) -> None:

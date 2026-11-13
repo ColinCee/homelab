@@ -15,7 +15,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -34,7 +34,7 @@ EXCLUDES = (
     "/data/home-assistant/deps",
     "/data/home-assistant/tts",
 )
-# A run's numbers from restic's summary, logged as fields of "backup uploaded".
+# A run's numbers from restic's summary, logged as fields of "restic backup ran".
 SUMMARY_FIELDS = (
     "files_new",
     "files_changed",
@@ -84,28 +84,27 @@ def run(
     return subprocess.run(command, stdout=stdout, stderr=stderr, text=True, check=False)
 
 
-def json_number(text: str, key: str) -> int | None:
-    """The first integer `key` in any JSON object line of restic's output."""
+def json_objects(text: str) -> Iterator[dict[str, Any]]:
+    """Each JSON object line of restic's `--json` output, skipping any other line."""
     for line in text.splitlines():
         try:
             value = json.loads(line)
         except ValueError:
             continue
-        if isinstance(value, dict) and isinstance(number := value.get(key), int):
-            return number
-    return None
+        if isinstance(value, dict):
+            yield value
+
+
+def json_number(text: str, key: str) -> int | None:
+    """The first integer `key` in any JSON object line of restic's output."""
+    numbers = (n for o in json_objects(text) if isinstance(n := o.get(key), int))
+    return next(numbers, None)
 
 
 def summary(text: str) -> dict[str, Any]:
     """The summary object `restic backup --json` prints last, or {} when it printed none."""
-    for line in reversed(text.splitlines()):
-        try:
-            value = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(value, dict) and value.get("message_type") == "summary":
-            return value
-    return {}
+    found = [o for o in json_objects(text) if o.get("message_type") == "summary"]
+    return found[-1] if found else {}
 
 
 def seconds_until(clock: str, now: datetime) -> int:
@@ -219,7 +218,8 @@ class Backup:
         finished = self.run(["restic", *self.backup_args()], stdout=subprocess.PIPE)
         numbers = summary(finished.stdout or "")
         fields = {name: numbers[name] for name in SUMMARY_FIELDS if name in numbers}
-        log.info("backup uploaded", extra=fields | {"exit_code": finished.returncode})
+        level = logging.INFO if finished.returncode == 0 else logging.WARNING
+        log.log(level, "restic backup ran", extra=fields | {"exit_code": finished.returncode})
         return finished.returncode == 0
 
     def run_backup(self) -> str | None:
