@@ -2,7 +2,7 @@
 # Nightly updates take Docker's minor and patch releases only. A major may
 # change Docker's firewall backend, and CI isolation relies on its DOCKER-USER
 # chain (ci-runner/net/setup-net.sh), so upgrade one by hand: edit these
-# versions, then run ci-runner/tests/audit.sh.
+# versions, then run ci-runner/host-tests/audit.sh.
 Package: docker-ce docker-ce-cli docker-ce-rootless-extras
 Pin: version 5:29.*
 Pin-Priority: 900

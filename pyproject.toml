@@ -43,7 +43,7 @@ testpaths = ["tests"]
 pythonpath = [
   ".", "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",
   "ci-runner/supervisor",
-  "ci-runner/tests", "stacks/telemetry",
+  "ci-runner/host-tests", "stacks/telemetry",
 ]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
@@ -55,7 +55,7 @@ pythonpath = [
 extra-paths = [
   "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",
   "ci-runner/supervisor",
-  "ci-runner/tests", "stacks/telemetry",
+  "ci-runner/host-tests", "stacks/telemetry",
 ]
 
 # Strict: no untyped value gets through, and a warning fails the check.

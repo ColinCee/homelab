@@ -1,6 +1,6 @@
 #!/usr/local/bin/homelab-python3 -Es
 """Prove the image's tools run for a job, after building the image:
-  sudo ci-runner/tests/test-tools.sh
+  sudo ci-runner/host-tests/test-tools.sh
 with the supervisor stopped, since it needs slot 0 free.
 Boots a VM in slot 0 and runs each tool as the runner user, with the PATH
 ci-boot gives the runner. Exits non-zero if any fails.

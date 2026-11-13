@@ -1,4 +1,4 @@
-"""The CI runner's audit (ci-runner/tests/audit.py): every check runs, and any one failing
+"""The CI runner's audit (ci-runner/host-tests/audit.py): every check runs, and any one failing
 fails the audit, on a fake host that passes them all unless a test breaks one."""
 
 import importlib.util
@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "audit_script", Path(__file__).parents[1] / "ci-runner/tests/audit.py"
+    "audit_script", Path(__file__).parents[1] / "ci-runner/host-tests/audit.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 audit = importlib.util.module_from_spec(SPEC)
@@ -146,7 +146,7 @@ def run_audit(host: FakeHost, *, owner: Callable[[Path], tuple[str, str]] | None
         is_root=lambda: True,
         owner=owner or owners({proc}),
     )
-    return int(audit.main(fake, here=Path("/repo/ci-runner/tests")))
+    return int(audit.main(fake, here=Path("/repo/ci-runner/host-tests")))
 
 
 def test_a_sound_host_passes_every_check(
@@ -200,7 +200,7 @@ BREAKS: dict[str, Callable[[FakeHost], object]] = {
         h.root / "sys/fs/cgroup/firecracker/ci-slot0/memory.max"
     ).write_text("max\n"),
     "network test": lambda h: h.answers.update(
-        {(sys.executable, "-Es", "/repo/ci-runner/tests/test_network.py"): 1}
+        {(sys.executable, "-Es", "/repo/ci-runner/host-tests/test_network.py"): 1}
     ),
 }
 

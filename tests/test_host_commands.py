@@ -1,4 +1,4 @@
-"""The host tests' one way to run a command (ci-runner/tests/host_commands.py)."""
+"""The host tests' one way to run a command (ci-runner/host-tests/host_commands.py)."""
 
 import ast
 import sys

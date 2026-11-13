@@ -1,4 +1,4 @@
-"""The load test itself (ci-runner/tests/test_load.py): its PASS or FAIL decision, and the
+"""The load test itself (ci-runner/host-tests/test_load.py): its PASS or FAIL decision, and the
 last line, which the supervisor keeps as the result (ci_supervisor.py, drain_and_test)."""
 
 import importlib.util
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "load_test_script", Path(__file__).parents[1] / "ci-runner/tests/test_load.py"
+    "load_test_script", Path(__file__).parents[1] / "ci-runner/host-tests/test_load.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 load = importlib.util.module_from_spec(SPEC)

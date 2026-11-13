@@ -1,4 +1,4 @@
-"""The container wall test (ci-runner/tests/test_wall.py): a PASS needs the wall's drop
+"""The container wall test (ci-runner/host-tests/test_wall.py): a PASS needs the wall's drop
 counter to rise, and the throwaway network and namespace go whatever happens."""
 
 import importlib.util
@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 SPEC = importlib.util.spec_from_file_location(
-    "wall_test_script", Path(__file__).parents[1] / "ci-runner/tests/test_wall.py"
+    "wall_test_script", Path(__file__).parents[1] / "ci-runner/host-tests/test_wall.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 wall = importlib.util.module_from_spec(SPEC)

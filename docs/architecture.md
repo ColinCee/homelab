@@ -68,7 +68,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   connection.
 - Host units run `homelab-python3`, the `mise.toml` Python, which `install_host.py` links after a hash check. It and
   `update.py` stay on the system's 3.12 to repair it, as do the deploy scripts, which need its `python3-yaml`.
-- [`audit.sh`](../ci-runner/tests/audit.sh) gates every Firecracker, kernel or runner upgrade.
+- [`audit.sh`](../ci-runner/host-tests/audit.sh) gates every Firecracker, kernel or runner upgrade.
 
 ## Monitoring and alerts
 
