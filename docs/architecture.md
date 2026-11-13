@@ -88,7 +88,7 @@ agents as `agents`. Dashboards come from Git: the building-dashboards skill.
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
 its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
-[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #uptime. Alertmanager has no port
+[Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) to Discord's #alerts. Alertmanager has no port
 (its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
 
@@ -97,8 +97,9 @@ its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post throug
 | `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin, again every 4 h |
 | `week` | Something is running out or slipping | No mention, again daily |
 
-When Colin's PC is on, a Claude Desktop task works what fired since its last run: the
-[`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md) skill.
+**Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert one #incidents post and
+starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)). Nothing reaches in:
+the routine reaches only GitHub, where it opens draft pull requests.
 
 - A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
   means the number recovered.
@@ -112,11 +113,9 @@ Traps:
 
 - Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
   `job="ci-vms"`, present only while a slot runs a VM.
-- Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network,
-  Home Assistant once it has `prometheus:` and `HOMEASSISTANT_METRICS_TOKEN` secret;
-  [`probes.py`](../stacks/observability/probes.py) checks them for the alerts. The flight tracker's `probe_success` is 1
-  only when its public API says its data is live; the public sites' (`job="integrations/blackbox/sites"`) only on a
-  200.
+- Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network;
+  [`probes.py`](../stacks/observability/probes.py) checks them. The flight tracker's `probe_success` is 1 only when
+  its API says its data is live; the public sites' only on a 200.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;
   one in another form still reaches the log store.
 
