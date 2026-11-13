@@ -18,6 +18,7 @@ from typing import Any
 
 import pytest
 import telemetry
+from conftest import programs, units
 
 # Before conftest's sent_traces stands in for it.
 SEND_TRACES = telemetry.send_traces
@@ -35,11 +36,7 @@ OWN_REPLACE = {
 
 
 def test_files_are_replaced_only_through_telemetry() -> None:
-    for path in [
-        *ROOT.glob("scripts/**/*.py"),
-        *ROOT.glob("stacks/**/*.py"),
-        *ROOT.glob("ci-runner/**/*.py"),
-    ]:
+    for path in programs():
         if path not in OWN_REPLACE:
             text = path.read_text(encoding="utf-8")
             assert not re.search(r"os\.(replace|rename)\(|\.rename\(", text), (
@@ -55,12 +52,12 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
     installer = (ROOT / "ci-runner/install_host.py").read_text(encoding="utf-8")
     assert 'here.parent / "stacks/telemetry/telemetry.py"' in installer
     checked = 0
-    for unit in ROOT.glob("ci-runner/systemd/*.service"):
+    for unit in units():
         for line in re.findall(r"^ExecStart=(.*\.py\b.*)$", unit.read_text(encoding="utf-8"), re.M):
             command = shlex.split(line)
             script = next(part for part in command if part.endswith(".py"))
             if script.startswith(INSTALLED) and imports_telemetry(
-                ROOT / "scripts" / Path(script).name
+                next(p for p in programs() if p.name == Path(script).name)
             ):
                 checked += 1
                 # -I would drop the script's folder, where the module is, from the path.
@@ -129,12 +126,7 @@ HTTP_MODULES = {"urllib.request", "http.client", "requests", "httpx", "aiohttp"}
 
 
 def python_files() -> list[Path]:
-    return [
-        p
-        for pattern in ("scripts/**/*.py", "stacks/**/*.py", "ci-runner/**/*.py")
-        for p in ROOT.glob(pattern)
-        if p != MODULE
-    ]
+    return [p for p in programs() if p != MODULE]
 
 
 def imported(path: Path) -> set[str]:

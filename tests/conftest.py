@@ -69,7 +69,30 @@ def write_slowest(out: Path) -> None:
     out.write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
 
 
-STACKS = Path(__file__).parent.parent / "stacks"
+ROOT = Path(__file__).parent.parent
+STACKS = ROOT / "stacks"
+
+
+@cache
+def tracked(*endings: str) -> tuple[Path, ...]:
+    """Every file in git ending so, wherever it is: a check that names folders misses a new one."""
+    listed = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files"], check=True, capture_output=True, text=True
+    ).stdout.splitlines()
+    return tuple(ROOT / p for p in listed if not endings or p.endswith(endings))
+
+
+def is_test(path: Path) -> bool:
+    return "tests" in path.relative_to(ROOT).parts or path.name.endswith("_test.py")
+
+
+def programs() -> list[Path]:
+    """Every Python file but the tests."""
+    return [p for p in tracked(".py") if not is_test(p)]
+
+
+def units() -> tuple[Path, ...]:
+    return tracked(".service")
 
 
 class ComposeLoader(yaml.SafeLoader):

@@ -1218,6 +1218,20 @@ def test_failed_polls_in_a_row_go_to_prometheus_and_a_good_poll_clears_them(
     assert state.poll_failed_since is None
 
 
+def test_a_long_rest_keeps_showing_polls_failing(
+    wait_metrics: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [1000.0]
+    monkeypatch.setattr(sup.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(sup.time, "time", lambda: clock[0])
+    monkeypatch.setattr(sup.time, "sleep", lambda s: clock.__setitem__(0, clock[0] + s))
+    state = sup.State()
+    sup.note_poll(state, False, clock[0])  # rate limited
+    sup.rest(state, 1800.0)
+    assert clock[0] == 2800.0
+    assert "homelab_ci_poll_failed_seconds 1800" in wait_metrics.read_text()
+
+
 def test_a_queued_jobs_workflow_comes_from_github() -> None:
     labels = list(sup.RUNNER_LABELS)
     jobs = {

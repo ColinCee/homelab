@@ -5,9 +5,9 @@ which code comments point to by section.
 
 Checks: `mise run check` (CI's check job; Compose validation needs Docker), before pushing.
 
-- Keep each service, operational command and scheduled unit under `stacks/<name>/`; shared deployment logic stays
-  stack-name agnostic. No image polling or per-stack deploy branches: Git pins image revisions; Renovate moves
-  them, auto-merging non-major ones after checks and its release-age gate.
+- One job per top-level folder; files sit beside what they serve (`tests/test_placement.py`). Deploy logic stays
+  stack-name agnostic. No image polling or per-stack deploy branches: Git pins images; Renovate moves them,
+  auto-merging non-major ones after checks and its release-age gate.
 - Bind admin ports to Tailscale; host networking only when needed. Pin images, Actions.
 - Logic is typed, tested Python; shell only calls one program. A workflow step is one such command (`scripts/ci.py`),
   YAML only `runs-on` and `if:`.
