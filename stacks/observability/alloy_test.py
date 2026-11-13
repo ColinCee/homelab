@@ -159,6 +159,13 @@ JOURNAL = [
         "nothing new",
         "deploy-main",
     ),
+    # The user manager's own line, not a service's: a template unit is no service name.
+    (
+        {"_systemd_unit": "user@1000.service", "syslog_identifier": "systemd"},
+        "Reached target timers.target",
+        "Reached",
+        "systemd",
+    ),
     ({}, "a line with no field to name it", "no field", "unknown_service"),
 ]
 
