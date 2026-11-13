@@ -1,6 +1,10 @@
 """CI's time limits (tests/conftest.py): a slow test or run is named, and only past its limit."""
 
+from pathlib import Path
+
 import conftest
+import pytest
+from conftest import Mark
 
 
 def test_only_a_test_or_run_past_its_limit_is_named() -> None:
@@ -10,16 +14,20 @@ def test_only_a_test_or_run_past_its_limit_is_named() -> None:
     assert len(conftest.over_limits(conftest.RUN_LIMIT + 1, {})) == 1
 
 
-def stat(steal: int) -> str:
-    """/proc/stat as a CI VM writes it (13 Nov), with `steal` hundredths over all its CPUs."""
-    return f"cpu  1351 0 543 4652 205 0 37 {steal} 0 0\ncpu0 338 0 135 1163 51 0 9 561 0 0\n"
+def test_only_cpu_time_the_host_took_comes_off() -> None:
+    # 13 Nov, a 4-CPU VM's shard beside another VM: 21.9 s, 13.7 s of it on a CPU (with children),
+    # while the host took 38.6 s of the VM's CPUs as they ran 35.4 s. It took 15 s alone.
+    start = Mark(wall=0, cpu=0, stolen=22.47, busy=19.35)
+    assert 13 < conftest.own_seconds(start, Mark(21.9, 13.7, 61.03, 54.74)) < 15
+    # A test that only waits loses nothing, however much the host took from the other shards.
+    assert conftest.own_seconds(start, Mark(8.0, 0.0, 40.0, 30.0)) == 8.0
+    # Nor does anything when the host took nothing.
+    assert conftest.own_seconds(start, Mark(8.0, 6.0, 22.47, 40.0)) == 8.0
 
 
-def test_only_cpu_time_the_host_took_comes_off_the_clock() -> None:
-    # 13 Nov, beside another VM: a 4-CPU VM's shard took 21.9 s while the host took 38.6 CPU s.
-    took = 21.9 - (conftest.stolen_seconds(stat(6103), 4) - conftest.stolen_seconds(stat(2246), 4))
-    assert 12 < took < 13
-    # Outside a VM steal stays 0, so a test that waits keeps all its seconds; a line that is not
-    # the CPUs' total takes nothing off.
-    assert conftest.stolen_seconds(stat(0), 4) == 0
-    assert conftest.stolen_seconds("intr 1 2 3 4 5 6 7 8 9", 4) == 0
+def test_a_mark_reads_steal_and_busy_seconds(tmp_path: Path) -> None:
+    stat = tmp_path / "stat"
+    stat.write_text("cpu  1355 2 543 4652 205 3 37 2247 0 0\ncpu0 1 2 3 4 5 6 7 8 0 0\n")
+    taken = conftest.mark(stat)
+    assert (taken.stolen, taken.busy) == pytest.approx((22.47, 19.4))
+    assert conftest.mark(tmp_path / "missing")[2:] == (0.0, 0.0)
