@@ -1,3 +1,4 @@
+import ast
 import json
 import threading
 from collections.abc import Iterable, Mapping
@@ -7,6 +8,7 @@ from typing import Any, Never, Protocol
 import cache_disks
 import ci_supervisor as sup
 import github_api
+import install_host
 import job_waits
 import load_testing
 import pytest
@@ -1061,3 +1063,49 @@ def test_a_started_runs_review_takes_the_slot_before_an_older_new_build(
     sup.tick(NoGitHub(), sup.State(slots=1), ["o/ok"], now)
 
     assert started == [(0, first)]
+
+
+def test_each_vm_a_poll_starts_is_told_the_hosts_last_load_test(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class Registers(NoGitHub):
+        def request(self, method: str, path: str, body: object = None) -> dict[str, Any]:
+            return {"runner": {"id": 1}, "encoded_jit_config": "x"}
+
+    record = {"slots": 5, "passed": True, "line": "PASS 5 slots"}
+    load_testing.LOAD_TEST_FILE.write_text(json.dumps(record))
+    monkeypatch.setattr(vms, "STATE_DIR", tmp_path)
+    monkeypatch.setattr(vms, "LAST_REPO_FILE", tmp_path / "last-repo")
+    for name in ("check_served", "only_colin"):
+        monkeypatch.setattr(github_api, name, lambda *a, **k: True)
+    job = github_api.Job("o/ok", 1, "j", tuple(github_api.RUNNER_LABELS))
+    monkeypatch.setattr(github_api, "find_queued", lambda gh, repo, **_: [job])
+    monkeypatch.setattr(cache_disks, "maybe_take_outboxes", lambda *a, **k: None)
+    monkeypatch.setattr(vms, "has_job", lambda gh, run: False)
+    monkeypatch.setattr(sup, "standby_count", lambda: 1)
+
+    sup.tick(Registers(), sup.State(slots=2), ["o/ok"], 0.0)
+
+    for slot in (0, 1):  # the job's VM, then the standby
+        metadata = json.loads((tmp_path / f"metadata-slot{slot}.json").read_text())
+        assert metadata["load_test"] == record
+
+
+def test_its_modules_never_import_it_while_it_runs() -> None:
+    """It runs as __main__: a module importing it would load a second copy, with its own State
+    class, beside the running one. Its type is imported only for type checks."""
+    for name in install_host.SUPERVISOR_MODULES:
+        tree = ast.parse((Path(__file__).parent / name).read_text(encoding="utf-8"))
+        checked = {
+            id(n)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.If) and ast.unparse(node.test) == "TYPE_CHECKING"
+            for n in ast.walk(node)
+        }
+        for node in ast.walk(tree):
+            if id(node) in checked:
+                continue
+            if isinstance(node, ast.Import):
+                assert "ci_supervisor" not in [a.name for a in node.names], name
+            if isinstance(node, ast.ImportFrom):
+                assert node.module != "ci_supervisor", name
