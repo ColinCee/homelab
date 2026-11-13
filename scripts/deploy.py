@@ -17,8 +17,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import telemetry
 import yaml
+
+# The shared module, from the checkout it deploys (stacks/telemetry).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "stacks/telemetry"))
+import telemetry
 
 CommandRunner = Callable[..., subprocess.CompletedProcess[bytes]]
 

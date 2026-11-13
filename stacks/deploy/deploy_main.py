@@ -14,6 +14,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+# The shared module, whatever unit file starts this one: a deploy that fails before installing the
+# new unit must not leave the next run unable to import it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "telemetry"))
 import telemetry
 
 HOME = Path.home()

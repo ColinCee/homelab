@@ -4,6 +4,7 @@ importing the module can find it (stacks/telemetry/telemetry.py)."""
 import re
 import shlex
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,38 +32,34 @@ def test_files_are_replaced_only_through_telemetry() -> None:
 
 
 def imports_telemetry(script: Path) -> bool:
-    return bool(re.search(r"^import telemetry$", script.read_text(encoding="utf-8"), re.MULTILINE))
+    return bool(re.search(r"^import telemetry\b", script.read_text(encoding="utf-8"), re.MULTILINE))
 
 
-def test_host_units_find_the_module() -> None:
+def test_installed_scripts_find_the_module_beside_them() -> None:
     installer = (ROOT / "ci-runner/install_host.py").read_text(encoding="utf-8")
+    assert 'here.parent / "stacks/telemetry/telemetry.py"' in installer
     checked = 0
-    for unit in ROOT.glob("**/systemd/*.service"):
-        text = unit.read_text(encoding="utf-8")
-        for line in re.findall(r"^ExecStart=(.*\.py\b.*)$", text, re.MULTILINE):
+    for unit in ROOT.glob("ci-runner/systemd/*.service"):
+        for line in re.findall(r"^ExecStart=(.*\.py\b.*)$", unit.read_text(encoding="utf-8"), re.M):
             command = shlex.split(line)
-            if command[0] == "/usr/bin/docker":
-                continue  # In a container: test_json_logs checks its mount.
             script = next(part for part in command if part.endswith(".py"))
-            name = Path(script).name
-            source = ROOT / ("scripts" if script.startswith(INSTALLED) else "stacks/deploy") / name
-            if not imports_telemetry(source):
-                continue
-            checked += 1
-            # -I would drop the script's folder and PYTHONPATH from the path.
-            assert "-I" not in command, unit.name
-            if script.startswith(INSTALLED):
+            if script.startswith(INSTALLED) and imports_telemetry(
+                ROOT / "scripts" / Path(script).name
+            ):
+                checked += 1
+                # -I would drop the script's folder, where the module is, from the path.
                 assert "-Es" in command, unit.name
-                assert 'here.parent / "stacks/telemetry/telemetry.py"' in installer
-            else:
-                assert "Environment=PYTHONPATH=%h/code/homelab/stacks/telemetry" in text, unit.name
     assert checked >= 5
 
 
-def test_deploy_finds_the_module() -> None:
-    assert imports_telemetry(ROOT / "scripts/deploy.py")
-    wrapper = (ROOT / "scripts/deploy.sh").read_text(encoding="utf-8")
-    assert 'PYTHONPATH="$repo_root/stacks/telemetry" exec python3 -s' in wrapper
+@pytest.mark.parametrize("script", ["scripts/deploy.py", "stacks/deploy/deploy_main.py"])
+def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: Path) -> None:
+    # As the oldest deploy-main.service runs them: -I, no PYTHONPATH, run from elsewhere.
+    load = f"import runpy; runpy.run_path({str(ROOT / script)!r}, run_name='loaded')"
+    done = subprocess.run(
+        [sys.executable, "-I", "-c", load], cwd=tmp_path, capture_output=True, text=True
+    )
+    assert done.returncode == 0, done.stderr
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes")

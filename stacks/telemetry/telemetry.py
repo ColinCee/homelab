@@ -4,9 +4,10 @@ file for Alloy, or any file read while it changes, with `replace_file`.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
 volumes), so services run alone with `python -I` still import it; tests/test_json_logs.py fails a
-service that does not. Host scripts find it beside them (ci-runner/install_host.py) or on
-PYTHONPATH (scripts/deploy.sh, deploy-main.service). Lines are one JSON object each, which Alloy
-reads (config.alloy, loki.process "docker"); an exception is kept under OpenTelemetry's names.
+service that does not. Host scripts find it beside them (ci-runner/install_host.py) or
+by a path into the checkout (scripts/deploy.py, deploy_main.py). Each line is one JSON object,
+which Alloy reads (config.alloy, loki.process "docker"); an exception is kept under
+OpenTelemetry's names.
 """
 
 from __future__ import annotations
