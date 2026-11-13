@@ -177,50 +177,6 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     )
 
 
-def old_wrappers(root: Path) -> list[Path]:
-    """The shell wrappers an older install left, each a file that runs what is installed now."""
-    found = [Path(root, "usr/local/lib/homelab-ci", name) for name in ih.OLD_WRAPPERS]
-    for wrapper in found:
-        wrapper.parent.mkdir(parents=True, exist_ok=True)
-        wrapper.write_text("old")
-    return found
-
-
-def test_the_old_wrappers_go_only_after_the_units_that_named_them(root: Path) -> None:
-    recorder = installed_host(root)
-    wrappers = old_wrappers(root)
-    there_at_last_unit: list[bool] = []
-
-    def watching(
-        command: list[str],
-        *,
-        check: bool = True,
-        capture: bool = False,
-        quiet: bool = False,
-        input: str | None = None,
-    ) -> subprocess.CompletedProcess[str]:
-        if command[-1].endswith("/etc/systemd/system/homelab-ci-update.service"):
-            there_at_last_unit.append(all(w.exists() for w in wrappers))
-        return recorder(command, check=check, capture=capture, quiet=quiet, input=input)
-
-    ih.install_host(ih.Host(root=root, run=watching), CI_RUNNER, {})
-
-    assert there_at_last_unit == [True]
-    assert not any(w.exists() for w in wrappers)
-
-
-def test_a_failed_install_keeps_the_old_wrappers(root: Path) -> None:
-    recorder = installed_host(root)
-    (root / "usr/local/lib/homelab-ci/ci_supervisor.py").write_text("old\n")
-    wrappers = old_wrappers(root)
-    recorder.fail = str(root / "usr/local/lib/homelab-ci/net/setup_net.py")
-
-    with pytest.raises(subprocess.CalledProcessError):
-        install(root, recorder)
-
-    assert all(w.exists() for w in wrappers)
-
-
 def test_unchanged_supervisor_and_network_swap_vm_files_without_a_restart(
     root: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

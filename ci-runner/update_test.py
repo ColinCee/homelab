@@ -370,7 +370,7 @@ def test_the_units_the_updater_and_every_script_run_the_right_python() -> None:
         if words[0] != installer.PYTHON_LINK:
             name = Path(words[0]).name
             assert any(Path(s).name == name for s in scripts), words[0]
-    # Shell wrappers that only start a Python script are gone, apart from the stand-in.
+    # No shell wrapper only starts a Python script.
     wrappers = [
         script.name
         for script in CI_RUNNER.glob("**/*.sh")
@@ -379,4 +379,4 @@ def test_the_units_the_updater_and_every_script_run_the_right_python() -> None:
             for line in script.read_text(encoding="utf-8").splitlines()
         )
     ]
-    assert wrappers == ["install-host.sh"]
+    assert wrappers == []
