@@ -102,7 +102,11 @@ def http(
     if login:
         sent["Authorization"] = "Basic " + base64.b64encode(login.encode()).decode()
     for left in reversed(range(tries)):
-        request = urllib.request.Request(url, data=data, method=method)
+        try:
+            request = urllib.request.Request(url, data=data, method=method)
+        except ValueError:
+            # Its message would print the URL, which may be a secret (a ping URL).
+            raise ValueError("not an http(s) URL") from None
         for name, value in sent.items():
             # Never passed on by a redirect, which may lead to another host.
             request.add_unredirected_header(name, value)
@@ -115,14 +119,14 @@ def http(
             if not (again and left):
                 raise
             with contextlib.suppress(ValueError):
-                wait = min(float(e.headers.get("Retry-After") or wait), 5.0)
+                wait = max(0.0, min(float(e.headers.get("Retry-After") or wait), 5.0))
             e.close()
         except (OSError, HTTPException) as e:
             if not (method in _IDEMPOTENT and left):
                 if isinstance(e, OSError):
                     raise
-                # The URL stays out of the message, as some carry a secret (a ping URL).
-                raise OSError(f"{method}: {e!r}") from e
+                # Only its type: the message of one may carry the URL, as a secret may be one.
+                raise OSError(f"{method}: {type(e).__name__}") from e
         time.sleep(wait)
     raise AssertionError("tries must be at least 1")
 

@@ -125,14 +125,19 @@ def python_files() -> list[Path]:
 def imported(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-    froms = {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
+    froms = {
+        f"{n.module}.{a.name}"
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ImportFrom) and n.module
+        for a in n.names
+    }
     return names | froms
 
 
 def test_http_is_called_only_through_telemetry() -> None:
     for path in python_files():
         name = path.relative_to(ROOT).as_posix()
-        used = imported(path) & HTTP_MODULES
+        used = {m for m in HTTP_MODULES for i in imported(path) if (i + ".").startswith(m + ".")}
         if name in OWN_HTTP:
             assert OWN_HTTP[name] in used, f"{name} no longer calls HTTP itself: drop it"
         else:
@@ -140,13 +145,23 @@ def test_http_is_called_only_through_telemetry() -> None:
 
 
 def test_secret_files_are_read_only_through_telemetry() -> None:
-    # A secret read as text and trimmed: the way telemetry.secret reads one.
-    trimmed = re.compile(r"read_text\([^)]*\)\s*\.\s*r?strip\(")
-    named = re.compile(r"secret|token|password|credential|key_file|login", re.I)
+    # A file read whole and trimmed, the way telemetry.secret reads one, from a secret-looking name.
+    named = re.compile(r"secret|token|password|credential|private|key_file|login", re.I)
     for path in python_files():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if trimmed.search(line):
-                assert not named.search(line), f"{path.relative_to(ROOT)}: telemetry.secret"
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in {"strip", "rstrip"}
+                and isinstance(node.func.value, ast.Call)
+                and isinstance(node.func.value.func, ast.Attribute)
+                and node.func.value.func.attr in {"read_text", "read_bytes", "read"}
+            ):
+                continue
+            source = ast.unparse(node.func.value.func.value)
+            assert not named.search(source), (
+                f"{path.relative_to(ROOT)}: {source}; use telemetry.secret"
+            )
 
 
 def test_a_secret_is_read_by_name_or_path_without_its_newline(
