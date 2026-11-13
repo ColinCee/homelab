@@ -45,13 +45,12 @@ def test_files_are_replaced_only_through_telemetry() -> None:
 
 
 def test_label_values_are_escaped_only_through_telemetry() -> None:
-    # Escaping a backslash by hand is how a second label escaper starts.
+    # Escaping or blanking a backslash by hand is how a second label escaper starts.
+    by_hand = r"""replace\(\s*(chr\(92\)|["']\\\\\\\\["'])|re\.sub\(\s*r?["']\[[^]]*\\\\"""
     for path in programs():
         if path != MODULE:
             text = path.read_text(encoding="utf-8")
-            assert not re.search(r"""replace\(\s*(chr\(92\)|["']\\\\\\\\["'])""", text), (
-                f"{path.relative_to(ROOT)}: telemetry.label"
-            )
+            assert not re.search(by_hand, text), f"{path.relative_to(ROOT)}: telemetry.label"
 
 
 def test_a_label_value_reads_back_as_written() -> None:
