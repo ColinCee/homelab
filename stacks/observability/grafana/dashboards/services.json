@@ -1811,7 +1811,7 @@
         "x": 0,
         "y": 49,
         "w": 4,
-        "h": 4
+        "h": 9
       }
     },
     {
@@ -1893,7 +1893,7 @@
     {
       "id": 18,
       "type": "table",
-      "title": "Integrations that failed to set up, 7 days",
+      "title": "Setup failures, 7 days",
       "description": "Home Assistant's log lines for an integration or platform that failed to set up, was not ready, could not log in, or could not add an entity, each with how often and when last. Its Prometheus endpoint has no integration state, so this reads the logs.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
@@ -2035,7 +2035,7 @@
     {
       "id": 20,
       "type": "stat",
-      "title": "Blog numbers age",
+      "title": "Blog data age",
       "description": "How old the home-lab numbers colincheung.dev/homelab.json serves are (public_stats.py pushes every 5 minutes; probes.py reads them back). Amber past 30 minutes. A failing push already alerts as public-stats unhealthy; no data means the blog could not be read.",
       "datasource": {
         "type": "prometheus",
@@ -2101,7 +2101,7 @@
         "x": 0,
         "y": 59,
         "w": 4,
-        "h": 4
+        "h": 5
       }
     },
     {
