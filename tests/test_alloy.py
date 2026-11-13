@@ -3,6 +3,7 @@ loads (its validate command)."""
 
 import re
 import subprocess
+import threading
 from pathlib import Path
 
 import yaml
@@ -63,6 +64,7 @@ LINES = [
     ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
     ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
     ('{"level":"warn","logger":"http.log","msg":"handled request"}', "handled", "warn"),
+    ('{"level":"INFO","msg":"saw level=error in a reply"}', "reply", "info"),
     ("Error fetching from ADS-B API, trying fallback", "ADS-B", ""),
 ]
 # Lines from these containers: the first of each is dropped, the second kept.
@@ -105,6 +107,9 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     seen: list[str] = []
     with subprocess.Popen(command, stderr=subprocess.PIPE, text=True, encoding="utf-8") as run:
         assert run.stderr is not None
+        # A line wrongly dropped would leave the loop waiting for it: fail instead.
+        deadline = threading.Timer(60, run.kill)
+        deadline.start()
         try:
             for out in run.stderr:
                 if "component_id=loki.echo.out" in out:
@@ -112,6 +117,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
                 if len(seen) == len(LINES) + 2:
                     break
         finally:
+            deadline.cancel()
             run.kill()
     for line, word, level in LINES:
         got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]

@@ -69,6 +69,16 @@ discovery.relabel "cadvisor" {
     target_label = "instance"
     replacement  = constants.hostname
   }
+  // As the trace store's `service.name` and Prometheus's `job`, so a service is found by one name in each store; the
+  // Compose project tells apart two services of one name.
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+    target_label  = "service_name"
+  }
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project"]
+    target_label  = "service_namespace"
+  }
 }
 
 prometheus.scrape "cadvisor" {
@@ -238,21 +248,26 @@ loki.process "docker" {
 
   // Each line's level, for programs that do not log JSON: logfmt and Go's slog (`level=INFO`), cloudflared
   // (`2026-11-13T13:27:28Z INF`), VictoriaTraces (`<time>\tinfo\t`), Python's logging and uvicorn (`ERROR:`), Home
-  // Assistant (`<date> <time> WARNING (`). A stage that does not match leaves the level as it was.
-  stage.regex {
-    expression = "(?:^|\\s)level=\"?(?P<level>[A-Za-z]+)"
-  }
-  stage.regex {
-    expression = "^\\S+ (?P<level>DBG|INF|WRN|ERR|FTL) "
-  }
-  stage.regex {
-    expression = "^\\S+\\t(?P<level>debug|info|warn|error|fatal|panic)\\t"
-  }
-  stage.regex {
-    expression = "^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL):"
-  }
-  stage.regex {
-    expression = "^\\S+ \\S+ (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) \\("
+  // Assistant (`<date> <time> WARNING (`). A stage that does not match leaves the level as it was;
+  // a JSON line keeps its own, whatever its text says.
+  stage.match {
+    selector = "{container_name=~\".+\"} !~ \"^[{]\""
+
+    stage.regex {
+      expression = "(?:^|\\s)level=\"?(?P<level>[A-Za-z]+)"
+    }
+    stage.regex {
+      expression = "^\\S+ (?P<level>DBG|INF|WRN|ERR|FTL) "
+    }
+    stage.regex {
+      expression = "^\\S+\\t(?P<level>debug|info|warn|error|fatal|panic)\\t"
+    }
+    stage.regex {
+      expression = "^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL):"
+    }
+    stage.regex {
+      expression = "^\\S+ \\S+ (?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL) \\("
+    }
   }
 
   // One vocabulary, the journal's included (loki.relabel "journal"), which the Services dashboard's error counts read.

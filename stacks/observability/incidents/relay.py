@@ -49,21 +49,23 @@ FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 log = logging.getLogger("incidents")
 
 
-# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
-# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
-# copy; tests/test_json_logs.py keeps them the same.
+# One JSON object per line, which Alloy reads (config.alloy, loki.process "docker"); an exception
+# under OpenTelemetry's names. Each service runs alone with `python -I`, so each has a copy;
+# tests/test_json_logs.py keeps them the same.
 _RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
 
 class JsonLines(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # A value passed as `extra` never takes the place of these.
         line: dict[str, object] = {
+            k: v for k, v in vars(record).items() if k not in _RECORD_FIELDS
+        } | {
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
         if record.exc_info and record.exc_info[1]:
             line["exception.type"] = type(record.exc_info[1]).__name__
             line["exception.message"] = str(record.exc_info[1])

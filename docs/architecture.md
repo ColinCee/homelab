@@ -76,7 +76,8 @@ Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observabi
 VictoriaLogs and VictoriaTraces, 30 days each;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards come from Git: the building-dashboards skill.
+agents as `agents`. Dashboards come from Git: the building-dashboards skill. Signals link up: one service name per
+store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)).
 
 | Problem | Who warns |
 |---|---|
@@ -116,9 +117,7 @@ Traps:
   `job="ci-vms"`, present only while a slot runs a VM.
 - Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network,
   Home Assistant once it has `prometheus:` and `HOMEASSISTANT_METRICS_TOKEN` secret;
-  [`probes.py`](../stacks/observability/probes.py) checks them for the alerts. The flight tracker's `probe_success` is 1
-  only when its public API says its data is live; the public sites' (`job="integrations/blackbox/sites"`) only on a
-  200.
+  [`probes.py`](../stacks/observability/probes.py) checks them for the alerts.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;
   one in another form still reaches the log store.
 

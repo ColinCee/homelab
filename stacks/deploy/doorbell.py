@@ -22,21 +22,23 @@ BODY_MAX = 1 << 20
 log = logging.getLogger("doorbell")
 
 
-# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
-# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
-# copy; tests/test_json_logs.py keeps them the same.
+# One JSON object per line, which Alloy reads (config.alloy, loki.process "docker"); an exception
+# under OpenTelemetry's names. Each service runs alone with `python -I`, so each has a copy;
+# tests/test_json_logs.py keeps them the same.
 _RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
 
 class JsonLines(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
+        # A value passed as `extra` never takes the place of these.
         line: dict[str, object] = {
+            k: v for k, v in vars(record).items() if k not in _RECORD_FIELDS
+        } | {
             "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
         }
-        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
         if record.exc_info and record.exc_info[1]:
             line["exception.type"] = type(record.exc_info[1]).__name__
             line["exception.message"] = str(record.exc_info[1])
@@ -71,6 +73,15 @@ class Doorbell(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self._answer(404)
+
+    def log_request(self, code: int | str = "-", size: int | str = "-") -> None:
+        log.info(
+            "answered",
+            extra={"client": self.client_address[0], "request": self.requestline, "status": code},
+        )
+
+    def log_message(self, format: str, *args: object) -> None:
+        log.warning(format, *args, extra={"client": self.client_address[0]})
 
     def _answer(self, code: int) -> None:
         self.send_response(code)
