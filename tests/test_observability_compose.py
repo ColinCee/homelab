@@ -139,3 +139,10 @@ def test_obi_traces_every_container_but_the_telemetry_path() -> None:
     settings = Path(__file__).parent.parent / "stacks/observability/settings.env"
     profiles = re.search(r"^COMPOSE_PROFILES=(.*)$", settings.read_text("utf-8"), re.MULTILINE)
     assert profiles and "obi" in profiles.group(1).split(",")
+
+
+def test_obi_links_calls_by_header_where_it_can_attach() -> None:
+    # Without the host's cgroups it attaches nowhere, and calls stay unlinked with no error.
+    spec = SERVICES["obi"]
+    assert spec["environment"]["OTEL_EBPF_BPF_CONTEXT_PROPAGATION"] == "headers"
+    assert "/sys/fs/cgroup:/sys/fs/cgroup:ro" in spec["volumes"]

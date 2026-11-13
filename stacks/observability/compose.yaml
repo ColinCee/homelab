@@ -395,14 +395,17 @@ services:
       OTEL_EBPF_METRICS_FEATURES: application
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
-      # Spans are not linked across programs: that writes headers into their requests.
-      OTEL_EBPF_BPF_CONTEXT_PROPAGATION: disabled
+      # Calls on this host already link (OBI sees both ends), except some it misses, such as the gateway's to
+      # Alertmanager: those get a `traceparent` header. Plain HTTP only; TLS is unchanged.
+      OTEL_EBPF_BPF_CONTEXT_PROPAGATION: headers
       # Which container each program is in, and its Compose service.
       DOCKER_HOST: tcp://docker-socket-proxy:2375
     labels:
       homelab.config-hash: ${CONFIG_HASH_OBI:-}
     volumes:
       - ./obi/obi.yaml:/etc/obi/obi.yaml:ro
+      # The host's cgroups, where it attaches the header writer; its own namespace shows only its own.
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
     networks:
       - otlp
       - docker-api
