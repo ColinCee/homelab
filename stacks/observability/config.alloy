@@ -373,12 +373,18 @@ loki.source.journal "host" {
     container_name = "journal",
     instance       = constants.hostname,
   }
-  forward_to = [loki.process.journal.receiver]
+  forward_to = [loki.secretfilter.journal.receiver]
+}
+
+// Before the lines become JSON, whose escaped quotes the filter's password rules do not match.
+loki.secretfilter "journal" {
+  redact_percent = 100
+  forward_to     = [loki.process.journal.receiver]
 }
 
 // The host's lines as JSON too (loki.process "docker"); their level is the journal's.
 loki.process "journal" {
-  forward_to = [loki.secretfilter.logs.receiver]
+  forward_to = [otelcol.receiver.loki.logs.receiver]
 
   stage.template {
     source   = "json_line"
