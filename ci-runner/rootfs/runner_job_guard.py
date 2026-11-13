@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Refuse any job on a public repo's CI VM that is not Colin's own (docs/architecture.md,
 "CI runner").
 

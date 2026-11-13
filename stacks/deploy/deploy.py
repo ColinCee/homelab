@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Validate and deploy self-contained Compose stacks."""
 
 from __future__ import annotations
@@ -13,8 +12,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable, Generator, Mapping, Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -53,8 +51,6 @@ class DeploymentReport:
 
     completed: tuple[str, ...]
     failed: Mapping[str, str]
-    # When each completed stack's `up --wait` returned, as ISO UTC times.
-    ready_at: Mapping[str, str] = field(default_factory=dict)
 
     @property
     def partial(self) -> bool:
@@ -324,7 +320,6 @@ def deploy(
     validate_plans(repo_root, plans, runner=runner)
     completed: list[str] = []
     failed: dict[str, str] = {}
-    ready_at: dict[str, str] = {}
 
     for plan in plans:
         environment = _compose_environment()
@@ -351,7 +346,6 @@ def deploy(
                     env=environment,
                     check=True,
                 )
-                ready = datetime.now(UTC).isoformat()
                 install_systemd_units(plan.triggers, unit_dir=unit_dir, runner=runner)
                 if metrics_dir is not None:
                     record_running(repo_root, plan, metrics_dir, stamp_dir=stamp_dir, runner=runner)
@@ -363,10 +357,9 @@ def deploy(
                 continue
 
         completed.append(plan.name)
-        ready_at[plan.name] = ready
         log.info("deployed", extra={"stack": plan.name})
 
-    report = DeploymentReport(tuple(completed), failed, ready_at)
+    report = DeploymentReport(tuple(completed), failed)
     if report.partial:
         log.error(
             "partial deploy",

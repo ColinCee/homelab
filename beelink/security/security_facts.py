@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Write what the intrusion alerts read (prometheus/rules.yml, group intrusion) to security.prom:
 the last hour's CI-host installs and SSH logins from the journal, and every tailnet device and when
 it was added.

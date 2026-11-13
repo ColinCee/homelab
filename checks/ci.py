@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """The workflows' steps (.github/workflows/), one subcommand each, so no workflow holds logic of
 its own.
 

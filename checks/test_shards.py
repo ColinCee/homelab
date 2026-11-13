@@ -30,7 +30,7 @@ HEAVY = {
     "versions_hash_test.py": 0.66,
 }
 LIGHT = 0.4
-# What GitHub keeps of an annotation, as conftest.py's write_slowest caps it.
+# Under the 4096 characters GitHub keeps of an annotation, with room for escaping.
 TIMES_CHARS = 3500
 NO_TESTS = 5
 

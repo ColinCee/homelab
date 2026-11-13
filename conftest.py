@@ -13,6 +13,8 @@ from typing import Any, NamedTuple
 import pytest
 import yaml
 
+from checks import test_shards
+
 # CI's time limits, which fail the run in CI: one test process's run (checks/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
 # started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
@@ -107,15 +109,9 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
 
 
 def write_slowest(out: Path) -> None:
-    """[[test, start, seconds], ...], slowest first, under the 4096 characters GitHub keeps of an
-    annotation (with room for escaping)."""
-    rows: list[list[Any]] = []
-    for test, (start, took) in sorted(TIMES.items(), key=lambda item: -item[1][1]):
-        row = [test[-150:], round(start, 2), round(took, 2)]
-        if len(json.dumps([*rows, row], separators=(",", ":"))) > 3500:
-            break
-        rows.append(row)
-    out.write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
+    """[[test, start, seconds], ...], slowest first, cut as the runner cuts the shards' merge."""
+    rows = [[test[-150:], round(start, 2), round(took, 2)] for test, (start, took) in TIMES.items()]
+    out.write_text(test_shards.merge_times([json.dumps(rows)]), encoding="utf-8")
 
 
 ROOT = Path(__file__).parent
@@ -202,6 +198,20 @@ def git(repo: Path, *args: str) -> str:
         [*GIT, "-C", str(repo), *args], check=True, capture_output=True, text=True
     )
     return done.stdout.strip()
+
+
+def commit(repo: Path, files: Mapping[str, str | None]) -> str:
+    """Write each file (None deletes it), commit them all, and return the new commit."""
+    for name, text in files.items():
+        path = repo / name
+        if text is None:
+            path.unlink()
+            continue
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "c")
+    return git(repo, "rev-parse", "HEAD")
 
 
 def promtool(*args: str) -> subprocess.CompletedProcess[str]:

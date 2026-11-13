@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Start a throwaway Firecracker VM for each queued CI job on Colin's served repos.
 
 Polls GitHub for queued jobs asking for the `homelab-fc` label, on every private
