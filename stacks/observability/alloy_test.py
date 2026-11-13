@@ -4,9 +4,12 @@ loads (its validate command)."""
 import ast
 import json
 import re
+import socket
 import subprocess
 import threading
+import urllib.request
 from pathlib import Path
+from typing import Any
 
 from conftest import ROOT, tool
 from stacks.observability.prometheus import slos
@@ -177,6 +180,95 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     host = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if "skipped a run" in out]
     assert host == [["warn"]]
     assert " 200 9092" not in kept and "device" not in kept
+
+
+def block(kind: str, label: str) -> str:
+    start = CONFIG[CONFIG.index(f'{kind} "{label}"') :]
+    return start[: start.index("\n}\n") + 3]
+
+
+def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
+    alloy = tool("alloy")
+    # Two containers as Docker's API lists them: one reached on its network, one at the host port
+    # it publishes; a label's text that looks like the printed targets' own must not leak in.
+    service = "__meta_docker_container_label_com_docker_compose_service"
+    containers = (
+        f'[{{__meta_docker_network_ip = "172.31.0.3", {service} = "prometheus", '
+        '__meta_docker_container_name = "/a\\"=\\"b} {"}, '
+        '{__meta_docker_network_ip = "172.26.0.3", '
+        '__meta_docker_port_public_ip = "100.100.146.119", __meta_docker_port_public = "5080", '
+        f'{service} = "grafana"}}]'
+    )
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    peers = block("discovery.relabel", "peers").replace(
+        "discovery.docker.peers.targets", containers
+    )
+    transform = block("otelcol.processor.transform", "peers").replace(
+        "otelcol.processor.batch.traces.input", "otelcol.exporter.debug.out.input"
+    )
+    (tmp_path / "test.alloy").write_text(
+        f'otelcol.receiver.otlp "in" {{\n  http {{\n    endpoint = "127.0.0.1:{port}"\n  }}\n'
+        "  output {\n    traces = [otelcol.processor.transform.peers.input]\n  }\n}\n"
+        f'{peers}{transform}otelcol.exporter.debug "out" {{\n  verbosity = "detailed"\n}}\n',
+        encoding="utf-8",
+    )
+
+    def span(span_id: str, address: str, server_port: int) -> dict[str, Any]:
+        attributes = {
+            "network.peer.address": {"stringValue": address},
+            "server.port": {"intValue": server_port},
+        }
+        return {
+            "traceId": "0" * 31 + "1",
+            "spanId": span_id,
+            "name": span_id,
+            "kind": 3,
+            "startTimeUnixNano": "1",
+            "endTimeUnixNano": "2",
+            "attributes": [{"key": k, "value": v} for k, v in attributes.items()],
+        }
+
+    spans = [
+        span("000000000000000a", "172.31.0.3", 9090),
+        span("000000000000000b", "100.100.146.119", 5080),
+        span("000000000000000c", "100.100.146.119", 80),
+    ]
+    body = json.dumps({"resourceSpans": [{"scopeSpans": [{"spans": spans}]}]}).encode()
+    # The debug exporter is experimental; test_the_config_loads holds the live config to GA.
+    data = f"--storage.path={tmp_path / 'data'}"
+    command = [alloy, "run", "--stability.level=experimental", data, str(tmp_path / "test.alloy")]
+    printed = ""
+    with subprocess.Popen(command, stderr=subprocess.PIPE, text=True, encoding="utf-8") as run:
+        assert run.stderr is not None
+        deadline = threading.Timer(60, run.kill)
+        deadline.start()
+        try:
+            for out in run.stderr:
+                if "Starting HTTP server" in out and "otelcol.receiver.otlp.in" in out:
+                    request = urllib.request.Request(
+                        f"http://127.0.0.1:{port}/v1/traces",
+                        body,
+                        {"Content-Type": "application/json"},
+                    )
+                    urllib.request.urlopen(request, timeout=10).close()
+                if "component_id=otelcol.exporter.debug.out" in out and "Span #0" in out:
+                    printed = out
+                    break
+        finally:
+            deadline.cancel()
+            run.kill()
+    named = re.findall(
+        r"Name +: (\w+).*?Attributes:(.*?)(?=Span #|$)", printed.replace("\\n", "\n"), re.S
+    )
+    assert {
+        span_id[-1]: re.findall(r"peer.service: Str\((\w+)\)", attrs) for span_id, attrs in named
+    } == {
+        "a": ["prometheus"],
+        "b": ["grafana"],
+        "c": [],
+    }
 
 
 def test_container_logs_carry_their_service_name() -> None:

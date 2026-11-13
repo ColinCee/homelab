@@ -448,7 +448,7 @@ otelcol.receiver.otlp "programs" {
     endpoint = "0.0.0.0:4318"
   }
   output {
-    traces  = [otelcol.processor.batch.traces.input]
+    traces  = [otelcol.processor.transform.peers.input]
     logs    = [otelcol.exporter.loki.programs.input]
     metrics = [otelcol.exporter.prometheus.programs.input]
   }
@@ -481,6 +481,57 @@ loki.process "programs" {
 // Programs' metrics, OBI's request rate, errors and duration among them, go to Prometheus with the rest.
 otelcol.exporter.prometheus "programs" {
   forward_to = [prometheus.remote_write.default.receiver]
+}
+
+// Who each call reached, as `peer.service`: the Compose service at the address it connected to, from Docker's API.
+// OBI's `server.address` is the Host header the caller sent, which a proxy passes on (Caddy sends Prometheus the
+// gateway's own), or else an IP; and the stores answer with no span to name them (obi/obi.yaml). A container is
+// reached at its address on any of its networks, or at the host address and port it publishes. The statements
+// follow the containers as they start and stop.
+discovery.docker "peers" {
+  host                = "tcp://docker-socket-proxy:2375"
+  match_first_network = false
+}
+
+discovery.relabel "peers" {
+  targets = discovery.docker.peers.targets
+
+  rule {
+    source_labels = ["__meta_docker_network_ip", "__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(.+);(.+)"
+    target_label  = "by_address"
+    replacement   = "set(attributes[\"peer.service\"], \"$2\") where kind == SPAN_KIND_CLIENT and attributes[\"network.peer.address\"] == \"$1\""
+  }
+  rule {
+    source_labels = ["__meta_docker_port_public_ip", "__meta_docker_port_public", "__meta_docker_container_label_com_docker_compose_service"]
+    regex         = "(.+);(.+);(.+)"
+    target_label  = "by_port"
+    replacement   = "set(attributes[\"peer.service\"], \"$3\") where kind == SPAN_KIND_CLIENT and attributes[\"network.peer.address\"] == \"$1\" and attributes[\"server.port\"] == $2"
+  }
+  // Only the statements, so no Docker label's text reaches the step below.
+  rule {
+    action = "labelkeep"
+    regex  = "by_address|by_port"
+  }
+}
+
+// Alloy has no map over a list, and its generally available functions read a target only as text: printed, the
+// targets are JSON but for `=` between key and value and a space between targets. tests/test_alloy.py runs this on
+// an Alloy of the image's version. A statement that fails is skipped, so a span is never dropped.
+otelcol.processor.transform "peers" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "span"
+    statements = array.concat(
+      json_path(string.replace(string.replace(string.format("%v", discovery.relabel.peers.output), "\"=\"", "\":\""), "} {", "}, {"), "[*].by_address"),
+      json_path(string.replace(string.replace(string.format("%v", discovery.relabel.peers.output), "\"=\"", "\":\""), "} {", "}, {"), "[*].by_port"),
+    )
+  }
+
+  output {
+    traces = [otelcol.processor.batch.traces.input]
+  }
 }
 
 otelcol.processor.batch "traces" {

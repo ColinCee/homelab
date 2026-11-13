@@ -127,7 +127,7 @@
       "id": 7,
       "type": "nodeGraph",
       "title": "Who calls whom, last hour",
-      "description": "Each arrow is one service's calls to another in the last hour, from its traces; hover for how many failed. A call to a traced service is named by that service, any other by the address called, so the stores and the internet show as addresses. Drag to pan.",
+      "description": "Each arrow is one service's calls to another in the last hour, from its traces, and how many failed: answered with a server error or not at all, as the tables below count them. Each end is named by its Compose service, an outside one by the name it was called by, or else as the home network or the internet. Drag to pan.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "spans"
@@ -138,8 +138,19 @@
             "type": "victoriametrics-logs-datasource",
             "uid": "spans"
           },
-          "refId": "A",
-          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:server.address\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:server.address\" as address | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as target) | format if (target:=\"\") \"<address>\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code) | stats by (source, target) count() calls, count() if (status_code:=2) errors | format \"<source> to <target>\" as id | format \"<errors>\" as failed | delete errors",
+          "refId": "edges",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" peer:* host:* -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" (peer:ipv4_range(\"10.0.0.0/8\") or peer:ipv4_range(\"172.16.0.0/12\") or peer:ipv4_range(\"192.168.0.0/16\"))) \"home network\" as target | format if (target:=\"\" peer:*) \"internet\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | stats by (source, target) count() calls, count() if (status_code:=2 -http_status:~\"^4\") failed | format \"<source> to <target>\" as id | format \"<calls> calls\" as mainstat | format if (calls:=1) \"1 call\" as mainstat | format \"<failed> failed\" as secondarystat | fields id, source, target, mainstat, secondarystat",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 200
+        },
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "spans"
+          },
+          "refId": "nodes",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" peer:* host:* -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" (peer:ipv4_range(\"10.0.0.0/8\") or peer:ipv4_range(\"172.16.0.0/12\") or peer:ipv4_range(\"192.168.0.0/16\"))) \"home network\" as target | format if (target:=\"\" peer:*) \"internet\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | format '[\"<source>\",\"<target>\"]' as id | unroll by (id) | stats by (id) count() if (id:eq_field(target)) answered | format \"<id>\" as title | format if (answered:>0) \"<answered> calls in\" as subtitle | format if (answered:=1) \"1 call in\" as subtitle | fields id, title, subtitle",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 200
@@ -153,36 +164,10 @@
             "format": "auto",
             "replace": true
           }
-        },
-        {
-          "id": "organize",
-          "options": {
-            "renameByName": {
-              "calls": "mainstat",
-              "failed": "secondarystat"
-            }
-          }
-        },
-        {
-          "id": "convertFieldType",
-          "options": {
-            "conversions": [
-              {
-                "targetField": "mainstat",
-                "destinationType": "number"
-              },
-              {
-                "targetField": "secondarystat",
-                "destinationType": "number"
-              }
-            ]
-          }
         }
       ],
       "fieldConfig": {
-        "defaults": {
-          "decimals": 0
-        },
+        "defaults": {},
         "overrides": [
           {
             "matcher": {
