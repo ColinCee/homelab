@@ -189,15 +189,14 @@ class LoadTest:
         for _ in range(count):
             for url, timings in zip(self.urls, samples.timings, strict=True):
                 at = int(self.host.clock() - self.start)
-                try:
-                    out = self.host.run(
-                        [
-                            *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
-                            *["%{time_total} %{http_code}\n", url],
-                        ]
-                    ).stdout.split()
-                except FileNotFoundError:
-                    out = ["0", "000"]  # what curl itself prints for no answer
+                done = self.host.run(
+                    [
+                        *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
+                        *["%{time_total} %{http_code}\n", url],
+                    ]
+                )
+                # No curl (127): what curl itself prints for no answer.
+                out = ["0", "000"] if done.returncode == 127 else done.stdout.split()
                 if len(out) == 2:
                     timings.append(Timing(out[0], out[1], at))
             meminfo = (self.host.root / "proc/meminfo").read_text()
