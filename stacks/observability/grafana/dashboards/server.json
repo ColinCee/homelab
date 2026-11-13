@@ -1705,7 +1705,7 @@
       "id": 23,
       "type": "table",
       "title": "Runs",
-      "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, when it started and finished, and how many deep checks read every byte back.",
+      "description": "Each day's run in the time range (pick a longer one for more): how it ended, empty if it stopped before saying, when it started and finished, what restic sent and how many files were new, and how many deep checks read every byte back.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "logs"
@@ -1717,7 +1717,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "container_name:=\"backup\" | uniq by (_time, _msg) | stats by (_time:1d) min(_time) as started, max(_msg) if (_msg:~\"^backup (ok|FAILED|SKIPPED)\") as result, max(_time) if (_msg:~\"^backup (ok|FAILED|SKIPPED)\") as finished, count() if (_msg:=\"deep check ok\") as deep_checks | sort by (started desc)",
+          "expr": "container_name:=\"backup\" | uniq by (_time, _msg) | unpack_json from _msg fields (msg, data_added, files_new) | format if (msg:=\"\") \"<_msg>\" as msg | stats by (_time:1d) min(_time) as started, max(msg) if (msg:~\"^backup (ok|failed|skipped)\") as result, max(_time) if (msg:~\"^backup (ok|failed|skipped)\") as finished, max(data_added) if (msg:=\"restic backup ran\") as sent, max(files_new) if (msg:=\"restic backup ran\") as new_files, count() if (msg:=\"deep check ok\") as deep_checks | sort by (started desc)",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 100
@@ -1739,20 +1739,41 @@
               "started": true,
               "result": true,
               "finished": true,
+              "sent": true,
+              "new_files": true,
               "deep_checks": true
             },
             "indexByName": {
               "started": 0,
               "result": 1,
               "finished": 2,
-              "deep_checks": 3
+              "sent": 3,
+              "new_files": 4,
+              "deep_checks": 5
             },
             "renameByName": {
               "started": "Started",
               "result": "Result",
               "finished": "Finished",
+              "sent": "Sent",
+              "new_files": "New files",
               "deep_checks": "Deep checks"
             }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Sent",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "New files",
+                "destinationType": "number"
+              }
+            ]
           }
         }
       ],
@@ -1765,7 +1786,20 @@
             "inspect": false
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Sent"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "showHeader": true,

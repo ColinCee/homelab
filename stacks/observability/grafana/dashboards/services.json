@@ -1732,6 +1732,445 @@
         "w": 12,
         "h": 9
       }
+    },
+    {
+      "type": "row",
+      "title": "Home Assistant",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 15
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Entities down",
+      "description": "Entities Home Assistant reports unavailable or unknown, from its Prometheus endpoint; entities with no state of their own (buttons, events, notify, tts) are left out. No rule reads it.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "count(homeassistant_entity_available{domain!~\"button|event|scene|notify|tts|stt|conversation|wake_word|assist_satellite\"} == 0) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 49,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 17,
+      "type": "table",
+      "title": "Entities down now",
+      "description": "Each entity counted in Entities down: its domain, id and name. Unknown and unavailable look the same here; Home Assistant's own page tells them apart.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "max by (domain, entity, friendly_name) (homeassistant_entity_available{domain!~\"button|event|scene|notify|tts|stt|conversation|wake_word|assist_satellite\"} == 0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "indexByName": {
+              "friendly_name": 0,
+              "entity": 1,
+              "domain": 2
+            },
+            "renameByName": {
+              "friendly_name": "Name",
+              "entity": "Entity",
+              "domain": "Domain"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Entity"
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 49,
+        "w": 10,
+        "h": 9
+      }
+    },
+    {
+      "id": 18,
+      "type": "table",
+      "title": "Integrations that failed to set up, 7 days",
+      "description": "Home Assistant's log lines for an integration or platform that failed to set up, was not ready, could not log in, or could not add an entity, each with how often and when last. Its Prometheus endpoint has no integration state, so this reads the logs.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "logs"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "logs"
+          },
+          "refId": "A",
+          "expr": "_time:7d container_name:=\"homeassistant\" (\"Error setting up entry\" or \"Setup failed for\" or \"not ready yet\" or \"could not authenticate\" or \"Error during setup of component\" or \"Unable to prepare setup\" or \"Unable to set up dependencies\" or \"Error while setting up\" or \"Error adding entity\") | uniq by (_time, _msg) | unpack_json from _msg fields (msg) | format if (msg:=\"\") \"<_msg>\" as msg | extract_regexp `\\] (?P<line>.{0,100})` from msg | replace_regexp (\"[0-9]+ seconds\", \"# seconds\") at line | stats by (line) count() as lines, max(_time) as last | sort by (last desc) limit 20",
+          "queryType": "instant",
+          "editorMode": "code",
+          "maxLines": 20
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "format": "auto",
+            "replace": false
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "includeByName": {
+              "line": true,
+              "lines": true,
+              "last": true
+            },
+            "indexByName": {
+              "last": 0,
+              "line": 1,
+              "lines": 2
+            },
+            "renameByName": {
+              "last": "Last",
+              "line": "Line",
+              "lines": "Lines"
+            }
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "Lines",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "Last",
+                "destinationType": "time"
+              }
+            ]
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Last",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocalNoDateIfToday"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lines"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "gridPos": {
+        "x": 14,
+        "y": 49,
+        "w": 10,
+        "h": 9
+      }
+    },
+    {
+      "type": "row",
+      "title": "Public sites",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 58,
+        "w": 24,
+        "h": 1
+      },
+      "panels": [],
+      "id": 19
+    },
+    {
+      "id": 20,
+      "type": "stat",
+      "title": "Blog numbers age",
+      "description": "How old the home-lab numbers colincheung.dev/homelab.json serves are (public_stats.py pushes every 5 minutes; probes.py reads them back). Amber past 30 minutes. A failing push already alerts as public-stats unhealthy; no data means the blog could not be read.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "time() - max(homelab_public_stats_published_timestamp_seconds)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1800
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "textMode": "value",
+        "wideLayout": true,
+        "showPercentChange": false,
+        "text": {
+          "titleSize": 14,
+          "valueSize": 26
+        }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 59,
+        "w": 4,
+        "h": 4
+      }
+    },
+    {
+      "id": 21,
+      "type": "bargauge",
+      "title": "Certificate days left",
+      "description": "Days until each public site's TLS certificate expires, from the blackbox probes. Cloudflare renews them about 30 days ahead; amber under 14 days means renewal is late.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "refId": "A",
+          "expr": "sort(label_replace(min by (site) (label_replace(probe_ssl_earliest_cert_expiry{job=~\"integrations/blackbox/.+\"}, \"site\", \"https://api.colincheung.dev\", \"job\", \"integrations/blackbox/flight-tracker\")) - time(), \"site\", \"$1\", \"site\", \"https://(.+)\") / 86400)",
+          "legendFormat": "{{site}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "min": 0,
+          "max": 90,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#fab219",
+                "value": null
+              },
+              {
+                "color": "#2f8f46",
+                "value": 14
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "valueMode": "color",
+        "showUnfilled": true,
+        "namePlacement": "left",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 59,
+        "w": 10,
+        "h": 5
+      }
     }
   ]
 }
