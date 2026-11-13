@@ -49,13 +49,14 @@ def mark(stat: Path = Path("/proc/stat")) -> Mark:
 
 
 def own_seconds(start: Mark, end: Mark) -> float:
-    """Wall seconds less what the host took from this process: each of its CPU seconds lost the
-    machine's share of steal, so a test that only waits gets nothing off. At most the seconds it
-    was not on a CPU, as its children's CPU seconds can run side by side."""
+    """Wall seconds less what the host took from this process: the machine's stolen share of the
+    seconds it was on a CPU, so a test that only waits gets nothing off. A VM's process CPU time
+    includes steal (13 Nov: shards 63.5 s, the VM's own 35.4 s), and children's CPU time can run
+    side by side, so it counts at most the wall time."""
     wall, cpu = end.wall - start.wall, end.cpu - start.cpu
-    busy, stolen = end.busy - start.busy, end.stolen - start.stolen
-    taken = cpu * stolen / busy if busy > 0 else 0.0
-    return wall - max(0.0, min(taken, wall - cpu))
+    wanted = end.busy - start.busy + end.stolen - start.stolen
+    share = (end.stolen - start.stolen) / wanted if wanted > 0 else 0.0
+    return wall - share * max(0.0, min(cpu, wall))
 
 
 STARTED = [mark()]
