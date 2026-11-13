@@ -143,3 +143,13 @@ def test_only_a_post_to_ring_rings(bell: tuple[int, Path]) -> None:
     first = ring.read_text()
     assert ask(port, "POST", "/ring") == 202
     assert ring.read_text() != first
+
+
+def test_a_deploy_leaves_the_checkout_on_main_whatever_was_checked_out(lab: Lab) -> None:
+    lab.marker.write_text(git(lab.dev, "rev-parse", "HEAD") + "\n")
+    git(lab.checkout, "checkout", "-q", "-b", "old-feature")
+    second = lab.merge("second")
+
+    assert deploy_main.deploy_main(lab.host()) == 0
+    assert git(lab.checkout, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+    assert git(lab.checkout, "rev-parse", "HEAD") == second

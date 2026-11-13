@@ -102,7 +102,8 @@ def deploy_main(host: Host) -> int:
             )
             host.record(behind=True)
             return 1
-        host.git("reset", "--hard", target)
+        # On branch main whatever was checked out before, so the checkout says what it runs.
+        host.git("checkout", "--force", "-q", "-B", "main", target)
         # Also when main has not moved: deploy.py redeploys the stacks reading a changed secret.
         code = host.deploy(since)
         host.record(behind=code != 0)
