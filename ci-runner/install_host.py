@@ -259,6 +259,8 @@ def install_vm_files(host: Host, here: Path) -> None:
     # Before its wrapper, which the timer may start at any time.
     install(host, "0644", here / "update.py", f"{DEST}/update.py")
     install(host, "0755", here / "update.sh", f"{DEST}/update.sh")
+    # Its shared module first, beside it.
+    install(host, "0644", here / "tests" / "host_commands.py", f"{DEST}/host_commands.py")
     install(host, "0755", here / "tests" / "test_load.py", f"{DEST}/test_load.py")
     install(host, "0755", here / "tests" / "test-load.sh", f"{DEST}/test-load.sh")
 

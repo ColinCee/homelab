@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from host_commands import run_command, start_process
+
 DEFAULT_SLOTS = 5
 QUIET_SECONDS = 15
 # vm_size in ci_supervisor.py for a job started while others run.
@@ -39,15 +41,6 @@ class Run(Protocol):
 
 class Waitable(Protocol):
     def wait(self) -> int: ...
-
-
-def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(command, text=True, errors="replace", stdout=subprocess.PIPE, check=False)
-
-
-def start_process(command: list[str], log: Path, env: Mapping[str, str]) -> Waitable:
-    with log.open("w") as out:
-        return subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT, env=env)
 
 
 @dataclass
@@ -196,15 +189,14 @@ class LoadTest:
         for _ in range(count):
             for url, timings in zip(self.urls, samples.timings, strict=True):
                 at = int(self.host.clock() - self.start)
-                try:
-                    out = self.host.run(
-                        [
-                            *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
-                            *["%{time_total} %{http_code}\n", url],
-                        ]
-                    ).stdout.split()
-                except FileNotFoundError:
-                    out = ["0", "000"]  # what curl itself prints for no answer
+                done = self.host.run(
+                    [
+                        *["curl", "-s", "-o", "/dev/null", "-m", "10", "-w"],
+                        *["%{time_total} %{http_code}\n", url],
+                    ]
+                )
+                # No curl (127): what curl itself prints for no answer.
+                out = ["0", "000"] if done.returncode == 127 else done.stdout.split()
                 if len(out) == 2:
                     timings.append(Timing(out[0], out[1], at))
             meminfo = (self.host.root / "proc/meminfo").read_text()

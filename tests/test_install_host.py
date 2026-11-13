@@ -157,6 +157,11 @@ def test_a_first_install_sets_up_the_network_but_starts_no_supervisor(
     assert (root / "etc/homelab-ci").stat().st_mode & 0o777 == 0o700
     assert (dest / "ci_supervisor.py").stat().st_mode & 0o777 == 0o755
     assert (dest / "test_load.py").stat().st_mode & 0o777 == 0o755
+    # It runs from there (ci_supervisor.py, LOAD_TEST_SCRIPT) with only what is installed beside it.
+    found = subprocess.run(
+        [sys.executable, "-Es", "-c", "import test_load"], cwd=dest, capture_output=True, text=True
+    )
+    assert found.returncode == 0, found.stderr
     assert (dest / "net/setup_net.py").stat().st_mode & 0o777 == 0o755
     for name in ("vm_disks.py", "run_vm.py", "stop_vms.py"):
         assert (dest / name).stat().st_mode & 0o777 == 0o644

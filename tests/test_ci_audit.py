@@ -232,7 +232,7 @@ def test_a_missing_mount_program_fails_the_image_check_instead_of_crashing(
     class NoMount(FakeHost):
         def answer(self, command: list[str]) -> tuple[int, str]:
             if command[0] == "mount":
-                raise FileNotFoundError("mount")
+                return 127, ""
             return super().answer(command)
 
     no_mount = NoMount(host.root)
@@ -248,7 +248,7 @@ def test_a_missing_program_behind_a_check_fails_it_never_passes_it(
     class NoSudo(FakeHost):
         def answer(self, command: list[str]) -> tuple[int, str]:
             if command[0] == "sudo":
-                raise FileNotFoundError("sudo")
+                return 127, ""
             return super().answer(command)
 
     no_sudo = NoSudo(host.root)

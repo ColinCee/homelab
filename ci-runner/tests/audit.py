@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
+from host_commands import run_command, start_process
+
 LIB = "/usr/local/lib/homelab-ci"
 RUN_VM = f"{LIB}/run-vm.sh"
 IMAGE = "/var/lib/homelab-ci/images/rootfs.ext4"
@@ -55,26 +57,6 @@ class Waitable(Protocol):
     def wait(self) -> int: ...
 
 
-def run_command(
-    command: list[str], *, env: Mapping[str, str] | None = None, quiet: bool = False
-) -> subprocess.CompletedProcess[str]:
-    stderr = subprocess.DEVNULL if quiet else None
-    return subprocess.run(
-        command,
-        text=True,
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=stderr,
-        env=env,
-        check=False,
-    )
-
-
-def start_process(command: list[str], log: Path) -> Waitable:
-    with log.open("w") as out:
-        return subprocess.Popen(command, stdout=out, stderr=subprocess.STDOUT)
-
-
 def owner_of(path: Path) -> tuple[str, str]:
     """The user and group that own PATH, as GNU stat names them: a link is judged as
     itself, and an id with no name is UNKNOWN."""
@@ -103,13 +85,19 @@ class Host:
     def path(self, name: str) -> Path:
         return self.root / name.lstrip("/")
 
-    # A missing program raises, so the check behind it fails (Audit.check); it is never read as
-    # "no" to a question whose "no" passes.
+    # A missing program (a shell's 127) raises, so the check behind it fails (Audit.check); it is
+    # never read as "no" to a question whose "no" passes.
     def ok(self, *command: str, quiet: bool = False) -> bool:
-        return self.run(list(command), quiet=quiet).returncode == 0
+        return self.ran(list(command), quiet).returncode == 0
 
     def out(self, *command: str, quiet: bool = False) -> str:
-        return self.run(list(command), quiet=quiet).stdout
+        return self.ran(list(command), quiet).stdout
+
+    def ran(self, command: list[str], quiet: bool) -> subprocess.CompletedProcess[str]:
+        done = self.run(command, quiet=quiet)
+        if done.returncode == 127:
+            raise FileNotFoundError(f"{command[0]}: not found")
+        return done
 
 
 class Audit:
@@ -310,15 +298,8 @@ class Audit:
             tmp = Path(tmp_name)
             metadata = tmp / "metadata.json"
             metadata.write_text(json.dumps({"task": "probe", "probe": MMDS_PROBE}))
-            try:
-                vm: Waitable | None = h.start(
-                    [run_vm, "0", str(metadata), "90"], tmp / "console.log"
-                )
-            except OSError as e:
-                # A missing run-vm.sh: no Firecracker to find, and the checks below fail.
-                print(f"{run_vm}: {e}", file=sys.stderr)
-                (tmp / "console.log").touch()
-                vm = None
+            # A missing run-vm.sh leaves no Firecracker to find, and the checks below fail.
+            vm = h.start([run_vm, "0", str(metadata), "90"], tmp / "console.log")
             pid = ""
             for _ in range(30):
                 pid = next(iter(h.out("pgrep", "-x", "firecracker").splitlines()), "")
@@ -330,8 +311,7 @@ class Audit:
                 self.firecracker(pid)
             else:
                 self.fail("no Firecracker process to inspect")
-            if vm:
-                vm.wait()
+            vm.wait()
             console = (tmp / "console.log").read_text(errors="replace")
             found = re.search(r"MMDS_KEYS .*", console)
             keys = found.group(0).replace("\r", "") if found else ""

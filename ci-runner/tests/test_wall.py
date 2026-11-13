@@ -23,6 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from host_commands import run_command
+
 IMAGE = "busybox:1.37"
 NET = "homelab-wall-test"
 NS = "homelab-wall-lan"
@@ -35,27 +37,6 @@ class Run(Protocol):
     def __call__(
         self, command: list[str], *, show: bool = False, quiet: bool = False
     ) -> subprocess.CompletedProcess[str]: ...
-
-
-def run_command(
-    command: list[str], *, show: bool = False, quiet: bool = False
-) -> subprocess.CompletedProcess[str]:
-    """SHOW sends stdout to the terminal, QUIET drops stderr. A missing program fails as
-    it would in a shell, so the probe behind it fails rather than the whole test."""
-    try:
-        return subprocess.run(
-            command,
-            text=True,
-            errors="replace",
-            stdin=subprocess.DEVNULL,
-            stdout=None if show else subprocess.PIPE,
-            stderr=subprocess.DEVNULL if quiet else None,
-            check=False,
-        )
-    except OSError as e:
-        if not quiet:
-            print(f"{command[0]}: {e}", file=sys.stderr)
-        return subprocess.CompletedProcess(command, 127, "")
 
 
 @dataclass

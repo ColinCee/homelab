@@ -164,7 +164,7 @@ def test_a_missing_curl_counts_as_no_answer_not_a_traceback(
 
     def no_curl(command: list[str]) -> subprocess.CompletedProcess[str]:
         if command[0] == "curl":
-            raise FileNotFoundError("curl")
+            return subprocess.CompletedProcess(command, 127, "")
         out = "tailscale0 UNKNOWN 100.64.0.5/32 fd7a::5/128\n"
         return subprocess.CompletedProcess(command, 0, out)
 
