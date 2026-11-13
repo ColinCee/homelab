@@ -17,10 +17,17 @@ ebpf:
   # no more.
   maps_config:
     global_scale_factor: -1
-  # The flight tracker's request lines get the request's `trace_id=`, which Alloy reads out (config.alloy, loki.process
-  # "docker") and Grafana opens as the trace. OBI zeroes each line the program writes and writes it again with the IDs,
-  # so the log keeps a line of NULs in its place, which Alloy drops. A line OBI takes as it stops is lost.
+  # Each request-serving service's lines written while it answers get the request's trace: a JSON line gains
+  # `trace_id` and `span_id` fields, a text line `trace_id=` (the flight tracker's), which Alloy reads out (config.alloy,
+  # loki.process "docker") and Grafana opens as the trace. OBI zeroes each line the program writes and writes it again
+  # with the IDs, so the log keeps a line of NULs in its place, which Alloy drops. A line OBI takes as it stops is lost.
+  # Home Assistant and CoreDNS are left out: their lines are text with no request in them.
+  # https://opentelemetry.io/docs/zero-code/obi/trace-log-correlation/
   log_enricher:
     services:
       - service:
           - container_name: "flight-tracker-backend-*"
+          - container_name: "observability-{gateway,grafana,alertmanager,blackbox,incidents}-*"
+          - container_name: "internal-names-proxy-*"
+          - container_name: "tunnel-cloudflared-*"
+          - container_name: "deploy-doorbell-*"

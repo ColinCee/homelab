@@ -4,10 +4,11 @@ with a host folder can read the host's secrets, and nothing opens a way in witho
 
 import re
 import tomllib
+from fnmatch import fnmatchcase
 from pathlib import Path
 
 import yaml
-from conftest import STACKS, stacks
+from conftest import STACKS, services, stacks
 
 COMPOSE = stacks()[STACKS / "observability"]
 SERVICES = COMPOSE["services"]
@@ -147,3 +148,33 @@ def test_obi_links_calls_by_header_where_it_can_attach() -> None:
     assert spec["environment"]["OTEL_EBPF_BPF_CONTEXT_PROPAGATION"] == "headers"
     assert "/sys/fs/cgroup:/sys/fs/cgroup:ro" in spec["volumes"]
     assert "/sys/kernel/tracing:/sys/kernel/tracing:ro" in spec["volumes"]
+
+
+def test_obi_writes_traces_only_into_request_serving_logs_that_take_them() -> None:
+    # A pattern left from a renamed service enriches nothing, silently; Home Assistant's and
+    # CoreDNS's text lines would get `trace_id=` with no request in them.
+    obi = yaml.safe_load(
+        (Path(__file__).parent.parent / "stacks/observability/obi/obi.yaml").read_text("utf-8")
+    )
+    [enriched] = obi["ebpf"]["log_enricher"]["services"]
+    patterns = [p for s in enriched["service"] for p in _braces(s["container_name"])]
+    containers = {
+        spec.get("container_name", f"{stack.name}-{name}-1"): name
+        for stack, name, spec in services()
+    }
+    for pattern in patterns:
+        matched = {name for c, name in containers.items() if fnmatchcase(c, pattern)}
+        assert matched, pattern
+        assert not matched & {"homeassistant", "dns"}, pattern
+
+
+def _braces(pattern: str) -> list[str]:
+    """OBI's `{a,b}` glob as one pattern per choice."""
+    found = re.search(r"\{([^}]*)\}", pattern)
+    if not found:
+        return [pattern]
+    return [
+        expanded
+        for part in found.group(1).split(",")
+        for expanded in _braces(pattern[: found.start()] + part + pattern[found.end() :])
+    ]
