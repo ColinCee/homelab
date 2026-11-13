@@ -248,10 +248,6 @@ def trace(
     return telemetry.otlp_traces(by_service, repository=REPO)
 
 
-def label(text: str) -> str:
-    return re.sub(r'["\\\n]', "_", text)
-
-
 def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
     """Each recent job's latest seconds. Jobs only: step names change with each pinned action's
     version, so their series would pile up; steps are in the traces. `ci_job`, as the scrape sets
@@ -260,8 +256,10 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
     for row in latest.values():
         if row["at"] < now - ROW_DAYS * 86400:
             continue
-        keys = f'kind="{label(row["kind"])}",workflow="{label(row["workflow"])}",'
-        keys += f'ci_job="{label(row["job"])}",runner="{label(row["runner"])}"'
+        keys = (
+            f'kind="{telemetry.label(row["kind"])}",workflow="{telemetry.label(row["workflow"])}",'
+        )
+        keys += f'ci_job="{telemetry.label(row["job"])}",runner="{telemetry.label(row["runner"])}"'
         lines.append(f"homelab_ci_job_seconds{{{keys}}} {row['seconds']:.0f}")
     return "\n".join(lines) + "\n"
 
