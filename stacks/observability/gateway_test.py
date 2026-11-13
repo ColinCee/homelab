@@ -18,7 +18,7 @@ from typing import Any
 
 import pytest
 
-from conftest import STACKS, tool
+from conftest import STACKS, linux_only, tool
 
 STACK = STACKS / "observability"
 
@@ -79,6 +79,7 @@ def run_gateway(port: int, upstreams: dict[str, int], **passwords: str) -> subpr
         "CADDYFILE": str(STACK / "gateway/Caddyfile"),
         "GATEWAY_PORT": str(port),
     } | {name.upper(): f"127.0.0.1:{p}" for name, p in upstreams.items()}
+    linux_only("start.sh hands its process to Caddy (exec), which only POSIX does")
     script = str(STACK / "gateway/start.sh")
     # A file, not a pipe nobody reads, which a chatty Caddy would fill and block on.
     with LOGS[-1].open("w") as log:

@@ -106,9 +106,9 @@ no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes
 
 - A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
   means the number recovered.
-- New alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml);
-  [`slos.py`](../stacks/observability/prometheus/slos.py) makes their rules and tests. CI fails on an unwatched
-  metrics file.
+- Alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml), thresholds from their
+  normal ([`baseline.py`](../stacks/observability/prometheus/baseline.py));
+  [`slos.py`](../stacks/observability/prometheus/slos.py) makes rules and tests; CI fails on unwatched metrics.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics.
 - Noise budget: at most one post a day over 14 days. Replay a new or looser rule:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.

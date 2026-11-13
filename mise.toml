@@ -10,10 +10,9 @@ zizmor = "1.32.0"
 "aqua:caddyserver/caddy" = "2.11.9"
 
 [tasks.lint]
-description = "Lint Python, shell, YAML, and Actions"
+description = "Lint Python, YAML, and Actions (shell scripts: checks/shell_scripts_test.py)"
 run = [
   "uv run ruff check && uv run ruff format --check",
-  "shellcheck $(git ls-files '*.sh') ci-runner/rootfs/ci-boot ci-runner/rootfs/ci-memwatch",
   "uv run yamllint -c .yamllint.yaml stacks/ .github/workflows/ .github/actions/",
   "actionlint",
   # GitHub Actions' security practices (pinned actions, no persisted token, no template injection), from files alone.
@@ -35,7 +34,7 @@ run = "uv run python -m checks.test_shards --durations=8"
 
 [tasks."validate:compose"]
 description = "Validate Compose without changing local secrets"
-run = "checks/validate-compose.sh"
+run = "uv run python -m checks.validate_compose"
 
 [tasks."docs:size"]
 description = "Fail when a doc grows past docs-size.json"

@@ -9,7 +9,7 @@ from pathlib import Path
 import ci_supervisor as sup
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, linux_only
 
 ACTION = ROOT / ".github" / "actions" / "fc-cache"
 
@@ -20,6 +20,7 @@ def test_the_pack_checks_the_supervisors_size_limit() -> None:
 
 
 def save(tar: Path, *disks: Path) -> subprocess.CompletedProcess[str]:
+    linux_only("the action writes its disk with dd, as the CI VM has it")
     env = {**os.environ, "SUDO": "", "GITHUB_RUN_ID": "70", "GITHUB_RUN_ATTEMPT": "2"}
     return subprocess.run(
         [sys.executable, str(ACTION / "fc_cache.py"), "save", str(tar), *map(str, disks)],
@@ -60,6 +61,7 @@ def test_fails_without_an_outbox_disk(tmp_path: Path) -> None:
 
 
 def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProcess[str]:
+    linux_only("the action packs with GNU tar, as the CI VM has it")
     out = workspace.parent / "cache.tar"
     return subprocess.run(
         [sys.executable, str(ACTION / "fc_cache.py"), "pack", str(cache), str(out), *paths],
@@ -70,6 +72,7 @@ def pack(cache: Path, workspace: Path, *paths: str) -> subprocess.CompletedProce
 
 
 def test_packs_the_cache_and_workspace_paths_so_the_supervisor_unpacks_them(tmp_path: Path) -> None:
+    linux_only("symlinks, which Windows lets only admins make")
     cache, workspace = tmp_path / "cache", tmp_path / "work"
     (cache / "uv").mkdir(parents=True)
     (cache / "uv" / "wheel").write_text("w")
@@ -115,8 +118,10 @@ def test_packs_a_workspace_path_once_when_the_cache_disk_holds_last_times(tmp_pa
     assert sorted(names) == ["uv", "web/node_modules", "web/node_modules/new.js"]
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root reads everything")
 def test_leaves_out_what_it_cannot_read(tmp_path: Path) -> None:
+    linux_only("chmod 0 makes a file unreadable")
+    if os.geteuid() == 0:
+        pytest.skip("root reads everything")
     cache, workspace = tmp_path / "cache", tmp_path / "work"
     (cache / "npm").mkdir(parents=True)
     (cache / "npm" / "secret").write_text("x")
@@ -173,6 +178,7 @@ def test_a_hidden_cache_folder_is_left_out(tmp_path: Path) -> None:
 
 
 def test_the_action_never_fails_the_job_and_leaves_no_tar(tmp_path: Path) -> None:
+    linux_only("the action packs with GNU tar, as the CI VM has it")
     # The pack works, the save finds no outbox disk: a warning, never a failed check.
     (tmp_path / "cache" / "uv").mkdir(parents=True)
     env = {

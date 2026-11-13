@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import fcntl
 import hashlib
 import http.client
 import io
@@ -2002,6 +2001,8 @@ def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
             keep(False, False, f"not run: {count} VMs still running after the drain limit")
             return 1
         time.sleep(DRAIN_LOOK_SECONDS)
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
     line = ""
     with UPDATE_LOCK.open("a") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)

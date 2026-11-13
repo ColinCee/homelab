@@ -12,7 +12,6 @@ library only.
 
 from __future__ import annotations
 
-import fcntl
 import os
 import re
 import subprocess
@@ -155,6 +154,8 @@ def plain(reason: str) -> str:
 def lock(host: Host, follow: bool) -> int | None:
     """One update at a time: a named commit waits its turn; the timer's catch-up gives way.
     The lock's file, held open while the update runs, or None when it could not be taken."""
+    import fcntl  # Linux only, and only here, so the tests import this module on any system.
+
     fd = os.open(host.path(LOCK), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o644)
     deadline = time.monotonic() + 900
     while True:

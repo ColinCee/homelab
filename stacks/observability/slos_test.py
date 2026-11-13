@@ -68,3 +68,27 @@ def test_a_schedule_it_cannot_read_needs_every(tmp_path: Path) -> None:
     timer.write_text("[Timer]\nOnCalendar=Mon *-*-* 03:00\n", encoding="utf-8")
     with pytest.raises(ValueError, match="every"):
         slos.timer_interval(timer)
+
+
+def test_a_baseline_suggests_its_normals_highest_with_margin_in_whole_minutes() -> None:
+    from stacks.observability.prometheus import baseline
+
+    slo = slos.Slo("a", "now", "t", "h", "a", "a.prom", every=60)
+    found = baseline.Baseline(slo, days=2, normal=[30.0, 54.0], incident=[3600.0])
+    assert found.suggested == 120  # 54 s x 1.5 = 81 s, rounded up to whole minutes
+
+
+def test_a_baseline_with_too_few_runs_keeps_one_missed_run() -> None:
+    from stacks.observability.prometheus import baseline
+
+    slo = slos.Slo("a", "now", "t", "h", "a", "a.prom", every=86400)
+    found = baseline.Baseline(slo, days=2, normal=[30.0], incident=[])
+    assert not found.enough and found.suggested == slo.default_late
+
+
+def test_a_good_minutes_baseline_needs_minutes_with_something_to_measure() -> None:
+    from stacks.observability.prometheus import baseline
+
+    slo = slos.Slo("a", "now", "t", "h", "a", "a.prom", measure="max(x)", target=600)
+    quiet = baseline.Baseline(slo, days=2, normal=[0.0] * 2000 + [60.0] * 28, incident=[])
+    assert not quiet.enough and quiet.suggested == 600

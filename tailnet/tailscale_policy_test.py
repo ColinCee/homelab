@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from conftest import ROOT
+from conftest import ROOT, linux_only
 
 SPEC = importlib.util.spec_from_file_location(
     "tailscale_policy", ROOT / "tailnet/tailscale_policy.py"
@@ -43,6 +43,7 @@ def test_apply_sends_exact_candidate_with_original_etag(
     }
     backup = next(tmp_path.glob("policy-*.json"))
     assert backup.read_bytes() == CURRENT
+    linux_only("POSIX file modes")
     assert backup.stat().st_mode & 0o777 == 0o600
     assert tmp_path.stat().st_mode & 0o777 == 0o700
 
