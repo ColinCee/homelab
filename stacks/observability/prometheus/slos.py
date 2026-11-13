@@ -123,7 +123,7 @@ def fresh_rule(slo: Slo) -> dict[str, Any]:
 
 def good_minutes_rule(slo: Slo, writers: dict[str, Slo]) -> dict[str, Any]:
     writer = writers[slo.file]
-    bad = f"(count({slo.bad}) > bool 0 or on() vector(0))"
+    bad = f"(\n  count({slo.bad}) > bool 0 or on() vector(0)\n)"
     expr = (
         f"max(round(100 * avg_over_time({bad}[{WINDOW}:1m]))) > {BAD_SHARE * 100:g}\n"
         f"and on() max_over_time({bad}[{RECENT}:1m]) > 0\n"
@@ -158,7 +158,10 @@ def rules(slos: list[Slo]) -> dict[str, Any]:
 
 
 class _Dumper(yaml.SafeDumper):
-    pass
+    """Indents lists under their key, as yamllint (.yamllint.yaml) wants."""
+
+    def increase_indent(self, flow: bool = False, indentless: bool = False) -> None:
+        super().increase_indent(flow, False)
 
 
 def _text(dumper: yaml.SafeDumper, value: str) -> yaml.Node:
@@ -174,7 +177,7 @@ _Dumper.add_representer(str, _text)
 def render(slos: list[Slo]) -> str:
     head = "# Generated from slos.yml by slos.py: edit slos.yml, then run\n"
     head += "# `uv run python -m stacks.observability.prometheus.slos`.\n"
-    body = yaml.dump(rules(slos), Dumper=_Dumper, sort_keys=False, width=120, allow_unicode=True)
+    body = yaml.dump(rules(slos), Dumper=_Dumper, sort_keys=False, width=100, allow_unicode=True)
     assert isinstance(body, str)
     return f"{head}{body}"
 
