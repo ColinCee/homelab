@@ -266,11 +266,11 @@ def install_vm_files(host: Host, here: Path) -> None:
     install(host, "0755", here / "host-tests" / "test_load.py", f"{DEST}/test_load.py")
 
 
-def install_timed_script(host: Host, script: Path, unit: str, units: Path | None = None) -> None:
-    """The script and its timer's units, which sit beside it unless UNITS says where."""
+def install_timed_script(host: Host, script: Path, unit: str) -> None:
+    """The script and its timer's units, which sit beside it."""
     install(host, "0644", script, f"{DEST}/{script.name}")
     for name in (f"{unit}.service", f"{unit}.timer"):
-        install(host, "0644", (units or script.parent) / name, f"/etc/systemd/system/{name}")
+        install(host, "0644", script.parent / name, f"/etc/systemd/system/{name}")
     systemctl(host, "daemon-reload")
     systemctl(host, "enable", "--now", f"{unit}.timer")
 
@@ -351,8 +351,11 @@ def install_locked(
     install_dirs(host, "1777", "/var/lib/homelab-metrics")
     install_dirs(host, "0755", DEST)
     # The scripts' shared module, beside them, where Python finds it (their units run `-Es`,
-    # which keeps the script's folder on the path). Before the scripts that import it.
-    install(host, "0644", here.parent / "stacks/telemetry/telemetry.py", f"{DEST}/telemetry.py")
+    # which keeps the script's folder on the path). Before the scripts that import it; the
+    # supervisor imports it too, so a change restarts it below.
+    telemetry = (here.parent / "stacks/telemetry/telemetry.py", f"{DEST}/telemetry.py")
+    telemetry_changed = differs(telemetry[0], host.path(telemetry[1]))
+    install(host, "0644", *telemetry)
     # The SSD's lifetime writes and wear, for Prometheus.
     install_timed_script(host, here.parent / "beelink/ssd-wear/ssd_wear.py", "homelab-ssd-wear")
     # What the intrusion alerts read, as a user of its own in the journal's group.
@@ -376,7 +379,9 @@ def install_locked(
         here / "net" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
         here / "supervisor" / SERVICE: f"/etc/systemd/system/{SERVICE}",
     }
-    restart = any(differs(src, host.path(dst)) for src, dst in restart_files.items())
+    restart = telemetry_changed or any(
+        differs(src, host.path(dst)) for src, dst in restart_files.items()
+    )
     try:
         restart |= host.path(SLOTS_FILE).read_text().rstrip("\n") != str(slots)
     except OSError:

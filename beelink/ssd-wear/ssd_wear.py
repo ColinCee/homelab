@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Write the host SSD's lifetime bytes and wear to ssd.prom for the textfile collector.
 
 Reads the NVMe health log (log page 0x02) with an admin ioctl, so it runs as root and

@@ -23,7 +23,8 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
+# EXE: a #! line only on an executable file, and every executable has one.
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G", "EXE"]
 
 # Code that runs on the host's /usr/bin/python3 (3.12): the installer and updater, which must not
 # depend on homelab-python3, and the deploy scripts, which need that python's apt python3-yaml.
@@ -41,13 +42,9 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 python_files = ["*_test.py"]
 # pytest's default skips every dot folder, .github's action tests too; .claude holds other checkouts.
 norecursedirs = [".git", ".venv", ".claude", ".mise", ".*_cache", "__pycache__", "node_modules"]
-# Tests import checks/ and stacks/ as packages, and host programs and telemetry by name, whichever way pytest is
-# started.
-pythonpath = [
-  ".", "beelink/security", "beelink/ssd-wear", "ci-runner", "ci-runner/rootfs", "ci-runner/run-times",
-  "ci-runner/supervisor",
-  "ci-runner/host-tests", "stacks/observability/public-stats", "stacks/telemetry",
-]
+# A test imports what sits beside it by name (pytest puts its folder on the path); beyond that,
+# checks/ and stacks/ as packages, the installer, the supervisor and telemetry.
+pythonpath = [".", "ci-runner", "ci-runner/supervisor", "stacks/telemetry"]
 
 # ty uses the nearest pyproject.toml that has this table; without it, a checkout inside another project takes that project's rules.
 [tool.ty]

@@ -31,12 +31,6 @@ def flat(text: str) -> str:
     return " ".join(text.split())
 
 
-def seconds(duration: str) -> int:
-    match = re.fullmatch(r"(\d+)([smh])", duration)
-    assert match, duration
-    return int(match[1]) * {"s": 1, "m": 60, "h": 3600}[match[2]]
-
-
 @pytest.mark.parametrize("name", RULES)
 def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: str) -> None:
     rule = RULES[name]
@@ -48,7 +42,7 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     # A sentence each, not a placeholder.
     assert len(notes["harm"].split()) >= 6 and len(notes["action"].split()) >= 6
     assert notes["dashboard"] == HOME and notes["value"] == "{{ $value }}"
-    seconds(rule["for"])
+    slos.seconds(rule["for"])
     # The hold: a return within 10 minutes is the same alert.
     assert rule["keep_firing_for"] == "10m"
 
