@@ -1,0 +1,222 @@
+# Generated from slos.yml by slos.py: edit slos.yml, then run
+# `uv run python -m stacks.observability.prometheus.slos`.
+groups:
+  - name: slos
+    interval: 1m
+    rules:
+      - alert: ci-jobs-not-starting
+        expr: |
+          max(round(100 * avg_over_time((
+            count(homelab_ci_queued_seconds > 600 or homelab_ci_poll_failed_seconds > 600) > bool 0 or on() vector(0)
+          )[1h:1m]))) > 10
+          and on() max_over_time((
+            count(homelab_ci_queued_seconds > 600 or homelab_ci_poll_failed_seconds > 600) > bool 0 or on() vector(0)
+          )[5m:1m]) > 0
+          and on() (time() - max(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"})) < 616
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: CI jobs not starting
+          measure: 'Last 1h not meeting: CI jobs start within 10 min of GitHub queueing them'
+          unit: '%'
+          harm: Private repositories' checks sit queued, so nothing of theirs merges or deploys.
+          action: 'On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting
+            on "a VM booting for it": VMs die at start, `sudo journalctl -t homelab-ci-vm -n 30` says
+            why; fix it and merge. "A VM ready for it": its runner is up but GitHub sends it no job; check
+            githubstatus.com. "Slots in use" or "memory": a backlog, cancel runs you do not need. "Rate
+            limited until": it clears by itself then. "Poll failed": fix the error it names. See docs/architecture.md,
+            "CI runner".'
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: ci-supervisor-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m]))) / 60)
+          ) > 10.3
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: CI supervisor stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: No CI machine starts, so private repositories' checks wait and nothing of theirs merges.
+          action: Read `sudo journalctl -u homelab-ci-supervisor -n 100` on the Beelink, fix the cause,
+            then `sudo systemctl restart homelab-ci-supervisor`; see docs/architecture.md, "CI runner".
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: probes-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/probes.prom"}[30m]))) / 60)
+          ) > 11.1
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/probes.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: Health checks stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: Home Assistant and the .internal names going down would go unseen.
+          action: Check `docker ps -a --filter name=observability-probes` and `docker logs --tail 50 observability-probes-1`,
+            then `docker compose up -d` in /home/colin/code/homelab/stacks/observability.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: security-checks-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m]))) / 60)
+          ) > 11.1
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: Security checks stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.
+          action: Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with
+            `sudo ci-runner/install-host.sh`.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: main-deploy-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(homelab_main_deploy_checked_timestamp_seconds[30m]))) / 60)
+          ) > 26.5
+          or on() max(absent_over_time(homelab_main_deploy_checked_timestamp_seconds[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: Deployer stopped running
+          measure: Last success
+          unit: ' min ago'
+          harm: Merges to main no longer reach the Beelink, and a failed deploy would go unseen.
+          action: Run `systemctl --user status deploy-main.timer deploy-main` and `journalctl --user -u
+            deploy-main -n 50` on the Beelink; start it with `systemctl --user start deploy-main`.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: failed-units-check-stopped
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m]))) / 60)
+          ) > 11.1
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: Failed unit check stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: A failed systemd unit, the system's or Colin's, goes unseen while it is stopped.
+          action: Check `systemctl --user status observability-failed-units.service` and `systemctl --user
+            list-timers observability-failed-units.timer` on the Beelink; deploy-main installs it with
+            the observability stack.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: ssd-wear-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60)
+          ) > 26.5
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: SSD wear check stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: A wearing SSD would go unnoticed.
+          action: Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer`
+            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: ci-times-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m]))) / 60)
+          ) > 15.5
+          or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: CI run times stopped
+          measure: Last update
+          unit: ' min ago'
+          harm: A slower CI or deploy would go unnoticed, and no run is traced.
+          action: Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times`
+            on the Beelink; it starts with `sudo ci-runner/install-host.sh`.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: backup-missed
+        expr: |
+          (
+            round((time() - max(last_over_time(homelab_backup_last_success_timestamp_seconds[30m]))) / 3600)
+          ) > 26.6
+          or on() max(absent_over_time(homelab_backup_last_success_timestamp_seconds[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: Nightly backup didn't run
+          measure: Last success
+          unit: ' h ago'
+          harm: Without a nightly copy in R2, a lost disk loses everything since the last good backup.
+          action: Check `docker logs --tail 100 backup`; see docs/architecture.md, "Backups".
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: deep-check-missed
+        expr: |
+          (
+            round((time() - max(last_over_time(homelab_backup_last_deep_check_timestamp_seconds[30m]))) / 86400)
+          ) > 7.7
+          or on() max(absent_over_time(homelab_backup_last_deep_check_timestamp_seconds[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: Weekly backup check didn't pass
+          measure: Last success
+          unit: ' days ago'
+          harm: Damaged data in R2 goes unseen until a restore needs it.
+          action: Run the check now with `docker exec -e DEEP_CHECK=1 backup python3 -I /backup.py once`
+            and read why it fails in its output; a deploy since Sunday has wiped that run's log.
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'
+      - alert: pc-backup-stale
+        expr: |
+          (
+            round((time() - max(last_over_time(homelab_pc_backup_newest_timestamp_seconds[30m]))) / 3600)
+          ) > 53.0
+          or on() max(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[30m])) * -1
+        for: 5m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: PC backup stopped arriving
+          measure: Last success
+          unit: ' h ago'
+          harm: The Windows PC's files are no longer copied off it, so a dead PC disk loses them.
+          action: Check the PC's "Homelab PC backup" task and `~/.pc-backup.json` there, then `systemctl
+            --user status backup-pc-receive` on the Beelink; see docs/architecture.md, "Backups".
+          dashboard: http://grafana.internal/d/home
+          value: '{{ $value }}'

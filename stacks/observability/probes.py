@@ -1,5 +1,5 @@
 """Checks Home Assistant and the .internal names each minute and writes the results where Alloy's
-textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prometheus/rules.yml;
+textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prometheus/;
 and when the blog's homelab numbers were last published, a dashboard number. Stale numbers need no
 alert of their own: a failing push turns public-stats unhealthy (compose.yaml), which alerts.
 

@@ -1,5 +1,6 @@
-"""Replays rules.yml's rules over history and counts the Discord posts each would have made, for the
-noise budget in docs/architecture.md ("Monitoring and alerts"), which has the command.
+"""Replays the alert rules (rules.yml and slos.rules.yml) over history and counts the Discord posts
+each would have made, for the noise budget in docs/architecture.md ("Monitoring and alerts"),
+which has the command.
 
     replay.py [days] [rule ...]
 
@@ -17,14 +18,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-import yaml
-
-# The shared module, from this checkout (stacks/telemetry).
+# The shared module, from this checkout (stacks/telemetry), and the rule files' loader.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "telemetry"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import telemetry
 
+from stacks.observability.prometheus import slos
+
 STEP = 60
-RULES = Path(__file__).with_name("rules.yml")
 
 
 def seconds(duration: str) -> int:
@@ -82,9 +83,7 @@ def posts(returned: set[int], rule: dict[str, Any], start: int, end: int) -> lis
 def main() -> None:
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 7
     only = set(sys.argv[2:])
-    rules = [
-        r for g in yaml.safe_load(RULES.read_text(encoding="utf-8"))["groups"] for r in g["rules"]
-    ]
+    rules = [r for g in slos.rule_groups() for r in g["rules"]]
     end = int(time.time()) // STEP * STEP
     start = end - days * 86400
     total = 0

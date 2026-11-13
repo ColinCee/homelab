@@ -89,7 +89,7 @@ reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
-its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
+its "Cleared". [Rules](../stacks/observability/prometheus/) post through
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) and the relay to Discord's #incidents.
 Alertmanager has no port (its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
@@ -106,11 +106,13 @@ no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes
 
 - A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
   means the number recovered.
-- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only metrics written past Alloy
-  alert on no data, bar a job's not yet run.
-- Noise budget: at most one post a day over 14 days. Before adding or loosening a rule, replay it:
+- New alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml);
+  [`slos.py`](../stacks/observability/prometheus/slos.py) makes their rules and tests. CI fails on an unwatched
+  metrics file.
+- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics.
+- Noise budget: at most one post a day over 14 days. Replay a new or looser rule:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
-  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink.
+  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events.
 
 Traps:
 

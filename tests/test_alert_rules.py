@@ -2,7 +2,9 @@
 docs/architecture.md, Alertmanager carries out its lifecycle, and the rules fire, hold and clear
 as the standard says: promtool runs them over made-up series."""
 
+import itertools
 import json
+import math
 import os
 import re
 import subprocess
@@ -14,8 +16,10 @@ import pytest
 import yaml
 from conftest import stacks, tool
 
+from stacks.observability.prometheus import slos
+
 STACK = Path(__file__).parent.parent / "stacks/observability"
-GROUPS = yaml.safe_load((STACK / "prometheus/rules.yml").read_text(encoding="utf-8"))["groups"]
+GROUPS = slos.rule_groups()
 RULES = {r["alert"]: r for g in GROUPS for r in g["rules"]}
 HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
@@ -66,18 +70,10 @@ def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metric
     ]
 
 
-def test_no_data_is_kept_for_metrics_alloy_does_not_make() -> None:
-    # A gone Alloy metric is "Beelink metrics stopped"; a textfile metric's writer can stop alone.
-    for name, rule in HOMELAB.items():
-        expr = flat(rule["expr"])
-        no_data = re.search(r"or on\(\) max\((absent_over_time\(.+\))\) \* -1$", expr)
-        if no_data:
-            assert re.search(r"homelab_|node_textfile", no_data[1]), name
-            window = re.search(r"\[(\d+[mh])\]\)$", no_data[1])
-            # Longer than the inhibit's own window, so it never fires before it.
-            assert window and seconds(window[1]) > 5 * 60, name
-        elif name != "beelink-metrics-stopped":
-            assert not re.search(r"homelab_(backup|pc_backup|probe)", expr), name
+def test_a_metrics_files_age_is_watched_only_by_its_promise() -> None:
+    # slos.yml gives each file one stale and no-data alert; a hand rule reading it would post twice.
+    text = (STACK / "prometheus/rules.yml").read_text(encoding="utf-8")
+    assert "node_textfile_mtime_seconds" not in text
 
 
 def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
@@ -96,7 +92,7 @@ def test_the_config_and_rules_load() -> None:
     # The config names the rules by their path in the container, so they are checked on their own.
     checked = promtool("check", "config", "--syntax-only", str(STACK / "prometheus/prometheus.yml"))
     assert checked.returncode == 0, checked.stdout + checked.stderr
-    checked = promtool("check", "rules", str(STACK / "prometheus/rules.yml"))
+    checked = promtool("check", "rules", *map(str, slos.RULE_FILES))
     assert checked.returncode == 0, checked.stdout + checked.stderr
 
 
@@ -113,7 +109,6 @@ def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
 
 CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
 CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
-CI_WAITS = 'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-waits.prom"}'
 # Alloy's own series, as config.alloy's scrape of itself labels them.
 RECEIVER_ID = "otelcol.receiver.otlp.programs"
 RECEIVER = f'job="alloy",component_id="{RECEIVER_ID}"'
@@ -139,13 +134,6 @@ CASES = {
             at(22, "high-ram", posts("high-ram", "95")),
             at(42, "high-ram", posts("high-ram", "95")),
             at(45, "high-ram"),
-        ],
-    ),
-    "a textfile metric gone is no data, after `for`": (
-        [('up{job="docker"}', "1x30")],
-        [
-            at(4, "home-assistant-down"),
-            at(6, "home-assistant-down", posts("home-assistant-down", "-1")),
         ],
     ),
     "a failed probe fires and a passing one does not": (
@@ -293,18 +281,6 @@ CASES = {
             ),
         ],
     ),
-    "security checks stopping fires after 10 minutes and `for`": (
-        [
-            (
-                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/security.prom"}',
-                "0+60x10 600x30",
-            )
-        ],
-        [
-            at(25, "security-checks-stopped"),
-            at(27, "security-checks-stopped", posts("security-checks-stopped", "17")),
-        ],
-    ),
     "a failed upkeep fires after `for`, a good one after it clears": (
         [
             ("homelab_upkeep_last_success_timestamp_seconds", "0x80 5000x60"),
@@ -354,63 +330,6 @@ CASES = {
         [
             at(9, "container-unhealthy"),
             at(11, "container-unhealthy", posts("container-unhealthy", "0", name="web")),
-        ],
-    ),
-    "the CI supervisor stopping fires after 10 minutes and `for`": (
-        [
-            (
-                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-waits.prom"}',
-                "0+60x10 600x30",
-            )
-        ],
-        [
-            at(25, "ci-supervisor-stopped"),
-            at(27, "ci-supervisor-stopped", posts("ci-supervisor-stopped", "17")),
-        ],
-    ),
-    "CI jobs whose VMs never boot fire after 5 minutes and `for`": (
-        [
-            (CI_WAITS, "0+60x30"),
-            ('homelab_ci_wait_seconds{kind="booting"}', "0+60x30"),
-            ('homelab_ci_wait_seconds{kind="slots"}', "0x30"),
-            ("homelab_ci_vms_busy", "3x30"),
-        ],
-        [
-            at(10, "ci-jobs-not-starting"),
-            at(11, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "11")),
-        ],
-    ),
-    "CI polls failing fire after 10 minutes and `for`; a 2 h queue fires": (
-        [
-            (CI_WAITS, "0+60x30"),
-            ("homelab_ci_poll_failed_seconds", "0+60x30"),
-            ('homelab_ci_queued_seconds{repo="o/r",workflow="CI"}', "7000+60x30"),
-        ],
-        [
-            at(8, "ci-jobs-not-starting"),
-            # The queue arm from 4 min.
-            at(9, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "126")),
-            # Both arms: the first one's minutes.
-            at(16, "ci-jobs-not-starting", posts("ci-jobs-not-starting", "16")),
-        ],
-    ),
-    "CI backlogs, the load test, restarts, a spike and a stopped supervisor never fire": (
-        [
-            (CI_WAITS, "0+60x5 300x40"),
-            ('homelab_ci_wait_seconds{kind="slots"}', "3000+60x40"),
-            ('homelab_ci_wait_seconds{kind="memory"}', "3000+60x40"),
-            ('homelab_ci_wait_seconds{kind="other"}', "3180+60x40"),
-            ('homelab_ci_wait_seconds{kind="unseen"}', "1800x40"),
-            ('homelab_ci_wait_seconds{kind="booting"}', "0x3 2100 0x10 400+60x30"),
-            ('homelab_ci_queued_seconds{repo="o/r",workflow="CI"}', "3600+60x40"),
-        ],
-        [at(m, "ci-jobs-not-starting") for m in (4, 8, 12, 20, 35)],
-    ),
-    "a deep check over 8 days old fires after `for`": (
-        [("homelab_backup_last_deep_check_timestamp_seconds", "-734400x40")],
-        [
-            at(29, "deep-check-missed"),
-            at(31, "deep-check-missed", posts("deep-check-missed", "9")),
         ],
     ),
     "a service the deploy keeps running fires once no container of it runs, a one-shot never": (
@@ -542,13 +461,6 @@ CASES = {
         [at(370 * 60, "ci-slower")],
         "1h",
     ),
-    "CI run times not written for half an hour fires": (
-        [('node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/ci-times.prom"}', "0x60")],
-        [
-            at(44, "ci-times-stale"),
-            at(47, "ci-times-stale", posts("ci-times-stale", "47")),
-        ],
-    ),
     "a deploy still failing after half an hour fires, and one fixed sooner does not": (
         [
             ("homelab_main_deploy_behind", "0x5 1x20 0x5 1x40"),
@@ -645,34 +557,63 @@ CASES = {
             ),
         ],
     ),
-    "the failed unit check stopping fires after 10 minutes and `for`": (
-        [
-            (
-                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/failed-units.prom"}',
-                "0+60x10 600x30",
-            )
-        ],
-        [
-            at(25, "failed-units-check-stopped"),
-            at(27, "failed-units-check-stopped", posts("failed-units-check-stopped", "17")),
-        ],
-    ),
-    "a deployer that stopped running fires": (
-        [
-            ("homelab_main_deploy_behind", "0x120"),
-            ("homelab_main_deploy_checked_timestamp_seconds", "0x120"),
-        ],
-        [
-            at(85, "main-not-deployed"),
-            at(95, "main-not-deployed", posts("main-not-deployed", "95")),
-        ],
-    ),
 }
+
+
+def promql_round(x: float) -> int:
+    return math.floor(x + 0.5)
+
+
+def fresh_cases(slo: slos.Slo) -> dict[str, tuple[Any, ...]]:
+    """A writer that stops fires one missed run later and `for`; one that keeps writing never;
+    none at all is no data."""
+    textfile = slos.TEXTFILE.format(slo.file).replace('=~".*/', '="/var/lib/homelab-metrics/')
+    series = slo.metric or textfile
+    size, _ = slos.unit(slo.late)
+    late = round(slo.late / size, 1)
+    first = next(m for m in itertools.count() if promql_round(m * 60 / size) > late)
+    wait = slos.seconds(slos.FRESH_FOR) // 60
+    end = first + wait
+    value = str(promql_round(end * 60 / size))
+    return {
+        f"{slo.alert}: a writer that stops fires one missed run later": (
+            [(series, f"0x{end}")],
+            [at(end - 1, slo.alert), at(end, slo.alert, posts(slo.alert, value))],
+        ),
+        f"{slo.alert}: a writer that keeps writing never fires": (
+            [(series, f"0+60x{end}")],
+            [at(end, slo.alert)],
+        ),
+        f"{slo.alert}: no data fires after `for`": (
+            [('up{job="docker"}', "1x10")],
+            [at(wait - 1, slo.alert), at(wait + 1, slo.alert, posts(slo.alert, "-1"))],
+        ),
+    }
+
+
+def outage_cases(slo: slos.Slo) -> dict[str, tuple[Any, ...]]:
+    """A good-minutes promise replays a real outage's series (tests/incidents)."""
+    outage = json.loads((INCIDENTS / f"{slo.alert}.json").read_text(encoding="utf-8"))
+    series = []
+    for s in outage["series"]:
+        values, seen = [], False
+        for v in s["values"]:
+            values.append(str(v) if v is not None else "stale" if seen else "_")
+            seen = v is not None
+        series.append((s["series"], " ".join(values)))
+    checks = [at(m, slo.alert, *([posts(slo.alert, v)] if v else [])) for m, v in outage["checks"]]
+    return {f"{slo.alert}: its outage in tests/incidents fires": (series, checks)}
+
+
+INCIDENTS = Path(__file__).parent / "incidents"
+PROMISES, _ = slos.catalogue()
+for _slo in PROMISES:
+    CASES |= fresh_cases(_slo) if _slo.fresh else outage_cases(_slo)
 
 
 def test_no_rule_reads_another_rules_result() -> None:
     # Each case loads only the rules it checks (rule_runs), which holds only while this does.
-    text = (STACK / "prometheus/rules.yml").read_text(encoding="utf-8")
+    text = "".join(f.read_text(encoding="utf-8") for f in slos.RULE_FILES)
     assert all("alert" in rule for rule in RULES.values())
     assert "record:" not in text and "ALERTS" not in text
 

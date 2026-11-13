@@ -16,7 +16,7 @@ import sys
 
 # Tests run only in CI. AGENTS.md, skills and workflows steer agents and CI, so they stay out.
 DATA = re.compile(
-    r"stacks/observability/prometheus/rules\.yml"
+    r"stacks/observability/prometheus/(rules|slos|slos\.rules)\.yml"
     r"|stacks/observability/grafana/dashboards/[\w.-]+\.json"
     r"|docs/[\w./-]+\.(md|svg|png)"
     r"|README\.md"
