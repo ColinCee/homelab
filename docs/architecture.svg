@@ -143,7 +143,7 @@
 
   <rect class="net" x="16" y="458" width="160" height="36" rx="8"/>
   <use href="#i-discord" x="35.2" y="468" width="16" height="16" fill="#5865F2"/>
-  <text class="t" x="57.2" y="481" style="text-anchor:start">Discord<tspan class="s" dx="5" style="text-anchor:start">#uptime</tspan></text>
+  <text class="t" x="57.2" y="481" style="text-anchor:start">Discord<tspan class="s" dx="5" style="text-anchor:start">#alerts</tspan></text>
 
   <rect class="net" x="16" y="524" width="160" height="36" rx="8"/>
   <text class="t" x="96" y="547">Healthchecks.io</text>

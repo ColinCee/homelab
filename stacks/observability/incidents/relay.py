@@ -29,13 +29,20 @@ DISCORD = "https://discord.com/api/v10"
 FIRE = "https://api.anthropic.com/v1/claude_code/routines/{routine}/fire"
 # A Beelink outage fires about ten alerts at once; past this, posts still open without the agent.
 RUNS_PER_DAY = 12
-# An alert held back by an inhibit rule never sends its end, so its post would stay open for ever.
-OPEN_FOR = timedelta(days=14)
-# Label values reach the agent's prompt; the SSH rule's carry text from outside the Beelink.
-PLAIN = re.compile(r"^[\w.:/@-]{0,64}$")
+# A return this soon after clearing reopens the same post, with no new run, so a flapping alert
+# takes one post and one run.
+REOPEN_WITHIN = timedelta(days=1)
+# A firing alert repeats at least daily (alertmanager.yml, repeat_interval); one unseen for longer
+# was held back by an inhibit rule, which never sends its end, so its post is forgotten.
+FORGET_AFTER = timedelta(days=3)
+# Label values reach the agent's prompt. These rules' labels carry text from outside the Beelink
+# (rules.yml: ssh-login-elsewhere, ci-host-install), so theirs never do.
+OUTSIDE = frozenset({"user", "from", "device", "author", "commit"})
+PLAIN = re.compile(r"[\w.:/@-]{0,64}")
 
 Discord = Callable[[str, str, dict[str, Any] | None], dict[str, Any]]
 Fire = Callable[[str], str]
+FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
 def log(message: str) -> None:
@@ -59,16 +66,23 @@ class Relay:
         if not isinstance(alerts, list) or not alerts or not all(_is_alert(a) for a in alerts):
             return 400
         for alert in alerts:
-            if alert["status"] == "firing":
-                if not self._open(alert):
-                    return 502
-            else:
-                self._clear(alert)
+            done = self._open(alert) if alert["status"] == "firing" else self._clear(alert)
+            if not done:
+                # Alertmanager sends it again; what was saved lets the retry finish the job.
+                return 502
         return 200
 
     def _open(self, alert: dict[str, Any]) -> bool:
-        fingerprint = alert["fingerprint"]
-        if fingerprint in self.state["open"]:
+        post = self.state["posts"].get(alert["fingerprint"])
+        if post and not post["cleared"]:
+            post["seen"] = _now().isoformat()
+            self._save()
+            return True
+        if post and _now() - datetime.fromisoformat(post["cleared"]) < REOPEN_WITHIN:
+            if not self._retag(post["thread"], "Firing", "Firing again."):
+                return False
+            post.update(seen=_now().isoformat(), cleared=None)
+            self._save()
             return True
         try:
             thread = self.discord(
@@ -77,37 +91,45 @@ class Relay:
                 {
                     "name": _title(alert)[:100],
                     "message": {"content": _post(alert), "allowed_mentions": {"parse": []}},
-                    "applied_tags": self._tag("Firing"),
+                    **self._tags_for("Firing"),
                 },
             )["id"]
-        except (OSError, KeyError, ValueError) as e:
-            # Alertmanager sends it again, and nothing was saved, so the retry opens it.
+        except FAILED as e:
             log(f"cannot open a post for {alert['labels'].get('alertname')}: {e}")
             return False
-        self.state["open"][fingerprint] = {"thread": thread, "opened": _now().isoformat()}
+        self.state["posts"][alert["fingerprint"]] = {
+            "thread": thread,
+            "seen": _now().isoformat(),
+            "cleared": None,
+        }
         self._save()
         self._say(thread, self._start_agent(alert, thread))
         return True
 
-    def _clear(self, alert: dict[str, Any]) -> None:
-        entry = self.state["open"].pop(alert["fingerprint"], None)
-        if entry is None:
-            return
+    def _clear(self, alert: dict[str, Any]) -> bool:
+        post = self.state["posts"].get(alert["fingerprint"])
+        if post is None or post["cleared"]:
+            return True
+        text = "Cleared: the number is back within bounds; that does not mean the cause is fixed."
+        if not self._retag(post["thread"], "Cleared", text):
+            return False
+        post["cleared"] = _now().isoformat()
         self._save()
-        thread = entry["thread"]
-        self._say(
-            thread,
-            "Cleared: the number is back within bounds; that does not mean the cause is fixed.",
-        )
+        return True
+
+    def _retag(self, thread: str, tag: str, text: str) -> bool:
         try:
-            # Discord archives an idle post, and an archived one takes no tag change.
+            # Discord archives an idle post, and an archived one takes no message or tag change.
+            self.discord("PATCH", f"/channels/{thread}", {"archived": False, **self._tags_for(tag)})
             self.discord(
-                "PATCH",
-                f"/channels/{thread}",
-                {"archived": False, "applied_tags": self._tag("Cleared")},
+                "POST",
+                f"/channels/{thread}/messages",
+                {"content": text, "allowed_mentions": {"parse": []}},
             )
-        except (OSError, KeyError, ValueError) as e:
-            log(f"cannot tag post {thread} Cleared: {e}")
+        except FAILED as e:
+            log(f"cannot mark post {thread} {tag}: {e}")
+            return False
+        return True
 
     def _start_agent(self, alert: dict[str, Any], thread: str) -> str:
         runs = self.state["runs"]
@@ -116,14 +138,14 @@ class Relay:
             runs.update(day=today, count=0)
         if runs["count"] >= RUNS_PER_DAY:
             return f"On-call agent not started: {RUNS_PER_DAY} runs today already."
-        runs["count"] += 1
-        self._save()
         try:
             url = self.fire(_snapshot(alert, f"https://discord.com/channels/{self.guild}/{thread}"))
-        except (OSError, KeyError, ValueError) as e:
+        except FAILED as e:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
             log(f"cannot start the on-call agent: {e}")
             return "On-call agent not started: the relay could not reach its routine (see its log)."
+        runs["count"] += 1
+        self._save()
         return f"On-call agent: {url}"
 
     def _say(self, thread: str, text: str) -> None:
@@ -133,34 +155,44 @@ class Relay:
                 f"/channels/{thread}/messages",
                 {"content": text, "allowed_mentions": {"parse": []}},
             )
-        except (OSError, KeyError, ValueError) as e:
+        except FAILED as e:
             log(f"cannot post in {thread}: {e}")
 
-    def _tag(self, name: str) -> list[str]:
+    def _tags_for(self, name: str) -> dict[str, list[str]]:
+        """The tag to set, or none when the forum's tags cannot be read: never an empty list,
+        which would clear the post's tags."""
         if self._tags is None:
             try:
                 forum = self.discord("GET", f"/channels/{self.forum}", None)
                 self._tags = {t["name"]: t["id"] for t in forum.get("available_tags", [])}
-            except (OSError, KeyError, ValueError) as e:
+            except FAILED as e:
                 log(f"cannot read the forum's tags: {e}")
-                return []
-        return [self._tags[name]] if name in self._tags else []
+                return {}
+        if name not in self._tags:
+            log(f"the forum has no {name} tag")
+            self._tags = None
+            return {}
+        return {"applied_tags": [self._tags[name]]}
 
     def _load(self) -> dict[str, Any]:
         try:
             state = json.loads(self.state_file.read_text(encoding="utf-8"))
         except OSError, ValueError:
             state = {}
-        state.setdefault("open", {})
+        state.setdefault("posts", {})
         state.setdefault("runs", {"day": "", "count": 0})
         return state
 
     def _save(self) -> None:
-        cutoff = _now() - OPEN_FOR
-        self.state["open"] = {
+        now = _now()
+        self.state["posts"] = {
             k: v
-            for k, v in self.state["open"].items()
-            if datetime.fromisoformat(v["opened"]) > cutoff
+            for k, v in self.state["posts"].items()
+            if (
+                now - datetime.fromisoformat(v["cleared"]) < REOPEN_WITHIN
+                if v["cleared"]
+                else now - datetime.fromisoformat(v["seen"]) < FORGET_AFTER
+            )
         }
         tmp = self.state_file.with_suffix(".tmp")
         tmp.write_text(json.dumps(self.state), encoding="utf-8")
@@ -182,7 +214,10 @@ def _now() -> datetime:
 
 
 def _labels(alert: dict[str, Any]) -> dict[str, str]:
-    return {k: v if PLAIN.match(str(v)) else "(withheld)" for k, v in alert["labels"].items()}
+    return {
+        k: v if k not in OUTSIDE and PLAIN.fullmatch(str(v)) else "(withheld)"
+        for k, v in alert["labels"].items()
+    }
 
 
 def _title(alert: dict[str, Any]) -> str:
@@ -225,7 +260,8 @@ def _request(
     url: str, method: str, headers: dict[str, str], body: dict[str, Any] | None
 ) -> dict[str, Any]:
     data = None if body is None else json.dumps(body).encode()
-    for _ in range(3):
+    # Two tries at most: Alertmanager stops waiting after about a minute, and retries itself.
+    for _ in range(2):
         req = urllib.request.Request(
             url, data=data, method=method, headers={**headers, "Content-Type": "application/json"}
         )
@@ -236,7 +272,7 @@ def _request(
         except urllib.error.HTTPError as e:
             if e.code != 429:
                 raise
-            time.sleep(min(float(json.loads(e.read() or b"{}").get("retry_after", 1)), 5))
+            time.sleep(min(float(e.headers.get("Retry-After") or 1), 5))
     raise OSError(f"{method} {url}: still rate limited")
 
 
@@ -253,6 +289,7 @@ def main() -> None:
         "Authorization": f"Bearer {_secret('oncall_fire_token')}",
         "anthropic-version": "2023-06-01",
         "anthropic-beta": "experimental-cc-routine-2026-04-01",
+        "User-Agent": "homelab-incidents/1",
     }
     routine = os.environ.get("ONCALL_ROUTINE", "")
     fire_url = FIRE.format(routine=routine)
@@ -279,7 +316,8 @@ def main() -> None:
         timeout = 10
 
         def do_POST(self) -> None:
-            raw = self.rfile.read(min(int(self.headers.get("Content-Length") or 0), BODY_MAX))
+            length = self.headers.get("Content-Length") or "0"
+            raw = self.rfile.read(min(int(length), BODY_MAX)) if length.isdigit() else b""
             if self.path != "/alert":
                 code = 404
             else:
