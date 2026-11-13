@@ -1,12 +1,15 @@
 import json
 import os
 import shutil
+import subprocess
 import time
 from collections.abc import Callable, Mapping
+from functools import cache
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 
 # CI's time limits, which fail the run in CI: one test process's run (scripts/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
@@ -64,6 +67,63 @@ def write_slowest(out: Path) -> None:
             break
         rows.append(row)
     out.write_text(json.dumps(rows, separators=(",", ":")), encoding="utf-8")
+
+
+STACKS = Path(__file__).parent.parent / "stacks"
+
+
+class ComposeLoader(yaml.SafeLoader):
+    """Reads Compose's own tags (`!reset`, `!override`) as plain values."""
+
+
+def _plain(loader: yaml.SafeLoader, _tag: str, node: yaml.Node) -> object:
+    if isinstance(node, yaml.MappingNode):
+        return loader.construct_mapping(node, deep=True)
+    if isinstance(node, yaml.SequenceNode):
+        return loader.construct_sequence(node, deep=True)
+    return loader.construct_scalar(node)
+
+
+ComposeLoader.add_multi_constructor("!", _plain)
+
+
+def load_yaml(path: Path) -> object:
+    return yaml.load(path.read_text(encoding="utf-8"), ComposeLoader)
+
+
+@cache
+def stacks() -> dict[Path, dict[str, Any]]:
+    """Every stack's compose.yaml, by its folder: the deploy's own list (docs/architecture.md,
+    "Deploys")."""
+    found = {}
+    for compose in sorted(STACKS.glob("*/compose.yaml")):
+        spec = load_yaml(compose)
+        assert isinstance(spec, dict), compose
+        found[compose.parent] = spec
+    return found
+
+
+def services() -> list[tuple[Path, str, dict[str, Any]]]:
+    """Every Compose service: its stack's folder, its name and its spec."""
+    return [
+        (stack, name, s) for stack, spec in stacks().items() for name, s in spec["services"].items()
+    ]
+
+
+# A commit needs an author, and a test must not sign with the caller's key or depend on their
+# default branch.
+GIT = [
+    *("git", "-c", "user.name=Colin", "-c", "user.email=c@example.com"),
+    *("-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main"),
+]
+
+
+def git(repo: Path, *args: str) -> str:
+    """Every test's git: in `repo`, as a throwaway author, its output stripped."""
+    done = subprocess.run(
+        [*GIT, "-C", str(repo), *args], check=True, capture_output=True, text=True
+    )
+    return done.stdout.strip()
 
 
 def tool(name: str) -> str:

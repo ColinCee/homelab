@@ -1,19 +1,13 @@
-import subprocess
 from pathlib import Path
 
 import pytest
+from conftest import git
 
 from scripts.pin_only import is_pin_only
 
 OLD = "ghcr.io/colincee/app:latest@sha256:" + "a" * 64
 NEW = "ghcr.io/colincee/app:latest@sha256:" + "b" * 64
 COMPOSE = f"services:\n  app:\n    image: {OLD}\n    restart: unless-stopped\n"
-
-
-def _git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout.strip()
 
 
 def _commit(repo: Path, files: dict[str, str | None]) -> str:
@@ -24,21 +18,21 @@ def _commit(repo: Path, files: dict[str, str | None]) -> str:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
-    _git(repo, "add", "-A")
-    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
-    return _git(repo, "rev-parse", "HEAD")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "c")
+    return git(repo, "rev-parse", "HEAD")
 
 
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    _git(tmp_path, "init", "-q")
+    git(tmp_path, "init", "-q")
     _commit(tmp_path, {"stacks/app/compose.yaml": COMPOSE, "stacks/web/compose.yaml": COMPOSE})
     monkeypatch.chdir(tmp_path)
     return tmp_path
 
 
 def _changed(repo: Path, files: dict[str, str | None]) -> bool:
-    base = _git(repo, "rev-parse", "HEAD")
+    base = git(repo, "rev-parse", "HEAD")
     return is_pin_only(base, _commit(repo, files))
 
 
@@ -78,5 +72,5 @@ def test_any_other_change_gets_full_checks(repo: Path, files: dict[str, str | No
 
 
 def test_an_empty_diff_gets_full_checks(repo: Path) -> None:
-    head = _git(repo, "rev-parse", "HEAD")
+    head = git(repo, "rev-parse", "HEAD")
     assert not is_pin_only(head, head)

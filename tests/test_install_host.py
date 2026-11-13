@@ -10,6 +10,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
+from conftest import stacks
 
 CI_RUNNER = Path(__file__).parent.parent / "ci-runner"
 _spec = importlib.util.spec_from_file_location("install_host", CI_RUNNER / "install_host.py")
@@ -363,7 +364,7 @@ OLD_TARGET = f"{ih.PYTHON_DIR}/3.14.0+20250101/bin/python3"
 def test_every_python_image_is_the_version_mise_pins() -> None:
     root = CI_RUNNER.parent
     python = tomllib.loads((root / "mise.toml").read_text())["tools"]["python"]
-    files = [*root.glob("stacks/**/*.Dockerfile"), *root.glob("stacks/**/compose.yaml")]
+    files = [*root.glob("stacks/**/*.Dockerfile"), *(stack / "compose.yaml" for stack in stacks())]
     tags = {
         (file.name, tag)
         for file in files

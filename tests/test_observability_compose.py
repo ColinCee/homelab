@@ -7,10 +7,9 @@ import tomllib
 from pathlib import Path
 
 import yaml
+from conftest import STACKS, stacks
 
-COMPOSE = yaml.safe_load(
-    (Path(__file__).parent.parent / "stacks/observability/compose.yaml").read_text(encoding="utf-8")
-)
+COMPOSE = stacks()[STACKS / "observability"]
 SERVICES = COMPOSE["services"]
 
 

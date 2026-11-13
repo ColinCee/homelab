@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
+from conftest import GIT, git
 
 CI_RUNNER = Path(__file__).parent.parent / "ci-runner"
 _spec = importlib.util.spec_from_file_location("ci_update", CI_RUNNER / "update.py")
@@ -18,22 +19,6 @@ assert _spec is not None and _spec.loader is not None
 up = importlib.util.module_from_spec(_spec)
 sys.modules["ci_update"] = up
 _spec.loader.exec_module(up)
-
-GIT = [
-    "git",
-    "-c",
-    "user.name=Colin",
-    "-c",
-    "user.email=c@example.com",
-    "-c",
-    "init.defaultBranch=main",
-]
-
-
-def git(repo: Path, *args: str) -> str:
-    return subprocess.run(
-        [*GIT, "-C", str(repo), *args], check=True, capture_output=True, text=True
-    ).stdout
 
 
 def commit(repo: Path, path: str, message: str) -> str:

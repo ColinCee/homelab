@@ -10,11 +10,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
+from conftest import STACKS, services
 from telemetry import JsonLines
-
-ROOT = Path(__file__).parent.parent
-STACKS = ROOT / "stacks"
 
 # Where each image is told to log JSON: an argument in its command, or NAME=json in its environment;
 # None when it logs JSON with no setting. A new image fails until it is added here or to TEXT_ONLY.
@@ -44,14 +41,6 @@ TEXT_ONLY = {
     "ghcr.io/colincee/flight-tracker-at-home/backend",
 }
 LOG_CALLS = {"debug", "info", "warning", "error", "exception", "critical"}
-
-
-def services() -> list[tuple[Path, str, dict[str, Any]]]:
-    found = []
-    for compose in sorted(STACKS.glob("*/compose.yaml")):
-        stack = yaml.safe_load(compose.read_text(encoding="utf-8"))
-        found += [(compose.parent, name, service) for name, service in stack["services"].items()]
-    return found
 
 
 def test_every_image_logs_json_or_is_wrapped() -> None:

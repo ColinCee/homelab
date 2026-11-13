@@ -17,8 +17,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from conftest import tool
 
-from tests.conftest import tool
 from tests.test_alert_rules import STACK
 
 PASSWORDS = {"stats": "s", "agents": "a"}
