@@ -53,40 +53,41 @@ def test_every_service_has_a_memory_limit() -> None:
 
 # Services that write outside their volumes and tmpfs mounts, so cannot run read-only yet.
 WRITABLE = {
-    "homeassistant": "its s6 init writes /run and /etc at start",
-    "proxy": "Caddy writes its locks and instance id to /data and /config: give them tmpfs first",
-    "grafana": "writes its plugins' sockets to /tmp: give it a tmpfs first",
-    "obi": "the tracing work's service (stacks/observability/obi/): convert it there",
+    "home-assistant/homeassistant": "its s6 init writes /run and /etc at start",
+    "internal-names/proxy": "Caddy writes its locks and id to /data and /config: tmpfs first",
+    "observability/grafana": "writes its plugins' sockets to /tmp: give it a tmpfs first",
+    "observability/obi": "the tracing work's service (stacks/observability/obi/): convert it there",
 }
 # Services with no healthcheck, and why. The deploy waits for a healthcheck to pass, so one is
 # added with its command tried in the running container.
 NO_HEALTHCHECK = {
     # No shell or program in the image to run a check with.
-    "logs": "distroless image",
-    "traces": "distroless image",
-    "blackbox": "distroless image",
-    "obi": "distroless image",
-    "dns": "scratch image",
-    "cloudflared": "distroless image",
-    "alloy": "no wget or curl in the image",
-    "backend": "no wget or curl in the image",
+    "observability/logs": "distroless image",
+    "observability/traces": "distroless image",
+    "observability/blackbox": "distroless image",
+    "observability/obi": "distroless image",
+    "internal-names/dns": "scratch image",
+    "tunnel/cloudflared": "distroless image",
+    "observability/alloy": "no wget or curl in the image",
+    "flight-tracker/backend": "no wget or curl in the image",
     # wget is there; the check's URL is not yet tried.
-    "doorbell": "untried",
-    "proxy": "untried",
-    "grafana": "untried",
-    "alertmanager": "untried",
-    "incidents": "untried",
-    "gateway": "untried",
-    "docker-socket-proxy": "untried",
-    "probes": "untried",
-    "host-metrics": "untried",
+    "deploy/doorbell": "untried",
+    "internal-names/proxy": "untried",
+    "observability/grafana": "untried",
+    "observability/alertmanager": "untried",
+    "observability/incidents": "untried",
+    "observability/gateway": "untried",
+    "observability/docker-socket-proxy": "untried",
+    "observability/probes": "untried",
+    "observability/host-metrics": "untried",
 }
 
 
 def test_services_are_read_only_unless_listed() -> None:
-    names = {name for _, name, _ in services()}
+    names = {f"{stack.name}/{name}" for stack, name, _ in services()}
     assert names >= WRITABLE.keys()
-    for _, name, service in services():
+    for stack, short, service in services():
+        name = f"{stack.name}/{short}"
         if name in WRITABLE:
             assert not service.get("read_only"), f"{name} is read-only now: drop it from WRITABLE"
         else:
@@ -94,9 +95,10 @@ def test_services_are_read_only_unless_listed() -> None:
 
 
 def test_services_have_a_healthcheck_unless_listed() -> None:
-    names = {name for _, name, _ in services()}
+    names = {f"{stack.name}/{name}" for stack, name, _ in services()}
     assert names >= NO_HEALTHCHECK.keys()
-    for _, name, service in services():
+    for stack, short, service in services():
+        name = f"{stack.name}/{short}"
         has = "healthcheck" in service
         if name in NO_HEALTHCHECK:
             assert not has, f"{name} has a healthcheck now: drop it from NO_HEALTHCHECK"

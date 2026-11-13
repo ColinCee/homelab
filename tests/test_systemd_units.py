@@ -36,7 +36,7 @@ def settings(unit: Path) -> dict[str, list[str]]:
 
 
 def test_every_oneshot_has_a_start_limit() -> None:
-    # A oneshot's default is no limit at all, so a hung run would hold its timer for good.
+    # A system oneshot has no limit by default and a user one 90 s: one says how long its run takes.
     for unit in UNITS:
         if settings(unit).get("Type") == ["oneshot"]:
             assert "TimeoutStartSec" in settings(unit), f"{unit.name}: set TimeoutStartSec"
