@@ -222,10 +222,43 @@ services:
     networks:
       - alerting
       - alertmanager-out
+      - incidents
+
+  # Gives each alert one #incidents post and starts the cloud on-call agent on it (incidents/relay.py).
+  incidents:
+    image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
+    restart: unless-stopped
+    command: ["python3", "-I", "/relay.py"]
+    # Root in the container, with no capabilities, so it may write its state to the root-owned volume.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 64m
+    pids_limit: 32
+    environment:
+      INCIDENTS_FORUM: "1567861139142877295"
+      DISCORD_GUILD: "1467218689245053010"
+      # The claude.ai routine that runs the homelab-oncall skill on the alert it is given; empty starts none.
+      ONCALL_ROUTINE: trig_012QtfdKg7fygsfKECcGZYPU
+    secrets:
+      - incidents_discord_bot_token
+      - oncall_fire_token
+    volumes:
+      - ./incidents/relay.py:/relay.py:ro
+      # Which post each firing alert has, so a restart opens none again.
+      - incidents-data:/state
+    labels:
+      homelab.config-hash: ${CONFIG_HASH_INCIDENTS:-}
+    # incidents: only Alertmanager reaches it; incidents-out: its way out to Discord and Anthropic.
+    networks:
+      - incidents
+      - incidents-out
 
   # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
   # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, agents on
-  # Tailscale.
+  # Tailscale or, the on-call agent, through the tunnel.
   gateway:
     image: caddy:2.11.9@sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c
     restart: unless-stopped
@@ -250,12 +283,14 @@ services:
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./gateway/start.sh:/etc/caddy/start.sh:ro
-    # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks.
+    # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks, and by the on-call
+    # agent through the tunnel behind Cloudflare Access.
     networks:
       - stores
       - alerting
       - grafana
       - public-stats
+      - read
 
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
@@ -508,6 +543,13 @@ networks:
   alerting:
     internal: true
   alertmanager-out:
+  incidents:
+    internal: true
+  incidents-out:
+  # The tunnel's way to the gateway, for the on-call agent; owned here, as otlp, so this stack deploys first.
+  read:
+    name: observability-read
+    internal: true
   # Prometheus's scrape of the probe.
   probe:
     internal: true
@@ -550,6 +592,10 @@ secrets:
   # Empty until it is made in Home Assistant: its scrape fails until then.
   homeassistant_metrics_token:
     file: ../../secrets/homeassistant_metrics_token
+  incidents_discord_bot_token:
+    file: ../../secrets/incidents_discord_bot_token
+  oncall_fire_token:
+    file: ../../secrets/oncall_fire_token
 
 volumes:
   alloy-state:
@@ -558,3 +604,4 @@ volumes:
   alertmanager-data:
   victorialogs-data:
   victoriatraces-data:
+  incidents-data:

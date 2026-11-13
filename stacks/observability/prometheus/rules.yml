@@ -586,7 +586,7 @@ groups:
     interval: 1m
     rules:
       # Always firing while rules run and posts reach Discord. Alertmanager pings Healthchecks.io with it each minute
-      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts to #uptime when the pings stop: the Beelink,
+      # (../alertmanager/alertmanager.yml), and Healthchecks.io posts to #alerts when the pings stop: the Beelink,
       # Prometheus or Alertmanager is down, or Discord refused a post in the last hour. Not a GitHub cron: GitHub ran
       # 15-minute schedules hours late.
       - alert: watchdog

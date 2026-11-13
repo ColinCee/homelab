@@ -32,8 +32,27 @@ def test_only_alloy_reaches_the_stores_write_paths() -> None:
 
 def test_only_prometheus_and_the_gateway_reach_alertmanager() -> None:
     assert members("alerting") == {"prometheus", "alertmanager", "gateway"}
-    assert set(SERVICES["alertmanager"]["networks"]) == {"alerting", "alertmanager-out"}
+    assert set(SERVICES["alertmanager"]["networks"]) == {
+        "alerting",
+        "alertmanager-out",
+        "incidents",
+    }
     assert members("alertmanager-out") == {"alertmanager"}
+
+
+def test_only_alertmanager_reaches_the_incidents_relay() -> None:
+    # Whatever reaches it can open posts and start the on-call agent.
+    assert members("incidents") == {"alertmanager", "incidents"}
+    assert COMPOSE["networks"]["incidents"]["internal"] is True
+    assert set(SERVICES["incidents"]["networks"]) == {"incidents", "incidents-out"}
+    assert members("incidents-out") == {"incidents"}
+    assert "ports" not in SERVICES["incidents"]
+
+
+def test_the_tunnel_reaches_only_the_gateway_here() -> None:
+    # The on-call agent's way in, behind Cloudflare Access: the gateway's read paths, nothing else.
+    assert members("read") == {"gateway"}
+    assert COMPOSE["networks"]["read"] == {"name": "observability-read", "internal": True}
 
 
 def test_programs_that_send_traces_reach_alloy_alone() -> None:

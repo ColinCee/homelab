@@ -9,6 +9,10 @@ route:
   group_interval: 1m
   repeat_interval: 24h
   routes:
+    # Each alert also opens and clears its #incidents post (../incidents/relay.py), then goes on to the routes below.
+    - matchers: ['alertname!="watchdog"']
+      receiver: incidents
+      continue: true
     # Never posts: a ping each minute, and Healthchecks.io posts to Discord when they stop.
     - matchers: ['alertname="watchdog"']
       receiver: healthchecks
@@ -33,6 +37,10 @@ receivers:
         title: '{{ template "homelab.title" . }}'
         message: '{{ template "homelab.message" . }}'
         content: '{{ template "homelab.mention" . }}'
+  - name: incidents
+    webhook_configs:
+      - url: http://incidents:8080/alert
+        send_resolved: true
   - name: healthchecks
     webhook_configs:
       - url_file: /run/secrets/healthchecks_ping

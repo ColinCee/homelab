@@ -122,9 +122,17 @@ def time_limits() -> int:
     return 1 if raised else 0
 
 
+def agent_scope() -> int:
+    """An agent's branch (claude/) changes only what runs no code (agent_scope.py), so it can
+    merge itself; a guard against its mistakes, not against Colin's own login."""
+    if not os.environ.get("GITHUB_HEAD_REF", "").startswith("claude/"):
+        return 0
+    return run_base_rule("agent_scope.py") or 0
+
+
 def pull_request_rules() -> int:
     """The pull request's own rules. Every rule runs before the verdict."""
-    results = [rule() for rule in (pins_only, versions_hash, time_limits)]
+    results = [rule() for rule in (pins_only, versions_hash, time_limits, agent_scope)]
     return 1 if any(results) else 0
 
 
