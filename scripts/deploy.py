@@ -737,8 +737,8 @@ def traced_deploy(
     metrics_dir: Path | None,
     runner: CommandRunner,
 ) -> DeploymentReport:
-    """`deploy` as one trace with a span per stack: only a run that deploys something, as the
-    Grafana pages mark each deploy by it, with its commit."""
+    """`deploy` as one trace with a span per stack and its commit: only a run that deploys
+    something, so each trace is one deploy."""
     try:
         commit = head_commit(repo_root)
     except (OSError, subprocess.CalledProcessError):

@@ -299,7 +299,8 @@ def run(service: str, name: str, **attrs: object) -> Generator[Span]:
         _ENDED.reset(token)
         try:
             send_traces(otlp_traces({service: ended}))
-        except OSError as e:
+        # ValueError: an endpoint that is no URL.
+        except (OSError, ValueError) as e:
             log.warning("trace not sent", extra={"trace_id": trace_id, "error": str(e)})
 
 

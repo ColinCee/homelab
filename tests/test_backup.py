@@ -339,4 +339,5 @@ def test_upkeep_runs_every_step_and_fails_if_any_did(
     ]
     assert span["status"]["message"] == "prune images failed"
     # The restore test's own run joins this trace.
-    assert "TRACEPARENT" in dict(upkeep.STEPS)["restore test"]
+    restore = dict(upkeep.STEPS)["restore test"]
+    assert restore[restore.index("-e") + 1] == "TRACEPARENT"
