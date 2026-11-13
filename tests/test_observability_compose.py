@@ -152,7 +152,7 @@ def test_obi_links_calls_by_header_where_it_can_attach() -> None:
 
 def test_obi_writes_traces_only_into_request_serving_logs_that_take_them() -> None:
     # A pattern left from a renamed service enriches nothing, silently; Home Assistant's and
-    # CoreDNS's text lines would get `trace_id=` with no request in them.
+    # CoreDNS's text lines would get `trace_id=` with no request in them, and Caddy's got no IDs.
     obi = yaml.safe_load(
         (Path(__file__).parent.parent / "stacks/observability/obi/obi.yaml").read_text("utf-8")
     )
@@ -165,7 +165,7 @@ def test_obi_writes_traces_only_into_request_serving_logs_that_take_them() -> No
     for pattern in patterns:
         matched = {name for c, name in containers.items() if fnmatchcase(c, pattern)}
         assert matched, pattern
-        assert not matched & {"homeassistant", "dns"}, pattern
+        assert not matched & {"homeassistant", "dns", "gateway", "proxy"}, pattern
 
 
 def _braces(pattern: str) -> list[str]:
