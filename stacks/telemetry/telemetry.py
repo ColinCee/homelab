@@ -1,18 +1,24 @@
 """How every Python service in the lab reports what it does: call `start()` once, when the program
-starts, then log through `logging.getLogger(name)` with values as `extra` fields.
+starts, then log through `logging.getLogger(name)` with values as `extra` fields. Write a metrics
+file for Alloy, or any file read while it changes, with `replace_file`.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
 volumes), so services run alone with `python -I` still import it; tests/test_json_logs.py fails a
-service that does not. Lines are one JSON object each, which Alloy reads (config.alloy, loki.process
-"docker"); an exception is kept under OpenTelemetry's names.
+service that does not. Host scripts find it beside them (ci-runner/install_host.py) or
+by a path into the checkout (scripts/deploy.py, deploy_main.py). Each line is one JSON object,
+which Alloy reads (config.alloy, loki.process "docker"); an exception is kept under
+OpenTelemetry's names.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
+import tempfile
 from datetime import UTC, datetime
+from pathlib import Path
 
 _RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
 
@@ -39,3 +45,17 @@ def start() -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JsonLines())
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+
+
+def replace_file(path: Path, data: str | bytes, mode: int = 0o644) -> None:
+    """Replace `path` whole, so a reader sees the old file or the new, never half of one."""
+    # Hidden and not *.prom, so Alloy's textfile collector never reads it half written.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(data.encode() if isinstance(data, str) else data)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise

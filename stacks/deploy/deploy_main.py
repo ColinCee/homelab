@@ -7,13 +7,17 @@ Standard library only: it runs on the host's /usr/bin/python3.
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+# The shared module, whatever unit file starts this one: a deploy that fails before installing the
+# new unit must not leave the next run unable to import it.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "telemetry"))
+import telemetry
 
 HOME = Path.home()
 REPO = HOME / "code/homelab"
@@ -79,10 +83,7 @@ class Host:
             f"# TYPE {behind_metric} gauge",
             f"{behind_metric} {int(behind)}",
         ]
-        temporary = self.metrics.with_name(f".{self.metrics.name}.tmp")
-        temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        temporary.chmod(0o644)
-        os.replace(temporary, self.metrics)
+        telemetry.replace_file(self.metrics, "\n".join(lines) + "\n")
 
 
 def deploy_main(host: Host) -> int:

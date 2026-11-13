@@ -225,9 +225,7 @@ class Relay:
                 else now - datetime.fromisoformat(v["seen"]) < FORGET_AFTER
             )
         }
-        tmp = self.state_file.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.state), encoding="utf-8")
-        tmp.replace(self.state_file)
+        telemetry.replace_file(self.state_file, json.dumps(self.state))
 
 
 def _is_alert(alert: object) -> bool:

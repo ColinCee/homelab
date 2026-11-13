@@ -4,15 +4,17 @@ textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prom
 It runs on the host's network: the Beelink's firewall admits only Tailscale and loopback, so a
 container on a Docker network cannot reach the services on the host's network."""
 
-import os
 import socket
 import struct
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+import telemetry
 
 ADDRESS = "100.100.146.119"
-OUT = "/metrics/probes.prom"
+OUT = Path("/metrics/probes.prom")
 
 
 def http_status(url: str, host: str | None = None) -> int:
@@ -63,10 +65,7 @@ def write(results: dict[str, bool], now: float) -> None:
     ]
     lines += [f'homelab_probe_success{{target="{t}"}} {int(ok)}' for t, ok in results.items()]
     lines += [f"homelab_probe_timestamp_seconds {now:.0f}", ""]
-    temporary = f"{OUT}.{os.getpid()}.tmp"
-    with open(temporary, "w", encoding="utf-8") as file:
-        file.write("\n".join(lines))
-    os.replace(temporary, OUT)
+    telemetry.replace_file(OUT, "\n".join(lines))
 
 
 def main() -> None:

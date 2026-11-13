@@ -42,6 +42,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import IO, Any, Protocol
 
+import telemetry
+
 LABEL = "homelab-fc"
 RUNNER_LABELS = ("self-hosted", "linux", "x64", LABEL)
 # One extra label, `fc-cache-<owner>--<name>`, asks for another served repo's cache disk
@@ -886,18 +888,9 @@ def write_memory_metrics() -> None:
         for kind, counts in MEMORY_COUNTS.items()
     ]
     try:
-        write_textfile(MEMORY_METRICS, lines)
+        telemetry.replace_file(MEMORY_METRICS, "\n".join(lines) + "\n")
     except OSError as e:
         log(f"could not write {MEMORY_METRICS}: {type(e).__name__}: {e}")
-
-
-def write_textfile(path: Path, lines: list[str]) -> None:
-    """Replace a textfile for Alloy's collector whole, readable by anyone."""
-    # Not *.prom, or the collector could read it half written.
-    tmp = path.with_name(f".{path.stem}.tmp")
-    tmp.write_text("\n".join(lines) + "\n")
-    tmp.chmod(0o644)
-    os.replace(tmp, path)
 
 
 def adopt(state: State) -> None:
@@ -1761,11 +1754,12 @@ def write_wait_metrics(state: State, now: float) -> None:
         f"homelab_ci_poll_failed_seconds {round(failed_for)}",
     ]
     try:
-        write_textfile(WAIT_METRICS, lines)
+        telemetry.replace_file(WAIT_METRICS, "\n".join(lines) + "\n")
         state.wait_metrics_written = now
         state.wait_metrics_error = ""
     except OSError as e:
-        why = f"{type(e).__name__}: {e}"
+        # Its strerror, not the message, which names a new temporary file each time.
+        why = f"{type(e).__name__}: {e.strerror or e}"
         if why != state.wait_metrics_error:
             log(f"could not write {WAIT_METRICS}: {why}")
         state.wait_metrics_error = why
@@ -1823,7 +1817,7 @@ def record_wait(state: State, job_id: int, wait: Wait, now: float) -> None:
         WAITS_FILE.chmod(0o644)
         state.waits_error = ""
     except OSError as e:
-        why = f"{type(e).__name__}: {e}"
+        why = f"{type(e).__name__}: {e.strerror or e}"
         if why != state.waits_error:
             log(f"could not write {WAITS_FILE}: {why}")
         state.waits_error = why
@@ -2024,18 +2018,10 @@ def write_status(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def replace_file(path: Path, text: str) -> None:
-    """Replace the file whole, readable by anyone, so a reader never sees half of it."""
+    """Replace the file whole, in a folder anyone can read."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.parent.chmod(0o755)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}-")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(text)
-        os.chmod(tmp, 0o644)
-        os.replace(tmp, path)
-    except BaseException:
-        Path(tmp).unlink(missing_ok=True)
-        raise
+    telemetry.replace_file(path, text)
 
 
 def private_repos(gh: GitHubApi) -> dict[str, str]:

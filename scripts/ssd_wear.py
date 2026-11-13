@@ -14,6 +14,8 @@ import os
 import struct
 from pathlib import Path
 
+import telemetry
+
 DEVICE = "/dev/nvme0"
 OUT = Path("/var/lib/homelab-metrics/ssd.prom")
 LOG_SIZE = 512
@@ -71,10 +73,7 @@ def render(log: bytes, device: str = "nvme0") -> str:
 
 
 def write(text: str, out: Path = OUT) -> None:
-    tmp = out.with_name(out.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.chmod(0o644)
-    tmp.rename(out)
+    telemetry.replace_file(out, text)
 
 
 def main() -> None:

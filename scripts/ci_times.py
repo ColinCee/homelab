@@ -17,9 +17,7 @@ from __future__ import annotations
 import hashlib
 import http.client
 import json
-import os
 import re
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -27,6 +25,8 @@ from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+import telemetry
 
 REPO = "ColinCee/homelab"
 API = "https://api.github.com"
@@ -423,18 +423,11 @@ def send_trace(body: Json) -> None:
         pass
 
 
-def replace(path: Path, text: str, mode: int = 0o644) -> None:
-    with tempfile.NamedTemporaryFile("w", dir=path.parent, delete=False, encoding="utf-8") as f:
-        f.write(text)
-    os.chmod(f.name, mode)
-    os.replace(f.name, path)
-
-
 def main() -> int:
     state = json.loads(STATE.read_text()) if STATE.exists() else {}
 
     def keep(state: Json) -> None:
-        replace(STATE, json.dumps(state), 0o600)
+        telemetry.replace_file(STATE, json.dumps(state), 0o600)
 
     token = TOKEN_FILE.read_text().strip()
     state = poll(github(token), send_trace, state, keep, github_logs(token))
@@ -442,7 +435,7 @@ def main() -> int:
     if not state["done"]:
         return 1
     # Rewritten only after a whole pass, so its age is ci-times-stale's measure.
-    replace(OUT, metrics(state["latest"], time.time()))
+    telemetry.replace_file(OUT, metrics(state["latest"], time.time()))
     return 0
 
 

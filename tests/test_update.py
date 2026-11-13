@@ -333,6 +333,8 @@ def test_the_units_and_the_updater_run_the_same_python() -> None:
     assert len(commands) == 5
     assert {words[0] for words in commands} == {installer.PYTHON_LINK}
     assert up.SUPERVISOR[0] == installer.PYTHON_LINK
+    # -I would drop its folder, where telemetry.py is installed, from the path.
+    assert "-Es" in up.SUPERVISOR
 
     # The wrappers too; install-host.sh and update.sh repair the host, so they stay on the system's.
     wrappers = [
