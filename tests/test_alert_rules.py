@@ -55,7 +55,10 @@ def test_the_watchdog_pings_healthchecks_each_minute_and_never_posts_to_discord(
     assert {r["alert"] for r in RULES.values() if r["labels"]["level"] == "watchdog"} == {
         "watchdog"
     }
-    assert ALERTMANAGER["route"]["routes"][0] == {
+    routes = ALERTMANAGER["route"]["routes"]
+    # Only the incidents route comes before it, and it skips the watchdog.
+    assert routes[0]["matchers"] == ['alertname!="watchdog"']
+    assert routes[1] == {
         "matchers": ['alertname="watchdog"'],
         "receiver": "healthchecks",
         "group_wait": "0s",
