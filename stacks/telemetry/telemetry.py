@@ -82,6 +82,11 @@ def replace_file(path: Path, data: str | bytes, mode: int = 0o644) -> None:
         raise
 
 
+def label(text: str) -> str:
+    """Text as a metrics file's label value, escaped as Prometheus reads it."""
+    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
 SECRETS = Path("/run/secrets")
 # Cloudflare refuses Python's own.
 USER_AGENT = "homelab/1"

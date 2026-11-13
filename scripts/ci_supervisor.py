@@ -1731,8 +1731,8 @@ def write_wait_metrics(state: State, now: float) -> None:
     )
     names = {kind: f'kind="{kind}"' for kind in WAIT_KINDS}
     if stray:
-        labels = label_value(",".join(stray.unmatched))
-        names["other"] += f',repo="{label_value(stray.repo)}",labels="{labels}"'
+        labels = telemetry.label(",".join(stray.unmatched))
+        names["other"] += f',repo="{telemetry.label(stray.repo)}",labels="{labels}"'
     lines = [
         f"homelab_ci_wait_seconds{{{names[kind]}}} {round(seconds.get(kind, 0.0))}"
         for kind in WAIT_KINDS
@@ -1742,7 +1742,7 @@ def write_wait_metrics(state: State, now: float) -> None:
         key = (wait.repo, wait.workflow)
         queued[key] = max(queued.get(key, 0.0), now - wait.queued)
     lines += [
-        f'homelab_ci_queued_seconds{{repo="{label_value(repo)}",workflow="{label_value(name)}"}}'
+        f'homelab_ci_queued_seconds{{repo="{telemetry.label(repo)}",workflow="{telemetry.label(name)}"}}'
         f" {round(waited)}"
         for (repo, name), waited in sorted(queued.items())
     ]
@@ -1791,11 +1791,6 @@ def rest(state: State, seconds: float) -> None:
         time.sleep(min(left, WAIT_METRICS_SECONDS))
         if time.time() - state.wait_metrics_written >= WAIT_METRICS_SECONDS:
             write_wait_metrics(state, time.time())
-
-
-def label_value(text: str) -> str:
-    """Text as a Prometheus label value."""
-    return text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
 def wait_kind(why: str) -> str:
