@@ -236,6 +236,7 @@ services:
     image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     restart: unless-stopped
     command: ["python3", "-I", "/relay.py"]
+    init: true
     # Root in the container, with no capabilities, so it may write its state to the root-owned volume.
     read_only: true
     security_opt:

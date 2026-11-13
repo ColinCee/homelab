@@ -5,6 +5,8 @@ services:
     image: python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
     restart: unless-stopped
     command: ["python3", "-I", "/doorbell.py"]
+    # Passes SIGTERM on (docs/architecture.md, "Deploys").
+    init: true
     # Root in the container, with no capabilities: Docker creates the ring folder root-owned on first deploy,
     # before deploy-main's units exist, and only root may write to it. Do not create it by hand: owned by colin,
     # root without capabilities cannot write there, and every ring answers 500.

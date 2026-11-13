@@ -176,3 +176,10 @@ def test_an_exception_is_kept_by_its_semantic_convention_names() -> None:
     assert got["exception.type"] == "ValueError"
     assert got["exception.message"] == "bad"
     assert "raise ValueError" in str(got["exception.stacktrace"])
+
+
+def test_python_services_stop_when_asked() -> None:
+    # Python as PID 1 ignores SIGTERM, so a deploy waits 10 s and kills it (docs/architecture.md,
+    # "Deploys").
+    for name, service, _ in python_services():
+        assert service.get("init") is True, f"{name}: init: true"
