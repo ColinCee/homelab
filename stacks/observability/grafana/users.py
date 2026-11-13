@@ -4,7 +4,9 @@ Reads GRAFANA_ADMIN_USER and the secret files grafana_admin_password and agents_
 
 import base64
 import json
+import logging
 import os
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -16,6 +18,7 @@ URL = "http://grafana:3000"
 HOST = "grafana.internal"
 LOGIN = "agents"
 SECRETS = Path("/run/secrets")
+log = logging.getLogger("grafana-users")
 
 
 def secret(name: str) -> str:
@@ -66,7 +69,7 @@ def main() -> None:
         body = {"name": LOGIN, "login": LOGIN, "email": email, "password": password}
         call("POST", "/api/admin/users", body)
         user = call("GET", f"/api/users/lookup?loginOrEmail={LOGIN}")
-        print("created the agents login", flush=True)
+        log.info("created the agents login")
     # A changed secret or a hand-set role is put back. Grafana refuses to set the password it has.
     try:
         call("GET", "/api/user", auth=f"{LOGIN}:{password}")
@@ -75,8 +78,9 @@ def main() -> None:
             raise
         call("PUT", f"/api/admin/users/{user['id']}/password", {"password": password})
     call("PATCH", f"/api/org/users/{user['id']}", {"role": "Viewer"})
-    print("the agents login is a Viewer with the current password", flush=True)
+    log.info("the agents login is a Viewer with the current password")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
     main()

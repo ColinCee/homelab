@@ -10,6 +10,7 @@ their own.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -45,8 +46,7 @@ Fire = Callable[[str], str]
 FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
-def log(message: str) -> None:
-    print(f"ERROR: {message}", file=sys.stderr, flush=True)
+log = logging.getLogger("incidents")
 
 
 class Relay:
@@ -95,7 +95,7 @@ class Relay:
                 },
             )["id"]
         except FAILED as e:
-            log(f"cannot open a post for {alert['labels'].get('alertname')}: {e}")
+            log.error("cannot open a post for %s: %s", alert["labels"].get("alertname"), e)
             return False
         self.state["posts"][alert["fingerprint"]] = {
             "thread": thread,
@@ -103,6 +103,7 @@ class Relay:
             "cleared": None,
         }
         self._save()
+        log.info("opened post %s for %s", thread, alert["labels"].get("alertname"))
         self._say(thread, self._start_agent(alert, thread))
         return True
 
@@ -115,6 +116,7 @@ class Relay:
             return False
         post["cleared"] = _now().isoformat()
         self._save()
+        log.info("cleared post %s", post["thread"])
         return True
 
     def _retag(self, thread: str, tag: str, text: str) -> bool:
@@ -127,7 +129,7 @@ class Relay:
                 {"content": text, "allowed_mentions": {"parse": []}},
             )
         except FAILED as e:
-            log(f"cannot mark post {thread} {tag}: {e}")
+            log.error("cannot mark post %s %s: %s", thread, tag, e)
             return False
         return True
 
@@ -142,10 +144,11 @@ class Relay:
             url = self.fire(_snapshot(alert, f"https://discord.com/channels/{self.guild}/{thread}"))
         except FAILED as e:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
-            log(f"cannot start the on-call agent: {e}")
+            log.error("cannot start the on-call agent: %s", e)
             return "On-call agent not started: the relay could not reach its routine (see its log)."
         runs["count"] += 1
         self._save()
+        log.info("started the on-call agent: %s", url)
         return f"On-call agent: {url}"
 
     def _say(self, thread: str, text: str) -> None:
@@ -156,7 +159,7 @@ class Relay:
                 {"content": text, "allowed_mentions": {"parse": []}},
             )
         except FAILED as e:
-            log(f"cannot post in {thread}: {e}")
+            log.error("cannot post in %s: %s", thread, e)
 
     def _tags_for(self, name: str) -> dict[str, list[str]]:
         """The tag to set, or none when the forum's tags cannot be read: never an empty list,
@@ -166,10 +169,10 @@ class Relay:
                 forum = self.discord("GET", f"/channels/{self.forum}", None)
                 self._tags = {t["name"]: t["id"] for t in forum.get("available_tags", [])}
             except FAILED as e:
-                log(f"cannot read the forum's tags: {e}")
+                log.error("cannot read the forum's tags: %s", e)
                 return {}
         if name not in self._tags:
-            log(f"the forum has no {name} tag")
+            log.error("the forum has no %s tag", name)
             self._tags = None
             return {}
         return {"applied_tags": [self._tags[name]]}
@@ -337,4 +340,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
     main()

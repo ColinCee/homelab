@@ -15,6 +15,7 @@ See docs/architecture.md, "Public stats".
 
 import base64
 import json
+import logging
 import math
 import os
 import sys
@@ -54,6 +55,9 @@ QUERIES = {
 
 class StatsError(Exception):
     pass
+
+
+log = logging.getLogger("public-stats")
 
 
 def get_json(url: str, login: str | None = None) -> Any:  # noqa: ANN401 - the server's JSON
@@ -118,7 +122,7 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
     try:
         kpis = get_json(flights).get("kpis")
     except (OSError, ValueError, AttributeError) as error:
-        print(f"ERROR: flight tracker: {error}", file=sys.stderr)
+        log.error("flight tracker: %s", error)
         kpis = None
     return build_body(results, kpis, time.time())
 
@@ -162,10 +166,11 @@ def main() -> None:
         except Exception as error:
             # Anything odd in a response skips one push, not the process.
             # HTTPError's message says why the Worker refused.
-            print(f"ERROR: push failed: {error!r}", file=sys.stderr)
+            log.exception("push failed: %r", error)
             wait = RETRY_S
         time.sleep(wait)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
     main()

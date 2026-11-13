@@ -1,3 +1,4 @@
+import logging
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -212,8 +213,9 @@ def test_seeding_with_no_snapshot_writes_nothing(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("restored", [True, False])
 def test_restore_test_passes_only_when_the_file_comes_back(
-    tmp_path: Path, restored: bool, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, restored: bool, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.INFO)
     restic = Restic(restore=(1, ""))  # restic fails to chown even when the file is restored
     if restored:
         restic.on_restore = tmp_path / "tmp/restore-test/data/home-assistant/configuration.yaml"
@@ -224,9 +226,8 @@ def test_restore_test_passes_only_when_the_file_comes_back(
         "--include", "/data/home-assistant/configuration.yaml",
     ]  # fmt: skip
     assert not (tmp_path / "tmp/restore-test").exists()
-    out = capsys.readouterr()
-    assert ("restore test ok" in out.out) is restored
-    assert ("restore test FAILED" in out.err) is not restored
+    [record] = [r for r in caplog.records if r.getMessage().startswith("restore test")]
+    assert record.levelno == (logging.INFO if restored else logging.ERROR)
 
 
 def test_an_unknown_mode_is_a_usage_error(tmp_path: Path) -> None:

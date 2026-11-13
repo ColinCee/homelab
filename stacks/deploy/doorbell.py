@@ -6,7 +6,9 @@ a ring only makes the deployer fetch main from GitHub, so a forged one deploys n
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,6 +17,7 @@ RING = Path(os.environ.get("RING_FILE", "/ring/rung"))
 PORT = 8080
 # GitHub's push payloads; read only so closing the socket does not reset the reply away.
 BODY_MAX = 1 << 20
+log = logging.getLogger("doorbell")
 
 
 class Doorbell(BaseHTTPRequestHandler):
@@ -31,7 +34,7 @@ class Doorbell(BaseHTTPRequestHandler):
             # Its content changes, so PathModified fires even on a bind mount.
             RING.write_text(f"{time.time()}\n", encoding="utf-8")
         except OSError as e:
-            print(f"ERROR: cannot ring: {e}", flush=True)
+            log.error("cannot ring: %s", e)
             self._answer(500)
             return
         self._answer(202)
@@ -52,4 +55,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
     main()
