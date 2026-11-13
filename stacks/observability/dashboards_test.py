@@ -169,7 +169,7 @@ def test_the_map_names_whom_each_call_reached() -> None:
         '"<listener>" as target',
         '"<host>" as target',
     ]
-    alloy = (Path(__file__).parent.parent / "stacks/observability/config.alloy").read_text("utf-8")
+    alloy = (STACK / "config.alloy").read_text("utf-8")
     assert 'set(attributes[\\"peer.service\\"]' in alloy
     # A failed call is one the server failed, as the tables count server spans: OBI fails a
     # client span on any 4xx, such as the 403 the probes expect from home.internal.

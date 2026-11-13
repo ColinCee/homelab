@@ -525,7 +525,7 @@ discovery.relabel "peers" {
 }
 
 // Alloy has no map over a list, and its generally available functions read a target only as text: printed, the
-// targets are JSON but for `=` between key and value and a space between targets. tests/test_alloy.py runs this on
+// targets are JSON but for `=` between key and value and a space between targets. alloy_test.py runs this on
 // an Alloy of the image's version. A statement that fails is skipped, so a span is never dropped.
 otelcol.processor.transform "peers" {
   error_mode = "ignore"
