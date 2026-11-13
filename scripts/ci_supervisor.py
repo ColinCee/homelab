@@ -2000,7 +2000,9 @@ def drain_and_test(slots: int, keep: Callable[[bool, bool, str], None]) -> int:
         ) as proc:
             assert proc.stdout is not None
             for out in proc.stdout:
-                log(out.rstrip("\n"))
+                if out.strip():
+                    level = logging.ERROR if out.startswith("FAIL ") else logging.INFO
+                    logging.getLogger("ci-supervisor").log(level, out.rstrip("\n"))
                 if out.startswith(("PASS ", "FAIL ")):
                     line = out.strip()
         code = proc.returncode

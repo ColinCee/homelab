@@ -192,15 +192,28 @@ def host_scripts() -> set[str]:
     units = [*ROOT.glob("ci-runner/systemd/*.service"), *STACKS.glob("*/systemd/*.service")]
     for unit in units:
         for line in re.findall(r"^ExecStart\S*=(.*)$", unit.read_text(encoding="utf-8"), re.M):
+            if "docker exec" in line:
+                continue  # a container's, which test_python_services_log_... checks
             for target in re.findall(r"(\S+\.(?:py|sh))\b", line):
                 name = target.rsplit("/", 1)[-1]
-                source = next(p for p in [*ROOT.glob(f"*/**/{name}")] if ".git" not in p.parts)
+                sources = [p for p in ROOT.glob(f"*/**/{name}") if ".git" not in p.parts]
+                assert len(sources) == 1, f"{unit.name}: {name} is {sources}"
+                source = sources[0]
                 if name.endswith(".sh"):
-                    wrapped = re.search(r"(\w+\.py)", source.read_text(encoding="utf-8"))
+                    text = source.read_text(encoding="utf-8")
+                    wrapped = re.search(r"^exec .*?(\w+\.py)", text, re.M)
                     assert wrapped, source
                     source = source.with_name(wrapped.group(1))
                 found.add(source.relative_to(ROOT).as_posix())
     return found
+
+
+def starts_telemetry_when_run(tree: ast.Module) -> bool:
+    for node in tree.body:
+        if isinstance(node, ast.If) and "__main__" in ast.unparse(node.test):
+            called = {ast.unparse(n.func) for n in ast.walk(node) if isinstance(n, ast.Call)}
+            return "telemetry.start" in called
+    return False
 
 
 def test_host_scripts_log_through_the_telemetry_module() -> None:
@@ -215,7 +228,4 @@ def test_host_scripts_log_through_the_telemetry_module() -> None:
             assert printed, f"{name} prints no more: drop it from OWN_OUTPUT"
             continue
         assert not printed, f"{name}: log through telemetry, not print"
-        started = [f for f in calls if isinstance(f, ast.Attribute) and f.attr == "start"]
-        assert any(isinstance(f.value, ast.Name) and f.value.id == "telemetry" for f in started), (
-            f"{name}: call telemetry.start()"
-        )
+        assert starts_telemetry_when_run(tree), f"{name}: call telemetry.start() under __main__"

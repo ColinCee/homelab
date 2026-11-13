@@ -261,7 +261,7 @@ loki.process "docker" {
   }
 
   // Each line's level, for the programs that cannot log JSON: uvicorn (`INFO:`), CoreDNS (`[INFO]`), Home Assistant
-  // (`<date> <time> WARNING (`). A JSON line keeps its own, whatever its text says.
+  // (`<date> <time> WARNING (`), and a journal line written so. A JSON line keeps its own, whatever its text says.
   stage.match {
     selector = "{container_name=~\".+\"} !~ \"^[{]\""
 
