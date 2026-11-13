@@ -161,7 +161,7 @@ def annotation(text: str) -> str:
 
 
 def slowest_tests() -> int:
-    """Post the slowest tests (tests/conftest.py) as an annotation, for run-times/ci_times.py."""
+    """Post the slowest tests (conftest.py) as an annotation, for run-times/ci_times.py."""
     times = Path(os.environ["RUNNER_TEMP"]) / "test-times.json"
     if times.exists():
         print(f"::notice title=slowest tests::{annotation(times.read_text(encoding='utf-8'))}")

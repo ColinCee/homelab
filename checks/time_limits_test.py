@@ -1,4 +1,4 @@
-"""CI's time limits (tests/conftest.py): a slow test or run is named, and only past its limit."""
+"""CI's time limits (conftest.py): a slow test or run is named, and only past its limit."""
 
 import conftest
 

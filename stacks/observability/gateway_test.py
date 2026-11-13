@@ -65,7 +65,7 @@ def store(name: str) -> http.server.ThreadingHTTPServer:
 def run_gateway(port: int, upstreams: dict[str, int], **passwords: str) -> subprocess.Popen[bytes]:
     """The gateway's own start script and Caddy, with the stores at local stand-ins; Caddy's log
     is `caddy.log` beside its secrets. The container's limits are compose.yaml's
-    (tests/test_observability_compose.py)."""
+    (stacks/observability/observability_compose_test.py)."""
     secrets = Path(tempfile.mkdtemp(dir=SECRETS.name))
     LOGS.append(secrets / "caddy.log")
     for name, password in passwords.items():

@@ -193,7 +193,7 @@ def test_python_services_stop_when_asked() -> None:
 ROOT = STACKS.parent
 # Host programs that print rather than log, and why.
 OWN_OUTPUT = {
-    # The installer side imports nothing from the checkout (tests/test_install_host.py).
+    # The installer side imports nothing from the checkout (ci-runner/install_host_test.py).
     "ci-runner/update.py",
     # Installed under net/, apart from the module, and run before anything else is set up.
     "ci-runner/net/setup_net.py",

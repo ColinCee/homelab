@@ -28,6 +28,9 @@ FOLDERS = {
 TODO_FOLDERS: set[str] = set()
 TODO_UNITS: set[str] = set()
 
+# Top-level folders the layout removed: a path still naming one is stale, though no file is there.
+REMOVED = {"apt", "scripts", "systemd", "tests"}
+
 # Named in docs, but kept on the host, not in git.
 HOST_ONLY = {"stacks/home-assistant/config"}
 
@@ -129,7 +132,7 @@ def test_a_unit_sits_beside_the_program_it_runs() -> None:
 
 def path_pattern() -> re.Pattern[str]:
     """A repo path: a top-level folder, then more, and not the tail of a longer path."""
-    tops = sorted({p.split("/")[0] for p in paths() if "/" in p} | FOLDERS.keys())
+    tops = sorted({p.split("/")[0] for p in paths() if "/" in p} | FOLDERS.keys() | REMOVED)
     either = "|".join(map(re.escape, tops))
     return re.compile(rf"(?<![\w./~%-])((?:{either})/[\w./-]*\w)")
 

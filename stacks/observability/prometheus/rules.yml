@@ -8,7 +8,7 @@
 # series. A metrics file going stale or missing is its promise's alert (slos.yml, generated into slos.rules.yml), so a
 # rule here reads only the file's values; "Beelink metrics stopped" covers Alloy's own. `keep_firing_for` is the
 # 10-minute hold: a return inside it is the same alert. A new alert that a promise can say goes in slos.yml.
-# Tests: tests/test_alert_rules.py, which runs them with promtool.
+# Tests: stacks/observability/alert_rules_test.py, which runs them with promtool.
 
 groups:
   - name: homelab

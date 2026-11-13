@@ -69,7 +69,7 @@ def test_timer_work_runs_below_the_services() -> None:
 
 
 def test_units_write_metrics_files_only_through_telemetry() -> None:
-    # A shell's `> file.tmp && mv` is replace_file done a second way (tests/test_telemetry.py).
+    # A shell's `> file.tmp && mv` is replace_file done a second way (telemetry_test.py).
     for unit in UNITS:
         for key, values in settings(unit).items():
             if key.startswith("Exec"):

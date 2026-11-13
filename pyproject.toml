@@ -39,6 +39,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 [tool.pytest.ini_options]
 # Each test sits beside what it tests (AGENTS.md); the host checks in host-tests/ are not pytest.
 python_files = ["*_test.py"]
+# pytest's default skips every dot folder, .github's action tests too; .claude holds other checkouts.
+norecursedirs = [".git", ".venv", ".claude", ".mise", ".*_cache", "__pycache__", "node_modules"]
 # Tests import checks/ and stacks/ as packages, and host programs and telemetry by name, whichever way pytest is
 # started.
 pythonpath = [

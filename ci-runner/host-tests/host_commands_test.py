@@ -10,7 +10,7 @@ from conftest import ROOT
 
 CI_RUNNER = ROOT / "ci-runner"
 # Each keeps its own copy: the installer and what it installs must run with nothing from the
-# checkout (tests/test_install_host.py), and setup_net.py is installed apart, under net/.
+# checkout (ci-runner/install_host_test.py), and setup_net.py is installed apart, under net/.
 OWN_COPY = {"install_host.py", "update.py", "vm_disks.py", "setup_net.py"}
 MISSING = "/nonexistent/program"
 

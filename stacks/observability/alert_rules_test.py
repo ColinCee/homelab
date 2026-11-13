@@ -588,7 +588,7 @@ def fresh_cases(slo: slos.Slo) -> dict[str, tuple[Any, ...]]:
 
 
 def outage_cases(slo: slos.Slo) -> dict[str, tuple[Any, ...]]:
-    """A good-minutes promise replays a real outage's series (tests/incidents)."""
+    """A good-minutes promise replays a real outage's series (alert-replays/)."""
     outage = json.loads((INCIDENTS / f"{slo.alert}.json").read_text(encoding="utf-8"))
     series = []
     for s in outage["series"]:
@@ -598,7 +598,7 @@ def outage_cases(slo: slos.Slo) -> dict[str, tuple[Any, ...]]:
             seen = v is not None
         series.append((s["series"], " ".join(values)))
     checks = [at(m, slo.alert, *([posts(slo.alert, v)] if v else [])) for m, v in outage["checks"]]
-    return {f"{slo.alert}: its outage in tests/incidents fires": (series, checks)}
+    return {f"{slo.alert}: its outage in alert-replays fires": (series, checks)}
 
 
 INCIDENTS = Path(__file__).parent / "alert-replays"
