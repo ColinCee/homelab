@@ -56,7 +56,7 @@ WRITABLE = {
     # A tmpfs would hide the image's packages; a volume would keep old ones past an image update.
     "home-assistant/homeassistant": (
         "installs the wiser custom integration's requirement (aioWiserHeatAPI) into the image's "
-        "/usr/local/lib/python3.14/site-packages at each start"
+        "/usr/local/lib/python3.*/site-packages when its container is created"
     ),
     "observability/obi": "the tracing work's service (stacks/observability/obi/): convert it there",
 }
