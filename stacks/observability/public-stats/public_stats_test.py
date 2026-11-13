@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Any
 
 import public_stats
+import public_stats_key
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 from public_stats import STACKS, StatsError, build_body, signed
 
 from conftest import stacks as compose_stacks
@@ -89,3 +90,11 @@ def test_a_login_logs_in_to_the_prometheus_api_only(
     query, flights = sent
     assert query.unredirected_hdrs["Authorization"] == "Basic c3RhdHNAaG9tZWxhYi5pbnRlcm5hbDpwdw=="
     assert flights.get_header("Authorization") is None
+
+
+def test_a_rotated_key_is_the_file_the_service_reads(tmp_path: Path) -> None:
+    out = tmp_path / "public_stats_key"
+    public = public_stats_key.main(out)
+    # As public_stats.main loads it, and the blog checks it with the printed half.
+    key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(out.read_text().strip()))
+    Ed25519PublicKey.from_public_bytes(bytes.fromhex(public)).verify(key.sign(b"x"), b"x")

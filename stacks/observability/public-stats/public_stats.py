@@ -130,7 +130,7 @@ def main() -> None:
     prometheus = os.environ["PROMETHEUS_URL"]
     flights = os.environ["FLIGHTS_URL"]
     url = os.environ["PUBLIC_STATS_URL"]
-    # The only copy of the private key is the PUBLIC_STATS_KEY GitHub secret.
+    # Beelink's secrets/public_stats_key; its one other copy is in Bitwarden (public_stats_key.py).
     key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
     while True:
