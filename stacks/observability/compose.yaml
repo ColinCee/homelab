@@ -420,6 +420,9 @@ services:
     image: otel/ebpf-instrument:v1.0.0@sha256:a68d70e934260f72540f157ccf4fb4adfa38f11de060d7d905696dad6a3fca02
     profiles: [obi]
     restart: unless-stopped
+    # It writes nothing to its own files (`docker diff` showed only its config's mount point); its maps live in the
+    # kernel.
+    read_only: true
     privileged: true
     pid: host
     # It holds about 150 MiB, most of it its maps' kernel memory, but reading every program at start reached the old
