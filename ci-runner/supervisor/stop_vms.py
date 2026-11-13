@@ -23,7 +23,7 @@ def stop_vms(host: Host) -> int:
             if action() is False:
                 raise RuntimeError("something stayed")
         except Exception as e:
-            print(f"stop-vms: {name}: {e}", file=sys.stderr)
+            print(f"stop_vms: {name}: {e}", file=sys.stderr)
             failed = True
 
     def kill_cgroups() -> None:

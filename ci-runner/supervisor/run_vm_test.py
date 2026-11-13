@@ -513,7 +513,7 @@ def test_stop_vms_carries_on_past_a_failed_step_and_says_so(
     status = stop_vms.stop_vms(dataclasses.replace(host, run=no_systemctl))
 
     assert status == 1
-    assert "stop-vms: stop units: systemctl" in capsys.readouterr().err
+    assert "stop_vms: stop units: systemctl" in capsys.readouterr().err
     assert len(run.ran("dmsetup remove")) == 3
     assert not jail.parent.exists()
 

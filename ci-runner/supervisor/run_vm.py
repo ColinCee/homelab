@@ -386,7 +386,7 @@ def main(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Signa
             print(e.message, file=sys.stderr, flush=True)
         return e.status
     except OSError as e:
-        print(f"run-vm: {e}", file=sys.stderr, flush=True)
+        print(f"run_vm: {e}", file=sys.stderr, flush=True)
         return 1
 
 

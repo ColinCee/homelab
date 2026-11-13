@@ -207,7 +207,7 @@ VM_WAITS_MAX = 50
 # slot count and version of the test (docs/architecture.md, "CI runner"). Its
 # result goes in the status file and in each VM at /etc/homelab-ci/load-test.json.
 LOAD_TEST_FILE = Path("/var/lib/homelab-ci/load-test.json")
-# Run and hashed itself, not its wrapper, so a change to the test makes a new version.
+# Hashed itself, so a change to the test makes a new version.
 LOAD_TEST_SCRIPT = Path("/usr/local/lib/homelab-ci/test_load.py")
 LOAD_TEST_UNIT = "homelab-ci-load-test.service"
 # While this file exists no VM starts and the standbys stop, so the test has the host to itself.
