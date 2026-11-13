@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from stacks.backup.backup import Backup, seconds_until
+from stacks.backup.backup import SUMMARY_FIELDS, Backup, seconds_until
 
 SUNDAY = datetime(2026, 11, 15, 2, 30, 5, tzinfo=UTC)
 MONDAY = datetime(2026, 11, 16, 2, 30, 5, tzinfo=UTC)
@@ -21,7 +21,11 @@ class Restic:
 
     def __init__(self, **answers: tuple[int, str]) -> None:
         self.calls: list[list[str]] = []
-        self.answers = {"stats": (0, STATS), "dry-run": (0, DRY_RUN)} | answers
+        self.answers = {
+            "stats": (0, STATS),
+            "dry-run": (0, DRY_RUN),
+            "backup": (0, DRY_RUN.replace("1.2", "61.5")),
+        } | answers
         self.on_restore: Path | None = None
 
     def __call__(
@@ -132,6 +136,33 @@ def test_a_failed_step_is_recorded_and_fails_the_run(
     assert not (tmp_path / "metrics/backup.prom").exists()
     if step == "cap":
         assert not restic.ran("backup")  # nothing is uploaded past the cap
+
+
+@pytest.mark.parametrize(
+    ("answer", "fields"),
+    [
+        pytest.param(
+            None,
+            {"files_new": 2, "data_added": 500, "total_duration": 61.5, "exit_code": 0},
+            id="summary",
+        ),
+        pytest.param((1, "Fatal: unable to open repository\n"), {"exit_code": 1}, id="none"),
+    ],
+)
+def test_a_runs_bytes_and_files_are_fields_of_its_log_line(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    answer: tuple[int, str] | None,
+    fields: dict[str, object],
+) -> None:
+    caplog.set_level(logging.INFO)
+    restic = Restic(**({"backup": answer} if answer else {}))
+    make(tmp_path, restic).main(["once"])
+    assert restic.ran("backup")[0][-2:] == ["--json", "--quiet"]
+    [record] = [r for r in caplog.records if r.getMessage() == "backup uploaded"]
+    keys = {*SUMMARY_FIELDS, "exit_code", "message_type"}
+    logged = {k: v for k, v in vars(record).items() if k in keys}
+    assert logged == fields  # restic's own keys, never its message_type
 
 
 def test_the_cap_allows_a_run_that_reaches_it_exactly(tmp_path: Path) -> None:

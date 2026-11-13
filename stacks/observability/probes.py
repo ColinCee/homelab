@@ -1,5 +1,7 @@
 """Checks Home Assistant and the .internal names each minute and writes the results where Alloy's
-textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prometheus/rules.yml.
+textfile collector reads them (/var/lib/homelab-metrics), for the alerts in prometheus/rules.yml;
+and when the blog's homelab numbers were last published, a dashboard number. Stale numbers need no
+alert of their own: a failing push turns public-stats unhealthy (compose.yaml), which alerts.
 
 It runs on the host's network: the Beelink's firewall admits only Tailscale and loopback, so a
 container on a Docker network cannot reach the services on the host's network."""
@@ -14,6 +16,7 @@ import telemetry
 
 ADDRESS = "100.100.146.119"
 OUT = Path("/metrics/probes.prom")
+BLOG_STATS = "https://colincheung.dev/homelab.json"
 
 
 def http_status(url: str, host: str | None = None) -> int:
@@ -57,19 +60,31 @@ def checks() -> dict[str, bool]:
     }
 
 
-def write(results: dict[str, bool], now: float) -> None:
+def published_at(url: str = BLOG_STATS) -> int | None:
+    """The `at` of the numbers the blog serves (public_stats.py), or None when unreadable."""
+    try:
+        at = telemetry.http_json(url, timeout=10).get("at")
+    except OSError, ValueError, AttributeError:
+        return None
+    return at if isinstance(at, int) and not isinstance(at, bool) else None
+
+
+def write(results: dict[str, bool], now: float, published: int | None = None) -> None:
     lines = [
         "# HELP homelab_probe_success 1 when the check passed (stacks/observability/probes.py)."
     ]
     lines += [f'homelab_probe_success{{target="{t}"}} {int(ok)}' for t, ok in results.items()]
-    lines += [f"homelab_probe_timestamp_seconds {now:.0f}", ""]
+    lines += [f"homelab_probe_timestamp_seconds {now:.0f}"]
+    if published is not None:
+        lines += [f"homelab_public_stats_published_timestamp_seconds {published}"]
+    lines += [""]
     telemetry.replace_file(OUT, "\n".join(lines))
 
 
 def main() -> None:
     while True:
         started = time.time()
-        write(checks(), started)
+        write(checks(), started, published_at())
         time.sleep(max(1.0, 60 - (time.time() - started)))
 
 
