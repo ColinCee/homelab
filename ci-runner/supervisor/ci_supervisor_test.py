@@ -1255,17 +1255,6 @@ def test_an_unwritable_wait_metrics_file_is_logged_once(
     assert len(lines) == 1 and lines[0].startswith("could not write")
 
 
-def test_each_reason_has_a_kind_of_wait() -> None:
-    assert sup.wait_kind("memory (0 MiB free above the 3072 MiB reserve, a VM needs 2048)") == (
-        "memory"
-    )
-    assert sup.wait_kind("the disk (tasks waited on it 90% of the last minute)") == "disk"
-    assert sup.wait_kind("all 5 build slots in use") == "slots"
-    assert sup.wait_kind(sup.BOOTING) == "booting"
-    assert sup.wait_kind(sup.READY) == "ready"
-    assert sup.wait_kind("no VM has its labels (homelab-fc, gpu)") == "other"
-
-
 def test_waits_over_30_days_old_are_pruned_once_an_hour(waits_file: Path) -> None:
     day = 24 * 3600.0
     now = 100 * day
@@ -1996,7 +1985,12 @@ def test_a_vm_is_told_how_long_its_queued_jobs_waited_and_why(
     monkeypatch.setattr(sup, "start_vm", lambda run, timeout, env: None)
     monkeypatch.setattr(sup, "log", lambda line: None)
     state = sup.State()
-    sup.note_waits(state, ["o/ok"], {7: ("o/ok", "all 2 build slots in use")}, 100.0)
+    sup.note_waits(
+        state,
+        ["o/ok"],
+        {7: sup.Reason("o/ok", "all 2 build slots in use", sup.WaitKind.SLOTS)},
+        100.0,
+    )
     sup.launch(Registers(), state, "o/ok", 0, 340.0, cache=None, jobs=[9, 7])
     metadata = json.loads((tmp_path / "metadata-slot0.json").read_text())
     assert metadata["waits"] == {
