@@ -3,6 +3,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.16.0@sha256:e04987641b57704f408e31f6373ba4138ecf27cb4a165d24aabb6c38fddd0f06
     restart: unless-stopped
+    read_only: true
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
@@ -43,6 +44,7 @@ services:
   logs:
     image: victoriametrics/victoria-logs:v1.53.0@sha256:251121fa882af99b95ba0c230a4a2f412ea602d2698c64a96c58dc9842bb755d
     restart: unless-stopped
+    read_only: true
     command:
       - -storageDataPath=/vlogs
       - -loggerFormat=json
@@ -70,6 +72,7 @@ services:
   traces:
     image: victoriametrics/victoria-traces:v0.13.0@sha256:3018df8f99429d7d3029167ab9f70848bf0a778c31c49dff16c86c7e34759fbd
     restart: unless-stopped
+    read_only: true
     command:
       - -storageDataPath=/vtraces
       - -loggerFormat=json
@@ -305,6 +308,7 @@ services:
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
     restart: unless-stopped
+    mem_limit: 1g
     # Its image's own user, with no capabilities and no host folder but what it reads, so it can read no host file
     # that is not open to every user; in the journal's group on the Beelink (systemd-journal, 999).
     user: "473:473"
@@ -419,6 +423,7 @@ services:
   docker-socket-proxy:
     image: linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
+    mem_limit: 64m
     # Not root: the socket's group (docker, 1001 on the Beelink) is all it needs.
     user: "65534:1001"
     security_opt:
@@ -510,6 +515,7 @@ services:
     # would run with the signing key.
     pull_policy: build
     restart: unless-stopped
+    mem_limit: 64m
     command: ["python", "-I", "/public_stats.py"]
     # Passes SIGTERM on (docs/architecture.md, "Deploys").
     init: true

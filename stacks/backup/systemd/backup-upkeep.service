@@ -8,5 +8,7 @@ Type=oneshot
 ExecStart=/usr/bin/docker image prune -af --filter until=168h
 ExecStart=/usr/bin/docker builder prune -af --filter until=168h
 ExecStart=/usr/bin/docker exec backup python3 -I /backup.py restore-test
-# The result's time, for the Monthly upkeep failed alert. `$$` and `%%` keep systemd from expanding them.
-ExecStopPost=/bin/sh -c 'result=failure; [ "$$SERVICE_RESULT" = success ] && result=success; file=/var/lib/homelab-metrics/upkeep-$$result.prom; printf "homelab_upkeep_last_%%s_timestamp_seconds %%s\n" "$$result" "$$(date +%%s)" > "$$file.tmp" && mv "$$file.tmp" "$$file"'
+# The result's time, for the Monthly upkeep failed alert.
+ExecStopPost=/usr/bin/python3 -I %h/code/homelab/stacks/backup/unit_metrics.py upkeep
+# Above the prunes and a test restore.
+TimeoutStartSec=3h

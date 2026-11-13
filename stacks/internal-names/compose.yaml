@@ -3,6 +3,8 @@ services:
   dns:
     image: coredns/coredns:1.15.0@sha256:0a9d8c8ddf34347eb59aad9a8784f0710de88d6d112726d11d271f9bc6daca26
     restart: unless-stopped
+    read_only: true
+    mem_limit: 128m
     security_opt:
       - no-new-privileges:true
     command: ["-conf", "/etc/coredns/Corefile"]
@@ -18,6 +20,7 @@ services:
   proxy:
     image: caddy:2.11.9@sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c
     restart: unless-stopped
+    mem_limit: 128m
     security_opt:
       - no-new-privileges:true
     # On the host network, Docker's default NET_RAW would let it capture the host's traffic;
