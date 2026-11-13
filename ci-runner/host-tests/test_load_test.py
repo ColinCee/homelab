@@ -74,7 +74,7 @@ def make_host(
         root=root,
         sleep=sleep,
         clock=lambda: clock[0],
-        env={"SLOTS": "3", "RUN_VM": "/lib/run-vm.sh"},
+        env={"SLOTS": "3", "RUN_VM": "/lib/run_vm.py"},
         is_root=lambda: True,
     )
     return host, started
@@ -93,7 +93,7 @@ def test_every_vm_booted_and_every_answer_quick_passes(
     assert out.splitlines()[-1] == (
         "PASS 3 slots: every VM booted and finished, no request failed, worst response within 1s"
     )
-    assert [c[:2] for c in started] == [["/lib/run-vm.sh", str(n)] for n in range(3)]
+    assert [c[:2] for c in started] == [["/lib/run_vm.py", str(n)] for n in range(3)]
     assert started[0][3] == "140"  # the burn's seconds and two minutes to boot and stop
     assert "slot 2: held 1900 MiB, burned and exited" in out
     assert "loaded Grafana: median 0.012s, worst 0.012s at 9s, 0 failed" in out

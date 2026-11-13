@@ -1,6 +1,6 @@
 #!/usr/local/bin/homelab-python3 -Es
 """Prove the image's tools run for a job, after building the image:
-  sudo ci-runner/host-tests/test-tools.sh
+  sudo ci-runner/host-tests/test_tools.py
 with the supervisor stopped, since it needs slot 0 free.
 Boots a VM in slot 0 and runs each tool as the runner user, with the PATH
 ci-boot gives the runner. Exits non-zero if any fails.
@@ -20,7 +20,7 @@ from pathlib import Path
 
 from host_commands import start_process
 
-RUN_VM = "/usr/local/lib/homelab-ci/run-vm.sh"
+RUN_VM = "/usr/local/lib/homelab-ci/run_vm.py"
 # Expands inside the VM, not here. The Docker check builds with BuildKit (RUN --mount),
 # publishes a port and fetches the page.
 PROBE = r'''mkdir -p /tmp/dc && cat > /tmp/dc/Dockerfile <<EOF

@@ -9,8 +9,8 @@ Wants=docker.service network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh up
-ExecStop=/usr/local/lib/homelab-ci/net/setup-net.sh down
+ExecStart=/usr/local/lib/homelab-ci/net/setup_net.py up
+ExecStop=/usr/local/lib/homelab-ci/net/setup_net.py down
 TimeoutStartSec=5min
 
 [Install]

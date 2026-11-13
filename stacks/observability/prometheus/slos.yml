@@ -55,7 +55,7 @@ slos:
     harm: CI-host installs, new Tailscale devices and SSH logins go unseen while it is stopped.
     action: >-
       Check `systemctl status homelab-security-facts.service` on the Beelink; it starts with `sudo
-      ci-runner/install-host.sh`.
+      ci-runner/install_host.py`.
 
   - alert: main-deploy-stopped
     level: now
@@ -86,7 +86,7 @@ slos:
     harm: A wearing SSD would go unnoticed.
     action: >-
       Check `systemctl status homelab-ssd-wear.service` and `systemctl list-timers homelab-ssd-wear.timer` on the
-      Beelink; it starts with `sudo ci-runner/install-host.sh`.
+      Beelink; it starts with `sudo ci-runner/install_host.py`.
 
   - alert: ci-times-stale
     level: week
@@ -97,7 +97,7 @@ slos:
     harm: A slower CI or deploy would go unnoticed, and no run is traced.
     action: >-
       Check `systemctl status homelab-ci-times.service` and `journalctl -u homelab-ci-times` on the Beelink; it
-      starts with `sudo ci-runner/install-host.sh`.
+      starts with `sudo ci-runner/install_host.py`.
 
   - alert: backup-missed
     level: week

@@ -1,6 +1,6 @@
 #!/usr/local/bin/homelab-python3 -Es
 """Check that a VM in every slot at full tilt leaves the services responsive:
-  sudo ci-runner/host-tests/test-load.sh [SECONDS]
+  sudo ci-runner/host-tests/test_load.py [SECONDS]
 Boots a VM in every slot at the size the supervisor gives a job when others run
 (2 vCPUs, 2 GiB), each burning all its CPUs and holding nearly all its memory,
 while timing Home Assistant and Grafana once a second against a quiet baseline.
@@ -31,7 +31,7 @@ DEFAULT_SLOTS = 5
 QUIET_SECONDS = 15
 # vm_size in ci_supervisor.py for a job started while others run.
 VM_SIZE = {"VCPUS": "2", "MEM_MIB": "2048"}
-RUN_VM = "/usr/local/lib/homelab-ci/run-vm.sh"
+RUN_VM = "/usr/local/lib/homelab-ci/run_vm.py"
 SERVICES = (("Home Assistant", ":8123/"), ("Grafana", ":5080/healthz"))
 
 
@@ -81,7 +81,7 @@ class Samples:
 
 
 def slot_count(env: Mapping[str, str], root: Path) -> int:
-    """The host's slot count (/etc/homelab-ci/slots, which install-host.sh writes); an
+    """The host's slot count (/etc/homelab-ci/slots, which install_host.py writes); an
     explicit SLOTS wins. 5 when neither is a number, at least 1, as in ci_supervisor.py."""
     text = env.get("SLOTS", "")
     if not text:

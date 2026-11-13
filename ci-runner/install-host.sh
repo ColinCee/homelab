@@ -1,4 +1,4 @@
 #!/bin/sh
-# The stable path to install_host.py, which the docs and older update.sh copies run. -I keeps Python from reading
-# PYTHON* variables, as it runs as root.
+# Only for the Beelink's updater from before install_host.py ran by its own path, which runs this
+# once from the new checkout; delete it once the Beelink has installed that.
 exec /usr/bin/python3 -I "$(dirname "$0")/install_host.py" "$@"

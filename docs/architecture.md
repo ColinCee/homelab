@@ -63,12 +63,12 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
   VMs run at CPU weight 20 against the services' 100. How long runs take: [`ci_times.py`](../ci-runner/run-times/ci_times.py) traces each run and alerts
   when main slows.
 - Changes go in by merging: `homelab-ci-update.timer` installs main within minutes; running jobs carry on
-  ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install-host.sh`, after which
+  ([`update.py`](../ci-runner/update.py)). Slots, standby VMs and the memory reserve live in `/etc/homelab-ci/`; slots change only through `SLOTS=<n> install_host.py`, after which
   the host load-tests the count. Run any wait on the Beelink as a named systemd unit, never a loop on your own SSH
   connection.
 - Host units run `homelab-python3`, the `mise.toml` Python, which `install_host.py` links after a hash check. It and
   `update.py` stay on the system's 3.12 to repair it, as do the deploy scripts, which need its `python3-yaml`.
-- [`audit.sh`](../ci-runner/host-tests/audit.sh) gates every Firecracker, kernel or runner upgrade.
+- [`audit.py`](../ci-runner/host-tests/audit.py) gates every Firecracker, kernel or runner upgrade.
 
 ## Monitoring and alerts
 

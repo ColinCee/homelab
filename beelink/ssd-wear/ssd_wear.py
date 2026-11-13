@@ -2,7 +2,7 @@
 """Write the host SSD's lifetime bytes and wear to ssd.prom for the textfile collector.
 
 Reads the NVMe health log (log page 0x02) with an admin ioctl, so it runs as root and
-needs nothing installed. Installed by ci-runner/install-host.sh and run every 15 minutes
+needs nothing installed. Installed by ci-runner/install_host.py and run every 15 minutes
 by homelab-ssd-wear.timer. On any error the old file stays and the unit fails.
 """
 

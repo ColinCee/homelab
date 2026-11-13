@@ -6,12 +6,12 @@ repository of Colin's that its token can see (a repository signs up by being add
 the token's repository access in GitHub, nothing on the host) and on the public ones in
 PUBLIC_REPOS, whose VMs take only Colin's own jobs. For each job it asks
 GitHub for a just-in-time runner registration (good for exactly one job) and boots a
-VM with run-vm.sh, which receives that registration through Firecracker's metadata
+VM with run_vm.py, which receives that registration through Firecracker's metadata
 service. The GitHub token stays on
 the host; a VM only ever sees its one-job registration. A repository that is not
 Colin's, or public and not listed, is never served. See docs/architecture.md, "CI runner".
 
-Installed root-owned by ci-runner/install-host.sh and run by homelab-ci-supervisor.service.
+Installed root-owned by ci-runner/install_host.py and run by homelab-ci-supervisor.service.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ ASK_THREADS = 16
 # the standby goes back to them. Older versions wrote the repo alone.
 LAST_REPO_FILE = Path("/var/lib/homelab-ci/last-repo")
 TOKEN_FILE = Path("/etc/homelab-ci/github-token")
-RUN_VM = Path("/usr/local/lib/homelab-ci/run-vm.sh")
+RUN_VM = Path("/usr/local/lib/homelab-ci/run_vm.py")
 STATE_DIR = Path("/run/homelab-ci")
 # Each running VM is a systemd unit of its own (homelab-ci-vm-<runner name>), so it outlives a
 # restart of this supervisor; its record here, written before it starts, lets a restarted
@@ -93,7 +93,7 @@ UNIT_PREFIX = "homelab-ci-vm-"
 CGROUP_ROOT = Path("/sys/fs/cgroup/firecracker")
 API_HOST = "api.github.com"
 API = f"https://{API_HOST}"
-# How many VMs run at once, read from /etc/homelab-ci/slots at start-up. install-host.sh
+# How many VMs run at once, read from /etc/homelab-ci/slots at start-up. install_host.py
 # writes it and makes that many slot users and taps, so the three always match. A job
 # alone gets 4 GiB and each one started beside it 2 GiB (see vm_size), so N slots use
 # up to 2 + 2N GiB on paper. The default 5 (12 GiB on paper) fits the 16 GiB host because
@@ -220,7 +220,7 @@ DRAIN_LOOK_SECONDS = 10
 MIN_TESTED_SLOTS = 3
 # A test that did not run (jobs outlasted the drain, or the script broke) is tried again after this.
 LOAD_TEST_RETRY_SECONDS = 6 * 3600
-# update.sh's lock: no install or image build adds load while the test runs.
+# update.py's lock: no install or image build adds load while the test runs.
 UPDATE_LOCK = Path("/run/homelab-ci-update.lock")
 
 
@@ -949,7 +949,7 @@ def adopt(state: State) -> None:
 
 
 def vm_main(argv: list[str]) -> int:
-    """`vm SLOT METADATA TIMEOUT [--memory FILE]`: run-vm.sh's console reader, the main process
+    """`vm SLOT METADATA TIMEOUT [--memory FILE]`: run_vm.py's console reader, the main process
     of the VM's unit. It reads the console to the end (a full pipe would stall the VM), keeps
     the latest memory line in FILE, and exits with run_vm.py's code: 128 + the signal when a stop
     ended it, as a shell reports it (a negative code would read as 241 and fail the unit)."""
@@ -1524,7 +1524,7 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
     draining = DRAIN_FILE.exists()
     if state.draining and not draining:
         # A failed load test lowers the count while no VM runs; never raised here, as more
-        # slots need install-host.sh's users and taps.
+        # slots need install_host.py's users and taps.
         state.slots = min(state.slots, slot_count())
     state.draining = draining
     free = [slot for slot in range(state.slots) if slot not in state.launches and not draining]
@@ -1945,7 +1945,7 @@ def load_test_due(record: Mapping[str, object] | None, slots: int, test: str, no
 
 
 def start_load_test_if_due() -> int:
-    """`start-load-test-if-due`, from update.sh: start LOAD_TEST_UNIT when the test is due."""
+    """`start-load-test-if-due`, from update.py: start LOAD_TEST_UNIT when the test is due."""
     try:
         test = file_hash(LOAD_TEST_SCRIPT)
     except OSError as e:
@@ -2137,7 +2137,7 @@ def standby_first(repos: list[str], last: str) -> list[str]:
     return [last, *(r for r in repos if r != last)] if last in repos else repos
 
 
-# The commit install-host.sh last installed (ci-runner/update.sh writes it).
+# The commit install_host.py last installed (ci-runner/update.py writes it).
 COMMIT_FILE = Path("/etc/homelab-ci/commit")
 
 

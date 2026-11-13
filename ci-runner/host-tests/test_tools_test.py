@@ -23,11 +23,11 @@ def run(console: str, capsys: pytest.CaptureFixture[str]) -> tuple[int, str, dic
     sent: dict[str, str] = {}
 
     def boot(command: list[str], log: Path, env: Mapping[str, str]) -> None:
-        assert command[0] == "/stub/run-vm.sh" and command[1:2] == ["0"]
+        assert command[0] == "/stub/run_vm.py" and command[1:2] == ["0"]
         sent.update(json.loads(Path(command[2]).read_text()))
         log.write_text(console)
 
-    host = tools.Host(boot=boot, env={"RUN_VM": "/stub/run-vm.sh"}, is_root=lambda: True)
+    host = tools.Host(boot=boot, env={"RUN_VM": "/stub/run_vm.py"}, is_root=lambda: True)
     code = tools.main(host)
     assert isinstance(code, int)
     return code, capsys.readouterr().out, sent
@@ -60,7 +60,7 @@ def test_a_failed_or_uncounted_tool_fails(
 
 def test_a_busy_slot_fails_and_says_why(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     linux_only("runs a script by its #! line")
-    run_vm = tmp_path / "run-vm.sh"  # what run-vm.sh does when a job holds slot 0
+    run_vm = tmp_path / "run_vm.py"  # what run_vm.py does when a job holds slot 0
     run_vm.write_text('#!/usr/bin/env bash\necho "slot $1 is busy" >&2\nexit 75\n')
     run_vm.chmod(0o755)
     host = tools.Host(env={"RUN_VM": str(run_vm)}, is_root=lambda: True)

@@ -252,8 +252,8 @@ def test_a_failure_at_any_stage_cleans_up_and_says_how_it_ended(
 @pytest.mark.parametrize(
     ("failing", "status", "message"),
     [
-        (str(run_vm.HERE / "net" / "setup-net.sh"), 1, "public address not blocked"),
-        ("nft", 1, "fc-slot3 is not in the network wall; run setup-net.sh up"),
+        (str(run_vm.HERE / "net" / "setup_net.py"), 1, "public address not blocked"),
+        ("nft", 1, "fc-slot3 is not in the network wall; run setup_net.py up"),
     ],
 )
 def test_without_the_network_wall_no_vm_starts_and_nothing_is_cleared(

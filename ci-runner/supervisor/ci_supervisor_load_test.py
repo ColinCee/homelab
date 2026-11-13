@@ -1,4 +1,4 @@
-"""The Beelink's own load test: when update.sh starts it, the drain around it, and its result."""
+"""The Beelink's own load test: when update.py starts it, the drain around it, and its result."""
 
 import json
 from pathlib import Path

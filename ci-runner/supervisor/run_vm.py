@@ -1,6 +1,7 @@
+#!/usr/local/bin/homelab-python3 -Es
 """Boot one throwaway microVM in a slot, feed it a task through MMDS, wait for it to finish, and
 delete everything it wrote:
-    sudo run-vm.sh SLOT METADATA_JSON [TIMEOUT_SECONDS]
+    sudo run_vm.py SLOT METADATA_JSON [TIMEOUT_SECONDS]
 The guest console is printed to stdout. The jailer runs Firecracker as the slot's own user,
 chrooted, with a syscall filter, under cgroup limits.
 """
@@ -33,7 +34,7 @@ from vm_disks import (
     written_bytes,
 )
 
-USAGE = "usage: run-vm.sh SLOT METADATA_JSON [TIMEOUT]"
+USAGE = "usage: run_vm.py SLOT METADATA_JSON [TIMEOUT]"
 HERE = Path(__file__).parent
 # 6 GiB for the tar (CACHE_MAX_UNPACKED_BYTES in ci_supervisor.py) and its header.
 OUTBOX_BYTES = 6 * 1024 * 1024 * 1024 + 1024 * 1024
@@ -421,12 +422,12 @@ def run_vm(argv: Sequence[str], env: Mapping[str, str], host: Host, signals: Sig
 
     lock = lock_slot(host, n)
     # Block the home's current public address; refuse to start without it.
-    if checked.run([str(HERE / "net" / "setup-net.sh"), "wan"]).returncode != 0:
+    if checked.run([str(HERE / "net" / "setup_net.py"), "wan"]).returncode != 0:
         raise Failed(1, "public address not blocked")
     # And refuse a slot user the network wall does not cover (homelab-ci.nft, slot_uids).
     wall = ["nft", "get", "element", "inet", "homelab_ci", "slot_uids", f"{{ {job.uid} }}"]
     if checked.run(wall, quiet=True).returncode != 0:
-        raise Failed(1, f"{user} is not in the network wall; run setup-net.sh up")
+        raise Failed(1, f"{user} is not in the network wall; run setup_net.py up")
 
     # Cleaning up never stops for a signal, so it runs on the unchecked host.
     cleanup(Slot(n, host), None)

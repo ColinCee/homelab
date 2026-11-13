@@ -8,7 +8,7 @@ successful run's job seconds, by kind (main or pr), go to ci-times.prom for Prom
 ci-slower alert.
 
 Neither CI host can reach the observability stack, so this asks GitHub, with the CI supervisor's
-token. Installed by ci-runner/install-host.sh and run every 5 minutes by homelab-ci-times.timer.
+token. Installed by ci-runner/install_host.py and run every 5 minutes by homelab-ci-times.timer.
 See docs/architecture.md, "CI runner".
 """
 

@@ -38,7 +38,7 @@ class Host:
         self.origin = tmp / "origin"
         self.origin.mkdir()
         git(self.origin, "init", "-q")
-        self.first = commit(self.origin, "README.md", "start")
+        self.first = commit(self.origin, "ci-runner/install_host.py", "start")
         for d in ("etc/homelab-ci", "var/lib/homelab-ci/images", "run"):
             (self.root / d).mkdir(parents=True)
         subprocess.run([*GIT, "clone", "-q", str(self.origin), str(self.src)], check=True)
@@ -85,9 +85,9 @@ class Host:
             )
         self.calls.append(command)
         name = Path(command[-1]).name if command[0] != "timeout" else "ls-remote"
-        if name in ("install-host.sh", "build-rootfs.sh"):
+        if name in ("install_host.py", "build-rootfs.sh"):
             self.seen.append(self.installed)
-        if name == "install-host.sh":
+        if name == "install_host.py":
             self.calls[-1] = [*command, f"REASON={(env or {}).get('REASON')}"]
         out = git(self.origin, "rev-parse", "HEAD").strip() + "\trefs/heads/main\n"
         code = self.codes.get(name, 0)
@@ -115,9 +115,20 @@ def test_a_change_outside_the_host_code_installs_nothing(host: Host) -> None:
 
     assert host.update(want) == 0
 
-    assert host.ran("install-host.sh") == []
+    assert host.ran("install_host.py") == []
     assert host.ran("build-rootfs.sh") == []
     assert host.installed == want
+
+
+def test_a_commit_from_before_the_python_installer_runs_the_shell_one(host: Host) -> None:
+    host.at(host.first)
+    git(host.origin, "rm", "-q", "ci-runner/install_host.py")
+    want = commit(host.origin, "ci-runner/install-host.sh", "The shell installer (#1)")
+
+    assert host.update(want) == 0
+
+    assert host.ran("install_host.py") == []
+    assert len(host.ran("install-host.sh")) == 1
 
 
 def test_a_change_to_the_host_code_installs_with_its_pull_requests_as_the_reason(
@@ -126,11 +137,11 @@ def test_a_change_to_the_host_code_installs_with_its_pull_requests_as_the_reason
     host.at(host.first)
     commit(host.origin, "ci-runner/run-times/ci_times.py", "Times (#12)")
     commit(host.origin, "stacks/x/compose.yaml", "A stack (#13)")
-    want = commit(host.origin, "ci-runner/supervisor/run-vm.sh", "VMs; rm -rf / `x` (#14)")
+    want = commit(host.origin, "ci-runner/supervisor/run_vm.py", "VMs; rm -rf / `x` (#14)")
 
     assert host.update(want) == 0
 
-    [install] = host.ran("install-host.sh")
+    [install] = host.ran("install_host.py")
     assert install[-1] == "REASON=homelab #14 #12"
     assert [c[:3] for c in host.ran("logger")] == [["logger", "-t", "homelab-ci-update"]]
     assert host.ran("logger")[0][-1] == f"installed commit={want} author=Colin"
@@ -144,7 +155,7 @@ def test_a_given_reason_is_cut_to_plain_characters(host: Host) -> None:
 
     assert host.update(want, "Colin: $(reboot); fix #3") == 0
 
-    assert host.ran("install-host.sh")[0][-1] == "REASON=Colin: (reboot) fix #3"
+    assert host.ran("install_host.py")[0][-1] == "REASON=Colin: (reboot) fix #3"
 
 
 def test_a_change_to_the_image_inputs_rebuilds_it_after_the_install(host: Host) -> None:
@@ -153,7 +164,7 @@ def test_a_change_to_the_image_inputs_rebuilds_it_after_the_install(host: Host) 
 
     assert host.update(want) == 0
 
-    assert host.ran("install-host.sh") and host.ran("build-rootfs.sh")
+    assert host.ran("install_host.py") and host.ran("build-rootfs.sh")
     assert host.ran("build-rootfs.sh")[0][:5] == ["nice", "-n", "10", "ionice", "-c3"]
     assert host.built == want
     assert host.seen == [host.first, host.first]
@@ -166,21 +177,21 @@ def test_an_image_never_built_is_built_on_the_installed_commit(host: Host) -> No
 
     assert host.update(host.first) == 0
 
-    assert host.ran("build-rootfs.sh") and host.ran("install-host.sh") == []
+    assert host.ran("build-rootfs.sh") and host.ran("install_host.py") == []
     assert host.built == host.first
 
 
 def test_a_failed_install_keeps_the_old_commit_and_gives_up_after_two(host: Host) -> None:
     host.at(host.first)
     want = commit(host.origin, "ci-runner/rootfs/Dockerfile", "Image (#30)")
-    host.codes["install-host.sh"] = 1
+    host.codes["install_host.py"] = 1
     now = time.time()
 
     assert host.update(want, now=now) == 1
     assert host.update(want, now=now) == 1
     assert host.update(want, now=now + 60) == 0
 
-    assert len(host.ran("install-host.sh")) == 2
+    assert len(host.ran("install_host.py")) == 2
     assert host.ran("build-rootfs.sh") == []
     assert host.installed == host.first
     assert (host.root / "var/lib/homelab-ci/update-failed").read_text().split()[:2] == [want, "2"]
@@ -200,21 +211,21 @@ def test_a_failed_image_gives_up_after_two_and_jobs_keep_the_old_one(
 
     assert len(host.ran("build-rootfs.sh")) == 2
     assert host.built == host.first
-    assert host.ran("install-host.sh") == []
+    assert host.ran("install_host.py") == []
     assert "jobs keep the old one" in capsys.readouterr().out
 
 
 def test_a_change_that_gave_up_is_tried_again_an_hour_later(host: Host) -> None:
     host.at(host.first)
     want = commit(host.origin, "ci-runner/supervisor/ci_supervisor.py", "x")
-    host.codes["install-host.sh"] = 1
+    host.codes["install_host.py"] = 1
     host.update(want, now=1000)
     host.update(want, now=1000)
-    host.codes["install-host.sh"] = 0
+    host.codes["install_host.py"] = 0
 
     assert host.update(want, now=1000 + 3600) == 0
 
-    assert len(host.ran("install-host.sh")) == 3
+    assert len(host.ran("install_host.py")) == 3
     assert host.installed == want
 
 
@@ -300,26 +311,24 @@ def test_no_argument_is_a_usage_error(host: Host) -> None:
     assert host.update() == 1
 
 
-@pytest.mark.skipif(
-    not Path("/usr/bin/python3").exists(), reason="the wrapper runs /usr/bin/python3"
-)
 def test_the_installed_copy_runs_alone(tmp_path: Path) -> None:
+    linux_only("it runs by its #! line, on /usr/bin/python3")
     # Installed alone in /usr/local/lib/homelab-ci: an import from the checkout would fail there.
-    for name in ("update.py", "update.sh"):
-        shutil.copy(CI_RUNNER / name, tmp_path / name)
+    shutil.copy(CI_RUNNER / "update.py", tmp_path / "update.py")
 
     result = subprocess.run(
-        ["sh", str(tmp_path / "update.sh")], cwd=tmp_path, capture_output=True, text=True
+        [str(tmp_path / "update.py")], cwd=tmp_path, capture_output=True, text=True
     )
 
     assert result.returncode == 1
-    message = "update.sh: usage:" if os.geteuid() == 0 else "run with sudo"
+    message = "update.py: usage:" if os.geteuid() == 0 else "run with sudo"
     assert result.stderr.startswith(message), result.stderr
 
 
-def test_the_units_and_the_updater_run_the_same_python() -> None:
-    # install_host.py makes the link; a unit or SUPERVISOR naming another python3 would run the
-    # repo's code on the host's 3.12, or fail where the link is missing.
+def test_the_units_the_updater_and_every_script_run_the_right_python() -> None:
+    # install_host.py makes the link; a unit, SUPERVISOR or script naming another python3 would run
+    # the repo's code on the host's 3.12, or fail where the link is missing. The installer and the
+    # updater repair the host, so they stay on the system's.
     spec = importlib.util.spec_from_file_location(
         "install_host_link", CI_RUNNER / "install_host.py"
     )
@@ -330,21 +339,40 @@ def test_the_units_and_the_updater_run_the_same_python() -> None:
         line.split("=", 1)[1].split()
         for unit in units()
         for line in unit.read_text().splitlines()
-        if line.startswith("ExecStart=") and "/usr/local/lib/homelab-ci/" in line and ".py" in line
+        if line.startswith(("ExecStart=", "ExecStop="))
+        and "/usr/local/lib/homelab-ci/" in line
+        and ".py" in line
     ]
-    assert len(commands) == 5
-    assert {words[0] for words in commands} == {installer.PYTHON_LINK}
+    by_link = [words for words in commands if words[0] == installer.PYTHON_LINK]
+    assert len(by_link) == 5
     assert up.SUPERVISOR[0] == installer.PYTHON_LINK
     # -I would drop its folder, where telemetry.py is installed, from the path.
     assert "-Es" in up.SUPERVISOR
 
-    # The wrappers too; install-host.sh and update.sh repair the host, so they stay on the system's.
+    # From git's index, so the executable bit is checked on Windows too. The VM image has no
+    # homelab-python3, so its scripts are not.
+    listed = git(ROOT, "ls-files", "-s", "--", "ci-runner", ":(exclude)ci-runner/rootfs")
+    executable = {line.split("\t")[1] for line in listed.splitlines() if line.startswith("100755")}
+    scripts = sorted(path for path in executable if path.endswith(".py"))
+    system = {"ci-runner/install_host.py", "ci-runner/update.py"}
+    assert system <= set(scripts)
+    for path in scripts:
+        with (ROOT / path).open(encoding="utf-8") as f:
+            first = f.readline().rstrip("\n")
+        want = "#!/usr/bin/python3 -I" if path in system else f"#!{installer.PYTHON_LINK} -Es"
+        assert first == want, path
+    # A unit that runs a script by its path runs one of these.
+    for words in commands:
+        if words[0] != installer.PYTHON_LINK:
+            name = Path(words[0]).name
+            assert any(Path(s).name == name for s in scripts), words[0]
+    # Shell wrappers that only start a Python script are gone, apart from the stand-in.
     wrappers = [
-        line.split()[1]
+        script.name
         for script in CI_RUNNER.glob("**/*.sh")
-        if script.name not in ("install-host.sh", "update.sh")
-        for line in script.read_text().splitlines()
-        if line.startswith("exec ") and ".py" in line
+        if any(
+            line.startswith("exec ") and ".py" in line
+            for line in script.read_text(encoding="utf-8").splitlines()
+        )
     ]
-    assert len(wrappers) == 8
-    assert set(wrappers) == {installer.PYTHON_LINK}
+    assert wrappers == ["install-host.sh"]
