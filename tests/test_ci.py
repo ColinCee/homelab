@@ -103,9 +103,11 @@ def test_the_pull_request_rules_all_run_and_any_failure_fails_the_step(
     assert ran == names
 
 
-def test_only_an_agent_branch_is_held_to_its_scope(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_only_the_on_call_agents_branch_is_held_to_its_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(ci, "run_base_rule", lambda script: 1)
-    monkeypatch.setenv("GITHUB_HEAD_REF", "fix-disk-alert")
-    assert ci.agent_scope() == 0
     monkeypatch.setenv("GITHUB_HEAD_REF", "claude/fix-disk-alert")
+    assert ci.agent_scope() == 0
+    monkeypatch.setenv("GITHUB_HEAD_REF", ci.ONCALL_BRANCH)
     assert ci.agent_scope() == 1
