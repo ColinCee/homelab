@@ -283,12 +283,14 @@ services:
     volumes:
       - ./gateway/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./gateway/start.sh:/etc/caddy/start.sh:ro
-    # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks.
+    # Reads the stores and Alertmanager; reached by Grafana and public stats on their own networks, and by the on-call
+    # agent through the tunnel behind Cloudflare Access (docs/architecture.md, "Incidents").
     networks:
       - stores
       - alerting
       - grafana
       - public-stats
+      - read
 
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
@@ -544,6 +546,10 @@ networks:
   incidents:
     internal: true
   incidents-out:
+  # The tunnel's way to the gateway, for the on-call agent; owned here, as otlp, so this stack deploys first.
+  read:
+    name: observability-read
+    internal: true
   # Prometheus's scrape of the probe.
   probe:
     internal: true

@@ -36,7 +36,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   reaching-homelab-devices skill.
 - Public only through the [tunnel](../stacks/tunnel/compose.yaml), an outbound connection: routes set in Cloudflare's
   dashboard take `api.colincheung.dev` to `backend:8000` and `deploy.colincheung.dev/ring` to `doorbell:8080` on the
-  `tunnel` network, which has no way out. Filtering belongs at Cloudflare.
+  `tunnel` network, which has no way out; `observe.colincheung.dev` to the gateway, behind Cloudflare Access.
 - Docker's bridge containers and the CI VMs reach the internet, not the host, LAN or tailnet: two nftables tables in
   [`homelab-ci.nft`](../ci-runner/net/homelab-ci.nft). A service that needs
   the host uses host networking, as Home Assistant, the probes and `internal-names` do.
@@ -98,8 +98,9 @@ its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post throug
 | `week` | Something is running out or slipping | No mention, again daily |
 
 **Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert one #incidents post and
-starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)). Nothing reaches in:
-the routine reaches only GitHub, where it opens draft pull requests.
+starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)), which reads the
+gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin and merges only fixes that run
+no code ([`agent_scope.py`](../scripts/agent_scope.py)), a guard against mistakes, not against his login.
 
 - A rule fires after its `for` and clears after 10 minutes clear; a return inside them is the same alert. "Cleared"
   means the number recovered.

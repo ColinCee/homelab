@@ -14,11 +14,13 @@ services:
       - tunnel_token
     labels:
       homelab.config-hash: ${CONFIG_HASH_CLOUDFLARED:-}
-    # default: its way out to Cloudflare; tunnel: the services it publishes.
+    # default: its way out to Cloudflare; tunnel: the services it publishes; observability-read: the gateway, for the
+    # on-call agent.
     networks:
       - default
       - tunnel
       - observability-otlp
+      - observability-read
 
 # Files on the Beelink, copied from Bitwarden (docs/recovery.md).
 secrets:
@@ -32,4 +34,6 @@ networks:
     internal: true
   # Owned by the observability stack; deploy it first on a fresh host.
   observability-otlp:
+    external: true
+  observability-read:
     external: true

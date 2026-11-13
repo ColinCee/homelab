@@ -49,6 +49,12 @@ def test_only_alertmanager_reaches_the_incidents_relay() -> None:
     assert "ports" not in SERVICES["incidents"]
 
 
+def test_the_tunnel_reaches_only_the_gateway_here() -> None:
+    # The on-call agent's way in, behind Cloudflare Access: the gateway's read paths, nothing else.
+    assert members("read") == {"gateway"}
+    assert COMPOSE["networks"]["read"] == {"name": "observability-read", "internal": True}
+
+
 def test_programs_that_send_traces_reach_alloy_alone() -> None:
     assert members("otlp") == {"alloy", "obi"}
     assert COMPOSE["networks"]["otlp"]["internal"] is True
