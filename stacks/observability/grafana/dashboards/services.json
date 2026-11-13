@@ -1893,8 +1893,8 @@
     {
       "id": 18,
       "type": "table",
-      "title": "Setup failures, 7 days",
-      "description": "Home Assistant's log lines for an integration or platform that failed to set up, was not ready, could not log in, or could not add an entity, each with how often and when last. Its Prometheus endpoint has no integration state, so this reads the logs.",
+      "title": "Setup failures",
+      "description": "Home Assistant's log lines for an integration or platform that failed to set up, was not ready, could not log in, or could not add an entity, each with how often and when last, in the time range (pick a longer one for more). Its Prometheus endpoint has no integration state, so this reads the logs.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "logs"
@@ -1906,7 +1906,7 @@
             "uid": "logs"
           },
           "refId": "A",
-          "expr": "_time:7d container_name:=\"homeassistant\" (\"Error setting up entry\" or \"Setup failed for\" or \"not ready yet\" or \"could not authenticate\" or \"Error during setup of component\" or \"Unable to prepare setup\" or \"Unable to set up dependencies\" or \"Error while setting up\" or \"Error adding entity\") | uniq by (_time, _msg) | unpack_json from _msg fields (msg) | format if (msg:=\"\") \"<_msg>\" as msg | extract_regexp `\\] (?P<line>.{0,100})` from msg | replace_regexp (\"[0-9]+ seconds\", \"# seconds\") at line | stats by (line) count() as lines, max(_time) as last | sort by (last desc) limit 20",
+          "expr": "container_name:=\"homeassistant\" (\"Error setting up entry\" or \"Setup failed for\" or \"not ready yet\" or \"could not authenticate\" or \"Error during setup of component\" or \"Unable to prepare setup\" or \"Unable to set up dependencies\" or \"Error while setting up\" or \"Error adding entity\") | uniq by (_time, _msg) | unpack_json from _msg fields (msg) | format if (msg:=\"\") \"<_msg>\" as msg | extract_regexp `\\] (?P<line>.{0,100})` from msg | replace_regexp (\"[0-9]+ seconds\", \"# seconds\") at line | stats by (line) count() as lines, max(_time) as last | sort by (last desc) limit 20",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 20
