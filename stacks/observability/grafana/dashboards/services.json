@@ -1280,6 +1280,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "ci-jobs-not-starting"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "new-container"
             },
             "properties": [
