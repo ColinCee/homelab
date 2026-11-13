@@ -10,6 +10,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,34 @@ HOST = "grafana.internal"
 LOGIN = "agents"
 SECRETS = Path("/run/secrets")
 log = logging.getLogger("grafana-users")
+
+
+# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
+# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
+# copy; tests/test_json_logs.py keeps them the same.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class JsonLines(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        line: dict[str, object] = {
+            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
+        if record.exc_info and record.exc_info[1]:
+            line["exception.type"] = type(record.exc_info[1]).__name__
+            line["exception.message"] = str(record.exc_info[1])
+            line["exception.stacktrace"] = self.formatException(record.exc_info)
+        return json.dumps(line, default=str)
+
+
+def log_json() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 def secret(name: str) -> str:
@@ -82,5 +111,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
+    log_json()
     main()

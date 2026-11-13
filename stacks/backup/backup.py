@@ -64,6 +64,34 @@ class Run(Protocol):
 log = logging.getLogger("backup")
 
 
+# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
+# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
+# copy; tests/test_json_logs.py keeps them the same.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class JsonLines(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        line: dict[str, object] = {
+            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
+        if record.exc_info and record.exc_info[1]:
+            line["exception.type"] = type(record.exc_info[1]).__name__
+            line["exception.message"] = str(record.exc_info[1])
+            line["exception.stacktrace"] = self.formatException(record.exc_info)
+        return json.dumps(line, default=str)
+
+
+def log_json() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+
+
 def run(
     command: list[str], *, stdout: int | None = None, stderr: int | None = None
 ) -> subprocess.CompletedProcess[str]:
@@ -143,7 +171,7 @@ class Backup:
             temporary.write_text(f"{metric} {value}\n")
             os.replace(temporary, file)
         except OSError:
-            log.error("could not write %s", name)
+            log.error("could not write a metrics file", extra={"file": name})
 
     def timestamp(self) -> int:
         return int(self.now().timestamp())
@@ -166,15 +194,13 @@ class Backup:
         )
         pending = json_number(summary, "data_added")
         if stored is None or pending is None:
-            log.error("backup SKIPPED: could not measure repository or upload size")
+            log.error("backup skipped: could not measure the repository or upload size")
             return False
         limit = self.max_bytes()
         if stored + pending > limit:
             log.error(
-                "backup SKIPPED: %s bytes stored + %s new would exceed the %s byte cap",
-                stored,
-                pending,
-                limit,
+                "backup skipped: it would exceed the byte cap",
+                extra={"stored_bytes": stored, "new_bytes": pending, "cap_bytes": limit},
             )
             return False
         return True
@@ -199,7 +225,7 @@ class Backup:
         size = self.repo_bytes()
         if size is None:
             return
-        log.info("repository size: %s bytes of %s allowed", size, self.max_bytes())
+        log.info("repository measured", extra={"size_bytes": size, "cap_bytes": self.max_bytes()})
         self.write_metric(SIZE_FILE, "homelab_backup_repository_bytes", size)
 
     def run_backup(self) -> str | None:
@@ -219,7 +245,7 @@ class Backup:
     def report(self) -> int:
         step = self.run_backup()
         if step is not None:
-            log.error("backup FAILED at %s", step)
+            log.error("backup failed", extra={"step": step})
             self.record_failure(step)
             return 1
         log.info("backup ok")
@@ -229,7 +255,10 @@ class Backup:
         try:
             self.path(FAILURE_FILE).unlink(missing_ok=True)
         except OSError as error:
-            log.error("could not remove %s: %s", FAILURE_FILE, error)
+            log.error(
+                "could not remove the failure file",
+                extra={"file": str(FAILURE_FILE), "error": str(error)},
+            )
         return 0
 
     def record_failure(self, step: str) -> None:
@@ -267,15 +296,17 @@ class Backup:
         restored = target / RESTORE_FILE.lstrip("/")
         passed = restored.is_file() and restored.stat().st_size > 0
         if passed:
-            log.info("restore test ok: %s", RESTORE_FILE)
+            log.info("restore test ok", extra={"file": str(RESTORE_FILE)})
         else:
-            log.error("restore test FAILED: could not restore %s", RESTORE_FILE)
+            log.error(
+                "restore test failed: could not restore the file", extra={"file": str(RESTORE_FILE)}
+            )
         shutil.rmtree(target, ignore_errors=True)
         return 0 if passed else 1
 
     def loop(self, sleep: Callable[[float], None] = time.sleep) -> None:
         if not self.seed_metric():
-            log.error("could not seed %s", METRICS_FILE)
+            log.error("could not seed the metrics file", extra={"file": str(METRICS_FILE)})
         self.path("/tmp/ready").touch()
         if not self.path(SIZE_FILE).is_file():
             self.record_size()
@@ -284,8 +315,8 @@ class Backup:
             # A crash records a failure and waits for the next night, rather than ending the loop.
             try:
                 self.report()
-            except Exception as error:
-                log.exception("backup FAILED: %r", error)
+            except Exception:
+                log.exception("backup crashed")
                 self.record_failure("crash")
 
     def main(self, argv: Sequence[str]) -> int:
@@ -310,5 +341,5 @@ class Backup:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
+    log_json()
     sys.exit(Backup().main(sys.argv[1:]))

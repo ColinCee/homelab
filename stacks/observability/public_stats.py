@@ -22,6 +22,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,34 @@ class StatsError(Exception):
 
 
 log = logging.getLogger("public-stats")
+
+
+# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
+# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
+# copy; tests/test_json_logs.py keeps them the same.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class JsonLines(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        line: dict[str, object] = {
+            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
+        if record.exc_info and record.exc_info[1]:
+            line["exception.type"] = type(record.exc_info[1]).__name__
+            line["exception.message"] = str(record.exc_info[1])
+            line["exception.stacktrace"] = self.formatException(record.exc_info)
+        return json.dumps(line, default=str)
+
+
+def log_json() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 def get_json(url: str, login: str | None = None) -> Any:  # noqa: ANN401 - the server's JSON
@@ -122,7 +151,7 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
     try:
         kpis = get_json(flights).get("kpis")
     except (OSError, ValueError, AttributeError) as error:
-        log.error("flight tracker: %s", error)
+        log.error("cannot read the flight tracker", extra={"error": str(error)})
         kpis = None
     return build_body(results, kpis, time.time())
 
@@ -163,14 +192,14 @@ def main() -> None:
             # The healthcheck: fresh while pushes succeed.
             HEARTBEAT.touch()
             wait = EVERY_S
-        except Exception as error:
+        except Exception:
             # Anything odd in a response skips one push, not the process.
             # HTTPError's message says why the Worker refused.
-            log.exception("push failed: %r", error)
+            log.exception("push failed")
             wait = RETRY_S
         time.sleep(wait)
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
+    log_json()
     main()

@@ -55,6 +55,11 @@ LINES = [
     ("2026-11-13T13:35:21.384Z\twarn\tVictoriaTraces/app/logsql.go:1178\tslow", "logsql", "warn"),
     ('INFO:     192.168.96.2:55072 - "GET /aircraft HTTP/1.1" 200 OK', "aircraft", "info"),
     ("ERROR: cannot ring: timed out", "ring", "error"),
+    (
+        '{"time": "2026-11-13T13:35:30.000+00:00", "level": "ERROR", "msg": "cannot post"}',
+        "post",
+        "error",
+    ),
     ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
     ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
     ('{"level":"warn","logger":"http.log","msg":"handled request"}', "handled", "warn"),

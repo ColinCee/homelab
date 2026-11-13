@@ -6,10 +6,12 @@ a ring only makes the deployer fetch main from GitHub, so a forged one deploys n
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
 import time
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -18,6 +20,34 @@ PORT = 8080
 # GitHub's push payloads; read only so closing the socket does not reset the reply away.
 BODY_MAX = 1 << 20
 log = logging.getLogger("doorbell")
+
+
+# One JSON object per line, under the names of OpenTelemetry's log data model, which Alloy reads
+# (config.alloy, loki.process "docker"). Each service runs alone with `python -I`, so each has a
+# copy; tests/test_json_logs.py keeps them the same.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class JsonLines(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        line: dict[str, object] = {
+            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        line.update((k, v) for k, v in vars(record).items() if k not in _RECORD_FIELDS)
+        if record.exc_info and record.exc_info[1]:
+            line["exception.type"] = type(record.exc_info[1]).__name__
+            line["exception.message"] = str(record.exc_info[1])
+            line["exception.stacktrace"] = self.formatException(record.exc_info)
+        return json.dumps(line, default=str)
+
+
+def log_json() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 class Doorbell(BaseHTTPRequestHandler):
@@ -34,7 +64,7 @@ class Doorbell(BaseHTTPRequestHandler):
             # Its content changes, so PathModified fires even on a bind mount.
             RING.write_text(f"{time.time()}\n", encoding="utf-8")
         except OSError as e:
-            log.error("cannot ring: %s", e)
+            log.error("cannot ring", extra={"error": str(e)})
             self._answer(500)
             return
         self._answer(202)
@@ -55,5 +85,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(levelname)s: %(message)s")
+    log_json()
     main()
