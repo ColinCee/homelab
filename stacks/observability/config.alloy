@@ -244,11 +244,6 @@ loki.process "docker" {
     }
   }
 
-  // The same, as `trace_id=` in a plain line, where OBI writes it (obi/obi.yaml, log_enricher).
-  stage.regex {
-    expression = "(?:^|\\s)trace_id=(?P<trace_id>[0-9a-f]{32})(?:\\s+span_id=(?P<span_id>[0-9a-f]{16}))?"
-  }
-
   // The NULs OBI leaves where it took a line to write it again with its trace.
   stage.drop {
     expression = "^[\\x00\\s]*$"
@@ -260,14 +255,11 @@ loki.process "docker" {
     replace    = ""
   }
 
-  // Each line's level, for the programs that cannot log JSON: uvicorn (`INFO:`), CoreDNS (`[INFO]`), Home Assistant
+  // Each line's level, for the programs that cannot log JSON: CoreDNS (`[INFO]`), Home Assistant
   // (`<date> <time> WARNING (`), and a journal line written so. A JSON line keeps its own, whatever its text says.
   stage.match {
     selector = "{container_name=~\".+\"} !~ \"^[{]\""
 
-    stage.regex {
-      expression = "^(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL):"
-    }
     stage.regex {
       expression = "^\\[(?P<level>DEBUG|INFO|WARNING|ERROR|FATAL)\\] "
     }
