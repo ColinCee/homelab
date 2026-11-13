@@ -89,7 +89,7 @@ reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
-its "Cleared". [Rules](../stacks/observability/prometheus/rules.yml) post through
+its "Cleared". [Rules](../stacks/observability/prometheus/) post through
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) and the relay to Discord's #incidents.
 Alertmanager has no port (its API takes silences without a login): `docker exec observability-alertmanager-1 amtool alert query
 --alertmanager.url=http://localhost:9093`.
