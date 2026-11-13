@@ -7,6 +7,7 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-remote-write-receiver
+      - --log.format=json
       # One heavy query must not take its memory, and the alerts with it: about 160 MB of samples, a minute, four at a
       # time.
       - --query.max-samples=10000000
@@ -44,6 +45,7 @@ services:
     restart: unless-stopped
     command:
       - -storageDataPath=/vlogs
+      - -loggerFormat=json
       - -retentionPeriod=30d
       # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
       - -inmemoryDataFlushInterval=1s
@@ -70,6 +72,7 @@ services:
     restart: unless-stopped
     command:
       - -storageDataPath=/vtraces
+      - -loggerFormat=json
       # The default is 7 days.
       - -retentionPeriod=30d
       - -inmemoryDataFlushInterval=1s
@@ -135,6 +138,7 @@ services:
       GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
       GF_PUBLIC_DASHBOARDS_ENABLED: "false"
       GF_LOG_LEVEL: warn
+      GF_LOG_CONSOLE_FORMAT: json
       # Its plugins are in its image (grafana.Dockerfile).
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
       # Go grows its heap to twice what is live by default.
@@ -202,6 +206,7 @@ services:
       - --storage.path=/alertmanager
       # One instance: no peers to gossip with.
       - --cluster.listen-address=
+      - --log.format=json
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -349,7 +354,7 @@ services:
   blackbox:
     image: prom/blackbox-exporter:v0.29.1-distroless@sha256:4d6d2d50ecabf3a0b10e8f6f5c4b14fc0c2326dcc2f7fe161668de722d5bf61e
     restart: unless-stopped
-    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    command: ["--config.file=/etc/blackbox/blackbox.yml", "--log.format=json"]
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -381,6 +386,7 @@ services:
     mem_limit: 512m
     environment:
       OTEL_EBPF_CONFIG_PATH: /etc/obi/obi.yaml
+      OTEL_EBPF_LOG_FORMAT: json
       OTEL_EBPF_METRICS_FEATURES: application
       OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy:4318
       OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
@@ -461,6 +467,7 @@ services:
       - --storage.agent.path=/agent
       # Its default, 9090, would be on the host's every address.
       - --web.listen-address=127.0.0.1:9095
+      - --log.format=json
     read_only: true
     security_opt:
       - no-new-privileges:true

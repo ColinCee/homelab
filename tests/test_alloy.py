@@ -49,22 +49,51 @@ def test_the_config_loads() -> None:
 
 # A line in each format the containers write, a word found only in it, and the level it gets.
 LINES = [
-    ('ts=2026-11-13T13:35:30Z level=info msg="ready"', "ready", "info"),
-    ('t=2026-11-13T13:35:11Z level=warn msg="manifest watcher"', "manifest", "warn"),
-    ('time=2026-11-12T22:36:18Z level=ERROR msg="Probe failed"', "Probe", "error"),
-    ("2026-11-13T13:27:28Z INF precheck complete", "precheck", "info"),
-    ("2026-11-13T13:35:21.384Z\twarn\tVictoriaTraces/app/logsql.go:1178\tslow", "logsql", "warn"),
-    ('INFO:     192.168.96.2:55072 - "GET /aircraft HTTP/1.1" 200 OK', "aircraft", "info"),
-    ("ERROR: cannot ring: timed out", "ring", "error"),
+    # Prometheus, Alertmanager, blackbox and OBI (Go's slog)
     (
-        '{"time": "2026-11-13T13:35:30.000+00:00", "level": "ERROR", "msg": "cannot post"}',
+        '{"level":"ERROR","source":"main.go:774","msg":"Error loading"}',
+        "loading",
+        "error",
+    ),
+    (
+        '{"time":"2026-11-13T14:41:49Z","level":"INFO","msg":"OpenTelemetry eBPF Instrumentation"}',
+        "eBPF",
+        "info",
+    ),
+    # VictoriaLogs and VictoriaTraces
+    (
+        '{"ts":"2026-11-13T14:41:56Z","level":"warn","caller":"lib/flag.go:12","msg":"slow query"}',
+        "slow",
+        "warn",
+    ),
+    # Grafana
+    (
+        '{"level":"warn","logger":"settings","msg":"Deprecation Notice"}',
+        "Deprecation",
+        "warn",
+    ),
+    # cloudflared (zerolog)
+    (
+        '{"level":"error","time":"2026-11-13T14:42:00Z","message":"Connection terminated"}',
+        "terminated",
+        "error",
+    ),
+    # Alloy
+    ('{"ts":"2026-11-13T14:41:43Z","level":"info","msg":"Alloy is starting"}', "starting", "info"),
+    # Our services
+    (
+        '{"time":"2026-11-13T13:35:30.000+00:00","level":"ERROR","msg":"cannot post"}',
         "post",
         "error",
     ),
-    ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
-    ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
+    # Caddy
     ('{"level":"warn","logger":"http.log","msg":"handled request"}', "handled", "warn"),
     ('{"level":"INFO","msg":"saw level=error in a reply"}', "reply", "info"),
+    # uvicorn, CoreDNS and Home Assistant, which cannot log JSON
+    ('INFO:     192.168.96.2:55072 - "GET /aircraft HTTP/1.1" 200 OK', "aircraft", "info"),
+    ("[INFO] plugin/reload: Running configuration SHA512", "SHA512", "info"),
+    ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
+    ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
     ("Error fetching from ADS-B API, trying fallback", "ADS-B", ""),
 ]
 # Lines from these containers: the first of each is dropped, the second kept.
@@ -76,9 +105,10 @@ NOISE = {
         ' - - PR-- 27/27/23/23/0 0/0 "POST /v1.56/containers/9da7/stop HTTP/1.1"',
     ],
     "observability-alloy-1": [
-        'ts=2026-11-13T13:35:30Z level=info msg="Failed to update stats: unable to determine device'
-        ' info for dir: /rootfs/var/lib/docker/overlay2/ddf0/diff: stat failed"',
-        'ts=2026-11-14T08:00:00Z level=info msg="reload requested"',
+        '{"ts":"2026-11-13T13:35:30Z","level":"info","msg":"Failed to update stats for container'
+        ' \\"/system.slice/docker-73fa.scope\\": unable to determine device info for dir:'
+        ' /rootfs/var/lib/docker/overlay2/ddf0/diff: stat failed"}',
+        '{"ts":"2026-11-14T08:00:00Z","level":"info","msg":"reload requested"}',
     ],
 }
 
