@@ -64,6 +64,29 @@ datasources:
     secureJsonData:
       basicAuthPassword: $__file{/run/secrets/agents_password}
     editable: false
+    # A span opens its lines in the log store and its service's request rate, errors and duration in Prometheus, whose
+    # `job` is the span's `service.name`.
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: logs
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: trace_id:="$${__trace.traceId}"
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: -30m
+        spanEndTimeShift: 30m
+        tags:
+          - key: service.name
+            value: job
+        queries:
+          - name: Requests a second
+            query: sum(rate(http_server_request_duration_seconds_count{$$__tags}[5m]))
+          - name: Server errors a second
+            query: sum(rate(http_server_request_duration_seconds_count{$$__tags, http_response_status_code=~"5.."}[5m]))
+          - name: 95th percentile duration
+            query: histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket{$$__tags}[5m])))
   # The same store's spans as rows, through its LogsQL paths: sums across traces, which Jaeger's paths cannot give.
   - name: Spans
     uid: spans

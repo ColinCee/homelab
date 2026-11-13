@@ -23,7 +23,7 @@ target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G"]
 
 # Code that runs on the host's /usr/bin/python3 (3.12): the installer and updater, which must not
 # depend on homelab-python3, and the deploy scripts, which need that python's apt python3-yaml.

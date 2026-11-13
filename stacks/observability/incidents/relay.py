@@ -11,6 +11,7 @@ Alertmanager reaches it, on a network of their own.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import sys
@@ -48,8 +49,37 @@ Ping = Callable[[], None]
 FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
-def log(message: str) -> None:
-    print(message, file=sys.stderr, flush=True)
+log = logging.getLogger("incidents")
+
+
+# One JSON object per line, which Alloy reads (config.alloy, loki.process "docker"); an exception
+# under OpenTelemetry's names. Each service runs alone with `python -I`, so each has a copy;
+# tests/test_json_logs.py keeps them the same.
+_RECORD_FIELDS = frozenset(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class JsonLines(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        # A value passed as `extra` never takes the place of these.
+        line: dict[str, object] = {
+            k: v for k, v in vars(record).items() if k not in _RECORD_FIELDS
+        } | {
+            "time": datetime.fromtimestamp(record.created, UTC).isoformat(timespec="milliseconds"),
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[1]:
+            line["exception.type"] = type(record.exc_info[1]).__name__
+            line["exception.message"] = str(record.exc_info[1])
+            line["exception.stacktrace"] = self.formatException(record.exc_info)
+        return json.dumps(line, default=str)
+
+
+def log_json() -> None:
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(JsonLines())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 class Relay:
@@ -87,7 +117,7 @@ class Relay:
         except FAILED as e:
             # Never a 502: Alertmanager would count the relay as failing and stop the watchdog
             # for an hour, which Healthchecks.io would page as alerting down.
-            log(f"cannot ping Healthchecks.io: {e}")
+            log.error("cannot ping Healthchecks.io", extra={"error": str(e)})
 
     def _open(self, alert: dict[str, Any]) -> bool:
         post = self.state["posts"].get(alert["fingerprint"])
@@ -112,7 +142,10 @@ class Relay:
                 },
             )["id"]
         except FAILED as e:
-            log(f"cannot open a post for {alert['labels'].get('alertname')}: {e}")
+            log.error(
+                "cannot open a post",
+                extra={"alertname": alert["labels"].get("alertname"), "error": str(e)},
+            )
             return False
         self.state["posts"][alert["fingerprint"]] = {
             "thread": thread,
@@ -120,6 +153,9 @@ class Relay:
             "cleared": None,
         }
         self._save()
+        log.info(
+            "opened a post", extra={"post": thread, "alertname": alert["labels"].get("alertname")}
+        )
         self._say(thread, self._start_agent(alert, thread))
         return True
 
@@ -132,6 +168,7 @@ class Relay:
             return False
         post["cleared"] = _now().isoformat()
         self._save()
+        log.info("cleared a post", extra={"post": post["thread"]})
         return True
 
     def _retag(
@@ -149,7 +186,7 @@ class Relay:
                 },
             )
         except FAILED as e:
-            log(f"cannot mark post {thread} {tag}: {e}")
+            log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
             return False
         return True
 
@@ -164,10 +201,11 @@ class Relay:
             url = self.fire(_snapshot(alert, f"https://discord.com/channels/{self.guild}/{thread}"))
         except FAILED as e:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
-            log(f"cannot start the on-call agent: {e}")
+            log.error("cannot start the on-call agent", extra={"error": str(e)})
             return "On-call agent not started: the relay could not reach its routine (see its log)."
         runs["count"] += 1
         self._save()
+        log.info("started the on-call agent", extra={"session": url})
         return f"On-call agent: {url}"
 
     def _say(self, thread: str, text: str) -> None:
@@ -178,7 +216,7 @@ class Relay:
                 {"content": text, "allowed_mentions": {"parse": []}},
             )
         except FAILED as e:
-            log(f"cannot post in {thread}: {e}")
+            log.error("cannot post", extra={"post": thread, "error": str(e)})
 
     def _tags_for(self, name: str) -> dict[str, list[str]]:
         """The tag to set, or none when the forum's tags cannot be read: never an empty list,
@@ -188,10 +226,10 @@ class Relay:
                 forum = self.discord("GET", f"/channels/{self.forum}", None)
                 self._tags = {t["name"]: t["id"] for t in forum.get("available_tags", [])}
             except FAILED as e:
-                log(f"cannot read the forum's tags: {e}")
+                log.error("cannot read the forum's tags", extra={"error": str(e)})
                 return {}
         if name not in self._tags:
-            log(f"the forum has no {name} tag")
+            log.error("the forum has no such tag", extra={"tag": name})
             self._tags = None
             return {}
         return {"applied_tags": [self._tags[name]]}
@@ -378,4 +416,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    log_json()
     main()
