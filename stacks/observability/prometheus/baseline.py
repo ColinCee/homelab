@@ -5,8 +5,8 @@
 
 A fresh promise measures its file's age each minute; a good-minutes promise its `measure`. The
 suggestion is the normal's highest value with MARGIN, in whole minutes, so no normal minute alerts.
-A fresh promise needs MIN_RUNS of its writer's runs in the history, else one missed run stays its
-threshold.
+It needs MIN_RUNS in the history (a fresh promise's writer runs, a good-minutes promise's minutes
+with something to measure), else its threshold stays as it is.
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ class Baseline:
 
     @property
     def enough(self) -> bool:
-        return not self.slo.fresh or self.days * DAY >= MIN_RUNS * self.slo.every
+        if self.slo.fresh:
+            return self.days * DAY >= MIN_RUNS * self.slo.every
+        return sum(v > 0 for v in self.normal) >= MIN_RUNS
 
     @property
     def suggested(self) -> int:
@@ -91,12 +93,13 @@ def minutes(s: float) -> str:
 
 def main() -> None:
     days = int(sys.argv[1]) if len(sys.argv) > 1 else 30
-    print("promise | days | normal p50 / p99 / max (min) | now (min) | suggested (min)")
+    print("promise | days | minutes measured | normal p50 / p99 / max | now | suggested (min)")
     for b in baselines(days):
         now = b.slo.late if b.slo.fresh else b.slo.target
-        note = "" if b.enough else f" (under {MIN_RUNS} runs of history: one missed run)"
+        note = "" if b.enough else f" (under {MIN_RUNS} runs of history: kept)"
+        active = sum(v > 0 for v in b.normal)
         print(
-            f"{b.slo.alert} | {b.days:.1f} | {minutes(b.percentile(0.5))} / "
+            f"{b.slo.alert} | {b.days:.1f} | {active} | {minutes(b.percentile(0.5))} / "
             f"{minutes(b.percentile(0.99))} / {minutes(max(b.normal, default=0))} | "
             f"{minutes(now)} | {minutes(b.suggested)}{note}"
         )

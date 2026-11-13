@@ -7,10 +7,10 @@ groups:
       - alert: ci-jobs-not-starting
         expr: |
           max(round(100 * avg_over_time((
-            count((max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)) > 120) > bool 0 or on() vector(0)
+            count((max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)) > 600) > bool 0 or on() vector(0)
           )[1h:1m]))) > 10
           and on() max_over_time((
-            count((max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)) > 120) > bool 0 or on() vector(0)
+            count((max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)) > 600) > bool 0 or on() vector(0)
           )[5m:1m]) > 0
           and on() (time() - max(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"})) < 120
         for: 0m
@@ -19,7 +19,7 @@ groups:
           level: now
         annotations:
           title: CI jobs not starting
-          measure: 'Last 1h not meeting: CI jobs start within 2 min of GitHub queueing them'
+          measure: 'Last 1h not meeting: CI jobs start within 10 min of GitHub queueing them'
           unit: '%'
           harm: Private repositories' checks sit queued, so nothing of theirs merges or deploys.
           action: 'On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting
@@ -36,7 +36,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m]))) / 60)
           ) > 2.0
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-waits.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: now
@@ -55,7 +55,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/probes.prom"}[30m]))) / 60)
           ) > 3.0
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/probes.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: now
@@ -74,7 +74,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m]))) / 60)
           ) > 3.0
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/security.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: now
@@ -93,7 +93,7 @@ groups:
             round((time() - max(last_over_time(homelab_main_deploy_checked_timestamp_seconds[30m]))) / 60)
           ) > 26.5
           or on() max(absent_over_time(homelab_main_deploy_checked_timestamp_seconds[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: now
@@ -112,7 +112,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m]))) / 60)
           ) > 11.1
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/failed-units.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week
@@ -132,7 +132,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m]))) / 60)
           ) > 26.5
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ssd.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week
@@ -151,7 +151,7 @@ groups:
             round((time() - max(last_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m]))) / 60)
           ) > 17.0
           or on() max(absent_over_time(node_textfile_mtime_seconds{file=~".*/ci-times.prom"}[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week
@@ -170,7 +170,7 @@ groups:
             round((time() - max(last_over_time(homelab_backup_last_success_timestamp_seconds[30m]))) / 3600)
           ) > 26.6
           or on() max(absent_over_time(homelab_backup_last_success_timestamp_seconds[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week
@@ -188,7 +188,7 @@ groups:
             round((time() - max(last_over_time(homelab_backup_last_deep_check_timestamp_seconds[30m]))) / 86400)
           ) > 7.7
           or on() max(absent_over_time(homelab_backup_last_deep_check_timestamp_seconds[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week
@@ -207,7 +207,7 @@ groups:
             round((time() - max(last_over_time(homelab_pc_backup_newest_timestamp_seconds[30m]))) / 3600)
           ) > 53.0
           or on() max(absent_over_time(homelab_pc_backup_newest_timestamp_seconds[30m])) * -1
-        for: 2m
+        for: 5m
         keep_firing_for: 10m
         labels:
           level: week

@@ -84,3 +84,11 @@ def test_a_baseline_with_too_few_runs_keeps_one_missed_run() -> None:
     slo = slos.Slo("a", "now", "t", "h", "a", "a.prom", every=86400)
     found = baseline.Baseline(slo, days=2, normal=[30.0], incident=[])
     assert not found.enough and found.suggested == slo.default_late
+
+
+def test_a_good_minutes_baseline_needs_minutes_with_something_to_measure() -> None:
+    from stacks.observability.prometheus import baseline
+
+    slo = slos.Slo("a", "now", "t", "h", "a", "a.prom", measure="max(x)", target=600)
+    quiet = baseline.Baseline(slo, days=2, normal=[0.0] * 2000 + [60.0] * 28, incident=[])
+    assert not quiet.enough and quiet.suggested == 600

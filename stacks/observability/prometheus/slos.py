@@ -32,7 +32,8 @@ HOME = "http://grafana.internal/d/home"
 LATE_SLACK = 600
 # How long a vanished series still counts as its last value before it is no data.
 NO_DATA = "30m"
-FRESH_FOR = "2m"
+# Past "Beelink metrics stopped" (5 min of no data), which holds this back when Alloy is the cause.
+FRESH_FOR = "5m"
 WINDOW = "1h"
 BAD_SHARE = 0.10
 # Bad in this too, so the alert clears soon after the minutes are good again, not a WINDOW later.

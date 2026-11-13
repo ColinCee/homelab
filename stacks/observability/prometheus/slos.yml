@@ -13,7 +13,9 @@ slos:
     promise: CI jobs start within {target} of GitHub queueing them
     # The oldest queued job's wait; polls failing hide new jobs, so they count as waiting too.
     measure: max(homelab_ci_queued_seconds or homelab_ci_poll_failed_seconds)
-    target: 2m  # baseline.py, 11-13 Nov: normal at most 1.0 min
+    # baseline.py, 11-13 Nov: 28 minutes with a job queued, under 500, so kept. A burst of PRs on the 3 build
+    # slots waited up to about 6 min in the supervisor's log.
+    target: 10m
     harm: Private repositories' checks sit queued, so nothing of theirs merges or deploys.
     action: >-
       On the Beelink read `sudo journalctl -u homelab-ci-supervisor -n 50`. Jobs waiting on "a VM booting for it":
