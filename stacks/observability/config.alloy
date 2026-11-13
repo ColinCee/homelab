@@ -70,6 +70,13 @@ prometheus.exporter.cadvisor "docker" {
     "com.docker.compose.container-number",
     "com.docker.compose.oneoff",
   ]
+  // cAdvisor's default set, which this list replaces, and disk usage ("disk"): Alloy has no host folder under
+  // /rootfs/var/lib/docker but the layer IDs, so it read none and logged an error for each container every few
+  // minutes. Its only series were the root cgroup's mounts, as the host scrape's. Disk I/O ("diskIO") stays.
+  disabled_metrics = [
+    "advtcp", "cpu_topology", "cpuset", "hugetlb", "memory_numa", "process", "referenced_memory", "resctrl", "sched",
+    "tcp", "udp", "disk",
+  ]
 }
 
 discovery.relabel "cadvisor" {
@@ -310,7 +317,7 @@ loki.process "docker" {
 // ================================
 
 // The host's own services (Docker, Tailscale, the CI supervisor, the timers), as the container `journal` with each
-// line's unit, so the log store files them like a container's.
+// line's unit and service, so the log store files them like a container's.
 loki.relabel "journal" {
   forward_to = []
 
@@ -324,6 +331,35 @@ loki.relabel "journal" {
   rule {
     source_labels = ["__journal__systemd_unit"]
     target_label  = "unit"
+  }
+  // Each line's `service_name`, as a container's (discovery.relabel "docker_logs"): its service unit without
+  // `.service`, Colin's own (deploy-main) over the user manager's; else the program's name, as the kernel's, systemd's
+  // own (init.scope) and a template unit's (user@1000) lines have no other. Each rule sets it only when its field is
+  // there.
+  rule {
+    target_label = "service_name"
+    replacement  = "unknown_service"
+  }
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    regex         = "(.+)"
+    target_label  = "service_name"
+  }
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    regex         = "([^@]+)\\.service"
+    target_label  = "service_name"
+  }
+  // One unit per CI VM, named for its runner (ci-runner/supervisor/vms.py).
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    regex         = "(homelab-ci-vm)-.+\\.service"
+    target_label  = "service_name"
+  }
+  rule {
+    source_labels = ["__journal__systemd_user_unit"]
+    regex         = "([^@]+)\\.service"
+    target_label  = "service_name"
   }
   // The containers' level words (loki.process "docker").
   rule {

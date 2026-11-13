@@ -307,7 +307,8 @@ services:
     cap_drop:
       - ALL
     user: "65534:65534"
-    mem_limit: 64m
+    # Twice its 30-day peak of 44 MiB.
+    mem_limit: 96m
     ports:
       - "100.100.146.119:5081:5080"
     secrets:
