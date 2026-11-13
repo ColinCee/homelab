@@ -113,6 +113,12 @@ def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
 
 CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
 CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
+# Alloy's own series, as config.alloy's scrape of itself labels them.
+RECEIVER_ID = "otelcol.receiver.otlp.programs"
+RECEIVER = f'job="alloy",component_id="{RECEIVER_ID}"'
+EXPORTER_ID = "otelcol.exporter.otlphttp.logs"
+EXPORTER = f'job="alloy",component_id="{EXPORTER_ID}"'
+TRACES = 'job="alloy",component_id="otelcol.exporter.otlphttp.traces"'
 
 # Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5); a case may add a
 # third element, its step.
@@ -514,6 +520,102 @@ CASES = {
             at(28, "main-not-deployed"),
             at(62, "main-not-deployed"),
             at(64, "main-not-deployed", posts("main-not-deployed", "1")),
+        ],
+    ),
+    "two of a component's loss counters moving together are one post, a drop stage never": (
+        [
+            (f"otelcol_receiver_refused_spans_total{{{RECEIVER}}}", "0x10 30x30"),
+            (f"otelcol_receiver_refused_metric_points_total{{{RECEIVER}}}", "0x10 20x30"),
+            (
+                'loki_process_dropped_lines_total{job="alloy",component_id="loki.process.noise",'
+                'reason="drop_stage"}',
+                "0+100x40",
+            ),
+        ],
+        [
+            at(10, "telemetry-dropped"),
+            # Both rose at 11 min, by 50 together.
+            at(12, "telemetry-dropped", posts("telemetry-dropped", "50", component_id=RECEIVER_ID)),
+        ],
+    ),
+    "an exporter's first failure, a counter that starts then, posts and clears": (
+        [
+            (
+                f'otelcol_exporter_queue_capacity{{{EXPORTER},data_type="logs"}}',
+                "10000x45",
+            ),
+            (f"otelcol_exporter_send_failed_log_records_total{{{EXPORTER}}}", "_x10 7x35"),
+        ],
+        [
+            at(9, "telemetry-dropped"),
+            at(10, "telemetry-dropped", posts("telemetry-dropped", "7", component_id=EXPORTER_ID)),
+            # Out of the 15-minute window at 25, then the 10-minute hold.
+            at(37, "telemetry-dropped"),
+        ],
+    ),
+    "a send queue a quarter full fires after `for`, one whose store is down never": (
+        [
+            (f'otelcol_exporter_queue_capacity{{{EXPORTER},data_type="logs"}}', "10000x30"),
+            (f'otelcol_exporter_queue_size{{{EXPORTER},data_type="logs"}}', "0x5 3000x25"),
+            (f'otelcol_exporter_queue_capacity{{{TRACES},data_type="traces"}}', "10000x30"),
+            (f'otelcol_exporter_queue_size{{{TRACES},data_type="traces"}}', "0x5 5000x25"),
+            ('up{job="logs",instance="logs:9428"}', "1x30"),
+            ('up{job="traces",instance="traces:10428"}', "0x30"),
+        ],
+        [
+            at(10, "telemetry-backing-up"),
+            at(
+                11,
+                "telemetry-backing-up",
+                posts("telemetry-backing-up", "30", component_id=EXPORTER_ID),
+            ),
+        ],
+    ),
+    "host-metrics' three jobs gone fires after 10 minutes": (
+        [
+            ('up{job="caddy",instance="beelink"}', "1x5"),
+            ('up{job="coredns",instance="beelink"}', "1x5"),
+            ('up{job="homeassistant",instance="beelink"}', "1x5"),
+        ],
+        [
+            at(14, "host-metrics-stopped"),
+            at(15, "host-metrics-stopped", posts("host-metrics-stopped", "1")),
+        ],
+    ),
+    "one of host-metrics' jobs still written stays quiet": (
+        [
+            ('up{job="caddy",instance="beelink"}', "1x5"),
+            ('up{job="homeassistant",instance="beelink"}', "0x30"),
+        ],
+        [at(25, "host-metrics-stopped")],
+    ),
+    "a unit failing at every run fires after `for`, one failing once never": (
+        [
+            (
+                'homelab_systemd_unit_failed{manager="system",unit="homelab-ci-times.service"}',
+                "_x5 " + "1x3 stale " * 6,
+            ),
+            ('homelab_systemd_unit_failed{manager="user",unit="probe.service"}', "_x5 1x3 stale"),
+        ],
+        [
+            at(19, "unit-failed"),
+            at(
+                20,
+                "unit-failed",
+                posts("unit-failed", "1", manager="system", unit="homelab-ci-times.service"),
+            ),
+        ],
+    ),
+    "the failed unit check stopping fires after 10 minutes and `for`": (
+        [
+            (
+                'node_textfile_mtime_seconds{file="/var/lib/homelab-metrics/failed-units.prom"}',
+                "0+60x10 600x30",
+            )
+        ],
+        [
+            at(25, "failed-units-check-stopped"),
+            at(27, "failed-units-check-stopped", posts("failed-units-check-stopped", "17")),
         ],
     ),
     "a deployer that stopped running fires": (

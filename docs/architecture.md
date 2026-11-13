@@ -106,8 +106,8 @@ no code ([`agent_scope.py`](../scripts/agent_scope.py)): a guard against mistake
 
 - A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
   means the number recovered.
-- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only textfile metrics carry a no-data
-  arm, except a job's that may not have run yet.
+- "Beelink metrics stopped" holds back every alert that reads Alloy's metrics; only metrics written past Alloy
+  alert on no data, bar a job's not yet run.
 - Noise budget: at most one post a day over 14 days. Before adding or loosening a rule, replay it:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
   Test rules with promtool (`tests/test_alert_rules.py`), never with fake events on the Beelink.

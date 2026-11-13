@@ -77,6 +77,7 @@ def test_installed_scripts_find_the_module_beside_them() -> None:
         "stacks/backup/unit_metrics.py",
         "stacks/backup/upkeep.py",
         "stacks/home-assistant/history.py",
+        "stacks/observability/failed_units.py",
     ],
 )
 def test_checkout_scripts_find_the_module_under_any_unit(script: str, tmp_path: Path) -> None:

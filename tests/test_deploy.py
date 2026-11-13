@@ -92,6 +92,13 @@ def test_rejects_unpaired_or_unprefixed_systemd_units(
         deploy.discover_stack_plans(tmp_path)
 
 
+def test_the_repositorys_own_stacks_pass_the_deploys_unit_checks() -> None:
+    # Else deploy-main refuses every stack at once, which no fake stack above shows.
+    root = Path(__file__).parent.parent
+    for stack in (root / "stacks").iterdir():
+        deploy.discover_triggers(stack)
+
+
 def test_validates_every_stack_before_building_any(tmp_path: Path) -> None:
     _make_stack(tmp_path, "alpha", with_env=True)
     _make_stack(tmp_path, "beta")
