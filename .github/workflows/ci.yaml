@@ -41,7 +41,7 @@ jobs:
         run: python3 scripts/ci.py pull-request-rules
 
       - name: Validate Compose (image pins only)
-        if: steps.pins.outputs.only == 'true'
+        if: "!cancelled() && steps.pins.outputs.only == 'true'"
         run: python3 scripts/ci.py validate-changed-compose
 
       # The VM's tools and uv's cache live on its cache disk (/cache), built from main's last green push.
@@ -90,7 +90,7 @@ jobs:
         run: python3 scripts/ci.py pull-request-rules
 
       - name: Validate Compose (image pins only)
-        if: steps.pins.outputs.only == 'true'
+        if: "!cancelled() && steps.pins.outputs.only == 'true'"
         run: python3 scripts/ci.py validate-changed-compose
 
       - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
