@@ -1,6 +1,8 @@
 """Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
 loads (its validate command)."""
 
+import ast
+import json
 import re
 import subprocess
 import threading
@@ -152,6 +154,11 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     for line, word, level in LINES:
         got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]
         assert got == [[level] if level else []], line
+    # Every line leaves as one JSON object, whatever its program wrote.
+    for out in seen:
+        entry = re.search(r' entry=("(?:[^"\\]|\\.)*")', out)
+        assert entry, out
+        assert isinstance(json.loads(ast.literal_eval(entry.group(1))), dict), out
     kept = "".join(seen)
     assert "PR--" in kept and "reload requested" in kept
     assert " 200 9092" not in kept and "device" not in kept

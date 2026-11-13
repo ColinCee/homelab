@@ -77,7 +77,7 @@ VictoriaLogs and VictoriaTraces, 30 days each;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
 agents as `agents`. Dashboards come from Git: the building-dashboards skill. Signals link up: one service name per
-store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)).
+store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text.
 
 | Problem | Who warns |
 |---|---|
@@ -115,8 +115,7 @@ Traps:
 
 - Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
   `job="ci-vms"`, present only while a slot runs a VM.
-- Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network,
-  Home Assistant once it has `prometheus:` and `HOMEASSISTANT_METRICS_TOKEN` secret;
+- Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network;
   [`probes.py`](../stacks/observability/probes.py) checks them for the alerts.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;
   one in another form still reaches the log store.
