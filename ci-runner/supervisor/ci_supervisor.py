@@ -39,8 +39,9 @@ from collections.abc import Callable, Generator, Iterable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import IO, Any, Protocol
+from typing import IO, Any, NamedTuple, Protocol
 
 import telemetry
 
@@ -187,12 +188,11 @@ UNSEEN_LOG_SECONDS = 90.0
 # since GitHub queued it, then goes back to oldest first: a few minutes, never starved.
 FIRST_BUILD_WAIT_MAX = 600.0
 # Each job that waited, one JSON line when it stops waiting, with its seconds per kind of
-# wait (see wait_kind) and the reason of its longest kind, for speed reports. Lines older
+# wait (WaitKind) and the reason of its longest kind, for speed reports. Lines older
 # than WAITS_KEEP_SECONDS are dropped at most every WAITS_PRUNE_SECONDS. "unseen" is the
 # time from GitHub queueing the job to the supervisor first seeing it (a restart counts
 # again from GitHub's queueing).
 WAITS_FILE = STATUS_FILE.with_name("waits.jsonl")
-WAIT_KINDS = ("memory", "disk", "slots", "booting", "ready", "unseen", "other")
 WAITS_KEEP_SECONDS = 30 * 24 * 3600
 WAITS_PRUNE_SECONDS = 3600.0
 # The longest-waiting queued job's seconds so far per kind of wait, for Prometheus (Alloy's
@@ -228,6 +228,27 @@ UPDATE_LOCK = Path("/run/homelab-ci-update.lock")
 # What a VM is for: its repo, and the extra cache label it registers with ("" for none).
 # A VM covers only jobs with the same pair.
 type Want = tuple[str, str]
+
+
+class WaitKind(StrEnum):
+    """What a queued job waits for: the waits file's columns and the wait metric's `kind`. UNSEEN
+    is GitHub queueing it before the supervisor first saw it."""
+
+    MEMORY = "memory"
+    DISK = "disk"
+    SLOTS = "slots"
+    BOOTING = "booting"
+    READY = "ready"
+    UNSEEN = "unseen"
+    OTHER = "other"
+
+
+class Reason(NamedTuple):
+    """Why a queued job has not started: its repo, the words the wait log gives, and its kind."""
+
+    repo: str
+    why: str
+    kind: WaitKind = WaitKind.OTHER
 
 
 @dataclass(frozen=True)
@@ -344,13 +365,13 @@ class Wait:
     logged: float | None = None
     # The kind of wait at the last poll that saw it, and when: the time until the next
     # poll counts for that kind.
-    kind: str = "other"
+    kind: WaitKind = WaitKind.OTHER
     seen: float = 0.0
-    seconds: dict[str, float] = field(default_factory=dict)
+    seconds: dict[WaitKind, float] = field(default_factory=dict)
     # The reason the wait log gives at the last poll that saw it, and the latest one for
     # each kind, so the finished record names the reason of its longest kind.
     why: str = ""
-    whys: dict[str, str] = field(default_factory=dict)
+    whys: dict[WaitKind, str] = field(default_factory=dict)
     # Its workflow's name, "" when unknown.
     workflow: str = ""
     # The labels it asks for when no VM has them, else empty.
@@ -1462,7 +1483,7 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
     served: list[str] = []
     spent: dict[str, float] = {}
     # Why each queued job not started this poll waits: (repo, why).
-    reasons: dict[int, tuple[str, str]] = {}
+    reasons: dict[int, Reason] = {}
     # When GitHub queued each job, and its workflow.
     queued_at: dict[int, float] = {}
     workflows: dict[int, str] = {}
@@ -1480,7 +1501,7 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
             queued_at[job.id] = job.queued_at
             workflows[job.id] = job.workflow
             if not job.ours:
-                reasons[job.id] = (repo, f"no VM has its labels ({', '.join(job.labels)})")
+                reasons[job.id] = Reason(repo, f"no VM has its labels ({', '.join(job.labels)})")
                 unmatched[job.id] = job.labels
                 continue
             queued[job.want] += 1
@@ -1523,13 +1544,15 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
     if disk_busy:
         room = min(room, 0)
 
-    def why(need: int) -> str:
+    def why(repo: str, need: int) -> Reason:
         """Why a job needing `need` MiB is held: the disk or memory."""
         if disk_busy or disk_paced:
-            return f"the disk (tasks waited on it {disk_wait:.0f}% of the last minute)"
-        return (
+            busy = f"the disk (tasks waited on it {disk_wait:.0f}% of the last minute)"
+            return Reason(repo, busy, WaitKind.DISK)
+        free = (
             f"memory ({max(room, 0)} MiB free above the {reserve} MiB reserve, a VM needs {need})"
         )
+        return Reason(repo, free, WaitKind.MEMORY)
 
     def pace() -> None:
         """One VM a minute while the disk is half busy: no more room after this start."""
@@ -1541,7 +1564,7 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
     # In start order (a started run's job first, oldest first within each group, a new build
     # back in after FIRST_BUILD_WAIT_MAX); once one is held for memory, those after it wait too.
     builds = with_job_ids(starts, job_ids, booting, rank)
-    held: dict[int, tuple[str, str]] = {}
+    held: dict[int, Reason] = {}
     first_held_build: int | None = None
     started = 0
     for job_id, (repo, label) in sorted(builds, key=rank.__getitem__):
@@ -1549,7 +1572,7 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
         if first_held_build is not None or mem > room:
             if first_held_build is None:
                 first_held_build = job_id
-            held[job_id] = (repo, why(mem))
+            held[job_id] = why(repo, mem)
             continue
         launch(
             gh,
@@ -1573,15 +1596,15 @@ def tick(gh: GitHubApi, state: State, repos: list[str], now: float) -> dict[str,
     for want, ids in job_ids.items():
         for n, job_id in enumerate(sorted(ids)):
             if draining:
-                reasons[job_id] = (want[0], "the host's load test")
+                reasons[job_id] = Reason(want[0], "the host's load test")
             elif job_id in held:
                 reasons[job_id] = held[job_id]
             elif n < ready[want]:
-                reasons[job_id] = (want[0], READY)
+                reasons[job_id] = Reason(want[0], READY, WaitKind.READY)
             elif n < booting[want] or job_id in planned:
-                reasons[job_id] = (want[0], BOOTING)
+                reasons[job_id] = Reason(want[0], BOOTING, WaitKind.BOOTING)
             else:
-                reasons[job_id] = (want[0], full)
+                reasons[job_id] = Reason(want[0], full, WaitKind.SLOTS)
     note_waits(state, served, reasons, now, queued_at, workflows, unmatched)
     free = free[started:]
     # A build job still waiting for a slot, or for memory, gets the standby's slot and
@@ -1645,12 +1668,12 @@ def with_job_ids(
     return paired
 
 
-def hold_for_memory(state: State, repos: list[str], held: Mapping[int, tuple[str, str]]) -> None:
+def hold_for_memory(state: State, repos: list[str], held: Mapping[int, Reason]) -> None:
     """Note the queued jobs left waiting for memory or the disk (job id: its repo and why).
     They stay queued and are tried again next poll; note_waits logs them. Jobs of repos not
     polled this time keep their mark."""
     state.held = {i: r for i, r in state.held.items() if r not in repos} | {
-        i: repo for i, (repo, _) in held.items()
+        i: reason.repo for i, reason in held.items()
     }
 
 
@@ -1668,7 +1691,7 @@ def waited_since(state: State, job_id: int, now: float) -> float:
 def note_waits(
     state: State,
     repos: list[str],
-    reasons: Mapping[int, tuple[str, str]],
+    reasons: Mapping[int, Reason],
     now: float,
     queued_at: Mapping[int, float] | None = None,
     workflows: Mapping[int, str] | None = None,
@@ -1693,7 +1716,7 @@ def note_waits(
                     f"job {job_id} in {wait.repo} stopped waiting after {waited}"
                     + (total if wait.queued < wait.since else "")
                 )
-    for job_id, (repo, why) in sorted(reasons.items()):
+    for job_id, (repo, why, kind) in sorted(reasons.items()):
         wait = state.waits.get(job_id)
         unseen = 0.0
         if wait is None:
@@ -1701,14 +1724,16 @@ def note_waits(
             wait = state.waits[job_id] = Wait(
                 repo, now, queued, seen=now, workflow=workflows.get(job_id, "")
             )
-            unseen = wait.seconds["unseen"] = now - queued
+            unseen = wait.seconds[WaitKind.UNSEEN] = now - queued
         wait.count(now)
-        wait.kind = wait_kind(why)
-        wait.why = wait.whys[wait.kind] = why
+        wait.kind = kind
+        wait.why = wait.whys[kind] = why
         wait.unmatched = unmatched.get(job_id, ())
         waited = now - wait.since
         late = unseen >= UNSEEN_LOG_SECONDS
-        quiet = why in (BOOTING, READY) and waited < WAIT_LOG_SECONDS and not late
+        quiet = (
+            kind in (WaitKind.BOOTING, WaitKind.READY) and waited < WAIT_LOG_SECONDS and not late
+        )
         if not quiet and (wait.logged is None or now - wait.logged >= WAIT_LOG_SECONDS):
             seen = f" (GitHub had queued it {duration(unseen)} before)" if late else ""
             log(f"job {job_id} in {repo} has waited {duration(waited)} here{seen}: {why}")
@@ -1729,13 +1754,13 @@ def write_wait_metrics(state: State, now: float) -> None:
     stray = min(
         (w for w in state.waits.values() if w.unmatched), key=lambda w: w.queued, default=None
     )
-    names = {kind: f'kind="{kind}"' for kind in WAIT_KINDS}
+    names = {kind: f'kind="{kind}"' for kind in WaitKind}
     if stray:
         labels = telemetry.label(",".join(stray.unmatched))
-        names["other"] += f',repo="{telemetry.label(stray.repo)}",labels="{labels}"'
+        names[WaitKind.OTHER] += f',repo="{telemetry.label(stray.repo)}",labels="{labels}"'
     lines = [
         f"homelab_ci_wait_seconds{{{names[kind]}}} {round(seconds.get(kind, 0.0))}"
-        for kind in WAIT_KINDS
+        for kind in WaitKind
     ]
     queued: dict[tuple[str, str], float] = {}
     for wait in state.waits.values():
@@ -1793,27 +1818,11 @@ def rest(state: State, seconds: float) -> None:
             write_wait_metrics(state, time.time())
 
 
-def wait_kind(why: str) -> str:
-    """Which of WAIT_KINDS a reason from tick is. A job queued behind one held for memory
-    waits for memory too."""
-    if why == BOOTING:
-        return "booting"
-    if why == READY:
-        return "ready"
-    if why.startswith("the disk"):
-        return "disk"
-    if why.startswith("memory") or why.endswith("waiting for memory"):
-        return "memory"
-    if "slots in use" in why:
-        return "slots"
-    return "other"
-
-
 def record_wait(state: State, job_id: int, wait: Wait, now: float) -> None:
     """Append the job's wait to WAITS_FILE, pruning old lines first when due. A failure is
     logged once and never stops the poll."""
     line = {"job": job_id, "repo": wait.repo, "since": int(wait.since), "until": int(now)}
-    line |= {kind: round(wait.seconds.get(kind, 0.0)) for kind in WAIT_KINDS}
+    line |= {kind: round(wait.seconds.get(kind, 0.0)) for kind in WaitKind}
     line["why"] = wait.longest_why()
     try:
         if now - state.waits_pruned >= WAITS_PRUNE_SECONDS:
