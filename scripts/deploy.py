@@ -142,10 +142,10 @@ def changed_stacks(repo_root: Path, since: str | None) -> tuple[str, ...] | None
 
 def _shared_under_stacks(repo_root: Path, path: str) -> bool:
     parts = path.split("/")
+    # A deleted shared folder counts too: its mounts went with it.
     return (
         len(parts) >= 3
         and parts[0] == "stacks"
-        and (repo_root / "stacks" / parts[1]).is_dir()
         and not (repo_root / "stacks" / parts[1] / "compose.yaml").is_file()
     )
 
