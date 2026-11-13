@@ -10,7 +10,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-import ci_supervisor as sup
+import cache_disks
 import pytest
 import run_vm
 import stop_vms
@@ -190,7 +190,9 @@ def test_the_cache_and_outbox_disks_come_from_the_supervisors_env(box: Box, tmp_
     with outbox.open("rb") as f:
         data = f.read(4096)
     assert data.startswith(b"homelab-ci-outbox\n") and not data[18:4096].strip(b"\0")
-    assert outbox.stat().st_size == run_vm.OUTBOX_BYTES >= sup.CACHE_MAX_UNPACKED_BYTES + 512
+    assert (
+        outbox.stat().st_size == run_vm.OUTBOX_BYTES >= cache_disks.CACHE_MAX_UNPACKED_BYTES + 512
+    )
     assert stat.S_IMODE(outbox.stat().st_mode) == 0o600
 
 

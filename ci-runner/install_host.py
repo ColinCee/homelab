@@ -29,6 +29,14 @@ HERE = Path(__file__).resolve().parent
 
 SERVICE = "homelab-ci-supervisor.service"
 DEST = "/usr/local/lib/homelab-ci"
+# What ci_supervisor.py imports from beside it: a change to one restarts the supervisor too.
+SUPERVISOR_MODULES = (
+    "github_api.py",
+    "vms.py",
+    "cache_disks.py",
+    "job_waits.py",
+    "load_testing.py",
+)
 SLOTS_FILE = "/etc/homelab-ci/slots"
 DEFAULT_SLOTS = 5
 RUN_DIR = "/run/homelab-ci"
@@ -104,7 +112,7 @@ def versions(text: str) -> dict[str, str]:
 
 def slot_count(env: Mapping[str, str], host: Host) -> int:
     """SLOTS if given, else the host's file from the last run: 5 when not a number, at least 1,
-    as in ci_supervisor.py."""
+    as in load_testing.py."""
     text = env.get("SLOTS") or ""
     if not text:
         try:
@@ -359,7 +367,10 @@ def install_locked(
     # on through it (each is a unit of its own, taken back by the new supervisor), and the
     # rules reload in one transaction, so a restart takes seconds and cuts off nothing.
     restart_files = {
-        here / "supervisor" / "ci_supervisor.py": f"{DEST}/ci_supervisor.py",
+        **{
+            here / "supervisor" / m: f"{DEST}/{m}"
+            for m in ("ci_supervisor.py", *SUPERVISOR_MODULES)
+        },
         here / "net" / "homelab-ci.nft": f"{DEST}/net/homelab-ci.nft",
         here / "net" / "setup_net.py": f"{DEST}/net/setup_net.py",
         here / "net" / "homelab-ci-net.service": "/etc/systemd/system/homelab-ci-net.service",
@@ -378,17 +389,6 @@ def install_locked(
     else:
         if active(host):
             supervisor.was_running = True
-            # A supervisor from before VMs ran as their own units owns its VMs: stopping it
-            # waits for their jobs (up to 20 minutes) instead of cutting them off.
-            try:
-                old = (dest / "ci_supervisor.py").read_text()
-            except OSError:
-                old = ""
-            if "UNIT_PREFIX" not in old:
-                say(
-                    "The running supervisor owns its VMs: waiting for their jobs to finish "
-                    "(up to 20 minutes)."
-                )
             systemctl(host, "stop", SERVICE)
 
         # Host-side settings, never in the repo: the slot count, and the GitHub token
@@ -400,6 +400,9 @@ def install_locked(
         install_vm_files(host, here)
         install(host, "0644", here / "net" / "homelab-ci.nft", f"{DEST}/net/homelab-ci.nft")
         install(host, "0755", here / "net" / "setup_net.py", f"{DEST}/net/setup_net.py")
+        # Its modules before it: update.py and the load test run it too.
+        for module in SUPERVISOR_MODULES:
+            install(host, "0644", here / "supervisor" / module, f"{DEST}/{module}")
         install(host, "0755", here / "supervisor" / "ci_supervisor.py", f"{DEST}/ci_supervisor.py")
         for unit in (here / "net" / "homelab-ci-net.service", here / "supervisor" / SERVICE):
             install(host, "0644", unit, f"/etc/systemd/system/{unit.name}")

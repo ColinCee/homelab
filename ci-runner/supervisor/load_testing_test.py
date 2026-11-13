@@ -1,10 +1,17 @@
 """The Beelink's own load test: when update.py starts it, the drain around it, and its result."""
 
 import json
+import subprocess
+import time
 from pathlib import Path
 
+import cache_disks
 import ci_supervisor as sup
+import github_api
+import job_waits
+import load_testing
 import pytest
+import vms
 
 from conftest import NoGitHub, linux_only
 
@@ -16,24 +23,23 @@ CALLS: list[list[str]] = []
 def host(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A host with 5 slots, a load test that passes (and checks the drain is on while it
     runs), no VMs running, and the systemctl calls recorded in host/systemctl."""
-    monkeypatch.setattr(sup, "DRAIN_FILE", tmp_path / "run" / "load-test-drain")
-    monkeypatch.setattr(sup, "LOAD_TEST_FILE", tmp_path / "load-test.json")
-    monkeypatch.setattr(sup, "SLOTS_FILE", tmp_path / "slots")
-    monkeypatch.setattr(sup, "COMMIT_FILE", tmp_path / "commit")
-    monkeypatch.setattr(sup, "UPDATE_LOCK", tmp_path / "update.lock")
-    monkeypatch.setattr(sup, "LOAD_TEST_SCRIPT", tmp_path / "test_load.py")
-    monkeypatch.setattr(sup, "log", lambda message: None)
-    monkeypatch.setattr(sup, "running_vms", lambda: set())
+    monkeypatch.setattr(load_testing, "DRAIN_FILE", tmp_path / "run" / "load-test-drain")
+    monkeypatch.setattr(load_testing, "LOAD_TEST_FILE", tmp_path / "load-test.json")
+    monkeypatch.setattr(load_testing, "SLOTS_FILE", tmp_path / "slots")
+    monkeypatch.setattr(load_testing, "COMMIT_FILE", tmp_path / "commit")
+    monkeypatch.setattr(load_testing, "UPDATE_LOCK", tmp_path / "update.lock")
+    monkeypatch.setattr(load_testing, "LOAD_TEST_SCRIPT", tmp_path / "test_load.py")
+    monkeypatch.setattr(vms, "running_vms", lambda: set())
     (tmp_path / "slots").write_text("5\n")
     (tmp_path / "commit").write_text("a" * 40 + "\n")
     write_test_script(tmp_path, 'echo "PASS $SLOTS slots: every VM booted and finished"')
     CALLS.clear()
 
-    def run(args: list[str], **kwargs: object) -> sup.subprocess.CompletedProcess[str]:
+    def run(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
         CALLS.append(args)
-        return sup.subprocess.CompletedProcess(args, 0)
+        return subprocess.CompletedProcess(args, 0)
 
-    monkeypatch.setattr(sup.subprocess, "run", run)
+    monkeypatch.setattr(subprocess, "run", run)
     return tmp_path
 
 
@@ -49,12 +55,12 @@ def write_test_script(folder: Path, result: str) -> None:
 def drained_test() -> int:
     """The load test run past its drain, to the end."""
     linux_only("flock, and a script run by its #! line")
-    return sup.run_load_test()
+    return load_testing.run_load_test()
 
 
 def started(host: Path) -> bool:
-    sup.start_load_test_if_due()
-    return ["systemctl", "start", "--no-block", sup.LOAD_TEST_UNIT] in CALLS
+    load_testing.start_load_test_if_due()
+    return ["systemctl", "start", "--no-block", load_testing.LOAD_TEST_UNIT] in CALLS
 
 
 def test_no_result_for_the_current_slot_count_starts_the_load_test(host: Path) -> None:
@@ -65,9 +71,9 @@ def test_a_start_refused_by_its_start_limit_is_left_for_a_later_pass(
     host: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        sup.subprocess, "run", lambda args, **kwargs: sup.subprocess.CompletedProcess(args, 1)
+        subprocess, "run", lambda args, **kwargs: subprocess.CompletedProcess(args, 1)
     )
-    assert sup.start_load_test_if_due() == 0
+    assert load_testing.start_load_test_if_due() == 0
 
 
 def test_a_pass_for_the_same_slots_and_test_does_not_start_it_again(host: Path) -> None:
@@ -121,7 +127,7 @@ def test_the_drain_ends_when_the_test_breaks_and_it_waits_to_try_again(
     else:
         write_test_script(host, broken)
         assert drained_test() == 1
-    assert not sup.DRAIN_FILE.exists()
+    assert not load_testing.DRAIN_FILE.exists()
     record = json.loads((host / "load-test.json").read_text())
     assert record["ran"] is False and record["line"].startswith("not run:")
     assert not started(host)  # not drained again on the next update pass
@@ -131,7 +137,7 @@ def test_a_fail_kept_is_not_overwritten_when_lowering_the_count_breaks(
     host: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     write_test_script(host, 'echo "FAIL $SLOTS slots: slot 4: VM did not boot (exit 1)"; exit 1')
-    monkeypatch.setattr(sup, "SLOTS_FILE", host / "no-such-folder" / "slots")
+    monkeypatch.setattr(load_testing, "SLOTS_FILE", host / "no-such-folder" / "slots")
     with pytest.raises(FileNotFoundError):
         drained_test()
     record = json.loads((host / "load-test.json").read_text())
@@ -141,33 +147,35 @@ def test_a_fail_kept_is_not_overwritten_when_lowering_the_count_breaks(
 def test_the_drain_ends_when_jobs_outlast_its_limit_and_it_is_tried_again_later(
     host: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(sup, "running_vms", lambda: {"homelab-ci-vm-0"})
-    monkeypatch.setattr(sup, "DRAIN_LIMIT_SECONDS", 0)
-    assert sup.run_load_test() == 1
-    assert not sup.DRAIN_FILE.exists()
+    monkeypatch.setattr(vms, "running_vms", lambda: {"homelab-ci-vm-0"})
+    monkeypatch.setattr(load_testing, "DRAIN_LIMIT_SECONDS", 0)
+    assert load_testing.run_load_test() == 1
+    assert not load_testing.DRAIN_FILE.exists()
     record = json.loads((host / "load-test.json").read_text())
     assert record["line"] == "not run: 1 VMs still running after the drain limit"
     assert not started(host)  # not straight away: the jobs are still there
-    monkeypatch.setattr(sup.time, "time", lambda: record["at"] + sup.LOAD_TEST_RETRY_SECONDS)
+    monkeypatch.setattr(time, "time", lambda: record["at"] + load_testing.LOAD_TEST_RETRY_SECONDS)
     assert started(host)
 
 
 def test_the_unit_ends_the_drain_however_it_stops() -> None:
     unit = Path("ci-runner/supervisor/homelab-ci-load-test.service").read_text()
-    assert f"ExecStopPost=/usr/bin/rm -f {sup.DRAIN_FILE.as_posix()}" in unit
+    assert f"ExecStopPost=/usr/bin/rm -f {load_testing.DRAIN_FILE.as_posix()}" in unit
 
 
 def queued_job(monkeypatch: pytest.MonkeyPatch, repo: str = "o/ok") -> None:
-    monkeypatch.setattr(sup, "check_served", lambda *a, **k: True)
-    monkeypatch.setattr(sup, "only_colin", lambda *a, **k: True)
-    monkeypatch.setattr(sup, "reap", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "maybe_take_outboxes", lambda *a, **k: None)
-    monkeypatch.setattr(sup, "mem_available_mib", lambda: 1 << 20)
-    monkeypatch.setattr(sup, "disk_wait_percent", lambda: 0.0)
-    monkeypatch.setattr(sup, "WAITS_FILE", sup.DRAIN_FILE.parent / "waits.jsonl")
-    monkeypatch.setattr(sup, "WAIT_METRICS", sup.DRAIN_FILE.parent / "ci-waits.prom")
+    monkeypatch.setattr(github_api, "check_served", lambda *a, **k: True)
+    monkeypatch.setattr(github_api, "only_colin", lambda *a, **k: True)
+    monkeypatch.setattr(vms, "reap", lambda *a, **k: None)
+    monkeypatch.setattr(cache_disks, "maybe_take_outboxes", lambda *a, **k: None)
+    monkeypatch.setattr(vms, "mem_available_mib", lambda: 1 << 20)
+    monkeypatch.setattr(vms, "disk_wait_percent", lambda: 0.0)
+    monkeypatch.setattr(job_waits, "WAITS_FILE", load_testing.DRAIN_FILE.parent / "waits.jsonl")
+    monkeypatch.setattr(job_waits, "WAIT_METRICS", load_testing.DRAIN_FILE.parent / "ci-waits.prom")
     monkeypatch.setattr(
-        sup, "find_queued", lambda gh, r, **_: [sup.Job(r, 1, "j", tuple(sup.RUNNER_LABELS))]
+        github_api,
+        "find_queued",
+        lambda gh, r, **_: [github_api.Job(r, 1, "j", tuple(github_api.RUNNER_LABELS))],
     )
 
 
@@ -176,13 +184,13 @@ def test_while_drained_no_vm_starts_and_the_standby_stops(
 ) -> None:
     queued_job(monkeypatch)
     starts: list[int] = []
-    monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: starts.append(slot))
+    monkeypatch.setattr(vms, "launch", lambda gh, state, repo, slot, now, **k: starts.append(slot))
     stopped: list[str] = []
-    monkeypatch.setattr(sup, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
-    standby = sup.Launch(0, "o/ok", 0, "fc-0", 0.0, Path("m"), True)
+    monkeypatch.setattr(vms, "stop_if_still_idle", lambda gh, run, why: stopped.append(why))
+    standby = vms.Launch(0, "o/ok", 0, "fc-0", 0.0, Path("m"), True)
     state = sup.State(slots=5, launches={0: standby})
-    sup.DRAIN_FILE.parent.mkdir(parents=True)
-    sup.DRAIN_FILE.touch()
+    load_testing.DRAIN_FILE.parent.mkdir(parents=True)
+    load_testing.DRAIN_FILE.touch()
 
     sup.tick(NoGitHub(), state, ["o/ok"], 0.0)
 
@@ -196,7 +204,7 @@ def test_after_the_drain_the_supervisor_takes_the_lowered_count_and_jobs_again(
 ) -> None:
     queued_job(monkeypatch)
     starts: list[int] = []
-    monkeypatch.setattr(sup, "launch", lambda gh, state, repo, slot, now, **k: starts.append(slot))
+    monkeypatch.setattr(vms, "launch", lambda gh, state, repo, slot, now, **k: starts.append(slot))
     monkeypatch.setattr(sup, "standby_count", lambda: 0)
     state = sup.State(slots=5, draining=True)
     (host / "slots").write_text("4\n")
@@ -208,4 +216,25 @@ def test_after_the_drain_the_supervisor_takes_the_lowered_count_and_jobs_again(
 
 def test_the_last_result_reads_back_as_written(host: Path) -> None:
     drained_test()
-    assert sup.read_load_test() == json.loads((host / "load-test.json").read_text())
+    assert load_testing.read_load_test() == json.loads((host / "load-test.json").read_text())
+
+
+@pytest.mark.parametrize(
+    ("text", "slots"),
+    [(None, 5), ("four\n", 5), ("-2\n", 5), ("0\n", 1), (" 2 ", 2)],
+)
+def test_the_slot_count_comes_from_the_host_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, text: str | None, slots: int
+) -> None:
+    path = tmp_path / "slots"
+    if text is not None:
+        path.write_text(text)
+    monkeypatch.setattr(load_testing, "SLOTS_FILE", path)
+    assert load_testing.slot_count() == slots
+
+
+def test_an_unreadable_slot_file_means_the_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(load_testing, "SLOTS_FILE", tmp_path)  # a folder: reading it fails
+    assert load_testing.slot_count() == 5

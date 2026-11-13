@@ -28,7 +28,7 @@ slos:
     level: now
     title: CI supervisor stopped
     file: ci-waits.prom
-    every: 15s  # ci-runner/supervisor/ci_supervisor.py, WAIT_METRICS_SECONDS
+    every: 15s  # ci-runner/supervisor/job_waits.py, WAIT_METRICS_SECONDS
     late: 2m  # baseline.py, 11-13 Nov: normal at most 0.9 min old
     harm: No CI machine starts, so private repositories' checks wait and nothing of theirs merges.
     action: >-

@@ -1,5 +1,5 @@
 """The load test itself (ci-runner/host-tests/test_load.py): its PASS or FAIL decision, and the
-last line, which the supervisor keeps as the result (ci_supervisor.py, drain_and_test)."""
+last line, which the supervisor keeps as the result (load_testing.py, drain_and_test)."""
 
 import importlib.util
 import subprocess
