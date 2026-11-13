@@ -258,18 +258,6 @@ def install_vm_files(host: Host, here: Path) -> None:
     install(host, "0755", here / "host-tests" / "test_load.py", f"{DEST}/test_load.py")
 
 
-# Shell wrappers older installs left beside the scripts above, which they run. Removed only after a
-# whole install: a failed one restarts the old supervisor and keeps the old units, which name them.
-OLD_WRAPPERS = (
-    "vm-disks.sh",
-    "run-vm.sh",
-    "stop-vms.sh",
-    "update.sh",
-    "test-load.sh",
-    "net/setup-net.sh",
-)
-
-
 def install_timed_script(host: Host, script: Path, unit: str, units: Path | None = None) -> None:
     """The script and its timer's units, which sit beside it unless UNITS says where."""
     install(host, "0644", script, f"{DEST}/{script.name}")
@@ -434,8 +422,6 @@ def install_locked(
     install(host, "0644", here / "supervisor" / unit, f"/etc/systemd/system/{unit}")
     systemctl(host, "daemon-reload")
     systemctl(host, "enable", "--now", "homelab-ci-update.timer")
-    for name in OLD_WRAPPERS:
-        host.path(f"{DEST}/{name}").unlink(missing_ok=True)
 
     firecracker = (
         host.run(
