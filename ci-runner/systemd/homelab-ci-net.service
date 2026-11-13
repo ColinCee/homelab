@@ -11,6 +11,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/lib/homelab-ci/net/setup-net.sh up
 ExecStop=/usr/local/lib/homelab-ci/net/setup-net.sh down
+TimeoutStartSec=5min
 
 [Install]
 WantedBy=multi-user.target

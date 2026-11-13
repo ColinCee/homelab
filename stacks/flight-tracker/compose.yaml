@@ -2,6 +2,7 @@ services:
   backend:
     image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:73a28916cfe76d09663942d31fafaa26c864e64050718c3acdf88fb7189bba11
     restart: unless-stopped
+    mem_limit: 256m
     security_opt:
       - no-new-privileges:true
     expose:

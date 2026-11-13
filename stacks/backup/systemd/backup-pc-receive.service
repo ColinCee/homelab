@@ -8,5 +8,7 @@ Type=oneshot
 # Needs `sudo tailscale set --operator=colin` once, so this user may receive files.
 ExecStartPre=/usr/bin/mkdir -p %h/pc-backups
 ExecStart=/usr/bin/tailscale file get --conflict=overwrite %h/pc-backups
-# The newest file's time, for Prometheus (docs/architecture.md, "Backups"). `$$` and `%%` keep systemd from expanding them.
-ExecStartPost=/bin/sh -c 'newest=$(find %h/pc-backups -type f -printf "%%T@\n" | sort -n | tail -n 1); [ -n "$newest" ] && printf "homelab_pc_backup_newest_timestamp_seconds %%s\n" "$${newest%%.*}" > /var/lib/homelab-metrics/pc-backup.prom.tmp && mv /var/lib/homelab-metrics/pc-backup.prom.tmp /var/lib/homelab-metrics/pc-backup.prom || true'
+# The newest file's time, for Prometheus (docs/architecture.md, "Backups").
+ExecStartPost=/usr/bin/python3 -I %h/code/homelab/stacks/backup/unit_metrics.py pc-received
+TimeoutStartSec=30min
+Nice=10

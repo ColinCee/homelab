@@ -11,6 +11,7 @@ services:
     # Built here only: never pulled, so no registry image of that name can stand in.
     pull_policy: build
     restart: unless-stopped
+    mem_limit: 512m
     entrypoint: ["python3", "-I", "/backup.py"]
     # Passes SIGTERM on (docs/architecture.md, "Deploys").
     init: true

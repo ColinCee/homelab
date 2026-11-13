@@ -4,6 +4,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     restart: unless-stopped
+    mem_limit: 128m
     security_opt:
       - no-new-privileges:true
     # Its metrics for the observability stack's Alloy, which reaches it on observability-otlp.
