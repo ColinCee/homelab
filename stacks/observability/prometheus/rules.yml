@@ -717,7 +717,7 @@ groups:
           measure: 'Installed'
           unit: ' min ago'
           harm: >-
-            update.sh installs ci-runner/ and scripts/ from main as root, so a commit you did not merge runs with full
+            update.sh installs ci-runner/ and beelink/ from main as root, so a commit you did not merge runs with full
             control of the Beelink.
           action: >-
             Read that commit on main and `journalctl -u homelab-ci-update`; if you did not merge it, stop the timer

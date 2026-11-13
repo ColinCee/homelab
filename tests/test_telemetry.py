@@ -130,10 +130,10 @@ OWN_HTTP = {
     "ci-runner/supervisor/ci_supervisor.py": "http.client",
     # Runs in Colin's terminal with the OS's certificate store and refuses any redirect of the
     # admin login it sends.
-    "scripts/tailscale_policy.py": "urllib.request",
-    # CI runs the base commit's copy alone from a temporary folder (scripts/ci.py, run_base_rule),
+    "tailnet/tailscale_policy.py": "urllib.request",
+    # CI runs the base commit's copy alone from a temporary folder (checks/ci.py, run_base_rule),
     # where no shared module can be found.
-    "scripts/versions_hash.py": "urllib.request",
+    "checks/versions_hash.py": "urllib.request",
 }
 HTTP_MODULES = {"urllib.request", "http.client", "requests", "httpx", "aiohttp"}
 

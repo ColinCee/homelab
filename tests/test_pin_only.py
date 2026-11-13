@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from conftest import git
 
-from scripts.pin_only import is_pin_only
+from checks.pin_only import is_pin_only
 
 OLD = "ghcr.io/colincee/app:latest@sha256:" + "a" * 64
 NEW = "ghcr.io/colincee/app:latest@sha256:" + "b" * 64

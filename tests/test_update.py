@@ -138,7 +138,7 @@ def test_a_change_to_the_host_code_installs_with_its_pull_requests_as_the_reason
 
 def test_a_given_reason_is_cut_to_plain_characters(host: Host) -> None:
     host.at(host.first)
-    want = commit(host.origin, "scripts/ci.py", "x")
+    want = commit(host.origin, "ci-runner/supervisor/ci_supervisor.py", "x")
 
     assert host.update(want, "Colin: $(reboot); fix #3") == 0
 
@@ -204,7 +204,7 @@ def test_a_failed_image_gives_up_after_two_and_jobs_keep_the_old_one(
 
 def test_a_change_that_gave_up_is_tried_again_an_hour_later(host: Host) -> None:
     host.at(host.first)
-    want = commit(host.origin, "scripts/ci.py", "x")
+    want = commit(host.origin, "ci-runner/supervisor/ci_supervisor.py", "x")
     host.codes["install-host.sh"] = 1
     host.update(want, now=1000)
     host.update(want, now=1000)
@@ -240,7 +240,7 @@ def test_a_load_test_that_will_not_start_waits_for_the_next_pass(
 
 def test_follow_takes_main(host: Host) -> None:
     host.at(host.first)
-    want = commit(host.origin, "scripts/ci.py", "x")
+    want = commit(host.origin, "ci-runner/supervisor/ci_supervisor.py", "x")
 
     assert host.update("--follow") == 0
 
@@ -259,7 +259,7 @@ def test_follow_stays_on_a_pinned_commit(host: Host, capsys: pytest.CaptureFixtu
 def test_a_commit_not_on_main_is_refused(host: Host) -> None:
     host.at(host.first)
     git(host.src, "checkout", "-q", "-b", "side")
-    other = commit(host.src, "scripts/ci.py", "side")
+    other = commit(host.src, "ci-runner/supervisor/ci_supervisor.py", "side")
 
     assert host.update(other) == 2
     assert host.update("main") == 2
@@ -267,7 +267,7 @@ def test_a_commit_not_on_main_is_refused(host: Host) -> None:
 
 
 def test_an_older_commit_needs_rollback(host: Host) -> None:
-    want = commit(host.origin, "scripts/ci.py", "x")
+    want = commit(host.origin, "ci-runner/supervisor/ci_supervisor.py", "x")
     host.at(want)
 
     assert host.update("--follow") == 0

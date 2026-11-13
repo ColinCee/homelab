@@ -1,12 +1,12 @@
 """An agent's pull request merges itself only when it changes what runs no code on the Beelink
-(scripts/agent_scope.py)."""
+(checks/agent_scope.py)."""
 
 from pathlib import Path
 
 import pytest
 from conftest import git
 
-from scripts.agent_scope import outside
+from checks.agent_scope import outside
 
 
 def _commit(repo: Path, files: list[str]) -> str:
@@ -27,7 +27,7 @@ def _commit(repo: Path, files: list[str]) -> str:
         (["README.md"], []),
         (["AGENTS.md"], ["AGENTS.md"]),
         (["stacks/observability/compose.yaml"], ["stacks/observability/compose.yaml"]),
-        (["scripts/ci.py", "docs/recovery.md"], ["scripts/ci.py"]),
+        (["checks/ci.py", "docs/recovery.md"], ["checks/ci.py"]),
         ([".github/skills/homelab-oncall/SKILL.md"], [".github/skills/homelab-oncall/SKILL.md"]),
         (["stacks/observability/alertmanager/alertmanager.yml"],
          ["stacks/observability/alertmanager/alertmanager.yml"]),
@@ -47,9 +47,9 @@ def test_a_rename_into_the_docs_is_held_by_its_old_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     git(tmp_path, "init", "-q")
-    base = _commit(tmp_path, ["scripts/ci.py"])
+    base = _commit(tmp_path, ["checks/ci.py"])
     (tmp_path / "docs").mkdir()
-    git(tmp_path, "mv", "scripts/ci.py", "docs/ci.md")
+    git(tmp_path, "mv", "checks/ci.py", "docs/ci.md")
     git(tmp_path, "commit", "-qm", "mv")
     monkeypatch.chdir(tmp_path)
-    assert outside(base, "HEAD") == ["scripts/ci.py"]
+    assert outside(base, "HEAD") == ["checks/ci.py"]

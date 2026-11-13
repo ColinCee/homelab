@@ -54,7 +54,7 @@ def output(name: str, value: str) -> None:
 
 def run_base_rule(script: str) -> int | None:
     """Run the base commit's copy of a rule script on BASE..HEAD; None when the base has none."""
-    text = base_file(f"scripts/{script}")
+    text = base_file(f"checks/{script}")
     if text is None:
         return None
     with tempfile.TemporaryDirectory() as folder:
@@ -82,7 +82,7 @@ def versions_hash() -> int:
 
 def validate_changed_compose() -> int:
     files = [p for p in changed([]) if p.endswith("compose.yaml")]
-    return subprocess.run(["scripts/validate-compose.sh", *files]).returncode if files else 0
+    return subprocess.run(["checks/validate-compose.sh", *files]).returncode if files else 0
 
 
 def limits(text: str) -> dict[str, float]:

@@ -12,7 +12,7 @@ Uncompressed so that restic on Beelink stores only what changed from one night t
 SQLite database is copied with SQLite's own backup first, so one in use is copied whole; its
 -wal and -shm files are left out.
 
-usage: python scripts/pc_backup.py [--root DIR] [--to DEVICE] [--dry-run]
+usage: python stacks/backup/pc_backup.py [--root DIR] [--to DEVICE] [--dry-run]
 
 Standard library only, so any Python 3.11+ on the PC runs it. The last run is written to
 ~/.pc-backup.json.

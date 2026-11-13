@@ -32,7 +32,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 - Nothing accepts an internet connection. Admin pages bind to the Tailscale address, which Docker waits for
   at boot ([`tailscale.conf`](../beelink/docker/tailscale.conf)). Who may reach what is the tailnet policy
-  ([`tailscale_policy.py`](../scripts/tailscale_policy.py)); addresses and `.internal` names are in the
+  ([`tailscale_policy.py`](../tailnet/tailscale_policy.py)); addresses and `.internal` names are in the
   reaching-homelab-devices skill.
 - Public only through the [tunnel](../stacks/tunnel/compose.yaml), an outbound connection: routes set in Cloudflare's
   dashboard take `api.colincheung.dev` to `backend:8000` and `deploy.colincheung.dev/ring` to `doorbell:8080` on the
@@ -102,7 +102,7 @@ Alertmanager has no port (its API takes silences without a login): `docker exec 
 **Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert one #incidents post and
 starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)), which reads the
 gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin, merging only fixes that run
-no code ([`agent_scope.py`](../scripts/agent_scope.py)): a guard against mistakes, not his login.
+no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes, not his login.
 
 - A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert. "Cleared"
   means the number recovered.
@@ -128,7 +128,7 @@ Traps:
 [restic](../stacks/backup/backup.py) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
 encrypted: Home Assistant's config and a consistent copy of its history, the flight tracker's heatmap volume, and
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
-([`pc_backup.py`](../scripts/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
+([`pc_backup.py`](../stacks/backup/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
 6 monthly snapshots, reads back every byte on Sundays, and uploads nothing past 8 GB, since R2 bills past 10 GB.
 `RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Restoring: [recovery](recovery.md).
 

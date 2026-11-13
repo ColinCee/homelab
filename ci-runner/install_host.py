@@ -39,7 +39,7 @@ GH = "https://github.com/firecracker-microvm/firecracker/releases/download"
 # SUPERVISOR and the units' ExecStart name it too (tests/test_install_host.py checks they agree).
 PYTHON_LINK = "/usr/local/bin/homelab-python3"
 PYTHON_DIR = "/usr/local/lib/homelab-python"
-# The URL scripts/versions_hash.py builds for CI's hash check: change them together.
+# The URL checks/versions_hash.py builds for CI's hash check: change them together.
 PBS = "https://github.com/astral-sh/python-build-standalone/releases/download"
 PYTHON_SMOKE = "import ssl, json, sqlite3, tomllib"
 
@@ -93,7 +93,7 @@ class Host:
 
 
 def versions(text: str) -> dict[str, str]:
-    """versions.env's NAME=value lines, as the shell reads them (as scripts/ci.py's `versions`,
+    """versions.env's NAME=value lines, as the shell reads them (as checks/ci.py's `versions`,
     kept here so the installer imports nothing from the checkout)."""
     found: dict[str, str] = {}
     for token in shlex.split(text, comments=True):

@@ -1,10 +1,10 @@
-"""The CI workflows' steps (scripts/ci.py): the rules they apply and what they tell later steps."""
+"""The CI workflows' steps (checks/ci.py): the rules they apply and what they tell later steps."""
 
 from pathlib import Path
 
 import pytest
 
-from scripts import ci
+from checks import ci
 
 ROOT = Path(__file__).parent.parent
 

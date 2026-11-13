@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import pc_backup
+from stacks.backup import pc_backup
 
 
 def _project(root: Path, name: str, manifest: str) -> Path:

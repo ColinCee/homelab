@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 import yaml
 
-# CI's time limits, which fail the run in CI: one test process's run (scripts/test_shards.py runs
+# CI's time limits, which fail the run in CI: one test process's run (checks/test_shards.py runs
 # one per core) at about twice today's, and one test's own body (a sleep, a timeout, a container
 # started per test). Shared fixtures count in the run. Raise one only in a pull request saying why.
 RUN_LIMIT = 30.0
