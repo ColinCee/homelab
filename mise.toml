@@ -4,7 +4,7 @@ uv = "0.13.7"
 shellcheck = "0.11.0"
 actionlint = "1.7.12"
 zizmor = "1.32.0"
-# promtool, alloy and caddy for the tests, at the versions compose.yaml runs (tests/test_observability_compose.py).
+# promtool, alloy and caddy for the tests, at the versions compose.yaml runs (stacks/observability/observability_compose_test.py).
 "aqua:prometheus/prometheus" = "3.16.0"
 "aqua:grafana/alloy" = "1.21.3"
 "aqua:caddyserver/caddy" = "2.11.9"

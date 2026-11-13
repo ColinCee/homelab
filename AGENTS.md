@@ -5,7 +5,7 @@ which code comments point to by section.
 
 Checks: `mise run check` (CI's check job; Compose validation needs Docker), before pushing.
 
-- One job per top-level folder; files sit beside what they serve (`tests/test_placement.py`). Deploy logic stays
+- One job per top-level folder; files sit beside what they serve (`checks/placement_test.py`). Deploy logic stays
   stack-name agnostic. No image polling or per-stack deploy branches: Git pins images; Renovate moves them,
   auto-merging non-major ones after checks and its release-age gate.
 - Bind admin ports to Tailscale; host networking only when needed. Pin images, Actions.

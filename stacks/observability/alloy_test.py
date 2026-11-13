@@ -1,0 +1,190 @@
+"""Alloy (stacks/observability/config.alloy) keeps every metric and the container labels read, and
+loads (its validate command)."""
+
+import ast
+import json
+import re
+import subprocess
+import threading
+from pathlib import Path
+
+from conftest import ROOT, tool
+from stacks.observability.prometheus import slos
+
+STACK = ROOT / "stacks/observability"
+CONFIG = (STACK / "config.alloy").read_text(encoding="utf-8")
+READERS = (
+    *sorted((STACK / "grafana/dashboards").glob("*.json")),
+    STACK / "public-stats/public_stats.py",
+)
+
+
+def queries() -> list[str]:
+    """Every alert and dashboard query, and the scripts that read metrics."""
+    texts = [str(rule["expr"]) for group in slos.rule_groups() for rule in group["rules"]]
+    return texts + [reader.read_text(encoding="utf-8") for reader in READERS]
+
+
+def test_no_metric_is_dropped_by_name() -> None:
+    # The store keeps what a later fix may need, so no rule filters on the metric name.
+    assert not re.search(r'source_labels\s*=\s*\[[^\]]*"__name__"', CONFIG)
+    # Nor do the host and container exporters narrow their default sets.
+    assert "set_collectors" not in CONFIG
+    docker = CONFIG[CONFIG.index('prometheus.exporter.cadvisor "docker"') :]
+    assert "enabled_metrics" not in docker[: docker.index("\n}")]
+
+
+def test_every_container_label_read_is_sent() -> None:
+    block = CONFIG[CONFIG.index("allowlisted_container_labels") :]
+    allowed = re.findall(r'"([^"]+)"', block[: block.index("]")])
+    sent = {"container_label_" + re.sub(r"[.-]", "_", label) for label in allowed}
+    read = {name for text in queries() for name in re.findall(r"\bcontainer_label_\w+", text)}
+    assert "container_label_com_docker_compose_project" in read
+    assert read <= sent
+
+
+def test_the_config_loads() -> None:
+    command = [tool("alloy"), "validate", str(STACK / "config.alloy")]
+    ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
+    assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+# A line in each format the containers write, a word found only in it, and the level it gets.
+LINES = [
+    # Prometheus, Alertmanager, blackbox and OBI (Go's slog)
+    (
+        '{"level":"ERROR","source":"main.go:774","msg":"Error loading"}',
+        "loading",
+        "error",
+    ),
+    (
+        '{"time":"2026-11-13T14:41:49Z","level":"INFO","msg":"OpenTelemetry eBPF Instrumentation"}',
+        "eBPF",
+        "info",
+    ),
+    # VictoriaLogs and VictoriaTraces
+    (
+        '{"ts":"2026-11-13T14:41:56Z","level":"warn","caller":"lib/flag.go:12","msg":"slow query"}',
+        "slow",
+        "warn",
+    ),
+    # Grafana
+    (
+        '{"level":"warn","logger":"settings","msg":"Deprecation Notice"}',
+        "Deprecation",
+        "warn",
+    ),
+    # cloudflared (zerolog)
+    (
+        '{"level":"error","time":"2026-11-13T14:42:00Z","message":"Connection terminated"}',
+        "terminated",
+        "error",
+    ),
+    # Alloy
+    ('{"ts":"2026-11-13T14:41:43Z","level":"info","msg":"Alloy is starting"}', "starting", "info"),
+    # Our services
+    (
+        '{"time":"2026-11-13T13:35:30.000+00:00","level":"ERROR","msg":"cannot post"}',
+        "post",
+        "error",
+    ),
+    # Caddy
+    ('{"level":"warn","logger":"http.log","msg":"handled request"}', "handled", "warn"),
+    ('{"level":"INFO","msg":"saw level=error in a reply"}', "reply", "info"),
+    # uvicorn, CoreDNS and Home Assistant, which cannot log JSON
+    ('INFO:     192.168.96.2:55072 - "GET /aircraft HTTP/1.1" 200 OK', "aircraft", "info"),
+    ("[INFO] plugin/reload: Running configuration SHA512", "SHA512", "info"),
+    ("\x1b[31m2026-11-12 20:25:47.122 ERROR (MainThread) [habluetooth]", "habluetooth", "error"),
+    ("2026-11-12 20:25:44.669 CRITICAL (MainThread) [homeassistant]", "homeassistant", "fatal"),
+    ("Error fetching from ADS-B API, trying fallback", "ADS-B", ""),
+]
+# Lines from these containers: the first of each is dropped, the second kept.
+NOISE = {
+    "observability-docker-socket-proxy-1": [
+        "::ffff:172.29.0.4:48868 [13/Nov/2026:13:35:21.154] proxy docker/socket 0/0/0/1/1 200 9092"
+        ' - - ---- 27/27/23/23/0 0/0 "GET /v1.56/containers/9da7/json HTTP/1.1"',
+        "::ffff:172.29.0.4:48868 [13/Nov/2026:13:35:21.169] proxy docker/socket 0/0/0/1/1 403 212"
+        ' - - PR-- 27/27/23/23/0 0/0 "POST /v1.56/containers/9da7/stop HTTP/1.1"',
+    ],
+    "observability-alloy-1": [
+        '{"ts":"2026-11-13T13:35:30Z","level":"info","msg":"Failed to update stats for container'
+        ' \\"/system.slice/docker-73fa.scope\\": unable to determine device info for dir:'
+        ' /rootfs/var/lib/docker/overlay2/ddf0/diff: stat failed"}',
+        '{"ts":"2026-11-14T08:00:00Z","level":"info","msg":"reload requested"}',
+    ],
+}
+
+
+def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> None:
+    alloy = tool("alloy")
+    names = ("noise", "docker")
+    starts = [CONFIG[CONFIG.index(f'loki.process "{name}"') :] for name in names]
+    block = "".join(start[: start.index("\n}\n") + 3] for start in starts)
+    # Without the secret filter between them, which needs no testing here.
+    block = block.replace("loki.secretfilter.docker.receiver", "loki.process.docker.receiver")
+    block = block.replace("otelcol.receiver.loki.logs.receiver", "loki.echo.out.receiver")
+    files = {"app": [line for line, _, _ in LINES], **NOISE}
+    targets = []
+    for name, lines in files.items():
+        path = tmp_path / f"{name}.log"
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        targets.append(f'{{__path__ = "{path.as_posix()}", container_name = "{name}"}}')
+    journal = tmp_path / "journal.txt"
+    # A unit's text, and a host script's line through telemetry.
+    journal.write_text(
+        "Started homelab-ci-update.service.\n"
+        '{"time":"2026-11-13T13:35:30.000+00:00","level":"WARNING","logger":"ci-times",'
+        '"msg":"skipped a run"}\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "test.alloy").write_text(
+        f'local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
+        'loki.source.file "s" {\n  targets = local.file_match.s.targets\n'
+        "  forward_to = [loki.process.noise.receiver]\n  tail_from_end = false\n}\n"
+        f'local.file_match "j" {{\n  path_targets = [{{__path__ = "{journal.as_posix()}", '
+        'container_name = "journal"}]\n}\n'
+        'loki.source.file "j" {\n  targets = local.file_match.j.targets\n'
+        "  forward_to = [loki.process.docker.receiver]\n  tail_from_end = false\n}\n"
+        f'{block}\nloki.echo "out" {{}}\n',
+        encoding="utf-8",
+    )
+    command = [alloy, "run", f"--storage.path={tmp_path / 'data'}", str(tmp_path / "test.alloy")]
+    seen: list[str] = []
+    with subprocess.Popen(command, stderr=subprocess.PIPE, text=True, encoding="utf-8") as run:
+        assert run.stderr is not None
+        # A line wrongly dropped would leave the loop waiting for it: fail instead.
+        deadline = threading.Timer(60, run.kill)
+        deadline.start()
+        try:
+            for out in run.stderr:
+                if "component_id=loki.echo.out" in out:
+                    seen.append(out)
+                if len(seen) == len(LINES) + 4:
+                    break
+        finally:
+            deadline.cancel()
+            run.kill()
+    for line, word, level in LINES:
+        got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]
+        assert got == [[level] if level else []], line
+    # Every line leaves as one JSON object, whatever its program wrote.
+    for out in seen:
+        entry = re.search(r' entry=("(?:[^"\\]|\\.)*")', out)
+        assert entry, out
+        assert isinstance(json.loads(ast.literal_eval(entry.group(1))), dict), out
+    kept = "".join(seen)
+    assert "PR--" in kept and "reload requested" in kept and "homelab-ci-update" in kept
+    host = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if "skipped a run" in out]
+    assert host == [["warn"]]
+    assert " 200 9092" not in kept and "device" not in kept
+
+
+def test_container_logs_carry_their_service_name() -> None:
+    # The rules must be in the block that the log source reads, not another relabel block.
+    source = CONFIG[CONFIG.index('loki.source.docker "containers"') :]
+    rules = re.search(r"relabel_rules\s*=\s*discovery\.relabel\.(\w+)\.rules", source)
+    assert rules
+    block = CONFIG[CONFIG.index(f'discovery.relabel "{rules.group(1)}"') :]
+    block = block[: block.index("\n}\n")]
+    assert '"__meta_docker_container_label_com_docker_compose_service"' in block
+    assert re.search(r'target_label\s*=\s*"service_name"', block)

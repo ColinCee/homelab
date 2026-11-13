@@ -1,5 +1,5 @@
 """How the host tests in this folder run commands, one way for all of them, so a fix reaches each
-(tests/test_host_commands.py fails a copy). They find it beside them: in this folder, or in
+(host_commands_test.py fails a copy). They find it beside them: in this folder, or in
 /usr/local/lib/homelab-ci, where install_host.py installs it with test_load.py."""
 
 from __future__ import annotations

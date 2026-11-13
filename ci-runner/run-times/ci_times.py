@@ -91,7 +91,7 @@ def kind(run: Mapping[str, Any]) -> str:
 
 def slowest_tests(get: Get, job_id: int) -> list[dict[str, Any]]:
     """The job's annotation of its slowest tests, [[test, start, seconds], ...] as
-    tests/conftest.py writes it; [] when absent or malformed."""
+    conftest.py writes it; [] when absent or malformed."""
     for note in get(f"/repos/{REPO}/check-runs/{job_id}/annotations?per_page=50"):
         if note.get("title") != TESTS_TITLE:
             continue

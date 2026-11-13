@@ -34,12 +34,15 @@ LOCK = "/run/homelab-ci-update.lock"
 # so a broken pinned Python cannot stop the updater that would repair it.
 SUPERVISOR = ["/usr/local/bin/homelab-python3", "-Es", "/usr/local/lib/homelab-ci/ci_supervisor.py"]
 USAGE = "update.sh: usage: update.sh <commit> [reason] | --follow"
-# What install-host.sh installs, and what goes into the image.
-INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "stacks/telemetry"]
+# What install-host.sh installs, and what goes into the image; tests sit beside the code they test
+# but are neither.
+NOT_TESTS = ":(glob,exclude)**/*_test.py"
+INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "stacks/telemetry", NOT_TESTS]
 IMAGE_INPUTS = [
     "ci-runner/build-rootfs.sh",
     "ci-runner/rootfs",
     "ci-runner/versions.env",
+    NOT_TESTS,
 ]
 GIVE_UP_FAILURES = 2
 RETRY_SECONDS = 3600

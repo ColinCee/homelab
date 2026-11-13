@@ -112,7 +112,7 @@ no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics.
 - Noise budget: at most one post a day over 14 days. Replay a new or looser rule:
   `GATEWAY_LOGIN=agents@homelab.internal:<password> uv run python stacks/observability/prometheus/replay.py 14`.
-  Test rules with promtool (`tests/test_alert_rules.py`), never with fake events.
+  Test rules with promtool (`stacks/observability/alert_rules_test.py`), never with fake events.
 
 Traps:
 

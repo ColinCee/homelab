@@ -159,7 +159,8 @@ def _changed_paths(repo_root: Path, since: str | None) -> list[str] | None:
     if not since:
         return None
     listed = subprocess.run(
-        ["git", "diff", "--name-only", since, "HEAD", "--"],
+        # A test sits beside the stack it tests but deploys nothing.
+        ["git", "diff", "--name-only", since, "HEAD", "--", ".", ":(glob,exclude)**/*_test.py"],
         cwd=repo_root,
         capture_output=True,
         text=True,
