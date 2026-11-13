@@ -1860,7 +1860,7 @@
       "id": 17,
       "type": "table",
       "title": "Entities down now",
-      "description": "Each entity counted in Entities down: its domain, id and name. Unknown and unavailable look the same here; Home Assistant's own page tells them apart.",
+      "description": "Each entity the Down panel counts: its domain, id and name. Unknown and unavailable look the same here; Home Assistant's own page tells them apart.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
