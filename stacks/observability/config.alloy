@@ -622,14 +622,14 @@ otelcol.exporter.prometheus "programs" {
 
 // A span keeps where a call went (its host, and its route in its name), never the URL itself: a URL's path or query
 // can be a secret, as the Healthchecks.io ping URL is (incidents/relay.py), and the trace store has no secret filter.
-// OBI writes the URLs it sees; these are their attributes in OpenTelemetry's conventions.
+// These are OpenTelemetry's URL attributes, which OBI writes, and `url`, which host jobs' spans carry.
 otelcol.processor.transform "urls" {
   error_mode = "ignore"
 
   trace_statements {
     context    = "span"
     statements = [
-      `delete_matching_keys(attributes, "^(url\\.(full|path|query|original)|http\\.(url|target))$")`,
+      `delete_matching_keys(attributes, "^(url|url\\.(full|path|query|original)|http\\.(url|target))$")`,
     ]
   }
 

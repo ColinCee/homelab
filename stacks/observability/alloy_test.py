@@ -416,8 +416,9 @@ def error_lines(port: int) -> dict[str, float]:
     return counted
 
 
-# Each test's Alloy logs to the stderr the test reads: started from PowerShell, it takes itself for
-# a Windows service and logs to the Event Log, which needs an administrator, so it never loads.
+# Each test's Alloy logs to the stderr the test reads. On Windows, Alloy takes itself for a service
+# when a service started a process above it, as with a desktop app's shells, and then logs to the
+# Event Log, which needs an administrator, so it never loads.
 STDERR = 'logging {\n  destination = "stderr"\n}\n'
 
 
@@ -465,7 +466,7 @@ def test_spans_lose_their_urls_and_name_the_container_reached(tmp_path: Path) ->
         key = "network.peer.address" if connected else "server.address"
         attributes = {key: {"stringValue": address}, "server.port": {"intValue": server_port}}
         # A ping URL's path is its secret; Home Assistant signs a path in its query.
-        for url in ("url.full", "url.path", "url.query", "http.url"):
+        for url in ("url", "url.full", "url.path", "url.query", "http.url"):
             attributes[url] = {"stringValue": "/ping/secret-uuid?authSig=secret"}
         return {
             "traceId": "0" * 31 + "1",
