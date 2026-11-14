@@ -8,6 +8,9 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.path=/prometheus
       - --web.enable-remote-write-receiver
+      # Keeps the trace a metric point came from, which Alloy sends and Grafana opens (grafana/datasources.yaml): the
+      # newest 100,000, in memory and its WAL.
+      - --enable-feature=exemplar-storage
       - --log.format=json
       # One heavy query must not take its memory, and the alerts with it: about 160 MB of samples, a minute, four at a
       # time.
