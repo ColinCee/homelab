@@ -36,7 +36,7 @@ snapshots with `restic forget --prune <id>`.
    sudo systemctl daemon-reload
    ```
 
-3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (folder 700, files 444), then
+3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` ([list](secrets.md); folder 700, files 444), then
    `stacks/deploy/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty; `deploy-main`
    follows. Deploy `backup` last and restore as above.
 4. CI runner: `sudo ci-runner/install_host.py`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/host-tests/test_tools.py`, `sudo ci-runner/host-tests/audit.py`
