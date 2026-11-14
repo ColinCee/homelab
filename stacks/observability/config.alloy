@@ -310,7 +310,7 @@ loki.process "docker" {
   // server answers one it left (the page history a closing tab reads or saves) with three "Handler timeout" lines
   // and a 500; the same request not left answers 200. A real timeout elsewhere still logs its "Request Completed".
   stage.match {
-    selector = `{service_name="grafana"} |= "\"level\":\"error\"" |~ "context canceled\"|Handler timeout|Post-timeout activity|\"path\":\"/apis/userstorage[.]grafana[.]app/[^\"]*\",.*\"status\":500,"`
+    selector = `{service_name="grafana"} |= "\"level\":\"error\"" |~ "context canceled\"|Handler timeout|Post-timeout activity\",.*\"path\":\"/apis/userstorage[.]|\"path\":\"/apis/userstorage[.]grafana[.]app/[^\"]*\",.*\"status\":500,"`
 
     stage.template {
       source   = "level"

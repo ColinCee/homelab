@@ -168,11 +168,16 @@ MAPPED = {
             "m7",
             "info",
         ),
-        ('{"level":"error","msg":"Request Completed","status":500,"t":"m8"}', "m8", "error"),
+        (
+            '{"level":"error","msg":"Request Completed","path":"/apis/dashboard.grafana.app/v1/x",'
+            '"status":500,"t":"m8"}',
+            "m8",
+            "error",
+        ),
         ('{"level":"warn","error":"context canceled","t":"m9"}', "m9", "warn"),
         (
             '{"err":"apiserver was unable to write a application/json response: http: Handler'
-            ' timeout","level":"error","logger":"UnhandledError","t":"mz1"}',
+            ' timeout","level":"error","t":"mz1"}',
             "mz1",
             "info",
         ),
@@ -183,15 +188,10 @@ MAPPED = {
             "info",
         ),
         (
-            '{"level":"error","logger":"UnhandledError","msg":"Post-timeout activity","t":"mz4"}',
+            '{"level":"error","msg":"Post-timeout activity",'
+            '"path":"/apis/userstorage.grafana.app/v0alpha1/x","t":"mz4"}',
             "mz4",
             "info",
-        ),
-        (
-            '{"level":"error","msg":"Request Completed","path":"/apis/dashboard.grafana.app/'
-            'v1/x","status":500,"t":"mz3"}',
-            "mz3",
-            "error",
         ),
     ],
     "blackbox": [
