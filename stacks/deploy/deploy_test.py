@@ -599,8 +599,11 @@ DOCKER_STOP, DOCKER_RM = ["docker", "stop"], ["docker", "rm"]
 class Host:
     """Docker as start_first sees it: the service's containers and the config hash each runs."""
 
-    def __init__(self, running: dict[str, str], *, wanted: str, healthy: bool = True) -> None:
+    def __init__(
+        self, running: dict[str, str], *, wanted: str, healthy: bool = True, state: str = "running"
+    ) -> None:
         self.running = dict(running)
+        self.state = state
         self.wanted = wanted
         self.healthy = healthy
         self.commands: list[list[str]] = []
@@ -614,7 +617,7 @@ class Host:
             case [*_, "ps", "-q", _]:
                 out = "".join(f"{c}\n" for c in self.running)
             case ["docker", "inspect", *_, container]:
-                out = self.running[container] + "\n"
+                out = f"{self.running[container]} {self.state}\n"
             case [*_, "web"] if "--scale" in command:
                 self.running["new"] = self.wanted
                 if not self.healthy:
@@ -644,7 +647,7 @@ def test_a_start_first_service_stops_its_old_container_once_the_new_one_is_healt
     assert report.completed == ("app",)
     steps = [c for c in host.commands if "--scale" in c or c[0:2] in (DOCKER_STOP, DOCKER_RM)]
     assert "web=2" in steps[0]
-    assert steps[1:] == [[*DOCKER_STOP, "old"], [*DOCKER_RM, "old"]]
+    assert steps[1:] == [[*DOCKER_STOP, "--time", "10", "old"], [*DOCKER_RM, "old"]]
     assert host.running == {"new": "h2"}
 
 
@@ -669,3 +672,13 @@ def test_a_new_container_that_never_gets_healthy_goes_and_the_old_one_keeps_serv
     assert report.failed == {"app": "command exited with 1"}
     assert host.running == {"old": "h1"}
     assert not any(c[:2] == ["docker", "stop"] for c in host.commands)
+
+
+def test_an_old_container_not_serving_is_replaced_the_plain_way(tmp_path: Path) -> None:
+    _start_first_stack(tmp_path)
+    host = Host({"old": "h1"}, wanted="h2", state="unhealthy")
+
+    report = deploy.deploy(tmp_path, deploy.discover_stack_plans(tmp_path), runner=host)
+
+    assert report.completed == ("app",)
+    assert not any("--scale" in c for c in host.commands)

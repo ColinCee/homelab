@@ -380,9 +380,14 @@ def deploy(
 # does the same as a Docker CLI plugin, which the host would need installed and kept up to date.
 START_FIRST_LABEL = "homelab.deploy"
 START_FIRST = "start-first"
-# Under a minute, so both containers never reach a once-a-minute job such as the flight tracker's
-# snapshot, which waits a minute after its start.
+# Together under a minute, so both containers never reach a once-a-minute job such as the flight
+# tracker's snapshot, which waits a minute after its start.
 START_FIRST_TIMEOUT = 45
+START_FIRST_STOP = 10
+STATE_FORMAT = (
+    '{{index .Config.Labels "com.docker.compose.config-hash"}} '
+    "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}"
+)
 
 
 def start_first_services(compose_file: Path) -> list[str]:
@@ -415,21 +420,17 @@ def start_first(
 
     hashes = output(compose_command(plan, "config", "--hash", service)).split()
     wanted = hashes[-1] if hashes else ""
-    old = [
-        container
+    # Each container's config hash and state: its health when it has a check.
+    states = {
+        container: output(["docker", "inspect", "--format", STATE_FORMAT, container])
+        .rstrip("\n")
+        .partition(" ")[::2]
         for container in running()
-        if output(
-            [
-                "docker",
-                "inspect",
-                "--format",
-                '{{index .Config.Labels "com.docker.compose.config-hash"}}',
-                container,
-            ]
-        ).strip()
-        != wanted
-    ]
-    if not old or not wanted:
+    }
+    old = [container for container, (config, _) in states.items() if config != wanted]
+    # An old container not serving gains nothing from the wait, which would fail on it: the plain
+    # `up` below replaces it.
+    if not wanted or not old or any(states[c][1] not in ("healthy", "running") for c in old):
         return
     try:
         runner(
@@ -451,11 +452,18 @@ def start_first(
             check=True,
         )
     except subprocess.CalledProcessError:
-        new = [container for container in running() if container not in old]
+        listed = runner(
+            compose_command(plan, "ps", "-q", service),
+            cwd=repo_root,
+            env=environment,
+            check=False,
+            capture_output=True,
+        )
+        new = [c for c in (listed.stdout or b"").decode().split() if c not in old]
         if new:
             runner(["docker", "rm", "-f", *new], check=False)
         raise
-    runner(["docker", "stop", *old], check=True)
+    runner(["docker", "stop", "--time", str(START_FIRST_STOP), *old], check=True)
     runner(["docker", "rm", *old], check=True)
 
 

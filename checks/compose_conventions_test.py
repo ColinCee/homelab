@@ -104,6 +104,7 @@ def test_a_start_first_service_can_run_twice_and_says_when_it_is_ready() -> None
         assert "healthcheck" in service, f"{stack.name}/{name}"
         assert "container_name" not in service and "ports" not in service, f"{stack.name}/{name}"
 
+
 def test_python_services_share_one_image_and_mount_their_code() -> None:
     # Stock python with the script and telemetry mounted; a Dockerfile only adds what the script
     # needs beyond the standard library (restic, cryptography), on the same pinned Python.
