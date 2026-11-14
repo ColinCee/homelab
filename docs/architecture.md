@@ -77,9 +77,19 @@ Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observabi
 VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: the Compose service or host unit is the
-`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Alloy stores lines as JSON. Python logs, writes metrics,
-reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
+agents as `agents`. Dashboards: the building-dashboards skill.
+
+**Observed** means, for every stack service and host unit, with a check behind each line:
+
+- one name, its Compose service or host unit, as `service_name`, `service.name` and `job`
+  ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
+  ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
+- JSON lines with a level, Alloy wrapping text ([`json_logs_test.py`](../stacks/telemetry/json_logs_test.py)); Python
+  logs, writes metrics, reads secrets, calls HTTP and sends traces only through
+  [`telemetry`](../stacks/telemetry/telemetry.py), mounted in containers, beside host scripts;
+- traced: OBI for containers, a trace per run with a span per step for host jobs;
+- a memory limit, a healthcheck and read-only where it can ([check](../checks/compose_conventions_test.py));
+- no error lines (errors are bugs, below), and what can harm it watched by a promise in `slos.yml`.
 
 | Problem | Who warns |
 |---|---|
