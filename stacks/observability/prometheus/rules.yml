@@ -319,6 +319,31 @@ groups:
             images or old data, never Docker volumes.
           dashboard: *home
           value: '{{ $value }}'
+      # The `now` standard's "full within 24 h", which high-disk at 80% cannot see coming at a fast fill.
+      - alert: disk-full-soon
+        expr: |
+          (
+            max(round(
+              node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+              / -deriv(node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}[6h]) / 3600
+            ))
+          ) < 24 >= 0
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink disk full within a day'
+          measure: 'Hours until full at the last 6 hours'' rate'
+          unit: 'h'
+          harm: >-
+            A full disk stops every stack writing: Prometheus, the logs, the backups and Home Assistant's
+            history.
+          action: >-
+            Find what is writing with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`, and
+            stop it; a flooded store shows on Grafana's Logs page (http://grafana.internal/d/logs).
+          dashboard: *home
+          value: '{{ $value }}'
       - alert: backup-storage-high
         expr: |
           (

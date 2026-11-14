@@ -82,16 +82,17 @@ agents as `agents`. Dashboards: the building-dashboards skill.
 **Observed** means:
 
 - each container and host unit has one name, its Compose service or unit, as `service_name`, `service.name` and
-  `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
-  ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
+  `job` ([check](../checks/service_names_test.py)); a log's `trace_id` and a metric's exemplar open their trace, a
+  span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
+- spans keep no URL, which can hold a secret ([check](../stacks/observability/alloy_test.py));
 - every program logs JSON or Alloy wraps it ([check](../stacks/telemetry/json_logs_test.py)); Python logs, writes
-  metrics, reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py),
-  mounted in containers, beside host scripts ([check](../stacks/telemetry/telemetry_test.py));
-- OBI traces every container but the telemetry path's; a host job with steps (deploy, backup, upkeep, the Home
-  Assistant history copy) sends one trace per run, a span per step;
+  metrics, reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py)
+  ([check](../stacks/telemetry/telemetry_test.py));
+- OBI traces every container but the telemetry path's; a host job with steps (deploy, backup, upkeep, the history
+  copy) sends one trace per run, a span per step;
 - every container has a memory limit, runs read-only and has a healthcheck, or is listed with its reason
   ([check](../checks/compose_conventions_test.py));
-- every metrics file has a promise watching it or a stated reason ([check](../stacks/observability/slos_test.py)).
+- every metrics file has a promise or a stated reason ([check](../stacks/observability/slos_test.py)).
 
 | Problem | Who warns |
 |---|---|
@@ -131,8 +132,8 @@ no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes
 
 Traps:
 
-- Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
-  `job="homelab-ci-vm"`, present only while a slot runs a VM.
+- Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own are `job="homelab-ci-vm"`,
+  only while a VM runs.
 - Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network;
   [`probes.py`](../stacks/observability/probes.py) checks them for the alerts.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;

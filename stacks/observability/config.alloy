@@ -585,7 +585,7 @@ otelcol.receiver.otlp "programs" {
     endpoint = "0.0.0.0:4318"
   }
   output {
-    traces  = [otelcol.processor.transform.peers.input]
+    traces  = [otelcol.processor.transform.urls.input]
     logs    = [otelcol.exporter.loki.programs.input]
     metrics = [otelcol.exporter.prometheus.programs.input]
   }
@@ -618,6 +618,24 @@ loki.process "programs" {
 // Programs' metrics, OBI's request rate, errors and duration among them, go to Prometheus with the rest.
 otelcol.exporter.prometheus "programs" {
   forward_to = [prometheus.remote_write.default.receiver]
+}
+
+// A span keeps where a call went (its host, and its route in its name), never the URL itself: a URL's path or query
+// can be a secret, as the Healthchecks.io ping URL is (incidents/relay.py), and the trace store has no secret filter.
+// These are OpenTelemetry's URL attributes, which OBI writes, and `url`, which host jobs' spans carry.
+otelcol.processor.transform "urls" {
+  error_mode = "ignore"
+
+  trace_statements {
+    context    = "span"
+    statements = [
+      `delete_matching_keys(attributes, "^(url|url\\.(full|path|query|original)|http\\.(url|target))$")`,
+    ]
+  }
+
+  output {
+    traces = [otelcol.processor.transform.peers.input]
+  }
 }
 
 // Who each call reached, as `peer.service`: the Compose service at the address it connected to, from Docker's API.
