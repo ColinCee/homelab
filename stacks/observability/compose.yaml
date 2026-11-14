@@ -153,8 +153,8 @@ services:
       GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
       GF_PUBLIC_DASHBOARDS_ENABLED: "false"
       # With no quota file, 13.3's dashboard browser asks for a quota on every visit and gets a 501, which it logs
-      # as an error (grafana/grafana#136271); an empty one answers with the default limit, which
-      # nothing enforces. Drop both once that is fixed.
+      # as an error (grafana/grafana#136271); an empty one answers with the default limit, which nothing enforces.
+      # Drop this and the file's mount once that is fixed.
       GF_UNIFIED_STORAGE_OVERRIDES_PATH: /etc/grafana/quota-overrides.yaml
       GF_LOG_LEVEL: warn
       GF_LOG_CONSOLE_FORMAT: json

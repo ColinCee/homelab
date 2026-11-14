@@ -308,7 +308,9 @@ loki.process "docker" {
 
   // Grafana logs each request the browser cancelled (leaving or refreshing a page) and its stop as errors. Its API
   // server answers one it left (the page history a closing tab reads or saves) with three "Handler timeout" lines
-  // and a 500; the same request not left answers 200. A real timeout elsewhere still logs its "Request Completed".
+  // and a 500; the same request not left answers 200. The timeout lines name no path, but a real timeout elsewhere
+  // still logs its 5xx "Request Completed". A page-history 500 with another cause is hidden too: it saves nothing
+  // the home page cannot do without.
   stage.match {
     selector = `{service_name="grafana"} |= "\"level\":\"error\"" |~ "context canceled\"|Handler timeout|Post-timeout activity\",.*\"path\":\"/apis/userstorage[.]|\"path\":\"/apis/userstorage[.]grafana[.]app/[^\"]*\",.*\"status\":500,"`
 
