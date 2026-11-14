@@ -5,13 +5,13 @@ global:
 
 scrape_configs:
   # The .internal proxy's requests per site (../../internal-names/Caddyfile).
-  - job_name: caddy
+  - job_name: proxy
     static_configs:
       - targets: ["127.0.0.1:2019"]
         labels:
           instance: beelink
   # The .internal names' DNS, published to loopback only (../../internal-names/compose.yaml).
-  - job_name: coredns
+  - job_name: dns
     static_configs:
       - targets: ["127.0.0.1:9153"]
         labels:

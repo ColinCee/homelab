@@ -122,7 +122,7 @@ discovery.relabel "ci_vms" {
 
   rule {
     target_label = "job"
-    replacement  = "ci-vms"
+    replacement  = "homelab-ci-vm"
   }
   rule {
     target_label = "instance"

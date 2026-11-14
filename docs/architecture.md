@@ -76,8 +76,8 @@ Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observabi
 VictoriaLogs and VictoriaTraces, 30 days each;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: one service name per
-store (`service_name`, `service.name`, `job`); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python logs, writes metrics,
+agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: the Compose service or host unit is the
+`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python logs, writes metrics,
 reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
 
 | Problem | Who warns |
@@ -119,7 +119,7 @@ no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes
 Traps:
 
 - Host metrics carry `job="integrations/unix"` and include the CI VMs; the VMs' own CPU and memory are
-  `job="ci-vms"`, present only while a slot runs a VM.
+  `job="homelab-ci-vm"`, present only while a slot runs a VM.
 - Caddy, CoreDNS and Home Assistant serve metrics only on loopback: `host-metrics` scrapes them from the host network;
   [`probes.py`](../stacks/observability/probes.py) checks them for the alerts.
 - `loki.secretfilter` in [`config.alloy`](../stacks/observability/config.alloy) redacts the secrets it recognises;

@@ -34,7 +34,7 @@
             "uid": "spans"
           },
           "refId": "Deploys",
-          "expr": "\"resource_attr:service.name\":=deploy name:=deploy parent_span_id:=\"\" | rename \"span_attr:commit\" as commit, \"span_attr:stacks\" as stacks | format if (status_code:=2) \"failed\" as result | format if (status_code:!=2) \"deployed\" as result | format \"LTa href=QThttps://github.com/ColinCee/homelab/commit/<commit>QTGTCommit <commit>LT/aGT: <result> <stacks>\" as _msg | replace (\"LT\", \"<\") at _msg | replace (\"GT\", \">\") at _msg | replace (\"QT\", '\"') at _msg | fields _time, _msg",
+          "expr": "\"resource_attr:service.name\":=deploy-main name:=deploy parent_span_id:=\"\" | rename \"span_attr:commit\" as commit, \"span_attr:stacks\" as stacks | format if (status_code:=2) \"failed\" as result | format if (status_code:!=2) \"deployed\" as result | format \"LTa href=QThttps://github.com/ColinCee/homelab/commit/<commit>QTGTCommit <commit>LT/aGT: <result> <stacks>\" as _msg | replace (\"LT\", \"<\") at _msg | replace (\"GT\", \">\") at _msg | replace (\"QT\", '\"') at _msg | fields _time, _msg",
           "queryType": "raw",
           "editorMode": "code",
           "maxLines": 100
@@ -1250,7 +1250,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "sum by (host) (rate(caddy_http_requests_total{job=\"caddy\",host=~\".+\\\\.internal\"}[5m]))",
+          "expr": "sum by (host) (rate(caddy_http_requests_total{job=\"proxy\",host=~\".+\\\\.internal\"}[5m]))",
           "legendFormat": "{{host}}"
         },
         {
@@ -1259,7 +1259,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"caddy\",code=~\"5..\"}[5m])) or vector(0)",
+          "expr": "sum(rate(caddy_http_request_duration_seconds_count{job=\"proxy\",code=~\"5..\"}[5m])) or vector(0)",
           "legendFormat": "Proxy errors (5xx)"
         },
         {
@@ -1268,7 +1268,7 @@
             "uid": "prometheus"
           },
           "refId": "C",
-          "expr": "sum(rate(coredns_dns_responses_total{job=\"coredns\",rcode!~\"NOERROR|NXDOMAIN\"}[5m])) or vector(0)",
+          "expr": "sum(rate(coredns_dns_responses_total{job=\"dns\",rcode!~\"NOERROR|NXDOMAIN\"}[5m])) or vector(0)",
           "legendFormat": "DNS failures"
         }
       ],

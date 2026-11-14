@@ -738,7 +738,7 @@ def traced_deploy(
     except (OSError, subprocess.CalledProcessError):
         commit = ""
     stacks = ",".join(plan.name for plan in plans)
-    with telemetry.run("deploy", "deploy", commit=commit, stacks=stacks) as trace:
+    with telemetry.run("deploy-main", "deploy", commit=commit, stacks=stacks) as trace:
         report = deploy(
             repo_root,
             plans,

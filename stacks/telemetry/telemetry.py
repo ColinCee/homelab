@@ -290,7 +290,8 @@ def _open(span: Span) -> Generator[Span]:
 
 @contextlib.contextmanager
 def run(service: str, name: str, **attrs: object) -> Generator[Span]:
-    """One run of a job as one trace, filed under SERVICE and sent to Alloy as the block ends;
+    """One run of a job as one trace, filed under SERVICE (the Compose service or systemd unit it
+    runs in, as its logs are) and sent to Alloy as the block ends;
     a failed send is logged, never raised. A TRACEPARENT in the environment makes it part of
     that span's trace. Lines logged inside carry its trace_id, which Grafana opens as the trace."""
     parent = _TRACEPARENT.fullmatch(os.environ.get("TRACEPARENT", ""))

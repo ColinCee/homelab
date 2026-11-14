@@ -58,7 +58,7 @@ Each colour means one thing; hexes are in `stacks/observability/dashboards_test.
 - Metric names are as Alloy sends them, mixed case included (`node_memory_MemAvailable_bytes`).
 - Use `max by (name)` for container metrics and `max()` for a single host value, which removes
   duplicate series; `name!=""` selects containers. The CI VMs are not containers: their series
-  are `job="ci-vms"`.
+  are `job="homelab-ci-vm"`.
 - A running service: the `container-stopped` rule's join of `homelab_container_expected`.
 - `homelab_ci_job_seconds` is each job's latest good run in this repo, held until the next: a median
   over it weighs hours, not runs.
