@@ -473,7 +473,7 @@ groups:
       # Errors are bugs (docs/architecture.md): any error or fatal line a service logs, as Alloy counts them
       # (config.alloy, loki.process "error_lines"), posts once per service. The lines in 5 minutes are the count now
       # less the count then, where both come from the Alloy process running now; a count with no such sample 5
-      # minutes ago counts whole, since it starts at 0 with each process and appears at its first line. Alloy pushes
+      # minutes ago, or below it, counts whole, since it starts at 0 with each process and appears at its first line. Alloy pushes
       # its own metrics, so a restart marks nothing stale: the old process's samples stay current for 5 minutes, and a
       # new count back at the old value would look unchanged. Not a promise in slos.yml: it
       # reads no metrics file and has no normal to set a threshold from, since the target is zero. The relay posts
@@ -492,7 +492,7 @@ groups:
                 and timestamp(homelab_error_lines_total offset 5m)
                   >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
               )
-            )
+            ) >= 0
             or (
               homelab_error_lines_total
               and timestamp(homelab_error_lines_total)
