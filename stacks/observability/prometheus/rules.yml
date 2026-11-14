@@ -55,7 +55,7 @@ groups:
             https://api.colincheung.dev/aircraft is not serving live aircraft, so the public radar is blank or
             stale.
           action: >-
-            Check `docker logs --tail 50 flight-tracker-backend-1` (upstream 403 or 429?) and `docker logs
+            Check `docker compose -p flight-tracker logs --tail 50 backend` (upstream 403 or 429?) and `docker logs
             --tail 50 tunnel-cloudflared-1`.
           dashboard: *home
           value: '{{ $value }}'

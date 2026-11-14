@@ -13,19 +13,20 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   that dropped the deployed commit, and runs [`deploy.sh`](../stacks/deploy/deploy.sh) for stacks changed since the last
   full deploy ([`deploy.py`](../stacks/deploy/deploy.py)) or reading a changed secret, until `main` stops moving. No code
   from GitHub runs on the Beelink to deploy.
-- **Who may deploy.** Whoever lands a commit on `main`, which takes a pull request with checks green, admins included.
+- **Who may deploy.** Whoever merges to `main`: a pull request with green checks, admins included.
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
-    the service needs it;
+    needed;
   - `labels: {homelab.config-hash: ${CONFIG_HASH_<SERVICE>:-}}` on a service that reads a mounted file without reloading,
-    and `init: true` when its main process ignores SIGTERM as PID 1;
+    and `init: true` when its main process ignores SIGTERM as PID 1; `homelab.deploy: start-first` for no
+    gap at a deploy ([`deploy.py`](../stacks/deploy/deploy.py));
   - each secret a Compose `secrets:` file from `../../secrets/` (its one copy elsewhere is in Bitwarden), never in
     `environment:`, which `docker inspect` shows;
   - `systemd/<stack>-*.service` with a `.timer` or `.path` install as user units (the host has linger on) and write
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
   - another stack's network is joined as `external: true`.
 - **Removing a stack:** deleting its folder removes nothing from the host. Stop its timers and containers by hand,
-  keep volumes until their data is backed up or retired, then delete the folder and
+  keep volumes until their data is backed up, then delete the folder and
   `/var/lib/homelab-metrics/deploy-<stack>.prom`.
 
 ## Network and access
