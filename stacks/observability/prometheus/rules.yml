@@ -470,6 +470,34 @@ groups:
             (`systemctl --user` for manager "user").
           dashboard: *home
           value: '{{ $value }}'
+      # Errors are bugs (docs/architecture.md): any error or fatal line a service logs, as Alloy counts them
+      # (config.alloy, loki.process "error_lines"), posts once per service. A service's series starts at its first
+      # line, which `increase` cannot see, so a series absent 5 minutes ago counts whole. Not a promise in slos.yml:
+      # it reads no metrics file and has no normal to set a threshold from, since the target is zero. The relay posts
+      # the service's first line from the log store and a link to its lines (`logs`, ../incidents/relay.py).
+      - alert: errors-logged
+        expr: |
+          sum by (service_name) (round(
+            (homelab_error_lines_total unless homelab_error_lines_total offset 5m)
+            or increase(homelab_error_lines_total[5m])
+          )) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'A service logged errors'
+          measure: 'Error lines in 5 min'
+          unit: ''
+          harm: >-
+            Each error line is a fault, or a line at the wrong level that hides the next real fault among the
+            healthy services' silence.
+          action: >-
+            Read the service's lines (below), fix the cause and merge. A line at the wrong level is set right in the
+            program's settings, else mapped in stacks/observability/config.alloy for that service under its reason.
+          dashboard: *home
+          value: '{{ $value }}'
+          logs: 'service_name:"{{ $labels.service_name }}" level:in(error,fatal)'
 
   # Alerting itself: the Prometheus mixin's two stock rules (documentation/prometheus-mixin/alerts.libsonnet), with
   # their `for`, taken over all series so a post carries no labels, on Prometheus's own metrics (prometheus.yml, job

@@ -238,7 +238,7 @@ loki.secretfilter "docker" {
 }
 
 loki.process "docker" {
-  forward_to = [otelcol.receiver.loki.logs.receiver]
+  forward_to = [otelcol.receiver.loki.logs.receiver, loki.process.error_lines.receiver]
 
   // Every program that can logs JSON (compose.yaml, each one's log format flag), under its own names for the logger.
   // A line's trace, under the names OpenTelemetry's loggers use, so Grafana links it to the trace store.
@@ -354,6 +354,34 @@ loki.process "docker" {
       stage    = "stage",
       trace_id = "trace_id",
       span_id  = "span_id",
+    }
+  }
+}
+
+// Each service's error and fatal lines, counted for the rule that posts them (prometheus/rules.yml, errors-logged),
+// as `homelab_error_lines_total` on Alloy's own metrics. Of a line's labels only its service and level are kept (the
+// scrape adds Alloy's own): a unit or container name would start a series per CI VM or recreate. A series is kept
+// while Alloy runs, and starts at its first line. Programs log to their output, so the OTLP logs path
+// (loki.process "programs") carries no line to count.
+loki.process "error_lines" {
+  forward_to = []
+
+  stage.label_keep {
+    values = ["service_name", "level"]
+  }
+
+  stage.match {
+    selector = `{level=~"error|fatal"}`
+
+    stage.metrics {
+      metric.counter {
+        name              = "error_lines_total"
+        prefix            = "homelab_"
+        description       = "Lines logged at error or fatal, by service."
+        match_all         = true
+        action            = "inc"
+        max_idle_duration = "8760h"
+      }
     }
   }
 }

@@ -7,6 +7,7 @@ import re
 import socket
 import subprocess
 import threading
+import time
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -226,6 +227,7 @@ JOURNAL = [
 def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> None:
     alloy = tool("alloy")
     process = block("loki.process", "noise") + block("loki.process", "docker")
+    process += block("loki.process", "error_lines")
     # Without the secret filter between them, which needs no testing here.
     process = process.replace("loki.secretfilter.docker.receiver", "loki.process.docker.receiver")
     process = process.replace("otelcol.receiver.loki.logs.receiver", "loki.echo.out.receiver")
@@ -262,8 +264,15 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         f'{relabel}{process}\nloki.echo "out" {{}}\n',
         encoding="utf-8",
     )
-    command = [alloy, "run", f"--storage.path={tmp_path / 'data'}", str(tmp_path / "test.alloy")]
+    with socket.socket() as free:
+        free.bind(("127.0.0.1", 0))
+        port = free.getsockname()[1]
+    command = [
+        *(alloy, "run", f"--storage.path={tmp_path / 'data'}"),
+        *(f"--server.http.listen-addr=127.0.0.1:{port}", str(tmp_path / "test.alloy")),
+    ]
     seen: list[str] = []
+    counted: dict[str, float] = {}
     with subprocess.Popen(command, stderr=subprocess.PIPE, text=True, encoding="utf-8") as run:
         assert run.stderr is not None
         # A line wrongly dropped would leave the loop waiting for it: fail instead.
@@ -276,12 +285,15 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
                 mapped = sum(len(lines) for lines in MAPPED.values())
                 if len(seen) == len(LINES) + len(NOISE) + len(JOURNAL) + mapped:
                     break
+            counted = error_lines(port)
         finally:
             deadline.cancel()
             run.kill()
     for line, word, level in [*LINES, *(m for lines in MAPPED.values() for m in lines)]:
         got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]
         assert got == [[level] if level else []], line
+    # Each error and fatal line is counted by its service and level alone, a mapped one never.
+    assert counted == ERRORS_COUNTED, counted
     # Every line leaves as one JSON object, whatever its program wrote.
     for out in seen:
         entry = re.search(r' entry=("(?:[^"\\]|\\.)*")', out)
@@ -338,6 +350,31 @@ def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -
             journal,
         )
         assert rule and rule.group(1) == level, keyword
+
+
+# The error and fatal lines above by service and level: the containers' with no service, then the
+# one error each mapped service still logs.
+ERRORS_COUNTED = {
+    '{level="error"}': 4.0,
+    '{level="fatal"}': 1.0,
+    **{f'{{level="error",service_name="{s}"}}': 1.0 for s in MAPPED},
+}
+
+
+def error_lines(port: int) -> dict[str, float]:
+    """Alloy's error line counts, by their labels, once they stop changing."""
+    counted: dict[str, float] = {}
+    for _ in range(50):
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as answer:
+            text = answer.read().decode()
+        series = re.findall(r"^homelab_error_lines_total(\{.*\}) (\S+)$", text, re.M)
+        # Alloy adds which component counted it.
+        now = {re.sub(r'component_\w+="[^"]*",', "", k): float(v) for k, v in series}
+        if now and now == counted:
+            return now
+        counted = now
+        time.sleep(0.2)
+    return counted
 
 
 def block(kind: str, label: str) -> str:

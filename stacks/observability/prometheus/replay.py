@@ -4,16 +4,19 @@ which has the command.
 
     replay.py [days] [rule ...]
 
-Reads Prometheus through the read-only gateway (GATEWAY_URL, default the Beelink's; GATEWAY_LOGIN,
-user:password). Runs each rule's query a minute apart and follows Prometheus and the incidents
-relay: a post once the query has returned for `for` and a "Cleared" once it has stayed empty for
-`keep_firing_for`; a repeat posts nothing. Inhibits are not replayed."""
+Reads Prometheus, and the log store for FROM_LOGS, through the read-only gateway (GATEWAY_URL,
+default the Beelink's; GATEWAY_LOGIN, user:password). Runs each rule's query a minute apart and
+follows Prometheus and the incidents relay: a post once the query has returned for `for` and a
+"Cleared" once it has stayed empty for `keep_firing_for`; a repeat posts nothing.
+Inhibits are not replayed."""
 
+import json
 import os
 import sys
 import time
 import urllib.parse
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,10 +28,44 @@ import telemetry
 from stacks.observability.prometheus import slos
 
 STEP = 60
+# A rule over a count Alloy makes of log lines has no history from before the count existed; the
+# log store keeps the lines, so it replays from them: the LogsQL query, the label its posts are by,
+# and how long one line keeps the rule's query returning (its `offset` and `increase` window).
+FROM_LOGS = {"errors-logged": ("level:in(error,fatal)", "service_name", 300)}
+
+
+def gateway() -> str:
+    return os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
+
+
+def log_history(query: str, by: str, window: int, start: int, end: int) -> dict[str, set[int]]:
+    """The minutes the rule would have returned for each value of BY, a day per request."""
+    series: dict[str, set[int]] = defaultdict(set)
+    while start < end:
+        stop = min(start + 86400, end)
+        span = f"_time:[{iso(start)}, {iso(stop)})"
+        logsql = f"{span} {query} | stats by (_time:1m, {by}) count() lines"
+        raw = telemetry.http(
+            f"{gateway()}/logs/select/logsql/query?" + urllib.parse.urlencode({"query": logsql}),
+            login=os.environ["GATEWAY_LOGIN"],
+            timeout=120,
+            tries=2,
+        )
+        for row in map(json.loads, raw.decode().splitlines()):
+            minute = int(datetime.fromisoformat(row["_time"].replace("Z", "+00:00")).timestamp())
+            # Its lines came within the minute, so the rule returns from the next one on.
+            returned = range(minute + STEP, minute + window + 1, STEP)
+            series[f"{by}={row.get(by, '')}"] |= set(returned)
+        start = stop
+    return series
+
+
+def iso(t: int) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
 def query_range(promql: str, start: int, end: int) -> list[dict[str, Any]]:
-    url = os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
+    url = gateway()
     query = urllib.parse.urlencode({"query": promql, "start": start, "end": end, "step": STEP})
     answer = telemetry.http_json(
         f"{url}/prometheus/api/v1/query_range?{query}",
@@ -83,9 +120,11 @@ def main() -> None:
         # The watchdog pings Healthchecks.io, never posts.
         if (only and rule["alert"] not in only) or rule["labels"]["level"] == "watchdog":
             continue
+        logs = FROM_LOGS.get(rule["alert"])
+        returned_by = log_history(*logs, start, end) if logs else history(rule["expr"], start, end)
         found = [
             (t, kind, key)
-            for key, returned in history(rule["expr"], start, end).items()
+            for key, returned in returned_by.items()
             for t, kind in posts(returned, rule, start, end)
         ]
         total += len(found)

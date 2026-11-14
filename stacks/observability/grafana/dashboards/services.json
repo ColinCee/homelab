@@ -1502,6 +1502,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "errors-logged"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fab219"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "failed-units-check-stopped"
             },
             "properties": [
