@@ -1,14 +1,19 @@
-# What OBI (../compose.yaml, obi) instruments: the programs in Docker's containers, each named after its Compose
-# service. Both come from Docker's API: a host program or a CI VM has no container, so it matches no `container_name`,
-# and with no Docker API nothing matches.
+# What OBI (../compose.yaml, obi) instruments: the programs in the containers the lab's stacks start, each named after
+# its Compose service. Both come from Docker's API: a host program or a CI VM has no container, so it matches no
+# `container_name`, and with no Docker API nothing matches. OBI matches a container by its name alone, so a container
+# an agent runs to test something must not be named for a stack, as Alloy keeps only the stacks' (config.alloy,
+# discovery.relabel "compose"): Compose names each `<stack>-<service>-<n>`, or its container_name, and a
+# `compose run` `<stack>-<service>-run-<id>`. alloy_test.py holds both to the stacks.
 # https://opentelemetry.io/docs/zero-code/obi/configure/service-discovery/
 discovery:
   instrument:
-    - container_name: "*"
+    - container_name: "{backup,deploy,flight-tracker,home-assistant,internal-names,observability,tunnel}-*"
+    - container_name: "{backup,homeassistant}"
   # The telemetry's own path: every send Alloy makes would be a span, which it would then send, and the socket proxy
   # answers Alloy's polls many times a second.
   exclude_instrument:
     - container_name: "observability-{alloy,prometheus,logs,traces,docker-socket-proxy}-*"
+    - container_name: "*-run-*"
   # Go programs get the tracer every program gets: Go's own also turns on the OpenTelemetry calls built into a program,
   # so a busy one, such as promtool testing the rules, sends about 10,000 spans a second. For the rest, it adds detail
   # inside one program (Grafana's SQLite queries) at about 1.8 times the spans and 80 MiB, and none for Go 1.26+, for

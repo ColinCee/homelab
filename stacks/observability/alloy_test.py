@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from conftest import ROOT, tool
+from conftest import ROOT, services, stacks, tool
 from stacks.observability.prometheus import slos
 
 STACK = ROOT / "stacks/observability"
@@ -30,8 +30,10 @@ def queries() -> list[str]:
 
 
 def test_no_metric_is_dropped_by_name() -> None:
-    # The store keeps what a later fix may need, so no rule filters on the metric name.
-    assert not re.search(r'source_labels\s*=\s*\[[^\]]*"__name__"', CONFIG)
+    # The store keeps what a later fix may need, so no rule filters on the metric name: but for
+    # the one series a container outside the lab keeps (test_only_the_labs_containers_are_kept).
+    rest = CONFIG.replace(block("prometheus.relabel", "cadvisor"), "")
+    assert not re.search(r'source_labels\s*=\s*\[[^\]]*"__name__"', rest)
     # Nor do the host and container exporters narrow their default sets.
     assert "set_collectors" not in CONFIG
     docker = CONFIG[CONFIG.index('prometheus.exporter.cadvisor "docker"') :]
@@ -287,6 +289,8 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         path = tmp_path / f"journal{i}.log"
         path.write_text(line + "\n", encoding="utf-8")
         labels = "".join(f', journal_{key} = "{value}"' for key, value in fields.items())
+        # The journal source's own `job`.
+        labels += ', job = "loki.source.journal.host"'
         journal.append(f'{{__path__ = "{path.as_posix()}", container_name = "journal"{labels}}}')
     (tmp_path / "test.alloy").write_text(
         f'local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
@@ -342,6 +346,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     for _, line, word, service in JOURNAL:
         got = [re.findall(r'service_name=\\"([\w-]+)\\"', out) for out in seen if word in out]
         assert got == [[service]], line
+    assert not [out for out in seen if "job=" in out]
 
 
 LOWER = {"debug", "info", "warn"}
@@ -527,3 +532,144 @@ def test_container_logs_carry_their_service_name() -> None:
     block = block[: block.index("\n}\n")]
     assert '"__meta_docker_container_label_com_docker_compose_service"' in block
     assert re.search(r'target_label\s*=\s*"service_name"', block)
+
+
+# Each container the lab's stacks start: its project (the stack's folder), service and name.
+LAB = [
+    (stack.name, name, spec.get("container_name", f"{stack.name}-{name}-1"))
+    for stack, name, spec in services()
+]
+# Containers agents started on the Beelink to test things: by `docker run`, as their own Compose
+# project, and by `compose run` of a lab service, which an older Compose did not mark `oneoff`.
+STRAYS: dict[str, dict[str, str]] = {
+    "happy_poincare": {},
+    "obi-trial": {},
+    "hm-test-agent-1": {"project": "hm-test", "service": "agent", "oneoff": "False"},
+    "observability-grafana-run-0b1c": {
+        "project": "observability",
+        "service": "grafana",
+        "oneoff": "True",
+    },
+    "gtest": {"project": "observability", "service": "grafana"},
+}
+
+
+def test_only_the_labs_containers_are_kept(tmp_path: Path) -> None:
+    # Each lab container and stray as Docker's API lists it for the log reader, and as cAdvisor
+    # reports its memory and when it was last seen.
+    containers = {
+        **{name: {"project": p, "service": s, "oneoff": "False"} for p, s, name in LAB},
+        **STRAYS,
+    }
+    meta = "__meta_docker_container_label_com_docker_compose_"
+    targets = ", ".join(
+        f'{{__meta_docker_container_id = "id-{name}", __meta_docker_container_name = "/{name}"'
+        + "".join(f', {meta}{k} = "{v}"' for k, v in labels.items())
+        + "}"
+        for name, labels in containers.items()
+    )
+    # By OTLP, which reaches the relabel at once; a scrape starts only after 5 s.
+    points: dict[str, list[dict[str, Any]]] = {
+        "machine_memory_bytes": [{}],
+        "container_memory_working_set_bytes": [{"id": "/"}],
+        "container_last_seen": [],
+    }
+    for name, labels in containers.items():
+        compose = {f"container_label_com_docker_compose_{k}": v for k, v in labels.items()}
+        for metric in ("container_memory_working_set_bytes", "container_last_seen"):
+            points[metric].append({"name": name, **compose})
+    metrics = [
+        {
+            "name": metric,
+            "gauge": {
+                "dataPoints": [
+                    {
+                        "asDouble": 1,
+                        "timeUnixNano": str(time.time_ns()),
+                        "attributes": [
+                            {"key": k, "value": {"stringValue": v}} for k, v in point.items()
+                        ],
+                    }
+                    for point in each
+                ]
+            },
+        }
+        for metric, each in points.items()
+    ]
+    body = json.dumps({"resourceMetrics": [{"scopeMetrics": [{"metrics": metrics}]}]}).encode()
+    ports = []
+    for _ in range(2):
+        with socket.socket() as free:
+            free.bind(("127.0.0.1", 0))
+            ports.append(free.getsockname()[1])
+    port, otlp = ports
+    compose = block("discovery.relabel", "compose").replace(
+        "discovery.docker.containers.targets", f"[{targets}]"
+    )
+    cadvisor = block("prometheus.relabel", "cadvisor").replace(
+        "prometheus.remote_write.default.receiver", "prometheus.echo.out.receiver"
+    )
+    (tmp_path / "test.alloy").write_text(
+        f'{compose}otelcol.receiver.otlp "in" {{\n  http {{\n'
+        f'    endpoint = "127.0.0.1:{otlp}"\n  }}\n'
+        "  output {\n    metrics = [otelcol.exporter.prometheus.out.input]\n  }\n}\n"
+        'otelcol.exporter.prometheus "out" {\n'
+        "  forward_to = [prometheus.relabel.cadvisor.receiver]\n}\n"
+        f'{cadvisor}prometheus.echo "out" {{}}\n',
+        encoding="utf-8",
+    )
+    command = [
+        *(tool("alloy"), "run", f"--storage.path={tmp_path / 'data'}"),
+        *(f"--server.http.listen-addr=127.0.0.1:{port}", str(tmp_path / "test.alloy")),
+    ]
+    echoed = ""
+    with subprocess.Popen(command, stderr=subprocess.PIPE, text=True, encoding="utf-8") as run:
+        assert run.stderr is not None
+        deadline = threading.Timer(60, run.kill)
+        deadline.start()
+        try:
+            for out in run.stderr:
+                if "Starting HTTP server" in out and "otelcol.receiver.otlp.in" in out:
+                    request = urllib.request.Request(
+                        f"http://127.0.0.1:{otlp}/v1/metrics",
+                        body,
+                        {"Content-Type": "application/json"},
+                    )
+                    # Answered once the echo is written, which this loop must read meanwhile.
+                    threading.Thread(
+                        target=urllib.request.urlopen, args=(request,), daemon=True
+                    ).start()
+                printed = re.search(r' metrics=("(?:[^"\\]|\\.)*")', out)
+                if "component_id=prometheus.echo.out" in out and printed:
+                    echoed = ast.literal_eval(printed.group(1))
+                    break
+            url = f"http://127.0.0.1:{port}/api/v0/web/components/discovery.relabel.compose"
+            with urllib.request.urlopen(url, timeout=10) as answer:
+                component = json.load(answer)
+        finally:
+            deadline.cancel()
+            run.kill()
+    output = json.dumps(next(e for e in component["exports"] if e["name"] == "output"))
+    tailed = set(re.findall(r'"/([\w-]+)"', output))
+    assert tailed == {name for _, _, name in LAB}
+    # The log reader still gets each one's ID.
+    assert set(re.findall(r'"id-([\w-]+)"', output)) == tailed
+    kept = {
+        metric: set(re.findall(rf'^{metric}{{.*?name="([\w-]+)"', echoed, re.M))
+        for metric in ("container_memory_working_set_bytes", "container_last_seen")
+    }
+    assert kept == {
+        "container_memory_working_set_bytes": tailed,
+        # For the new-container alert.
+        "container_last_seen": set(containers),
+    }
+    # Series of no container, as the machine's and the scrape's `up`.
+    assert re.search(r'^container_memory_working_set_bytes\{id="/"', echoed, re.M)
+    assert re.search(r"^machine_memory_bytes", echoed, re.M)
+
+    # Every stack, and only the stacks, in both rules; each project named for its folder.
+    assert not [stack for stack, spec in stacks().items() if "name" in spec]
+    rules = re.findall(r'regex\s*=\s*"[^"]*\(([\w|-]+)\);False', CONFIG)
+    assert len(rules) == 2
+    for rule in rules:
+        assert set(rule.split("|")) == {project for project, _, _ in LAB}

@@ -73,11 +73,11 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 ## Monitoring and alerts
 
 Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observability/obi/obi.yaml) container traces into
-VictoriaLogs and VictoriaTraces, 30 days each;
+VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
 agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: the Compose service or host unit is the
-`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python logs, writes metrics,
+`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Alloy stores lines as JSON. Python logs, writes metrics,
 reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
 
 | Problem | Who warns |
