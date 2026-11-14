@@ -160,6 +160,28 @@ groups:
           action: 'Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack.'
           dashboard: *home
           value: '{{ $value }}'
+      # The kernel's own count: cAdvisor's container_oom_events_total stayed 0 when OBI was killed twice (11 Nov).
+      - alert: memory-kill
+        expr: |
+          (
+            max(round(increase(node_vmstat_oom_kill{job="integrations/unix"}[15m])))
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'A process was killed for memory'
+          measure: 'Killed in the last 15 min'
+          unit: ''
+          harm: >-
+            The kernel stopped a process at its memory limit, most often a container's, which restarts and loses
+            what it was doing, and it happens again until the limit or what grew is fixed.
+          action: >-
+            Find it with `journalctl -k --since -1h | grep 'Killed process'` on the Beelink, then fix what grew or
+            raise its `mem_limit` in its compose.yaml.
+          dashboard: *home
+          value: '{{ $value }}'
       # 0 is unhealthy or still starting, which no stack's start period keeps up for 10 minutes; -1 has no check.
       - alert: container-unhealthy
         expr: |
@@ -317,6 +339,31 @@ groups:
           action: >-
             Find what grew with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`; prune
             images or old data, never Docker volumes.
+          dashboard: *home
+          value: '{{ $value }}'
+      # The `now` standard's "full within 24 h", which high-disk at 80% cannot see coming at a fast fill.
+      - alert: disk-full-soon
+        expr: |
+          (
+            max(round(
+              node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}
+              / -deriv(node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}[6h]) / 3600
+            ))
+          ) < 24 >= 0
+        for: 30m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'Beelink disk full within a day'
+          measure: 'Hours until full at the last 6 hours'' rate'
+          unit: 'h'
+          harm: >-
+            A full disk stops every stack writing: Prometheus, the logs, the backups and Home Assistant's
+            history.
+          action: >-
+            Find what is writing with `docker system df` and `sudo du -xh --max-depth=2 / | sort -h | tail`, and
+            stop it; a flooded store shows on Grafana's Logs page (http://grafana.internal/d/logs).
           dashboard: *home
           value: '{{ $value }}'
       - alert: backup-storage-high
