@@ -201,9 +201,12 @@ class Relay:
         if not query:
             return None
         try:
-            # Its line is counted within seconds, and the rule runs each minute.
-            starts = datetime.fromisoformat(alert.get("startsAt", "").replace("Z", "+00:00"))
-            since = (starts - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            starts = datetime.fromisoformat(str(alert.get("startsAt")).replace("Z", "+00:00"))
+        except ValueError:
+            starts = _now()
+        # Its line is counted within seconds, and the rule runs each minute.
+        since = (starts - timedelta(minutes=5)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        try:
             return self.first_line(f"_time:[{since}, now] {query}")
         except FAILED as e:
             # A warning: the post still opens, with the link; an error here would post again.
@@ -320,7 +323,7 @@ def _post(alert: dict[str, Any], line: str | None = None) -> str:
 def _explore(query: str) -> str:
     """Grafana's Explore on the Logs data source, the last hour of QUERY's lines."""
     source = {"type": "victoriametrics-logs-datasource", "uid": "logs"}
-    query_ = {"refId": "A", "datasource": source, "expr": query, "queryType": "raw"}
+    query_ = {"refId": "A", "datasource": source, "expr": query, "queryType": "instant"}
     pane = {"datasource": "logs", "queries": [query_], "range": {"from": "now-1h", "to": "now"}}
     return EXPLORE + urllib.parse.quote(json.dumps({"a": pane}, separators=(",", ":")))
 
