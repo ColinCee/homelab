@@ -20,7 +20,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   - `labels: {homelab.config-hash: ${CONFIG_HASH_<SERVICE>:-}}` on a service that reads a mounted file without reloading,
     and `init: true` when its main process ignores SIGTERM as PID 1; `homelab.deploy: start-first` for no
     gap at a deploy ([`deploy.py`](../stacks/deploy/deploy.py));
-  - each secret a Compose `secrets:` file from `../../secrets/` (its one copy elsewhere is in Bitwarden), never in
+  - each secret a Compose `secrets:` file from `../../secrets/` (all listed in [secrets](secrets.md)), never in
     `environment:`, which `docker inspect` shows;
   - `systemd/<stack>-*.service` with a `.timer` or `.path` install as user units (the host has linger on) and write
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;

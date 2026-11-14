@@ -1,18 +1,17 @@
-"""Every secret file a stack reads has a row in docs/recovery.md, "Secrets", and every row a file:
-the table is how a rebuild knows what to copy out of Bitwarden."""
+"""Every secret file a stack reads has a row in docs/secrets.md, and every row a file:
+the table is where to find every secret, and how a rebuild knows what to copy out of Bitwarden."""
 
 import re
 from pathlib import Path
 
 from conftest import STACKS, load_yaml
 
-RECOVERY = Path(__file__).parent.parent / "docs" / "recovery.md"
+SECRETS_DOC = Path(__file__).parent.parent / "docs" / "secrets.md"
 ROW = re.compile(r"^\| `([^`]+)` \|", re.MULTILINE)
 
 
 def listed(doc: str) -> set[str]:
-    section = doc.split("\n## Secrets\n", 1)[1].split("\n## ", 1)[0]
-    return set(ROW.findall(section))
+    return set(ROW.findall(doc))
 
 
 def used() -> set[str]:
@@ -28,10 +27,10 @@ def used() -> set[str]:
     return names
 
 
-def test_listed_reads_only_the_secrets_table() -> None:
-    doc = "## Other\n| `x` | a |\n## Secrets\n| `a` | b |\n| `b` | c |\n## Next\n| `y` | d |\n"
+def test_listed_reads_table_rows_only() -> None:
+    doc = "Text `x` here.\n\n| `secrets/` file | Gives |\n| --- | --- |\n| `a` | b |\n| `b` | c |\n"
     assert listed(doc) == {"a", "b"}
 
 
 def test_every_secret_file_is_listed_and_every_row_used() -> None:
-    assert used() == listed(RECOVERY.read_text(encoding="utf-8"))
+    assert used() == listed(SECRETS_DOC.read_text(encoding="utf-8"))
