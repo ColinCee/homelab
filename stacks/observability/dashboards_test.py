@@ -3,6 +3,7 @@ and queries in .github/skills/building-dashboards/SKILL.md."""
 
 import json
 import re
+import urllib.parse
 from functools import cache
 from pathlib import Path
 from typing import Any
@@ -307,6 +308,13 @@ def test_data_source_links_name_real_data_sources_and_fields() -> None:
     # A metric point's exemplar opens its trace only if Prometheus keeps exemplars.
     prometheus = next(spec for _, name, spec in services() if name == "prometheus")
     assert "--enable-feature=exemplar-storage" in prometheus["command"]
+    # It opens the trace store with the exemplar's own trace ID.
+    (link,) = sources[0]["jsonData"]["exemplarTraceIdDestinations"]
+    panes = json.loads(urllib.parse.unquote(link["url"].partition("panes=")[2]))
+    (query,) = panes["trace"]["queries"]
+    assert query["datasource"]["uid"] == "traces"
+    assert query["query"] == "$${__value.raw}"
+    assert link["name"] == "trace_id"
     # The field both links read is one Alloy gives each container line.
     traces = next(source for source in sources if source["uid"] == "traces")
     assert traces["jsonData"]["tracesToLogsV2"]["query"].startswith("trace_id:=")

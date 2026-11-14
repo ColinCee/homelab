@@ -19,10 +19,13 @@ datasources:
       prometheusVersion: 3.16.0
       timeInterval: 15s
       manageAlerts: true
-      # A point's exemplar opens the trace it came from.
+      # A point's exemplar opens the trace it came from, as a link: Grafana's own link to a data source asks it in
+      # Tempo's TraceQL, which the Jaeger one answers with nothing.
       exemplarTraceIdDestinations:
         - name: trace_id
-          datasourceUid: traces
+          urlDisplayLabel: View trace
+          # yamllint disable-line rule:line-length
+          url: /explore?schemaVersion=1&orgId=1&panes=%7B%22trace%22%3A%7B%22datasource%22%3A%22traces%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22jaeger%22%2C%22uid%22%3A%22traces%22%7D%2C%22query%22%3A%22$${__value.raw}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D%7D
   - name: Alertmanager
     uid: alertmanager
     type: alertmanager
