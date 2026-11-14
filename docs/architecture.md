@@ -77,9 +77,21 @@ Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observabi
 VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: the Compose service or host unit is the
-`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Alloy stores lines as JSON. Python logs, writes metrics,
-reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
+agents as `agents`. Dashboards: the building-dashboards skill.
+
+**Observed** means:
+
+- each container and host unit has one name, its Compose service or unit, as `service_name`, `service.name` and
+  `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
+  ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
+- every program logs JSON or Alloy wraps it ([check](../stacks/telemetry/json_logs_test.py)); Python logs, writes
+  metrics, reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py),
+  mounted in containers, beside host scripts ([check](../stacks/telemetry/telemetry_test.py));
+- OBI traces every container but the telemetry path's; a host job with steps (deploy, backup, upkeep, the Home
+  Assistant history copy) sends one trace per run, a span per step;
+- every container has a memory limit, runs read-only and has a healthcheck, or is listed with its reason
+  ([check](../checks/compose_conventions_test.py));
+- every metrics file has a promise watching it or a stated reason ([check](../stacks/observability/slos_test.py)).
 
 | Problem | Who warns |
 |---|---|
