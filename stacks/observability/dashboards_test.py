@@ -146,10 +146,12 @@ def test_the_map_gives_the_node_graph_its_edges() -> None:
     calls = edges[: edges.index(" | stats ")]
     assert nodes.startswith(calls + " | ")
     steps = {t["id"]: t["options"] for t in graph["transformations"]}
-    assert (
-        steps == {"extractFields": steps["extractFields"]}
-        and steps["extractFields"]["replace"] is True
-    )
+    assert steps["extractFields"]["replace"] is True
+    # A node's ring draws only numbers, and the store sends text.
+    rings = [arc["field"] for arc in graph["options"]["nodes"]["arcs"]]
+    numbers = {c["targetField"] for c in steps["convertFieldType"]["conversions"]}
+    assert rings and set(rings) <= numbers
+    assert all(f" as {ring}" in nodes for ring in rings)
     # The graph prints a number to two places (decimals 0 reads as unset) and shows a legend of
     # any node stat: the counts arrive as text, and a node's in its subtitle.
     assert re.search(

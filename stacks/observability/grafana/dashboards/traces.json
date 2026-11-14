@@ -127,7 +127,7 @@
       "id": 7,
       "type": "nodeGraph",
       "title": "Who calls whom, last hour",
-      "description": "Each arrow is one service's calls to another in the last hour, from its traces, and how many failed: answered with a server error or not at all, as the tables below count them. Each end is named by its Compose service, an outside one by the name it was called by, or else as the home network or the internet. Drag to pan.",
+      "description": "Each arrow is one service's calls to another in the last hour, from its traces. Each circle's icon says what it is, and its ring the share of calls it answered (green) and failed (red): with a server error or not at all, as the tables below count them. A Compose service goes by its name, an outside one by its domain, or else as the home network or the internet. Drag to pan.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "spans"
@@ -139,7 +139,7 @@
             "uid": "spans"
           },
           "refId": "edges",
-          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 \"resource_attr:container.network.mode\":=host | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (peer:=\"\" host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as peer | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" host:~\"[.]\" -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" peer:ipv4_range(\"0.0.0.0/0\") -peer:ipv4_range(\"10.0.0.0/8\") -peer:ipv4_range(\"172.16.0.0/12\") -peer:ipv4_range(\"192.168.0.0/16\") -peer:ipv4_range(\"127.0.0.0/8\") -peer:ipv4_range(\"100.64.0.0/10\") -peer:ipv4_range(\"169.254.0.0/16\")) \"internet\" as target | format if (target:=\"\" peer:*) \"home network\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | stats by (source, target) count() calls, count() if (status_code:=2 -http_status:~\"^4\") failed | format \"<source> to <target>\" as id | format \"<calls> calls\" as mainstat | format if (calls:=1) \"1 call\" as mainstat | format \"<failed> failed\" as secondarystat | fields id, source, target, mainstat, secondarystat",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 \"resource_attr:container.network.mode\":=host | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (peer:=\"\" host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as peer | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" host:~\"[.]\" -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" peer:ipv4_range(\"0.0.0.0/0\") -peer:ipv4_range(\"10.0.0.0/8\") -peer:ipv4_range(\"172.16.0.0/12\") -peer:ipv4_range(\"192.168.0.0/16\") -peer:ipv4_range(\"127.0.0.0/8\") -peer:ipv4_range(\"100.64.0.0/10\") -peer:ipv4_range(\"169.254.0.0/16\")) \"internet\" as target | format if (target:=\"\" peer:*) \"home network\" as target | replace_regexp if (target:~\"[.][a-z]{2,}(:[0-9]+)?$\" -target:~\"colincheung[.]dev|[.]internal\") (\"^(?:[^.]+[.])*([^.]+[.][^.:]+)(?::[0-9]+)?$\", \"$1\") at target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | stats by (source, target) count() calls, count() if (status_code:=2 -http_status:~\"^4\") failed | format \"<source> to <target>\" as id | format \"<calls> calls\" as mainstat | format if (calls:=1) \"1 call\" as mainstat | format \"<failed> failed\" as secondarystat | fields id, source, target, mainstat, secondarystat",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 200
@@ -150,7 +150,7 @@
             "uid": "spans"
           },
           "refId": "nodes",
-          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 \"resource_attr:container.network.mode\":=host | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (peer:=\"\" host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as peer | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" host:~\"[.]\" -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" peer:ipv4_range(\"0.0.0.0/0\") -peer:ipv4_range(\"10.0.0.0/8\") -peer:ipv4_range(\"172.16.0.0/12\") -peer:ipv4_range(\"192.168.0.0/16\") -peer:ipv4_range(\"127.0.0.0/8\") -peer:ipv4_range(\"100.64.0.0/10\") -peer:ipv4_range(\"169.254.0.0/16\")) \"internet\" as target | format if (target:=\"\" peer:*) \"home network\" as target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | format '[\"<source>\",\"<target>\"]' as id | unroll by (id) | stats by (id) count() if (id:eq_field(target)) answered | format \"<id>\" as title | format if (answered:>0) \"<answered> calls in\" as subtitle | format if (answered:=1) \"1 call in\" as subtitle | fields id, title, subtitle",
+          "expr": "_time:1h kind:=3 | fields span_id, \"resource_attr:service.name\", \"span_attr:peer.service\", \"span_attr:network.peer.address\", \"span_attr:server.address\", \"span_attr:server.port\", \"span_attr:http.response.status_code\", status_code | rename \"resource_attr:service.name\" as source, \"span_attr:peer.service\" as target, \"span_attr:network.peer.address\" as peer, \"span_attr:server.address\" as host, \"span_attr:server.port\" as port, \"span_attr:http.response.status_code\" as http_status | join by (span_id) (_time:1h kind:=2 | fields parent_span_id, \"resource_attr:service.name\" | rename parent_span_id as span_id, \"resource_attr:service.name\" as answered) | join by (port) (_time:1h kind:=2 \"resource_attr:container.network.mode\":=host | stats by (\"span_attr:server.port\") count_uniq(\"resource_attr:service.name\") listeners, min(\"resource_attr:service.name\") listener | filter listeners:=1 | rename \"span_attr:server.port\" as port | delete listeners) | format if (peer:=\"\" host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as peer | format if (target:=\"\") \"<answered>\" as target | format if (target:=\"\" (peer:ipv4_range(\"127.0.0.0/8\") or peer:ipv4_range(\"100.64.0.0/10\"))) \"<listener>\" as target | format if (target:=\"\" host:~\"[.]\" -host:ipv4_range(\"0.0.0.0/0\")) \"<host>\" as target | format if (target:=\"\" peer:ipv4_range(\"0.0.0.0/0\") -peer:ipv4_range(\"10.0.0.0/8\") -peer:ipv4_range(\"172.16.0.0/12\") -peer:ipv4_range(\"192.168.0.0/16\") -peer:ipv4_range(\"127.0.0.0/8\") -peer:ipv4_range(\"100.64.0.0/10\") -peer:ipv4_range(\"169.254.0.0/16\")) \"internet\" as target | format if (target:=\"\" peer:*) \"home network\" as target | replace_regexp if (target:~\"[.][a-z]{2,}(:[0-9]+)?$\" -target:~\"colincheung[.]dev|[.]internal\") (\"^(?:[^.]+[.])*([^.]+[.][^.:]+)(?::[0-9]+)?$\", \"$1\") at target | filter target:!=\"\" -target:eq_field(source) | uniq by (span_id, source, target, status_code, http_status) | format '[\"<source>\",\"<target>\"]' as id | unroll by (id) | stats by (id) count() if (id:eq_field(target)) answered, count() if (id:eq_field(target) status_code:=2 -http_status:~\"^4\") failed | math failed / max(answered, 1) as arc__failed, (answered - failed) / max(answered, 1) as arc__ok | format \"<id>\" as title | format if (answered:>0) \"<answered> calls in\" as subtitle | format if (answered:=1) \"1 call in\" as subtitle | format if (id:=\"homeassistant\") \"home-alt\" as icon | format if (id:=\"proxy\") \"exchange-alt\" as icon | format if (id:=\"gateway\") \"shield\" as icon | format if (id:=\"grafana\") \"grafana\" as icon | format if (id:=\"prometheus\") \"gf-prometheus\" as icon | format if (id:=\"logs\") \"gf-logs\" as icon | format if (id:=\"traces\") \"gf-traces\" as icon | format if (id:=\"alertmanager\") \"bell\" as icon | format if (id:=\"incidents\") \"comment-alt-message\" as icon | format if (id:=\"dns\") \"sitemap\" as icon | format if (id:=\"backend\") \"rocket\" as icon | format if (id:=\"cloudflared\") \"cloud\" as icon | format if (id:=\"doorbell\") \"sync\" as icon | format if (id:=\"probes\") \"heart-rate\" as icon | format if (id:=\"blackbox\") \"heart-rate\" as icon | format if (id:=\"host-metrics\") \"monitor\" as icon | format if (id:=\"public-stats\") \"chart-line\" as icon | format if (id:=\"home network\") \"signal\" as icon | format if (id:=\"internet\") \"globe\" as icon | format if (id:=\"github.com\") \"github\" as icon | format if (id:=\"api.anthropic.com\") \"anthropic-logo\" as icon | format if (id:=\"discord.com\") \"discord\" as icon | format if (icon:=\"\") \"globe\" as icon | fields id, title, subtitle, icon, arc__ok, arc__failed",
           "queryType": "instant",
           "editorMode": "code",
           "maxLines": 200
@@ -163,6 +163,31 @@
             "source": "labels",
             "format": "auto",
             "replace": true
+          }
+        },
+        {
+          "id": "convertFieldType",
+          "options": {
+            "conversions": [
+              {
+                "targetField": "arc__ok",
+                "destinationType": "number"
+              },
+              {
+                "targetField": "arc__failed",
+                "destinationType": "number"
+              }
+            ],
+            "fields": {}
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "renameByName": {
+              "arc__ok": "Answered",
+              "arc__failed": "Failed"
+            }
           }
         }
       ],
@@ -196,7 +221,18 @@
         ]
       },
       "options": {
-        "nodes": {},
+        "nodes": {
+          "arcs": [
+            {
+              "field": "arc__ok",
+              "color": "#2f8f46"
+            },
+            {
+              "field": "arc__failed",
+              "color": "#d03b3b"
+            }
+          ]
+        },
         "edges": {},
         "zoomMode": "cooperative",
         "layoutAlgorithm": "layered"
