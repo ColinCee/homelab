@@ -55,7 +55,7 @@ def sent() -> Iterator[tuple[Path, str]]:
                 and isinstance(node.func.value, ast.Name)
                 and (node.func.value.id, node.func.attr) == ("telemetry", "run")
             ):
-                first = node.args[0]
+                [first] = [*node.args[:1], *(k.value for k in node.keywords if k.arg == "service")]
             elif (
                 isinstance(node, ast.Tuple)
                 and len(node.elts) == 2
@@ -98,10 +98,11 @@ def strings(value: object) -> Iterator[str]:
             yield from strings(item)
 
 
+# PromQL's and Alloy's `=`, `!=`, `=~`, `!~`, and LogsQL's `:`, `:=`, `:!=`.
 SELECTORS = (
-    r'\bjob\s*=~?\s*"([^"]*)"',
-    r'\bservice_name\s*=~?\s*"([^"]*)"',
-    r'"resource_attr:service\.name"\s*:=\s*"?([\w.-]+)',
+    r'\bjob\s*!?[=~]~?\s*"([^"]*)"',
+    r'\bservice_name\s*(?:!?[=~]~?|:[!=]{0,2})\s*"?([\w./|-]+)',
+    r'"?resource_attr:service\.name"?\s*:[!=]{0,2}\s*"?([\w./|-]+)',
 )
 
 
