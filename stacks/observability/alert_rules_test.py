@@ -197,6 +197,30 @@ CASES = {
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
         ],
     ),
+    "a process killed for memory posts at once and clears": (
+        [('node_vmstat_oom_kill{job="integrations/unix",instance="beelink"}', "0x10 1x40")],
+        [
+            at(10, "memory-kill"),
+            at(12, "memory-kill", posts("memory-kill", "1")),
+            # Out of the 15-minute window from 26 min, then 10 clear minutes.
+            at(40, "memory-kill"),
+        ],
+    ),
+    "a disk full within a day posts after 30 minutes": (
+        [
+            # 100 MB left, losing 0.1 MB a minute: about 16 hours.
+            ('node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}', "1e8-1e5x60"),
+        ],
+        [
+            at(30, "disk-full-soon"),
+            at(40, "disk-full-soon", posts("disk-full-soon", "16")),
+        ],
+    ),
+    "a disk filling slowly never posts": (
+        # 100 MB left, losing 0.01 MB a minute: about 7 days.
+        [('node_filesystem_avail_bytes{mountpoint="/",job="integrations/unix"}', "1e8-1e4x60")],
+        [at(40, "disk-full-soon")],
+    ),
     "a store taking in a flood is named, one at its usual rate is not": (
         [
             # A span a second, then 100,000 a minute.
