@@ -175,8 +175,8 @@ groups:
           measure: 'Killed in the last 15 min'
           unit: ''
           harm: >-
-            The kernel stopped a process at its memory limit, so its container restarted and lost what it was
-            doing, and it happens again until the limit or what grew is fixed.
+            The kernel stopped a process at its memory limit, most often a container's, which restarts and loses
+            what it was doing, and it happens again until the limit or what grew is fixed.
           action: >-
             Find it with `journalctl -k --since -1h | grep 'Killed process'` on the Beelink, then fix what grew or
             raise its `mem_limit` in its compose.yaml.
