@@ -27,7 +27,7 @@ STEPS = (
 
 
 def main() -> int:
-    with telemetry.run("upkeep", "upkeep") as trace:
+    with telemetry.run("backup-upkeep", "upkeep") as trace:
         # Every step runs: a failed prune does not skip the restore test.
         failed = [name for name, argv in STEPS if not telemetry.command(name, argv)]
         if failed:

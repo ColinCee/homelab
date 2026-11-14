@@ -73,7 +73,7 @@
             "uid": "spans"
           },
           "refId": "Deploys",
-          "expr": "\"resource_attr:service.name\":=deploy name:=deploy parent_span_id:=\"\" | rename \"span_attr:commit\" as commit, \"span_attr:stacks\" as stacks | format if (status_code:=2) \"failed\" as result | format if (status_code:!=2) \"deployed\" as result | format \"LTa href=QThttps://github.com/ColinCee/homelab/commit/<commit>QTGTCommit <commit>LT/aGT: <result> <stacks>\" as _msg | replace (\"LT\", \"<\") at _msg | replace (\"GT\", \">\") at _msg | replace (\"QT\", '\"') at _msg | fields _time, _msg",
+          "expr": "\"resource_attr:service.name\":=deploy-main name:=deploy parent_span_id:=\"\" | rename \"span_attr:commit\" as commit, \"span_attr:stacks\" as stacks | format if (status_code:=2) \"failed\" as result | format if (status_code:!=2) \"deployed\" as result | format \"LTa href=QThttps://github.com/ColinCee/homelab/commit/<commit>QTGTCommit <commit>LT/aGT: <result> <stacks>\" as _msg | replace (\"LT\", \"<\") at _msg | replace (\"GT\", \">\") at _msg | replace (\"QT\", '\"') at _msg | fields _time, _msg",
           "queryType": "raw",
           "editorMode": "code",
           "maxLines": 100

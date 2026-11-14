@@ -522,8 +522,8 @@ CASES = {
     ),
     "host-metrics' three jobs gone fires after 10 minutes": (
         [
-            ('up{job="caddy",instance="beelink"}', "1x5"),
-            ('up{job="coredns",instance="beelink"}', "1x5"),
+            ('up{job="proxy",instance="beelink"}', "1x5"),
+            ('up{job="dns",instance="beelink"}', "1x5"),
             ('up{job="homeassistant",instance="beelink"}', "1x5"),
         ],
         [
@@ -533,7 +533,7 @@ CASES = {
     ),
     "one of host-metrics' jobs still written stays quiet": (
         [
-            ('up{job="caddy",instance="beelink"}', "1x5"),
+            ('up{job="proxy",instance="beelink"}', "1x5"),
             ('up{job="homeassistant",instance="beelink"}', "0x30"),
         ],
         [at(25, "host-metrics-stopped")],

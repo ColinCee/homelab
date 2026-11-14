@@ -705,7 +705,7 @@ groups:
       - alert: host-metrics-stopped
         expr: |
           (
-            max(absent_over_time(up{job=~"caddy|coredns|homeassistant"}[10m]))
+            max(absent_over_time(up{job=~"proxy|dns|homeassistant"}[10m]))
           ) > 0
         for: 0m
         keep_firing_for: 10m
