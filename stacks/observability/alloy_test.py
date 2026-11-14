@@ -193,6 +193,17 @@ MAPPED = {
             "mz4",
             "info",
         ),
+        (
+            '{"level":"error","msg":"Timeout or abort while handling","t":"mz5"}',
+            "mz5",
+            "info",
+        ),
+        (
+            '{"error":"resource_read.sql: context canceled; query: SELECT","level":"error",'
+            '"t":"mz6"}',
+            "mz6",
+            "info",
+        ),
     ],
     "blackbox": [
         (
