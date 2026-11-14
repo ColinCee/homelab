@@ -304,6 +304,9 @@ def test_data_source_links_name_real_data_sources_and_fields() -> None:
     uids = {source["uid"] for source in sources}
     linked = re.findall(r"datasourceUid: (\w+)", path.read_text(encoding="utf-8"))
     assert {"logs", "prometheus", "traces"} <= set(linked) <= uids
+    # A metric point's exemplar opens its trace only if Prometheus keeps exemplars.
+    prometheus = next(spec for _, name, spec in services() if name == "prometheus")
+    assert "--enable-feature=exemplar-storage" in prometheus["command"]
     # The field both links read is one Alloy gives each container line.
     traces = next(source for source in sources if source["uid"] == "traces")
     assert traces["jsonData"]["tracesToLogsV2"]["query"].startswith("trace_id:=")

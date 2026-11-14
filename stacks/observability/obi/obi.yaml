@@ -29,7 +29,8 @@ ebpf:
   # the trace. OBI zeroes each line the program writes and writes it again
   # with the IDs, so the log keeps a line of NULs in its place, which Alloy drops. A line OBI takes as it stops is lost.
   # Home Assistant and CoreDNS are left out: their lines are text with no request in them. So is Caddy (the gateway,
-  # the .internal proxy): its error lines, written while it answers, got no IDs.
+  # the .internal proxy): its error lines, written while it answers, got no IDs, nor do they from Caddy's own
+  # `tracing` (2.11.9, tried 14 Nov); it writes no access log, and a few error lines a month.
   # https://opentelemetry.io/docs/zero-code/obi/trace-log-correlation/
   log_enricher:
     services:

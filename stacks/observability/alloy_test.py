@@ -293,7 +293,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         labels += ', job = "loki.source.journal.host"'
         journal.append(f'{{__path__ = "{path.as_posix()}", container_name = "journal"{labels}}}')
     (tmp_path / "test.alloy").write_text(
-        f'local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
+        f'{STDERR}local.file_match "s" {{\n  path_targets = [{", ".join(targets)}]\n}}\n'
         'loki.source.file "s" {\n  targets = local.file_match.s.targets\n'
         "  forward_to = [loki.process.noise.receiver]\n  tail_from_end = false\n}\n"
         f'local.file_match "j" {{\n  path_targets = [{", ".join(journal)}]\n}}\n'
@@ -416,12 +416,17 @@ def error_lines(port: int) -> dict[str, float]:
     return counted
 
 
+# Each test's Alloy logs to the stderr the test reads: started from PowerShell, it takes itself for
+# a Windows service and logs to the Event Log, which needs an administrator, so it never loads.
+STDERR = 'logging {\n  destination = "stderr"\n}\n'
+
+
 def block(kind: str, label: str) -> str:
     start = CONFIG[CONFIG.index(f'\n{kind} "{label}" {{') + 1 :]
     return start[: start.index("\n}\n") + 3]
 
 
-def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
+def test_spans_lose_their_urls_and_name_the_container_reached(tmp_path: Path) -> None:
     alloy = tool("alloy")
     # Containers as Docker's API lists them: one reached on its network, one at the host port it
     # publishes, one on the host's network; a label's text that looks like the printed targets'
@@ -441,13 +446,15 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
     peers = block("discovery.relabel", "peers").replace(
         "discovery.docker.peers.targets", containers
     )
+    urls = block("otelcol.processor.transform", "urls")
     transform = block("otelcol.processor.transform", "peers").replace(
         "otelcol.processor.batch.traces.input", "otelcol.exporter.debug.out.input"
     )
     (tmp_path / "test.alloy").write_text(
-        f'otelcol.receiver.otlp "in" {{\n  http {{\n    endpoint = "127.0.0.1:{port}"\n  }}\n'
-        "  output {\n    traces = [otelcol.processor.transform.peers.input]\n  }\n}\n"
-        f'{peers}{transform}otelcol.exporter.debug "out" {{\n  verbosity = "detailed"\n}}\n',
+        f'{STDERR}otelcol.receiver.otlp "in" {{\n  http {{\n'
+        f'    endpoint = "127.0.0.1:{port}"\n  }}\n'
+        "  output {\n    traces = [otelcol.processor.transform.urls.input]\n  }\n}\n"
+        f'{urls}{peers}{transform}otelcol.exporter.debug "out" {{\n  verbosity = "detailed"\n}}\n',
         encoding="utf-8",
     )
 
@@ -457,6 +464,9 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
         # A call that never connected has only the address it was sent to.
         key = "network.peer.address" if connected else "server.address"
         attributes = {key: {"stringValue": address}, "server.port": {"intValue": server_port}}
+        # A ping URL's path is its secret; Home Assistant signs a path in its query.
+        for url in ("url.full", "url.path", "url.query", "http.url"):
+            attributes[url] = {"stringValue": "/ping/secret-uuid?authSig=secret"}
         return {
             "traceId": "0" * 31 + "1",
             "spanId": span_id,
@@ -519,6 +529,8 @@ def test_each_call_is_named_by_the_container_it_reached(tmp_path: Path) -> None:
         "c": [],
         "d": ["prometheus"],
     }
+    assert "secret" not in printed
+    assert printed.count("server.port") == len(spans)
     marked = re.findall(r"container.name: Str\(([\w-]+)\)\n.*?container.network.mode", printed)
     assert marked == ["observability-proxy-1"]
 
@@ -610,7 +622,7 @@ def test_only_the_labs_containers_are_kept(tmp_path: Path) -> None:
         "prometheus.remote_write.default.receiver", "prometheus.echo.out.receiver"
     )
     (tmp_path / "test.alloy").write_text(
-        f'{compose}otelcol.receiver.otlp "in" {{\n  http {{\n'
+        f'{STDERR}{compose}otelcol.receiver.otlp "in" {{\n  http {{\n'
         f'    endpoint = "127.0.0.1:{otlp}"\n  }}\n'
         "  output {\n    metrics = [otelcol.exporter.prometheus.out.input]\n  }\n}\n"
         'otelcol.exporter.prometheus "out" {\n'

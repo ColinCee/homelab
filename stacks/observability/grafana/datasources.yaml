@@ -19,6 +19,10 @@ datasources:
       prometheusVersion: 3.16.0
       timeInterval: 15s
       manageAlerts: true
+      # A point's exemplar opens the trace it came from.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: traces
   - name: Alertmanager
     uid: alertmanager
     type: alertmanager
