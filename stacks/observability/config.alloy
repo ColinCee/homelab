@@ -95,12 +95,24 @@ discovery.relabel "cadvisor" {
 
 prometheus.scrape "cadvisor" {
   targets    = discovery.relabel.cadvisor.output
-  forward_to = [prometheus.remote_write.default.receiver]
+  forward_to = [prometheus.relabel.cadvisor.receiver]
 
   scrape_interval = "15s"
   // cAdvisor stamps each sample with when it last read that cgroup, which differs on every series; the scrape's own
   // time compresses better.
   honor_timestamps = false
+}
+
+// Only the lab's containers, as their logs (discovery.relabel "compose"); any other keeps container_last_seen alone,
+// which the new-container alert reads. A series of no container, such as the scrape's `up`, has no `name`.
+prometheus.relabel "cadvisor" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["name", "container_label_com_docker_compose_project", "container_label_com_docker_compose_oneoff", "__name__"]
+    regex         = ";.*|[^;]+;(backup|deploy|flight-tracker|home-assistant|internal-names|observability|tunnel);False;.+|.*;container_last_seen"
+    action        = "keep"
+  }
 }
 
 // ================================
@@ -169,6 +181,20 @@ discovery.docker "containers" {
   host = "tcp://docker-socket-proxy:2375"
 }
 
+// Only the containers the lab's stacks start (docs/architecture.md, "Monitoring and alerts"): one an agent runs to test
+// something, by `docker run`, as its own Compose project or by `compose run` of a lab service, leaves nothing in the
+// stores. A Compose service with a container_name still carries its project. alloy_test.py holds the projects to the
+// stacks.
+discovery.relabel "compose" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_docker_compose_project", "__meta_docker_container_label_com_docker_compose_oneoff"]
+    regex         = "(backup|deploy|flight-tracker|home-assistant|internal-names|observability|tunnel);False"
+    action        = "keep"
+  }
+}
+
 discovery.relabel "docker_logs" {
   targets = []
 
@@ -203,7 +229,7 @@ discovery.relabel "docker_logs" {
 
 loki.source.docker "containers" {
   host          = "tcp://docker-socket-proxy:2375"
-  targets       = discovery.docker.containers.targets
+  targets       = discovery.relabel.compose.output
   relabel_rules = discovery.relabel.docker_logs.rules
   forward_to    = [loki.process.noise.receiver]
 }
@@ -405,6 +431,11 @@ loki.relabel "journal" {
     source_labels = ["__journal__comm"]
     regex         = "sudo|tailscaled"
     action        = "drop"
+  }
+  // The source's own `job` (loki.source.journal.host), which a container's line has not.
+  rule {
+    regex  = "job"
+    action = "labeldrop"
   }
   rule {
     source_labels = ["__journal__systemd_unit"]

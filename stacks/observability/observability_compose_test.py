@@ -9,6 +9,7 @@ from fnmatch import fnmatchcase
 import yaml
 
 from conftest import ROOT, STACKS, services, stacks
+from stacks.observability.alloy_test import LAB, STRAYS
 
 COMPOSE = stacks()[STACKS / "observability"]
 SERVICES = COMPOSE["services"]
@@ -129,15 +130,27 @@ def test_the_tests_tools_are_the_versions_the_stack_runs() -> None:
         assert tools["tools"][name] == tag, f"mise.toml {name} is not compose.yaml's {image}"
 
 
-def test_obi_traces_every_container_but_the_telemetry_path() -> None:
-    obi = yaml.safe_load((ROOT / "stacks/observability/obi/obi.yaml").read_text("utf-8"))
-    assert obi["discovery"]["instrument"] == [{"container_name": "*"}]
-    # Left out: only the telemetry's own path, by names that are still its services.
-    [excluded] = obi["discovery"]["exclude_instrument"]
-    names = re.fullmatch(r"observability-\{([\w,-]+)\}-\*", excluded["container_name"])
-    assert names
+def test_obi_traces_every_lab_container_but_the_telemetry_path() -> None:
+    found = yaml.safe_load((ROOT / "stacks/observability/obi/obi.yaml").read_text("utf-8"))
+    found = found["discovery"]
+
+    def matches(name: str, key: str) -> bool:
+        globs = [p for entry in found[key] for p in _braces(entry["container_name"])]
+        return any(fnmatchcase(name, glob) for glob in globs)
+
+    def traced(name: str) -> bool:
+        return matches(name, "instrument") and not matches(name, "exclude_instrument")
+
+    # Left out of the lab's: only the telemetry's own path.
     telemetry = {"alloy", "prometheus", "logs", "traces", "docker-socket-proxy"}
-    assert set(names.group(1).split(",")) <= telemetry & set(SERVICES)
+    assert {name for _, _, name in LAB if not traced(name)} == {
+        f"observability-{service}-1" for service in telemetry
+    }
+    # Nor any container an agent started to test something (config.alloy's own test).
+    assert not [name for name in STRAYS if traced(name)]
+    # Each stack's project, as Alloy keeps.
+    named = re.fullmatch(r"\{([\w,-]+)\}-\*", found["instrument"][0]["container_name"])
+    assert named and set(named.group(1).split(",")) == {project for project, _, _ in LAB}
     # Its profile is on (it runs only then).
     settings = ROOT / "stacks/observability/settings.env"
     profiles = re.search(r"^COMPOSE_PROFILES=(.*)$", settings.read_text("utf-8"), re.MULTILINE)
