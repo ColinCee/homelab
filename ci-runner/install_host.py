@@ -12,6 +12,7 @@ homelab-python3 it installs: the repair path must not depend on what it repairs 
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shlex
@@ -275,6 +276,42 @@ def install_timed_script(host: Host, script: Path, unit: str) -> None:
     systemctl(host, "enable", "--now", f"{unit}.timer")
 
 
+# Ubuntu 24.04's login (1:4.13+dfsg1-4ubuntu3.2) names pam_lastlog.so, which its libpam no longer
+# ships, so each `login` (a Tailscale SSH terminal's too) logs two errors (Launchpad bug 2060676).
+# Its fix, 4ubuntu3.3, has waited in noble-proposed since 2024. This writes that version's file, so
+# when it lands dpkg finds the file it ships and upgrades without asking; any other file is kept.
+LOGIN_PAM = "/etc/pam.d/login"
+LASTLOG_LINES = (
+    "# Prints the last login info upon successful login\n"
+    "# (Replaces the `LASTLOG_ENAB' option from login.defs)\n"
+    "session    optional   pam_lastlog.so\n"
+    "\n"
+)
+LOGIN_PAM_STOCK_MD5 = "d10e26d07799aaa674a125e89d525c39"
+LOGIN_PAM_FIXED_MD5 = "b6129a3c1af42a9977b29f490ecd057e"
+
+
+def drop_lastlog(host: Host) -> None:
+    path = host.path(LOGIN_PAM)
+    try:
+        stock = path.read_bytes()
+    except OSError:
+        return
+    if hashlib.md5(stock).hexdigest() != LOGIN_PAM_STOCK_MD5:
+        return
+    fixed = stock.replace(LASTLOG_LINES.encode(), b"", 1)
+    if hashlib.md5(fixed).hexdigest() != LOGIN_PAM_FIXED_MD5:
+        return
+    temporary = path.with_name(f".{path.name}.homelab")
+    # Whole or not at all: a cut-short file would stop every login.
+    with temporary.open("wb") as file:
+        file.write(fixed)
+        file.flush()
+        os.fsync(file.fileno())
+    os.chmod(temporary, 0o644)
+    os.replace(temporary, path)
+
+
 def install_host(host: Host, here: Path, env: Mapping[str, str]) -> None:
     pinned = versions((here / "versions.env").read_text(encoding="utf-8"))
     version = pinned["FIRECRACKER_VERSION"]
@@ -349,6 +386,7 @@ def install_locked(
     # write into another user's folder (cap_drop ALL); sticky and open to all, as Colin's user
     # timers (PC backups) write here too.
     install_dirs(host, "1777", "/var/lib/homelab-metrics")
+    drop_lastlog(host)
     install_dirs(host, "0755", DEST)
     # The scripts' shared module, beside them, where Python finds it (their units run `-Es`,
     # which keeps the script's folder on the path). Before the scripts that import it; the
