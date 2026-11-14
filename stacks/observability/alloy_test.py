@@ -183,6 +183,11 @@ MAPPED = {
             "info",
         ),
         (
+            '{"level":"error","logger":"UnhandledError","msg":"Post-timeout activity","t":"mz4"}',
+            "mz4",
+            "info",
+        ),
+        (
             '{"level":"error","msg":"Request Completed","path":"/apis/dashboard.grafana.app/'
             'v1/x","status":500,"t":"mz3"}',
             "mz3",

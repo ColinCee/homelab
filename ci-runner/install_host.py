@@ -303,7 +303,11 @@ def drop_lastlog(host: Host) -> None:
     if hashlib.md5(fixed).hexdigest() != LOGIN_PAM_FIXED_MD5:
         return
     temporary = path.with_name(f".{path.name}.homelab")
-    temporary.write_bytes(fixed)
+    # Whole or not at all: a cut-short file would stop every login.
+    with temporary.open("wb") as file:
+        file.write(fixed)
+        file.flush()
+        os.fsync(file.fileno())
     os.chmod(temporary, 0o644)
     os.replace(temporary, path)
 
