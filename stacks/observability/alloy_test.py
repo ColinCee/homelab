@@ -90,8 +90,8 @@ LINES = [
     ),
     # cloudflared (zerolog)
     (
-        '{"level":"error","time":"2026-11-13T14:42:00Z","message":"Connection terminated"}',
-        "terminated",
+        '{"level":"error","time":"2026-11-13T14:42:00Z","message":"Unable to reach the origin"}',
+        "origin",
         "error",
     ),
     # Alloy
@@ -124,6 +124,56 @@ NOISE = {
         ' \\"/system.slice/docker-73fa.scope\\": unable to determine device info for dir:'
         ' /rootfs/var/lib/docker/overlay2/ddf0/diff: stat failed"}',
         '{"ts":"2026-11-14T08:00:00Z","level":"info","msg":"reload requested"}',
+    ],
+}
+# Lines a service logs as errors that are not faults, each with a word found only in it, and the
+# level config.alloy gives it; the error beside each stays one.
+MAPPED = {
+    "cloudflared": [
+        (
+            '{"connIndex":0,"level":"error","message":"Connection terminated","t":"m1"}',
+            "m1",
+            "info",
+        ),
+        (
+            '{"level":"error","message":"no more connections active and exiting","t":"m2"}',
+            "m2",
+            "info",
+        ),
+        (
+            '{"connIndex":1,"error":"timeout","level":"error","message":"Connection terminated",'
+            '"t":"m3"}',
+            "m3",
+            "error",
+        ),
+    ],
+    "alloy": [
+        (
+            '{"level":"error","msg":"could not fetch logs for container","err":"Error response'
+            " from daemon: can not get logs from container which is dead or marked for removal"
+            '","t":"m4"}',
+            "m4",
+            "warn",
+        ),
+        (
+            '{"level":"error","msg":"could not fetch logs for container","err":"permission denied",'
+            '"t":"m5"}',
+            "m5",
+            "error",
+        ),
+    ],
+    "grafana": [
+        (
+            '{"err":"context canceled","level":"error","logger":"auth.client.session","t":"m6"}',
+            "m6",
+            "info",
+        ),
+        (
+            '{"level":"error","msg":"Get \\"http://gateway:5080/x\\": context canceled","t":"m7"}',
+            "m7",
+            "info",
+        ),
+        ('{"level":"error","msg":"Request Completed","status":500,"t":"m8"}', "m8", "error"),
     ],
 }
 # Host lines by the journal's fields, a word found only in each, and the service it is filed under.
@@ -186,6 +236,13 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         path = tmp_path / f"{name}.log"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         targets.append(f'{{__path__ = "{path.as_posix()}", container_name = "{name}"}}')
+    for service, mapped in MAPPED.items():
+        path = tmp_path / f"service-{service}.log"
+        path.write_text("\n".join(line for line, _, _ in mapped) + "\n", encoding="utf-8")
+        targets.append(
+            f'{{__path__ = "{path.as_posix()}", container_name = "c-{service}", '
+            f'service_name = "{service}"}}'
+        )
     journal = []
     for i, (fields, line, _, _) in enumerate(JOURNAL):
         path = tmp_path / f"journal{i}.log"
@@ -213,12 +270,13 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
             for out in run.stderr:
                 if "component_id=loki.echo.out" in out:
                     seen.append(out)
-                if len(seen) == len(LINES) + 2 + len(JOURNAL):
+                mapped = sum(len(lines) for lines in MAPPED.values())
+                if len(seen) == len(LINES) + 2 + len(JOURNAL) + mapped:
                     break
         finally:
             deadline.cancel()
             run.kill()
-    for line, word, level in LINES:
+    for line, word, level in [*LINES, *(m for lines in MAPPED.values() for m in lines)]:
         got = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if word in out]
         assert got == [[level] if level else []], line
     # Every line leaves as one JSON object, whatever its program wrote.
@@ -235,6 +293,47 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
     for _, line, word, service in JOURNAL:
         got = [re.findall(r'service_name=\\"([\w-]+)\\"', out) for out in seen if word in out]
         assert got == [[service]], line
+
+
+LOWER = {"debug", "info", "warn"}
+
+
+def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -> None:
+    # Errors are bugs (docs/architecture.md, "Monitoring and alerts"): an error line starts an
+    # incident, so hiding one takes a reason a reviewer can check.
+    lines = CONFIG.splitlines()
+    assert not re.search(
+        r"stage\.(static_labels|replace|labels)\s*\{[^}]*\blevel\s*=\s*\"(?!level\")", CONFIG
+    )
+    assert not re.search(r'stage\.replace\s*\{\s*source\s*=\s*"level"', CONFIG)
+    mappings = 0
+    for i, line in enumerate(lines):
+        if not re.fullmatch(r'\s*source\s*=\s*"level",?', line):
+            continue
+        template = re.search(r'template\s*=\s*"(.*)"', lines[i + 1])
+        assert template, lines[i + 1]
+        if "dict" in template.group(1):
+            # The one vocabulary keeps every error word an error.
+            pairs = dict(re.findall(r'\\"(\w+)\\" \\"(\w+)\\"', template.group(1)))
+            for word in ("err", "error", "eror"):
+                assert pairs[word] == "error", word
+            for word in ("emerg", "alert", "crit", "critical", "fatal", "ftl", "panic"):
+                assert pairs[word] == "fatal", word
+            continue
+        assert template.group(1) in LOWER, lines[i + 1]
+        match = next(j for j in range(i, 0, -1) if lines[j].strip() == "stage.match {")
+        assert re.search(r'service_name="[\w-]+"', lines[match + 1]), "name the one service"
+        assert lines[match - 1].strip().startswith("//"), f"say why above line {match + 1}"
+        mappings += 1
+    assert mappings == sum(1 for lines in MAPPED.values() if any(m[2] in LOWER for m in lines))
+    # The journal's priorities keep their meaning too.
+    journal = block("loki.relabel", "journal")
+    for keyword, level in (("err", "error"), ("crit", "fatal"), ("emerg", "fatal")):
+        rule = re.search(
+            rf'regex\s*=\s*"[^"]*\b{keyword}\b[^"]*"\s*\n[^\n]*\n\s*replacement\s*=\s*"(\w+)"',
+            journal,
+        )
+        assert rule and rule.group(1) == level, keyword
 
 
 def block(kind: str, label: str) -> str:

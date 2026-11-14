@@ -372,6 +372,9 @@ services:
       # and which layer is each container's own (layer IDs only, open to all), without which it tracks none.
       - /proc:/rootfs/proc:ro
       - /var/lib/docker/image/overlay2/layerdb/mounts:/rootfs/var/lib/docker/image/overlay2/layerdb/mounts:ro
+      # The disks' udev properties, open to all, which the host exporter adds to their series; without them it logs an
+      # error at each start.
+      - /run/udev/data:/run/udev/data:ro
       - /sys:/sys:ro
       - /var/log/journal:/var/log/journal:ro
       - /var/lib/homelab-metrics:/var/lib/homelab-metrics:ro
@@ -396,7 +399,9 @@ services:
   blackbox:
     image: prom/blackbox-exporter:v0.29.1-distroless@sha256:4d6d2d50ecabf3a0b10e8f6f5c4b14fc0c2326dcc2f7fe161668de722d5bf61e
     restart: unless-stopped
-    command: ["--config.file=/etc/blackbox/blackbox.yml", "--log.format=json"]
+    # A failed probe is a measurement (probe_success), which the site-down rule reads, not a fault of blackbox: its
+    # lines stay out of the log (shown only by /probe?debug=true), so it logs no error for each one.
+    command: ["--config.file=/etc/blackbox/blackbox.yml", "--log.format=json", "--log.prober=debug"]
     read_only: true
     security_opt:
       - no-new-privileges:true

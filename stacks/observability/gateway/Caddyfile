@@ -8,6 +8,11 @@
 	persist_config off
 }
 
+# A deploy recreates a store for a few seconds; a read waits through that instead of failing.
+(through_restarts) {
+	lb_try_duration 30s
+}
+
 :{$GATEWAY_PORT:5080} {
 	map {header.Authorization} {reader} {
 		"Basic {$STATS_AUTH}" stats
@@ -50,23 +55,33 @@
 
 	handle @stats {
 		uri strip_prefix /prometheus
-		reverse_proxy {$PROMETHEUS:prometheus:9090}
+		reverse_proxy {$PROMETHEUS:prometheus:9090} {
+			import through_restarts
+		}
 	}
 	handle @prometheus {
 		uri strip_prefix /prometheus
-		reverse_proxy {$PROMETHEUS:prometheus:9090}
+		reverse_proxy {$PROMETHEUS:prometheus:9090} {
+			import through_restarts
+		}
 	}
 	handle @alertmanager {
 		uri strip_prefix /alertmanager
-		reverse_proxy {$ALERTMANAGER:alertmanager:9093}
+		reverse_proxy {$ALERTMANAGER:alertmanager:9093} {
+			import through_restarts
+		}
 	}
 	handle @logs {
 		uri strip_prefix /logs
-		reverse_proxy {$LOGS:logs:9428}
+		reverse_proxy {$LOGS:logs:9428} {
+			import through_restarts
+		}
 	}
 	handle @traces {
 		uri strip_prefix /traces
-		reverse_proxy {$TRACES:traces:10428}
+		reverse_proxy {$TRACES:traces:10428} {
+			import through_restarts
+		}
 	}
 	handle {
 		respond 403
