@@ -36,7 +36,7 @@ snapshots with `restic forget --prune <id>`.
    sudo systemctl daemon-reload
    ```
 
-3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` (folder 700, files 444), then
+3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` ([list](#secrets); folder 700, files 444), then
    `stacks/deploy/deploy.sh --last-deployed ~/.local/state/homelab/last-deployed`: every stack comes up empty; `deploy-main`
    follows. Deploy `backup` last and restore as above.
 4. CI runner: `sudo ci-runner/install_host.py`, `sudo ci-runner/build-rootfs.sh`, `sudo ci-runner/host-tests/test_tools.py`, `sudo ci-runner/host-tests/audit.py`
@@ -45,6 +45,30 @@ snapshots with `restic forget --prune <id>`.
 
 If the Tailscale address changes, update the Docker drop-in, the Compose port bindings, `stacks/internal-names` and
 the `.internal` nameserver in Tailscale's DNS settings.
+
+## Secrets
+
+Names are public; values live in Bitwarden's "Homelab secrets". `checks/secrets_listed_test.py` keeps this in step.
+
+| `secrets/` file | Used by | Gives |
+| --- | --- | --- |
+| `agents_password` | observability | Agents' read-only gateway login |
+| `cf_tunnel_token` | tunnel | Runs the Cloudflare Tunnel |
+| `grafana_admin_password` | observability | Grafana's admin |
+| `grafana_secret_key` | observability | Grafana's signing key |
+| `healthchecks_ping_url` | observability | Incidents relay's dead-man ping |
+| `homeassistant_metrics_token` | observability | Reads Home Assistant's metrics |
+| `incidents_discord_bot_token` | observability | The Homelab Discord bot |
+| `oncall_fire_token` | observability | Starts the on-call routine |
+| `public_stats_key` | observability | Signs the public stats page |
+| `r2_access_key_id` | backup | R2 login, with the next two |
+| `r2_account_id` | backup | |
+| `r2_secret_access_key` | backup | |
+| `restic_password` | backup | Decrypts every backup |
+| `stats_password` | observability | Public stats' gateway login |
+
+Elsewhere: the CI runner's `/etc/homelab-ci/github-token`, and the claude.ai Homelab environment's network secrets
+for `observe.colincheung.dev` (the gateway login and a Cloudflare Access service token) and `discord.com` (the bot token).
 
 ## CI runner rollback
 
