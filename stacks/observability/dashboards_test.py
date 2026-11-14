@@ -152,12 +152,13 @@ def test_the_map_gives_the_node_graph_its_edges() -> None:
     numbers = {c["targetField"] for c in steps["convertFieldType"]["conversions"]}
     assert rings and set(rings) <= numbers
     assert all(f" as {ring}" in nodes for ring in rings)
-    # The graph prints a number to two places (decimals 0 reads as unset) and shows a legend of
-    # any node stat: the counts arrive as text, and a node's in its subtitle.
+    # The graph prints a number to two places (decimals 0 reads as unset): the counts arrive as
+    # text, and a node's in its subtitle. A node with no icon shows its main stat, else its
+    # ring's number, so that is blank.
     assert re.search(
         r'format "<calls> calls" as mainstat .*format "<failed> failed" as secondarystat', edges
     )
-    assert " as subtitle" in nodes and "mainstat" not in nodes
+    assert " as subtitle" in nodes and 'format " " as mainstat' in nodes
 
 
 def test_the_map_names_whom_each_call_reached() -> None:
