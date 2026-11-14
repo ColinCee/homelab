@@ -1,5 +1,6 @@
 """Installing the CI host (ci-runner/install_host.py): what restarts when, and what goes where."""
 
+import hashlib
 import importlib.util
 import os
 import re
@@ -435,3 +436,34 @@ def test_a_python_that_fails_its_smoke_test_is_not_linked(root: Path) -> None:
     assert os.readlink(link) == OLD_TARGET
     assert recorder.link_when_first_unit_written is None
     assert not restarted(recorder)
+
+
+STOCK_LOGIN = (
+    "auth optional pam_faildelay.so\n\n" + ih.LASTLOG_LINES + "session optional pam_motd.so\n"
+)
+FIXED_LOGIN = "auth optional pam_faildelay.so\n\nsession optional pam_motd.so\n"
+
+
+@pytest.fixture
+def login_pam(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A stand-in for Ubuntu's stock file, with its hashes in place of the real file's."""
+    monkeypatch.setattr(ih, "LOGIN_PAM_STOCK_MD5", hashlib.md5(STOCK_LOGIN.encode()).hexdigest())
+    monkeypatch.setattr(ih, "LOGIN_PAM_FIXED_MD5", hashlib.md5(FIXED_LOGIN.encode()).hexdigest())
+    path = tmp_path / "etc/pam.d/login"
+    path.parent.mkdir(parents=True)
+    return path
+
+
+def test_the_stock_login_pam_file_loses_its_lastlog_lines(tmp_path: Path, login_pam: Path) -> None:
+    login_pam.write_bytes(STOCK_LOGIN.encode())
+    ih.drop_lastlog(ih.Host(root=tmp_path))
+    assert login_pam.read_bytes() == FIXED_LOGIN.encode()
+
+
+@pytest.mark.parametrize("text", [STOCK_LOGIN + "# a hand edit\n", FIXED_LOGIN])
+def test_a_login_pam_file_not_the_stock_one_is_left_alone(
+    tmp_path: Path, login_pam: Path, text: str
+) -> None:
+    login_pam.write_bytes(text.encode())
+    ih.drop_lastlog(ih.Host(root=tmp_path))
+    assert login_pam.read_bytes() == text.encode()
