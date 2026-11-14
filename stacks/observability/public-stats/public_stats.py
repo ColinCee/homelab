@@ -129,9 +129,19 @@ def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
     telemetry.http(url, method="PUT", data=data, headers=headers, timeout=TIMEOUT_S)
 
 
-def failure_level(last_ok: float, now: float) -> int:
-    """The level of a failed push: a warning until pushes have failed for FAILING_S."""
-    return logging.ERROR if now - last_ok >= FAILING_S else logging.WARNING
+class Failures:
+    """Pushes failing in a row: a warning until the first of them is FAILING_S old."""
+
+    def __init__(self) -> None:
+        self.since: float | None = None
+
+    def ok(self) -> None:
+        self.since = None
+
+    def level(self, now: float) -> int:
+        if self.since is None:
+            self.since = now
+        return logging.ERROR if now - self.since >= FAILING_S else logging.WARNING
 
 
 def main() -> None:
@@ -141,7 +151,7 @@ def main() -> None:
     # Beelink's secrets/public_stats_key; its one other copy is in Bitwarden (public_stats_key.py).
     key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
-    last_ok = time.monotonic()
+    failures = Failures()
     while True:
         with telemetry.run("public-stats", "push") as trace:
             try:
@@ -151,13 +161,13 @@ def main() -> None:
                     push(url, key, body)
                 # The healthcheck: fresh while pushes succeed.
                 HEARTBEAT.touch()
-                last_ok = time.monotonic()
+                failures.ok()
                 wait = EVERY_S
             except Exception as e:
                 # Anything odd in a response skips one push, not the process.
                 # HTTPError's message says why the Worker refused.
                 trace.fail(type(e).__name__)
-                log.log(failure_level(last_ok, time.monotonic()), "push failed", exc_info=True)
+                log.log(failures.level(time.monotonic()), "push failed", exc_info=True)
                 wait = RETRY_S
         time.sleep(wait)
 

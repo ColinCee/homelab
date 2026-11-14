@@ -214,7 +214,7 @@ loki.process "noise" {
   // Lines already stored. A container's log is read again from the start of the second of its last line
   // (loki.source.docker keeps whole seconds), whenever the socket proxy cuts a stream idle for 10 minutes and when Alloy
   // starts, so a quiet container's last line came again every 10 minutes. A line read live is under a second old; a
-  // line written while Alloy was down for longer than this is lost.
+  // line written while Alloy was down, or held up in it, for longer than this is lost.
   stage.drop {
     older_than          = "5m"
     drop_counter_reason = "read_again"
@@ -317,11 +317,22 @@ loki.process "docker" {
 
   // Grafana logs each request the browser cancelled (leaving or refreshing a page) and its stop as errors.
   stage.match {
-    selector = `{service_name="grafana"} |= "context canceled\""`
+    selector = `{service_name="grafana"} |= "\"level\":\"error\"" |= "context canceled\""`
 
     stage.template {
       source   = "level"
       template = "info"
+    }
+  }
+
+  // blackbox logs a failed probe as an error: a fault of the site it probes, which probe_success records for the
+  // site-down and flight-tracker-down alerts, and which has no level setting (--log.prober adds lines, not hides them).
+  stage.match {
+    selector = `{service_name="blackbox"} |= "\"module\":" |= "\"level\":\"ERROR\""`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
     }
   }
 

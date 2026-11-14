@@ -399,9 +399,7 @@ services:
   blackbox:
     image: prom/blackbox-exporter:v0.29.1-distroless@sha256:4d6d2d50ecabf3a0b10e8f6f5c4b14fc0c2326dcc2f7fe161668de722d5bf61e
     restart: unless-stopped
-    # A failed probe is a measurement (probe_success), which the site-down rule reads, not a fault of blackbox: its
-    # lines stay out of the log (shown only by /probe?debug=true), so it logs no error for each one.
-    command: ["--config.file=/etc/blackbox/blackbox.yml", "--log.format=json", "--log.prober=debug"]
+    command: ["--config.file=/etc/blackbox/blackbox.yml", "--log.format=json"]
     read_only: true
     security_opt:
       - no-new-privileges:true

@@ -174,6 +174,15 @@ MAPPED = {
             "info",
         ),
         ('{"level":"error","msg":"Request Completed","status":500,"t":"m8"}', "m8", "error"),
+        ('{"level":"warn","error":"context canceled","t":"m9"}', "m9", "warn"),
+    ],
+    "blackbox": [
+        (
+            '{"level":"ERROR","module":"aircraft_live","msg":"Probe failed","t":"mx10"}',
+            "mx10",
+            "warn",
+        ),
+        ('{"level":"ERROR","msg":"Cannot read the config","t":"mx11"}', "mx11", "error"),
     ],
 }
 # Host lines by the journal's fields, a word found only in each, and the service it is filed under.
@@ -322,7 +331,8 @@ def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -
             continue
         assert template.group(1) in LOWER, lines[i + 1]
         match = next(j for j in range(i, 0, -1) if lines[j].strip() == "stage.match {")
-        assert re.search(r'service_name="[\w-]+"', lines[match + 1]), "name the one service"
+        # One service's lines, and only those its line filters pick, never all it logs.
+        assert re.search(r'\{service_name="[\w-]+"\} \|[=~]', lines[match + 1]), lines[match + 1]
         assert lines[match - 1].strip().startswith("//"), f"say why above line {match + 1}"
         mappings += 1
     assert mappings == sum(1 for lines in MAPPED.values() if any(m[2] in LOWER for m in lines))

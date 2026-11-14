@@ -102,6 +102,12 @@ def test_a_rotated_key_is_the_file_the_service_reads(tmp_path: Path) -> None:
 
 
 def test_a_push_failing_through_a_restart_warns_and_one_failing_for_minutes_is_an_error() -> None:
-    level = public_stats.failure_level
-    assert level(0, public_stats.FAILING_S - 1) == logging.WARNING
-    assert level(0, public_stats.FAILING_S) == logging.ERROR
+    # Pushes every 5 minutes, then a restart fails two tries 15 s apart, well after the last push.
+    failures = public_stats.Failures()
+    failures.ok()
+    assert failures.level(1000) == logging.WARNING
+    assert failures.level(1015) == logging.WARNING
+    failures.ok()
+    # Failing on and on: an error once the first failure in a row is FAILING_S old.
+    assert failures.level(2000) == logging.WARNING
+    assert failures.level(2000 + public_stats.FAILING_S) == logging.ERROR
