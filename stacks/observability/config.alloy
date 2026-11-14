@@ -72,7 +72,8 @@ prometheus.exporter.cadvisor "docker" {
   ]
   // cAdvisor's default set, which this list replaces, and disk usage ("disk"): Alloy has no host folder under
   // /rootfs/var/lib/docker but the layer IDs, so it read none and logged an error for each container every few
-  // minutes. Its only series were the root cgroup's mounts, as the host scrape's. Disk I/O ("diskIO") stays.
+  // minutes. Its only series were the root cgroup's mounts, as the host scrape's. Each container's disk I/O ("diskIO")
+  // stays.
   disabled_metrics = [
     "advtcp", "cpu_topology", "cpuset", "hugetlb", "memory_numa", "process", "referenced_memory", "resctrl", "sched",
     "tcp", "udp", "disk",
@@ -226,16 +227,6 @@ loki.process "noise" {
 
     stage.drop {
       expression = "\\s[0-9/]+ (200|404) \\d+ "
-    }
-  }
-
-  // The CI VMs' cAdvisor (prometheus.exporter.cadvisor "ci_vms") finds the containers too and logs, each minute for
-  // each, that it cannot read their disks, which it is not asked for.
-  stage.match {
-    selector = "{container_name=\"observability-alloy-1\"}"
-
-    stage.drop {
-      expression = "unable to determine device info for dir: /rootfs/var/lib/docker/overlay2/"
     }
   }
 }

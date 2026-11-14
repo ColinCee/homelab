@@ -119,12 +119,6 @@ NOISE = {
         "::ffff:172.29.0.4:48868 [13/Nov/2026:13:35:21.169] proxy docker/socket 0/0/0/1/1 403 212"
         ' - - PR-- 27/27/23/23/0 0/0 "POST /v1.56/containers/9da7/stop HTTP/1.1"',
     ],
-    "observability-alloy-1": [
-        '{"ts":"2026-11-13T13:35:30Z","level":"info","msg":"Failed to update stats for container'
-        ' \\"/system.slice/docker-73fa.scope\\": unable to determine device info for dir:'
-        ' /rootfs/var/lib/docker/overlay2/ddf0/diff: stat failed"}',
-        '{"ts":"2026-11-14T08:00:00Z","level":"info","msg":"reload requested"}',
-    ],
 }
 # Lines a service logs as errors that are not faults, each with a word found only in it, and the
 # level config.alloy gives it; the error beside each stays one.
@@ -280,7 +274,7 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
                 if "component_id=loki.echo.out" in out:
                     seen.append(out)
                 mapped = sum(len(lines) for lines in MAPPED.values())
-                if len(seen) == len(LINES) + 2 + len(JOURNAL) + mapped:
+                if len(seen) == len(LINES) + len(NOISE) + len(JOURNAL) + mapped:
                     break
         finally:
             deadline.cancel()
@@ -294,10 +288,10 @@ def test_each_log_format_gets_one_level_and_noise_is_dropped(tmp_path: Path) -> 
         assert entry, out
         assert isinstance(json.loads(ast.literal_eval(entry.group(1))), dict), out
     kept = "".join(seen)
-    assert "PR--" in kept and "reload requested" in kept and "homelab-ci-update" in kept
+    assert "PR--" in kept and "homelab-ci-update" in kept
     host = [re.findall(r'level=\\"(\w+)\\"', out) for out in seen if "skipped a run" in out]
     assert host == [["warn"]]
-    assert " 200 9092" not in kept and "device" not in kept
+    assert " 200 9092" not in kept
     # Every host line is filed under a service, as a container's is; the files arrive in any order.
     for _, line, word, service in JOURNAL:
         got = [re.findall(r'service_name=\\"([\w-]+)\\"', out) for out in seen if word in out]
