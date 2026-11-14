@@ -197,15 +197,6 @@ CASES = {
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
         ],
     ),
-    "a process killed for memory posts at once and clears": (
-        [('node_vmstat_oom_kill{job="integrations/unix",instance="beelink"}', "0x10 1x40")],
-        [
-            at(10, "memory-kill"),
-            at(12, "memory-kill", posts("memory-kill", "1")),
-            # Out of the 15-minute window from 26 min, then 10 clear minutes.
-            at(40, "memory-kill"),
-        ],
-    ),
     "a disk full within a day posts after 30 minutes": (
         [
             # 100 MB left, losing 0.1 MB a minute: about 16 hours.

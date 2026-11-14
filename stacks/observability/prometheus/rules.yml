@@ -160,28 +160,6 @@ groups:
           action: 'Read why it stops with `docker logs --tail 100 <name>`, fix the cause, and redeploy its stack.'
           dashboard: *home
           value: '{{ $value }}'
-      # The kernel's own count: cAdvisor's container_oom_events_total stayed 0 when OBI was killed twice (11 Nov).
-      - alert: memory-kill
-        expr: |
-          (
-            max(round(increase(node_vmstat_oom_kill{job="integrations/unix"}[15m])))
-          ) > 0
-        for: 0m
-        keep_firing_for: 10m
-        labels:
-          level: week
-        annotations:
-          title: 'A process was killed for memory'
-          measure: 'Killed in the last 15 min'
-          unit: ''
-          harm: >-
-            The kernel stopped a process at its memory limit, most often a container's, which restarts and loses
-            what it was doing, and it happens again until the limit or what grew is fixed.
-          action: >-
-            Find it with `journalctl -k --since -1h | grep 'Killed process'` on the Beelink, then fix what grew or
-            raise its `mem_limit` in its compose.yaml.
-          dashboard: *home
-          value: '{{ $value }}'
       # 0 is unhealthy or still starting, which no stack's start period keeps up for 10 minutes; -1 has no check.
       - alert: container-unhealthy
         expr: |

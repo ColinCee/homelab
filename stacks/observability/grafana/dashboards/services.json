@@ -1802,21 +1802,6 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "memory-kill"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#fab219"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
               "options": "disk-full-soon"
             },
             "properties": [
