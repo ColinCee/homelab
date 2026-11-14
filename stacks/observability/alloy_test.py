@@ -170,6 +170,18 @@ MAPPED = {
         ),
         ('{"level":"error","msg":"Request Completed","status":500,"t":"m8"}', "m8", "error"),
         ('{"level":"warn","error":"context canceled","t":"m9"}', "m9", "warn"),
+        (
+            '{"level":"error","msg":"Request Completed","path":"/apis/quotas.grafana.app/v0alpha1'
+            '/namespaces/default/usage","status":501,"t":"mx12"}',
+            "mx12",
+            "warn",
+        ),
+        (
+            '{"level":"error","msg":"custom route handler failed","group":"quotas.grafana.app",'
+            '"path":"/usage","t":"mx13"}',
+            "mx13",
+            "warn",
+        ),
     ],
     "blackbox": [
         (

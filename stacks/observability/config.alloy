@@ -316,6 +316,17 @@ loki.process "docker" {
     }
   }
 
+  // Grafana 13's dashboard list asks its quotas app for usage, which it does not serve (501, "missing required query
+  // parameters: group"): its own fault, on every visit, with nothing in the lab wrong.
+  stage.match {
+    selector = `{service_name="grafana"} |= "\"level\":\"error\"" |= "quotas.grafana.app"`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
+    }
+  }
+
   // blackbox logs a failed probe as an error: a fault of the site it probes, which probe_success records for the
   // site-down and flight-tracker-down alerts, and which has no level setting (--log.prober adds lines, not hides them).
   stage.match {
