@@ -39,6 +39,9 @@ EVERY_S = 300
 # After a failure, sooner: the first push decides whether a deploy's
 # readiness wait sees the container healthy.
 RETRY_S = 15
+# A deploy that restarts Prometheus or the gateway fails a push or two, and a try RETRY_S later
+# succeeds; only pushes failing this long are an error (docs/architecture.md: errors are bugs).
+FAILING_S = 120
 TIMEOUT_S = 15
 HEARTBEAT = Path("/tmp/ready")
 
@@ -126,6 +129,21 @@ def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
     telemetry.http(url, method="PUT", data=data, headers=headers, timeout=TIMEOUT_S)
 
 
+class Failures:
+    """Pushes failing in a row: a warning until the first of them is FAILING_S old."""
+
+    def __init__(self) -> None:
+        self.since: float | None = None
+
+    def ok(self) -> None:
+        self.since = None
+
+    def level(self, now: float) -> int:
+        if self.since is None:
+            self.since = now
+        return logging.ERROR if now - self.since >= FAILING_S else logging.WARNING
+
+
 def main() -> None:
     prometheus = os.environ["PROMETHEUS_URL"]
     flights = os.environ["FLIGHTS_URL"]
@@ -133,6 +151,7 @@ def main() -> None:
     # Beelink's secrets/public_stats_key; its one other copy is in Bitwarden (public_stats_key.py).
     key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
+    failures = Failures()
     while True:
         with telemetry.run("public-stats", "push") as trace:
             try:
@@ -142,12 +161,13 @@ def main() -> None:
                     push(url, key, body)
                 # The healthcheck: fresh while pushes succeed.
                 HEARTBEAT.touch()
+                failures.ok()
                 wait = EVERY_S
             except Exception as e:
                 # Anything odd in a response skips one push, not the process.
                 # HTTPError's message says why the Worker refused.
                 trace.fail(type(e).__name__)
-                log.exception("push failed")
+                log.log(failures.level(time.monotonic()), "push failed", exc_info=True)
                 wait = RETRY_S
         time.sleep(wait)
 

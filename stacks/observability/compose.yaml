@@ -372,6 +372,9 @@ services:
       # and which layer is each container's own (layer IDs only, open to all), without which it tracks none.
       - /proc:/rootfs/proc:ro
       - /var/lib/docker/image/overlay2/layerdb/mounts:/rootfs/var/lib/docker/image/overlay2/layerdb/mounts:ro
+      # The disks' udev properties, open to all, which the host exporter adds to their series; without them it logs an
+      # error at each start.
+      - /run/udev/data:/run/udev/data:ro
       - /sys:/sys:ro
       - /var/log/journal:/var/log/journal:ro
       - /var/lib/homelab-metrics:/var/lib/homelab-metrics:ro

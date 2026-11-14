@@ -21,13 +21,22 @@ http://127.0.0.1:2019 {
 	respond @refused 403
 }
 
+# A deploy restarts the service behind a name for a few seconds; a request waits through that instead of failing.
+(through_restarts) {
+	lb_try_duration 30s
+}
+
 http://grafana.internal {
 	import tailnet_only
-	reverse_proxy 100.100.146.119:5080
+	reverse_proxy 100.100.146.119:5080 {
+		import through_restarts
+	}
 }
 
 # Home Assistant trusts proxies on loopback (http: trusted_proxies in its configuration.yaml on Beelink).
 http://home.internal {
 	import tailnet_only
-	reverse_proxy 127.0.0.1:8123
+	reverse_proxy 127.0.0.1:8123 {
+		import through_restarts
+	}
 }

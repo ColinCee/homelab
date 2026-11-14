@@ -212,6 +212,15 @@ loki.source.docker "containers" {
 loki.process "noise" {
   forward_to = [loki.secretfilter.docker.receiver]
 
+  // Lines already stored. A container's log is read again from the start of the second of its last line
+  // (loki.source.docker keeps whole seconds), whenever the socket proxy cuts a stream idle for 10 minutes and when Alloy
+  // starts, so a quiet container's last line came again every 10 minutes. A line read live is under a second old; a
+  // line written while Alloy was down, or held up in it, for longer than this is lost.
+  stage.drop {
+    older_than          = "5m"
+    drop_counter_reason = "read_again"
+  }
+
   // Alloy's and OBI's polls, answered: nearly every line the log store would take. Refusals (403) and errors stay.
   stage.match {
     selector = "{container_name=\"observability-docker-socket-proxy-1\"}"
@@ -270,6 +279,52 @@ loki.process "docker" {
   stage.template {
     source   = "level"
     template = "{{ $l := ToLower .Value }}{{ get (dict \"emerg\" \"fatal\" \"alert\" \"fatal\" \"crit\" \"fatal\" \"critical\" \"fatal\" \"fatal\" \"fatal\" \"ftl\" \"fatal\" \"panic\" \"fatal\" \"err\" \"error\" \"error\" \"error\" \"eror\" \"error\" \"warn\" \"warn\" \"warning\" \"warn\" \"wrn\" \"warn\" \"info\" \"info\" \"inf\" \"info\" \"notice\" \"info\" \"debug\" \"debug\" \"dbg\" \"debug\" \"trace\" \"debug\") $l | default $l }}"
+  }
+
+  // Lines a program logs as errors that are not faults, where it has no setting for their level. Errors are bugs
+  // (docs/architecture.md, "Monitoring and alerts"): each mapping names its service and says why above it, which
+  // alloy_test.py checks.
+
+  // cloudflared's graceful stop at each deploy, logged as errors (supervisor/supervisor.go, Err(nil)); a lost
+  // connection carries its "error".
+  stage.match {
+    selector = `{service_name="cloudflared"} |~ "\"message\":\"(Connection terminated|no more connections active and exiting)\"" !~ "\"error\":"`
+
+    stage.template {
+      source   = "level"
+      template = "info"
+    }
+  }
+
+  // Alloy's log reader reconnecting to a container Docker is removing: its lines were read, and it stops tailing it.
+  stage.match {
+    selector = `{service_name="alloy"} |~ "can not get logs from container which is dead or marked for removal|could not inspect container info.*No such container"`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
+    }
+  }
+
+  // Grafana logs each request the browser cancelled (leaving or refreshing a page) and its stop as errors.
+  stage.match {
+    selector = `{service_name="grafana"} |= "\"level\":\"error\"" |= "context canceled\""`
+
+    stage.template {
+      source   = "level"
+      template = "info"
+    }
+  }
+
+  // blackbox logs a failed probe as an error: a fault of the site it probes, which probe_success records for the
+  // site-down and flight-tracker-down alerts, and which has no level setting (--log.prober adds lines, not hides them).
+  stage.match {
+    selector = `{service_name="blackbox"} |= "\"module\":" |= "\"level\":\"ERROR\""`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
+    }
   }
 
   // Every line is stored as JSON: one a program wrote as text becomes {"level", "msg"}, its level read above.
