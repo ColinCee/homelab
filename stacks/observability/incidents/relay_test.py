@@ -2,6 +2,9 @@
 mentions Colin only for a firing `now` alert, starts the on-call agent once, clears the same post,
 survives a restart and passes the watchdog on to Healthchecks.io."""
 
+import json
+import re
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -88,6 +91,11 @@ def alert(status: str = "firing", fingerprint: str = "fp1", **labels: str) -> di
 Parts = tuple[relay.Relay, "FakeDiscord", "FakeFire"]
 
 
+def FIRST_LINE(query: str) -> str:
+    """The log store, for the alerts that read none."""
+    return ""
+
+
 @pytest.fixture
 def ping() -> FakePing:
     return FakePing()
@@ -96,7 +104,7 @@ def ping() -> FakePing:
 @pytest.fixture
 def parts(tmp_path: Path, ping: FakePing) -> tuple[relay.Relay, FakeDiscord, FakeFire]:
     discord, fire = FakeDiscord(), FakeFire()
-    r = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire, ping)
+    r = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire, ping, FIRST_LINE)
     return r, discord, fire
 
 
@@ -148,7 +156,9 @@ def test_a_failed_clear_is_sent_again(parts: Parts) -> None:
 def test_a_restart_opens_nothing_again(parts: Parts, tmp_path: Path) -> None:
     r, discord, fire = parts
     r.handle(alert())
-    again = relay.Relay(tmp_path / "state.json", "forum", "guild", discord, fire, FakePing())
+    again = relay.Relay(
+        tmp_path / "state.json", "forum", "guild", discord, fire, FakePing(), FIRST_LINE
+    )
     again.handle(alert())
     assert discord.threads == 1 and len(fire.texts) == 1
 
@@ -238,3 +248,42 @@ def test_a_failed_ping_is_not_a_relay_failure(parts: Parts, ping: FakePing) -> N
     r, _, _ = parts
     ping.fail = True
     assert r.handle(alert(alertname="watchdog", level="watchdog")) == 200
+
+
+def errors_alert(service: str) -> dict[str, Any]:
+    errors = alert(alertname="errors-logged", level="week", service_name=service)
+    errors["alerts"][0]["annotations"]["logs"] = f'service_name:"{service}" level:in(error,fatal)'
+    return errors
+
+
+def test_an_error_alert_shows_its_first_line_and_links_its_lines(tmp_path: Path) -> None:
+    discord, fire, asked = FakeDiscord(), FakeFire(), []
+
+    def first_line(query: str) -> str:
+        asked.append(query)
+        return "panic at ``` <@124> [x](http://evil)"
+
+    r = relay.Relay(tmp_path / "s.json", "forum", "guild", discord, fire, FakePing(), first_line)
+    assert r.handle(errors_alert("proxy")) == 200
+    # From 5 minutes before it started: its line came at most a scrape and a rule run earlier.
+    assert asked == ['_time:[2026-11-13T00:55:00Z, now] service_name:"proxy" level:in(error,fatal)']
+    post = opened(discord)["message"]
+    # The line stays in its code block, so it can mention or link no one.
+    assert "```\npanic at ''' <@124> [x](http://evil)\n```" in post["content"]
+    assert post["allowed_mentions"] == {"parse": [], "users": []}
+    link = re.search(r"\[Its lines\]\((\S+)\)", post["content"])
+    assert link and link.group(1).startswith("http://grafana.internal/explore?")
+    pane = json.loads(urllib.parse.unquote(link.group(1).split("panes=")[1]))
+    assert pane["a"]["queries"][0]["expr"] == 'service_name:"proxy" level:in(error,fatal)'
+    # The agent gets the query, never the line, whose text comes from outside.
+    assert "panic" not in fire.texts[0] and "level:in(error,fatal)" in fire.texts[0]
+
+
+def test_an_error_alert_still_posts_when_the_log_store_does_not_answer(tmp_path: Path) -> None:
+    def first_line(query: str) -> str:
+        raise OSError("gateway down")
+
+    discord = FakeDiscord()
+    r = relay.Relay(tmp_path / "s.json", "f", "g", discord, FakeFire(), FakePing(), first_line)
+    assert r.handle(errors_alert("x")) == 200
+    assert "did not answer" in opened(discord)["message"]["content"]

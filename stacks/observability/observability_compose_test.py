@@ -41,8 +41,12 @@ def test_only_alertmanager_reaches_the_incidents_relay() -> None:
     # Whatever reaches it can open posts and start the on-call agent.
     assert members("incidents") == {"alertmanager", "incidents"}
     assert COMPOSE["networks"]["incidents"]["internal"] is True
-    assert set(SERVICES["incidents"]["networks"]) == {"incidents", "incidents-out"}
+    networks = {"incidents", "incidents-out", "incidents-read"}
+    assert set(SERVICES["incidents"]["networks"]) == networks
     assert members("incidents-out") == {"incidents"}
+    # Its reads of the log store go through the gateway's read paths alone.
+    assert members("incidents-read") == {"incidents", "gateway"}
+    assert COMPOSE["networks"]["incidents-read"]["internal"] is True
     assert "ports" not in SERVICES["incidents"]
 
 

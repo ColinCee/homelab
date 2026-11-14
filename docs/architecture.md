@@ -93,9 +93,9 @@ its "Cleared". [Rules](../stacks/observability/prometheus/) post through
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) (no port: `docker exec observability-alertmanager-1
 amtool alert query --alertmanager.url=http://localhost:9093`) and the relay to Discord's #incidents.
 
-**Errors are bugs.** A healthy service logs no error or fatal line: fix the cause. A wrong level is set right in the
-program's settings, else mapped for one service in [`config.alloy`](../stacks/observability/config.alloy) under its
-reason (`alloy_test.py` checks).
+**Errors are bugs.** A healthy service logs no error or fatal line; one posts `errors-logged` with it. A wrong
+level is fixed in the program, else mapped for one service in
+[`config.alloy`](../stacks/observability/config.alloy) under its reason (`alloy_test.py` checks).
 
 | Level | When | Post |
 |---|---|---|

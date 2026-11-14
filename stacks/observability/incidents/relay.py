@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -40,10 +41,17 @@ FORGET_AFTER = timedelta(days=3)
 # (rules.yml: ssh-login-elsewhere, ci-host-install), so theirs never do.
 OUTSIDE = frozenset({"user", "from", "device", "author", "commit"})
 PLAIN = re.compile(r"[\w.:/@-]{0,64}")
+# An alert whose annotation `logs` is a LogsQL query (rules.yml: errors-logged) shows its first
+# line, cut to this, and a link to its lines in Grafana's Logs data source.
+LINE_MAX = 500
+EXPLORE = "http://grafana.internal/explore?schemaVersion=1&orgId=1&panes="
+GATEWAY = "http://gateway:5080/logs/select/logsql/query"
 
 Discord = Callable[[str, str, dict[str, Any] | None], dict[str, Any]]
 Fire = Callable[[str], str]
 Ping = Callable[[], None]
+# The first line a LogsQL query finds, "" for none.
+FirstLine = Callable[[str], str]
 FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
 
 
@@ -52,7 +60,14 @@ log = logging.getLogger("incidents")
 
 class Relay:
     def __init__(
-        self, state_file: Path, forum: str, guild: str, discord: Discord, fire: Fire, ping: Ping
+        self,
+        state_file: Path,
+        forum: str,
+        guild: str,
+        discord: Discord,
+        fire: Fire,
+        ping: Ping,
+        first_line: FirstLine,
     ) -> None:
         self.state_file = state_file
         self.forum = forum
@@ -60,6 +75,7 @@ class Relay:
         self.discord = discord
         self.fire = fire
         self.ping = ping
+        self.first_line = first_line
         self._tags: dict[str, str] | None = None
         self.state = self._load()
 
@@ -105,7 +121,10 @@ class Relay:
                 f"/channels/{self.forum}/threads",
                 {
                     "name": _title(alert)[:100],
-                    "message": {"content": _post(alert), "allowed_mentions": _mentions(alert)},
+                    "message": {
+                        "content": _post(alert, self._line(alert)),
+                        "allowed_mentions": _mentions(alert),
+                    },
                     **self._tags_for("Firing"),
                 },
             )["id"]
@@ -175,6 +194,21 @@ class Relay:
         self._save()
         log.info("started the on-call agent", extra={"session": url})
         return f"On-call agent: {url}"
+
+    def _line(self, alert: dict[str, Any]) -> str | None:
+        """The first line its `logs` query finds, None for an alert without one."""
+        query = alert["annotations"].get("logs")
+        if not query:
+            return None
+        try:
+            # Its line is counted within seconds, and the rule runs each minute.
+            starts = datetime.fromisoformat(alert.get("startsAt", "").replace("Z", "+00:00"))
+            since = (starts - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return self.first_line(f"_time:[{since}, now] {query}")
+        except FAILED as e:
+            # A warning: the post still opens, with the link; an error here would post again.
+            log.warning("cannot read the first line", extra={"error": str(e)})
+            return "(the log store did not answer; open the link)"
 
     def _say(self, thread: str, text: str) -> None:
         try:
@@ -264,7 +298,7 @@ def _title(alert: dict[str, Any]) -> str:
     )
 
 
-def _post(alert: dict[str, Any]) -> str:
+def _post(alert: dict[str, Any], line: str | None = None) -> str:
     a = alert["annotations"]
     value = a.get("value", "")
     shown = "no data" if re.fullmatch(r"-1(\.0*)?", value) else f"{value}{a.get('unit', '')}"
@@ -273,14 +307,35 @@ def _post(alert: dict[str, Any]) -> str:
         f"**Why it matters:** {a.get('harm', '')}",
         f"**What to do:** {a.get('action', '')}",
     ]
+    if a.get("logs"):
+        # A code block, which no text in the line can close or turn into a mention or link.
+        text = (line or "(none found)").replace("`", "'")[:LINE_MAX]
+        lines += [f"**First line:**\n```\n{text}\n```", f"[Its lines]({_explore(a['logs'])})"]
     if a.get("dashboard"):
         lines.append(f"[Dashboards]({a['dashboard']})")
     # The mention first, so the cut never drops it.
     return (_mention(_mentions(alert)) + "\n".join(lines))[:2000]
 
 
+def _explore(query: str) -> str:
+    """Grafana's Explore on the Logs data source, the last hour of QUERY's lines."""
+    source = {"type": "victoriametrics-logs-datasource", "uid": "logs"}
+    query_ = {"refId": "A", "datasource": source, "expr": query, "queryType": "raw"}
+    pane = {"datasource": "logs", "queries": [query_], "range": {"from": "now-1h", "to": "now"}}
+    return EXPLORE + urllib.parse.quote(json.dumps({"a": pane}, separators=(",", ":")))
+
+
+def _first_line(login: str, query: str) -> str:
+    """The oldest line QUERY finds, through the read-only gateway."""
+    sent = urllib.parse.urlencode({"query": f"{query} | sort by (_time) | limit 1"})
+    raw = telemetry.http(f"{GATEWAY}?{sent}", login=login, timeout=10, tries=2)
+    found = json.loads(raw.splitlines()[0]) if raw.strip() else {}
+    return str(found.get("_msg", ""))
+
+
 def _snapshot(alert: dict[str, Any], post: str) -> str:
-    keep = ("title", "measure", "value", "unit", "harm", "action", "dashboard")
+    # Not the first line: a log line holds text from outside, which the agent reads itself.
+    keep = ("title", "measure", "value", "unit", "harm", "action", "dashboard", "logs")
     return json.dumps(
         {
             "labels": _labels(alert),
@@ -315,6 +370,7 @@ def main() -> None:
     }
     routine = os.environ.get("ONCALL_ROUTINE", "")
     healthchecks = telemetry.secret("healthchecks_ping")
+    reader = f"agents@homelab.internal:{telemetry.secret('agents_password')}"
     fire_url = FIRE.format(routine=routine)
 
     def discord(method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
@@ -337,6 +393,7 @@ def main() -> None:
         discord,
         fire,
         ping,
+        lambda query: _first_line(reader, query),
     )
 
     class Handler(BaseHTTPRequestHandler):

@@ -275,6 +275,8 @@ services:
       - incidents_discord_bot_token
       - oncall_fire_token
       - healthchecks_ping
+      # The gateway's read-only login, for an alert's first log line.
+      - agents_password
     volumes:
       - ./incidents/relay.py:/relay.py:ro
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
@@ -289,10 +291,12 @@ services:
       timeout: 5s
       start_period: 30s
       start_interval: 2s
-    # incidents: only Alertmanager reaches it; incidents-out: its way out to Discord, Anthropic and Healthchecks.io.
+    # incidents: only Alertmanager reaches it; incidents-out: its way out to Discord, Anthropic and Healthchecks.io;
+    # incidents-read: the gateway.
     networks:
       - incidents
       - incidents-out
+      - incidents-read
 
   # How everyone but Prometheus's own rules reads the stores: each reader logs in with its own login and may read
   # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, agents on
@@ -337,6 +341,7 @@ services:
       - grafana
       - public-stats
       - read
+      - incidents-read
 
   alloy:
     image: grafana/alloy:v1.21.3@sha256:8ab871206bd2d8f89277f53abffee5f452a293980788d52f85fa183a87a505a4
@@ -635,6 +640,9 @@ networks:
   incidents:
     internal: true
   incidents-out:
+  # The relay's reads of an alert's log lines, as the agents login, through the gateway.
+  incidents-read:
+    internal: true
   # The tunnel's way to the gateway, for the on-call agent; owned here, as otlp, so this stack deploys first.
   read:
     name: observability-read

@@ -93,6 +93,13 @@ def posts(alert: str, value: str, **labels: str) -> dict[str, Any]:
     return {"exp_labels": rule["labels"] | labels, "exp_annotations": notes}
 
 
+def errors_posted(service: str, value: str) -> dict[str, Any]:
+    post = posts("errors-logged", value, service_name=service)
+    logs = post["exp_annotations"]["logs"].replace("{{ $labels.service_name }}", service)
+    post["exp_annotations"]["logs"] = logs
+    return post
+
+
 def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
     return {"eval_time": f"{minutes}m", "alertname": name, "exp_alerts": list(firing)}
 
@@ -105,6 +112,7 @@ RECEIVER = f'job="alloy",component_id="{RECEIVER_ID}"'
 EXPORTER_ID = "otelcol.exporter.otlphttp.logs"
 EXPORTER = f'job="alloy",component_id="{EXPORTER_ID}"'
 TRACES = 'job="alloy",component_id="otelcol.exporter.otlphttp.traces"'
+ERRORS = 'homelab_error_lines_total{job="alloy",component_id="loki.process.error_lines"'
 
 # Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5); a case may add a
 # third element, its step.
@@ -547,6 +555,30 @@ CASES = {
             ),
         ],
     ),
+    "a service's first error line posts at once, holds 10 minutes, then clears": (
+        [(f'{ERRORS},service_name="grafana",level="error"}}', "_x5 1x30")],
+        [
+            at(4, "errors-logged"),
+            at(5, "errors-logged", errors_posted("grafana", "1")),
+            at(18, "errors-logged", errors_posted("grafana", "1")),
+            at(20, "errors-logged"),
+        ],
+    ),
+    "a service's errors and fatal lines are one post, a line after a quiet hour another": (
+        [
+            # Scraped every 15 s, as Alloy's own metrics are: two more errors at 20 min, the first
+            # fatal line at 21, one more error at 40.
+            (f'{ERRORS},service_name="proxy",level="error"}}', "1x80 3x80 4x160"),
+            (f'{ERRORS},service_name="proxy",level="fatal"}}', "_x84 1x240"),
+        ],
+        [
+            at(15, "errors-logged"),
+            at(22, "errors-logged", errors_posted("proxy", "3")),
+            at(37, "errors-logged"),
+            at(41, "errors-logged", errors_posted("proxy", "1")),
+        ],
+        "15s",
+    ),
 }
 
 
@@ -676,6 +708,23 @@ def test_rules_fire_hold_and_clear_as_the_standard_says(
 ) -> None:
     ran = rule_runs[case]
     assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+def test_a_rule_over_log_lines_replays_from_them_for_its_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stacks.observability.prometheus import replay
+
+    query, by, window = replay.FROM_LOGS["errors-logged"]
+    expr = flat(RULES["errors-logged"]["expr"])
+    assert f"offset {window // 60}m" in expr and f"[{window // 60}m]" in expr
+    assert f"sum by ({by})" in expr
+    # The log store's count of lines a minute: one minute with lines at 01:00 on 1 Jan 1970.
+    answer = b'{"_time":"1970-01-01T01:00:00Z","service_name":"proxy","lines":"3"}\n'
+    monkeypatch.setenv("GATEWAY_LOGIN", "agents:x")
+    monkeypatch.setattr(replay.telemetry, "http", lambda *a, **k: answer)
+    returned = replay.log_history(query, by, window, 0, 7200)
+    assert returned == {"service_name=proxy": {3600 + 60 * m for m in range(1, 6)}}
 
 
 def test_replay_posts_as_prometheus_and_alertmanager_would() -> None:
