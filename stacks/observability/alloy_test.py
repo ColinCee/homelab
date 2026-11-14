@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from conftest import ROOT, services, tool
+from conftest import ROOT, services, stacks, tool
 from stacks.observability.prometheus import slos
 
 STACK = ROOT / "stacks/observability"
@@ -667,7 +667,8 @@ def test_only_the_labs_containers_are_kept(tmp_path: Path) -> None:
     assert re.search(r'^container_memory_working_set_bytes\{id="/"', echoed, re.M)
     assert re.search(r"^machine_memory_bytes", echoed, re.M)
 
-    # Every stack, and only the stacks, in both rules.
+    # Every stack, and only the stacks, in both rules; each project named for its folder.
+    assert not [stack for stack, spec in stacks().items() if "name" in spec]
     rules = re.findall(r'regex\s*=\s*"[^"]*\(([\w|-]+)\);False', CONFIG)
     assert len(rules) == 2
     for rule in rules:
