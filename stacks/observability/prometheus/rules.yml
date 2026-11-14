@@ -471,16 +471,34 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
       # Errors are bugs (docs/architecture.md): any error or fatal line a service logs, as Alloy counts them
-      # (config.alloy, loki.process "error_lines"), posts once per service. A service's series starts at its first
-      # line, which `increase` cannot see, so a series absent 5 minutes ago counts whole. Not a promise in slos.yml:
-      # it reads no metrics file and has no normal to set a threshold from, since the target is zero. The relay posts
+      # (config.alloy, loki.process "error_lines"), posts once per service. The lines in 5 minutes are the count now
+      # less the count then, where both come from the Alloy process running now; a count with no such sample 5
+      # minutes ago counts whole, since it starts at 0 with each process and appears at its first line. Alloy pushes
+      # its own metrics, so a restart marks nothing stale: the old process's samples stay current for 5 minutes, and a
+      # new count back at the old value would look unchanged. Not a promise in slos.yml: it
+      # reads no metrics file and has no normal to set a threshold from, since the target is zero. The relay posts
       # the service's first line from the log store and a link to its lines (`logs`, ../incidents/relay.py).
       - alert: errors-logged
         expr: |
-          sum by (service_name) (round(
-            (homelab_error_lines_total unless homelab_error_lines_total offset 5m)
-            or increase(homelab_error_lines_total[5m])
-          )) > 0
+          sum by (service_name) (
+            (
+              (
+                homelab_error_lines_total
+                and timestamp(homelab_error_lines_total)
+                  >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+              )
+              - (
+                homelab_error_lines_total offset 5m
+                and timestamp(homelab_error_lines_total offset 5m)
+                  >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+              )
+            )
+            or (
+              homelab_error_lines_total
+              and timestamp(homelab_error_lines_total)
+                >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+            )
+          ) > 0
         for: 0m
         keep_firing_for: 10m
         labels:
@@ -643,7 +661,11 @@ groups:
     rules:
       # Every counter of what Alloy dropped, failed to send or refused, summed per component, so two moving together are
       # one post. Not loki.process's drop stages, which drop by design. The exporters' failure counters start at their
-      # first failure, so the zero arm gives each exporter a series that counts that first one.
+      # first failure, so the zero arm gives each exporter a series that counts that first one. Alloy pushes its own
+      # metrics, so a restart marks nothing stale: the old process's counts stay current for up to 5 minutes, hide
+      # that zero, and a new count back at the old value would look unchanged. So every count reads 0 for 5 minutes
+      # after Alloy starts, and a loss in those minutes posts when they end. Not errors-logged's exact sample times:
+      # `timestamp` drops the names, and these counters differ only by name.
       - alert: telemetry-dropped
         expr: |
           (
@@ -652,6 +674,8 @@ groups:
                 component_id!="",
                 __name__=~"otelcol_exporter_(send|enqueue)_failed_(log_records|spans|metric_points)_total|otelcol_receiver_(refused|failed)_(log_records|spans|metric_points)_total|otelcol_exporter_loki_entries_failed|prometheus_remote_storage_(samples|histograms|exemplars)_(failed|dropped)_total|loki_secretfilter_lines_dropped_total"
               })
+              * on (job) group_left ()
+                (time() - max by (job) (process_start_time_seconds{job="alloy"}) >= bool 300)
               or sum by (job, component_id) (otelcol_exporter_queue_capacity{component_id!=""}) * 0
             )[15m:1m])))
           ) > 0

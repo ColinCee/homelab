@@ -391,7 +391,7 @@ loki.process "docker" {
 // Each service's error and fatal lines, counted for the rule that posts them (prometheus/rules.yml, errors-logged),
 // as `homelab_error_lines_total` on Alloy's own metrics. Of a line's labels only its service and level are kept (the
 // scrape adds Alloy's own): a unit or container name would start a series per CI VM or recreate. A series is kept
-// while Alloy runs, and starts at its first line. Programs log to their output, so the OTLP logs path
+// while Alloy runs, and starts at its first line, from 0 again after each restart. Programs log to their output, so the OTLP logs path
 // (loki.process "programs") carries no line to count.
 loki.process "error_lines" {
   forward_to = []

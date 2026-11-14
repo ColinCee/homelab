@@ -108,11 +108,19 @@ CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
 CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
 # Alloy's own series, as config.alloy's scrape of itself labels them.
 RECEIVER_ID = "otelcol.receiver.otlp.programs"
-RECEIVER = f'job="alloy",component_id="{RECEIVER_ID}"'
+RECEIVER = f'job="alloy",instance="beelink",component_id="{RECEIVER_ID}"'
 EXPORTER_ID = "otelcol.exporter.otlphttp.logs"
-EXPORTER = f'job="alloy",component_id="{EXPORTER_ID}"'
-TRACES = 'job="alloy",component_id="otelcol.exporter.otlphttp.traces"'
-ERRORS = 'homelab_error_lines_total{job="alloy",component_id="loki.process.error_lines"'
+EXPORTER = f'job="alloy",instance="beelink",component_id="{EXPORTER_ID}"'
+TRACES = 'job="alloy",instance="beelink",component_id="otelcol.exporter.otlphttp.traces"'
+ERRORS = (
+    'homelab_error_lines_total{job="alloy",instance="beelink",'
+    'component_id="loki.process.error_lines"'
+)
+# When the Alloy process sending its counters started, in seconds: since the series start, or
+# restarted at 40:15 on a 15 s scrape. Alloy pushes its own metrics, so a restart leaves its
+# counters' old samples current for 5 more minutes, and the new ones start from 0.
+ALLOY_UP = ('process_start_time_seconds{job="alloy",instance="beelink"}', "0x400")
+ALLOY_RESTARTED = ('process_start_time_seconds{job="alloy",instance="beelink"}', "0x160 _ 2415x200")
 
 # Series one sample a minute, in promtool's notation ("5x20": 21 samples of 5); a case may add a
 # third element, its step.
@@ -473,6 +481,7 @@ CASES = {
     ),
     "two of a component's loss counters moving together are one post, a drop stage never": (
         [
+            ALLOY_UP,
             (f"otelcol_receiver_refused_spans_total{{{RECEIVER}}}", "0x10 30x30"),
             (f"otelcol_receiver_refused_metric_points_total{{{RECEIVER}}}", "0x10 20x30"),
             (
@@ -489,6 +498,7 @@ CASES = {
     ),
     "an exporter's first failure, a counter that starts then, posts and clears": (
         [
+            ALLOY_UP,
             (
                 f'otelcol_exporter_queue_capacity{{{EXPORTER},data_type="logs"}}',
                 "10000x45",
@@ -501,6 +511,24 @@ CASES = {
             # Out of the 15-minute window at 25, then the 10-minute hold.
             at(37, "telemetry-dropped"),
         ],
+    ),
+    "an exporter failing as often after Alloy restarts as before posts": (
+        [
+            ALLOY_RESTARTED,
+            (
+                f'otelcol_exporter_queue_capacity{{{EXPORTER},data_type="logs"}}',
+                "10000x160 _ 10000x200",
+            ),
+            # 7 failed before the restart, and 7 again 2 minutes after it.
+            (f"otelcol_exporter_send_failed_log_records_total{{{EXPORTER}}}", "7x160 _x8 7x200"),
+        ],
+        [
+            # Counts read 0 for 5 minutes after the start, so the new 7 shows from 46, stretched
+            # from 14 minutes of steps to the 15-minute window.
+            at(45, "telemetry-dropped"),
+            at(46, "telemetry-dropped", posts("telemetry-dropped", "8", component_id=EXPORTER_ID)),
+        ],
+        "15s",
     ),
     "a send queue a quarter full fires after `for`, one whose store is down never": (
         [
@@ -556,7 +584,7 @@ CASES = {
         ],
     ),
     "a service's first error line posts at once, holds 10 minutes, then clears": (
-        [(f'{ERRORS},service_name="grafana",level="error"}}', "_x5 1x30")],
+        [ALLOY_UP, (f'{ERRORS},service_name="grafana",level="error"}}', "_x5 1x30")],
         [
             at(4, "errors-logged"),
             at(5, "errors-logged", errors_posted("grafana", "1")),
@@ -568,6 +596,7 @@ CASES = {
         [
             # Scraped every 15 s, as Alloy's own metrics are: two more errors at 20 min, the first
             # fatal line at 21, one more error at 40.
+            ALLOY_UP,
             (f'{ERRORS},service_name="proxy",level="error"}}', "1x80 3x80 4x160"),
             (f'{ERRORS},service_name="proxy",level="fatal"}}', "_x84 1x240"),
         ],
@@ -577,6 +606,26 @@ CASES = {
             at(37, "errors-logged"),
             at(41, "errors-logged", errors_posted("proxy", "1")),
         ],
+        "15s",
+    ),
+    # 14 November 2026, 01:03: Grafana's count stood at 2, Alloy restarted, and 2 lines 3 minutes
+    # later brought it back at 2, so it read as unchanged and nothing posted.
+    "an error line after Alloy restarts posts, though its count is back where it was": (
+        [ALLOY_RESTARTED, (f'{ERRORS},service_name="grafana",level="error"}}', "2x160 _x12 2x200")],
+        [
+            at(39, "errors-logged"),
+            at(42, "errors-logged"),
+            at(44, "errors-logged", errors_posted("grafana", "2")),
+        ],
+        "15s",
+    ),
+    "a count back at 0 after Alloy restarts, or not back, posts nothing": (
+        [
+            ALLOY_RESTARTED,
+            (f'{ERRORS},service_name="grafana",level="error"}}', "2x160 _x12 0x200"),
+            (f'{ERRORS},service_name="proxy",level="error"}}', "3x160"),
+        ],
+        [at(39, "errors-logged"), at(42, "errors-logged"), at(50, "errors-logged")],
         "15s",
     ),
 }
@@ -717,7 +766,7 @@ def test_a_rule_over_log_lines_replays_from_them_for_its_window(
 
     query, by, window = replay.FROM_LOGS["errors-logged"]
     expr = flat(RULES["errors-logged"]["expr"])
-    assert f"offset {window // 60}m" in expr and f"[{window // 60}m]" in expr
+    assert f"offset {window // 60}m" in expr
     assert f"sum by ({by})" in expr
     # The log store's count of lines a minute: one minute with lines at 01:00 on 1 Jan 1970.
     answer = b'{"_time":"1970-01-01T01:00:00Z","service_name":"proxy","lines":"3"}\n'
