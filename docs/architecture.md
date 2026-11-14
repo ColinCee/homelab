@@ -79,17 +79,19 @@ Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observabili
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
 agents as `agents`. Dashboards: the building-dashboards skill.
 
-**Observed** means, for every stack service and host unit, with a check behind each line:
+**Observed** means:
 
-- one name, its Compose service or host unit, as `service_name`, `service.name` and `job`
-  ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
+- each container and host unit has one name, its Compose service or unit, as `service_name`, `service.name` and
+  `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
   ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
-- JSON lines with a level, Alloy wrapping text ([`json_logs_test.py`](../stacks/telemetry/json_logs_test.py)); Python
-  logs, writes metrics, reads secrets, calls HTTP and sends traces only through
-  [`telemetry`](../stacks/telemetry/telemetry.py), mounted in containers, beside host scripts;
-- traced: OBI for containers, a trace per run with a span per step for host jobs;
-- a memory limit, a healthcheck and read-only where it can ([check](../checks/compose_conventions_test.py));
-- no error lines (errors are bugs, below), and what can harm it watched by a promise in `slos.yml`.
+- every program logs JSON or Alloy wraps it ([check](../stacks/telemetry/json_logs_test.py)); Python logs, writes
+  metrics, reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py),
+  mounted in containers, beside host scripts ([check](../stacks/telemetry/telemetry_test.py));
+- OBI traces every container but the telemetry path's; a host job with steps (deploy, backup, upkeep, the Home
+  Assistant history copy) sends one trace per run, a span per step;
+- every container has a memory limit, runs read-only and has a healthcheck, or is listed with its reason
+  ([check](../checks/compose_conventions_test.py));
+- every metrics file has a promise watching it or a stated reason ([check](../stacks/observability/slos_test.py)).
 
 | Problem | Who warns |
 |---|---|
