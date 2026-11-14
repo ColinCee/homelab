@@ -2,6 +2,20 @@ services:
   backend:
     image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:4f6fe2c1ca96ca49b56e5120a79b51ffc957b76a863150ae2992aa282f05e943
     restart: unless-stopped
+    # Its new container serves before the old one stops (stacks/deploy/deploy.py, START_FIRST), so a
+    # deploy fails no request through the tunnel.
+    labels:
+      homelab.deploy: start-first
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - from urllib.request import urlopen; urlopen('http://localhost:8000/health', timeout=5)
+      interval: 60s
+      timeout: 5s
+      start_period: 30s
+      start_interval: 1s
     read_only: true
     mem_limit: 256m
     security_opt:
