@@ -152,6 +152,10 @@ services:
       GF_SNAPSHOTS_ENABLED: "false"
       GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
       GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      # With no quota file, 13.3's dashboard browser asks for a quota on every visit and gets a 501, which it logs
+      # as an error (grafana/grafana#136271); an empty one answers with the default limit, which
+      # nothing enforces. Drop both once that is fixed.
+      GF_UNIFIED_STORAGE_OVERRIDES_PATH: /etc/grafana/quota-overrides.yaml
       GF_LOG_LEVEL: warn
       GF_LOG_CONSOLE_FORMAT: json
       # Its plugins are in its image (grafana.Dockerfile).
@@ -169,6 +173,7 @@ services:
       - grafana-data:/var/lib/grafana
       - ./grafana/datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
       - ./grafana/dashboards.yaml:/etc/grafana/provisioning/dashboards/dashboards.yaml:ro
+      - ./grafana/quota-overrides.yaml:/etc/grafana/quota-overrides.yaml:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     # Shared with the gateway and grafana-users only, so no data source can reach a store directly.
     networks:
