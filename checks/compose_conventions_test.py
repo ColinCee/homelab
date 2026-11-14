@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 from conftest import dockerfile, services, tracked
+from stacks.deploy import deploy
 from stacks.observability.probes import ADDRESS
 
 # Docker publishes a port with no address on every interface, the internet's included.
@@ -69,7 +70,6 @@ NO_HEALTHCHECK = {
     "internal-names/dns": "scratch image",
     "tunnel/cloudflared": "distroless image",
     "observability/alloy": "no wget or curl in the image",
-    "flight-tracker/backend": "no wget or curl in the image",
 }
 
 
@@ -94,6 +94,15 @@ def test_services_have_a_healthcheck_unless_listed() -> None:
             assert not has, f"{name} has a healthcheck now: drop it from NO_HEALTHCHECK"
         else:
             assert has, f"{name}: a healthcheck, or say why not in NO_HEALTHCHECK"
+
+
+def test_a_start_first_service_can_run_twice_and_says_when_it_is_ready() -> None:
+    # stacks/deploy/deploy.py, START_FIRST: two containers at once, the new one waited for.
+    for stack, name, service in services():
+        if (service.get("labels") or {}).get(deploy.START_FIRST_LABEL) != deploy.START_FIRST:
+            continue
+        assert "healthcheck" in service, f"{stack.name}/{name}"
+        assert "container_name" not in service and "ports" not in service, f"{stack.name}/{name}"
 
 
 def test_python_services_share_one_image_and_mount_their_code() -> None:

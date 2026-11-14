@@ -13,19 +13,20 @@ sections; hand steps after a failure are in [recovery](recovery.md).
   that dropped the deployed commit, and runs [`deploy.sh`](../stacks/deploy/deploy.sh) for stacks changed since the last
   full deploy ([`deploy.py`](../stacks/deploy/deploy.py)) or reading a changed secret, until `main` stops moving. No code
   from GitHub runs on the Beelink to deploy.
-- **Who may deploy.** Whoever lands a commit on `main`, which takes a pull request with checks green, admins included.
+- **Who may deploy.** Whoever merges to `main`: a pull request with green checks, admins included.
 - **A stack** is `stacks/<name>/compose.yaml`, found by the deploy with no registry:
   - images pinned, `restart: unless-stopped`, admin ports bound to the Tailscale address, host networking only when
-    the service needs it;
+    needed;
   - `labels: {homelab.config-hash: ${CONFIG_HASH_<SERVICE>:-}}` on a service that reads a mounted file without reloading,
-    and `init: true` when its main process ignores SIGTERM as PID 1;
+    and `init: true` when its main process ignores SIGTERM as PID 1; `homelab.deploy: start-first` for no
+    gap at a deploy ([`deploy.py`](../stacks/deploy/deploy.py));
   - each secret a Compose `secrets:` file from `../../secrets/` (its one copy elsewhere is in Bitwarden), never in
     `environment:`, which `docker inspect` shows;
   - `systemd/<stack>-*.service` with a `.timer` or `.path` install as user units (the host has linger on) and write
     `*.prom` files to `/var/lib/homelab-metrics` for Alloy;
   - another stack's network is joined as `external: true`.
 - **Removing a stack:** deleting its folder removes nothing from the host. Stop its timers and containers by hand,
-  keep volumes until their data is backed up or retired, then delete the folder and
+  keep volumes until their data is backed up, then delete the folder and
   `/var/lib/homelab-metrics/deploy-<stack>.prom`.
 
 ## Network and access
@@ -73,12 +74,24 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 ## Monitoring and alerts
 
 Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observability/obi/obi.yaml) container traces into
-VictoriaLogs and VictoriaTraces, 30 days each;
+VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only;
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
-agents as `agents`. Dashboards: the building-dashboards skill. Signals link up: the Compose service or host unit is the
-`service_name`, `service.name` and `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml)). Every log line is stored as JSON; Alloy wraps text. Python logs, writes metrics,
-reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py): mounted in containers, beside host scripts.
+agents as `agents`. Dashboards: the building-dashboards skill.
+
+**Observed** means:
+
+- each container and host unit has one name, its Compose service or unit, as `service_name`, `service.name` and
+  `job` ([check](../checks/service_names_test.py)); a log's `trace_id` opens its trace, a span its logs and metrics
+  ([`datasources.yaml`](../stacks/observability/grafana/datasources.yaml));
+- every program logs JSON or Alloy wraps it ([check](../stacks/telemetry/json_logs_test.py)); Python logs, writes
+  metrics, reads secrets, calls HTTP and sends traces only through [`telemetry`](../stacks/telemetry/telemetry.py),
+  mounted in containers, beside host scripts ([check](../stacks/telemetry/telemetry_test.py));
+- OBI traces every container but the telemetry path's; a host job with steps (deploy, backup, upkeep, the Home
+  Assistant history copy) sends one trace per run, a span per step;
+- every container has a memory limit, runs read-only and has a healthcheck, or is listed with its reason
+  ([check](../checks/compose_conventions_test.py));
+- every metrics file has a promise watching it or a stated reason ([check](../stacks/observability/slos_test.py)).
 
 | Problem | Who warns |
 |---|---|

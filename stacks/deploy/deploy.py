@@ -332,6 +332,8 @@ def deploy(
                     env=_compose_environment(),
                     check=True,
                 )
+                for service in start_first_services(plan.compose_file):
+                    start_first(repo_root, plan, service, environment=environment, runner=runner)
                 runner(
                     compose_command(
                         plan,
@@ -368,6 +370,101 @@ def deploy(
     elif report.failed:
         log.error("deploy failed for every stack", extra={"failed": list(report.failed)})
     return report
+
+
+# A service labelled with this gets its new container healthy before its old one stops, so what
+# calls it by name sees no gap: Compose itself stops first and ignores `deploy.update_config.order`
+# (docker/compose#13149). Docker's DNS answers the name with both containers meanwhile, and a
+# caller refused by the stopping one dials the other. The service needs a healthcheck, and neither
+# a container_name nor a published port, which two containers cannot share. wowu/docker-rollout
+# does the same as a Docker CLI plugin, which the host would need installed and kept up to date.
+START_FIRST_LABEL = "homelab.deploy"
+START_FIRST = "start-first"
+# Together under a minute, so both containers never reach a once-a-minute job such as the flight
+# tracker's snapshot, which waits a minute after its start.
+START_FIRST_TIMEOUT = 45
+START_FIRST_STOP = 10
+STATE_FORMAT = (
+    '{{index .Config.Labels "com.docker.compose.config-hash"}} '
+    "{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}"
+)
+
+
+def start_first_services(compose_file: Path) -> list[str]:
+    compose = yaml.safe_load(compose_file.read_text(encoding="utf-8")) or {}
+    return [
+        name
+        for name, spec in (compose.get("services") or {}).items()
+        if ((spec or {}).get("labels") or {}).get(START_FIRST_LABEL) == START_FIRST
+    ]
+
+
+def start_first(
+    repo_root: Path,
+    plan: StackPlan,
+    service: str,
+    *,
+    environment: Mapping[str, str],
+    runner: CommandRunner = subprocess.run,
+) -> None:
+    """Start the service's new containers beside its old ones, wait for them to be healthy, then
+    stop the old ones. Nothing to do when none run or they already run this configuration; when
+    the new ones fail, they go and the old ones keep serving."""
+
+    def output(command: list[str]) -> str:
+        done = runner(command, cwd=repo_root, env=environment, check=True, capture_output=True)
+        return (done.stdout or b"").decode()
+
+    def running() -> list[str]:
+        return output(compose_command(plan, "ps", "-q", service)).split()
+
+    hashes = output(compose_command(plan, "config", "--hash", service)).split()
+    wanted = hashes[-1] if hashes else ""
+    # Each container's config hash and state: its health when it has a check.
+    states = {
+        container: output(["docker", "inspect", "--format", STATE_FORMAT, container])
+        .rstrip("\n")
+        .partition(" ")[::2]
+        for container in running()
+    }
+    old = [container for container, (config, _) in states.items() if config != wanted]
+    # An old container not serving gains nothing from the wait, which would fail on it: the plain
+    # `up` below replaces it.
+    if not wanted or not old or any(states[c][1] not in ("healthy", "running") for c in old):
+        return
+    try:
+        runner(
+            compose_command(
+                plan,
+                "up",
+                "-d",
+                "--no-deps",
+                "--no-recreate",
+                "--scale",
+                f"{service}={2 * len(old)}",
+                "--wait",
+                "--wait-timeout",
+                str(START_FIRST_TIMEOUT),
+                service,
+            ),
+            cwd=repo_root,
+            env=environment,
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        listed = runner(
+            compose_command(plan, "ps", "-q", service),
+            cwd=repo_root,
+            env=environment,
+            check=False,
+            capture_output=True,
+        )
+        new = [c for c in (listed.stdout or b"").decode().split() if c not in old]
+        if new:
+            runner(["docker", "rm", "-f", *new], check=False)
+        raise
+    runner(["docker", "stop", "--time", str(START_FIRST_STOP), *old], check=True)
+    runner(["docker", "rm", *old], check=True)
 
 
 def record_running(

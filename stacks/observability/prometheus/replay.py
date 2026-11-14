@@ -30,7 +30,7 @@ from stacks.observability.prometheus import slos
 STEP = 60
 # A rule over a count Alloy makes of log lines has no history from before the count existed; the
 # log store keeps the lines, so it replays from them: the LogsQL query, the label its posts are by,
-# and how long one line keeps the rule's query returning (its `offset` and `increase` window).
+# and how long one line keeps the rule's query returning (its `offset`).
 FROM_LOGS = {"errors-logged": ("level:in(error,fatal)", "service_name", 300)}
 
 
