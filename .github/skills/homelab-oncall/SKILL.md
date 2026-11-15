@@ -47,5 +47,5 @@ Fixed: what changed, with the pull request, merged or left for Colin; or not fix
 Needs you: Colin's one step, or nothing.
 ```
 
-Evidence stays in the pull request or this session. Nothing needs Colin: delete the post
-(`DELETE /channels/<id>`) and send no notification.
+Evidence stays in the pull request or this session. A false alarm a query proved, cleared, with
+nothing left for Colin: delete its post (`DELETE /channels/<id>`) and send no push notification.
