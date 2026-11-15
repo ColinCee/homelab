@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import urllib.error
 import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -110,11 +111,13 @@ class Relay:
             self._save()
             return True
         if post and _now() - datetime.fromisoformat(post["cleared"]) < REOPEN_WITHIN:
-            if not self._retag(post["thread"], "Firing", "Firing again.", _mentions(alert)):
+            marked = self._retag(post["thread"], "Firing", "Firing again.", _mentions(alert))
+            if marked is False:
                 return False
-            post.update(seen=_now().isoformat(), cleared=None)
-            self._save()
-            return True
+            if marked:
+                post.update(seen=_now().isoformat(), cleared=None)
+                self._save()
+                return True
         try:
             thread = self.discord(
                 "POST",
@@ -151,7 +154,7 @@ class Relay:
         if post is None or post["cleared"]:
             return True
         text = "Cleared: the number is back within bounds; that does not mean the cause is fixed."
-        if not self._retag(post["thread"], "Cleared", text):
+        if self._retag(post["thread"], "Cleared", text) is False:
             return False
         post["cleared"] = _now().isoformat()
         self._save()
@@ -160,7 +163,9 @@ class Relay:
 
     def _retag(
         self, thread: str, tag: str, text: str, mentions: dict[str, list[str]] | None = None
-    ) -> bool:
+    ) -> bool | None:
+        """Whether the post took the change; None when it is gone, deleted by hand as noise (the
+        on-call skill), so a return opens a new one."""
         try:
             # Discord archives an idle post, and an archived one takes no message or tag change.
             self.discord("PATCH", f"/channels/{thread}", {"archived": False, **self._tags_for(tag)})
@@ -172,6 +177,12 @@ class Relay:
                     "allowed_mentions": mentions or {"parse": []},
                 },
             )
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                log.info("a post was deleted", extra={"post": thread})
+                return None
+            log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
+            return False
         except FAILED as e:
             log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
             return False
