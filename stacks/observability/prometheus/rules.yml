@@ -388,13 +388,27 @@ groups:
         expr: |
           (
             round(max by (workflow, ci_job, runner) (
-              histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d])))
+              histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d])
+            ))
             ))
           )
-          > 1.5 * max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d]))))
+          > 1.5 * max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d])
+            ))
+          )
           and
-          max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d]))))
-          > 20 + max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d]))))
+          max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d])
+            ))
+          )
+          > 20 + max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d])
+            ))
+          )
           and
           sum by (workflow, ci_job, runner) (increase(homelab_ci_job_run_seconds_count{kind="main"}[1d])) >= 3
         for: 1h
