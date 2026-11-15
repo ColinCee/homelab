@@ -7,7 +7,9 @@ them in its home-lab figure.
 The body is built from named numbers only, never by forwarding a response, so
 nothing else about the host can leak. Anyone can poll the page and keep a
 history, so the numbers are coarse: one flag for all stacks, and no backup or
-per-service uptime, which over time would show outage windows. The blog's
+per-service uptime, which over time would show outage windows. The stacks and
+their services are what this repository deploys, not what is running, so they
+change only at a deploy and say nothing the repository does not. The blog's
 Worker refuses any other field, an `at` over 10 minutes old, and numbers not
 newer than the ones it has, so a drifting clock shows as refused pushes here.
 See docs/architecture.md, "Public stats".
@@ -25,16 +27,36 @@ from typing import Any
 import telemetry
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-# The stacks in this repository; public_stats_test.py keeps it in step.
-STACKS = (
-    "backup",
-    "deploy",
-    "flight-tracker",
-    "home-assistant",
-    "internal-names",
-    "observability",
-    "tunnel",
-)
+# Each stack in this repository and its Compose services, in compose.yaml's order, with a
+# profile's services when the stack's settings.env turns it on: what a deploy runs.
+# public_stats_test.py keeps it in step, and to the names and counts the blog's Worker accepts.
+# Kept here, not read from the compose files, so the image needs no YAML parser or repo mount,
+# and a change to any stack's services changes this file, which redeploys this service.
+STACKS: dict[str, tuple[str, ...]] = {
+    "backup": ("backup",),
+    "deploy": ("doorbell",),
+    "flight-tracker": ("backend",),
+    "home-assistant": ("homeassistant",),
+    "internal-names": ("dns", "proxy"),
+    "observability": (
+        "prometheus",
+        "logs",
+        "traces",
+        "grafana",
+        "grafana-users",
+        "alertmanager",
+        "incidents",
+        "gateway",
+        "alloy",
+        "blackbox",
+        "obi",
+        "docker-socket-proxy",
+        "probes",
+        "host-metrics",
+        "public-stats",
+    ),
+    "tunnel": ("cloudflared",),
+}
 EVERY_S = 300
 # After a failure, sooner: the first push decides whether a deploy's
 # readiness wait sees the container healthy.
@@ -103,6 +125,8 @@ def build_body(
         "allUp": all(stack in running for stack in STACKS),
         "tracking": whole(kpis.get("trackedAircraft")),
         "londonHour": whole(kpis.get("throughputLast60Min")),
+        # The blog's home-lab figure draws these; its Worker takes only short lowercase names.
+        "stacks": [{"id": stack, "services": list(services)} for stack, services in STACKS.items()],
     }
 
 
@@ -118,8 +142,8 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
 
 def signed(key: Ed25519PrivateKey, body: dict[str, Any]) -> tuple[bytes, str]:
     """The body as sent, and its signature, which the blog's Worker checks
-    against the public half of this key."""
-    data = json.dumps(body).encode()
+    against the public half of this key. Compact, since the Worker caps its size."""
+    data = json.dumps(body, separators=(",", ":")).encode()
     return data, key.sign(data).hex()
 
 

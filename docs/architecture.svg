@@ -182,6 +182,7 @@
   <text class="l" x="238" y="344">nightly</text>
   <path class="arrow" d="M346,430 H178"/>
   <text class="l" x="238" y="422">every 5 min</text>
+  <text class="s" x="238" y="447">numbers, stacks</text>
   <path class="arrow" d="M826,476 H756"/>
   <text class="l" x="791" y="468">writes</text>
   <path class="arrow" d="M554,476 H478"/>

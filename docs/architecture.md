@@ -150,7 +150,8 @@ encrypted: Home Assistant's config and a consistent copy of its history, the fli
 
 ## Public stats
 
-The `public-stats` container pushes a few numbers every 5 minutes, signed with an Ed25519 key, to the blog's
-Worker at colincheung.dev/homelab.json, which the home page shows. They are coarse on purpose, since anyone can poll
-and keep a history: the fields and why are in [`public_stats.py`](../stacks/observability/public-stats/public_stats.py), the key
-and its rotation in [`public_stats_key.py`](../stacks/observability/public-stats/public_stats_key.py).
+`public-stats` pushes some numbers and the deployed stacks every 5 minutes, Ed25519-signed, to the blog's home
+page (colincheung.dev/homelab.json). Coarse, since anyone can poll and keep history: fields and why in
+[`public_stats.py`](../stacks/observability/public-stats/public_stats.py), the key and rotation in
+[`public_stats_key.py`](../stacks/observability/public-stats/public_stats_key.py). The blog's Worker refuses
+unknown fields: deploy a new one there first, then merge it here.
