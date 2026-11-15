@@ -139,7 +139,7 @@
             "uid": "prometheus"
           },
           "refId": "A",
-          "expr": "max(100 * (max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])) and max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])))) or max(100 * clamp_max(max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d])), 1.49))",
+          "expr": "max(100 * (max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind=\"main\"}[14d])))) and max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) > 20 + max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind=\"main\"}[14d])))))) or max(100 * clamp_max(max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind=\"main\"}) / max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind=\"main\"}[14d])))), 1.49))",
           "legendFormat": ""
         }
       ],
@@ -431,7 +431,7 @@
             "uid": "prometheus"
           },
           "refId": "B",
-          "expr": "max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind=\"main\"}[14d]))",
+          "expr": "max by (workflow, ci_job, runner) (histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (increase(homelab_ci_job_run_seconds_bucket{kind=\"main\"}[14d]))))",
           "legendFormat": "",
           "instant": true,
           "range": false,

@@ -178,6 +178,21 @@ def test_metrics_are_the_latest_trusted_runs_by_kind_and_runner_and_drop_old_job
     assert ci_times.metrics(state["latest"], now + 31 * 86400).strip() == ""
 
 
+def test_every_run_counts_once_in_its_job_s_histogram_across_passes() -> None:
+    get, _ = github([run(1)])
+    state = ci_times.poll(get, lambda body: None, {})
+    get, _ = github([run(1), run(2)])
+    state = ci_times.poll(get, lambda body: None, state)
+    text = ci_times.metrics(state["latest"], ci_times.seconds("2026-11-13T00:00:00Z"))
+    keys = 'kind="main",workflow="CI",ci_job="check",runner="vm"'
+    # Each job takes 30 s.
+    assert f'homelab_ci_job_run_seconds_bucket{{{keys},le="27"}} 0' in text
+    assert f'homelab_ci_job_run_seconds_bucket{{{keys},le="31"}} 2' in text
+    assert f'homelab_ci_job_run_seconds_bucket{{{keys},le="+Inf"}} 2' in text
+    assert f"homelab_ci_job_run_seconds_count{{{keys}}} 2" in text
+    assert f"homelab_ci_job_run_seconds_sum{{{keys}}} 60" in text
+
+
 def test_the_tests_slowest_list_fits_github_s_annotation_limit() -> None:
     import conftest
 

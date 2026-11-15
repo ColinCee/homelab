@@ -381,25 +381,37 @@ groups:
             `homelab_ssd_written_bytes_total`.
           dashboard: *home
           value: '{{ $value }}'
-      # The latest main run's seconds (ci-runner/run-times/ci_times.py), median over a day against its 14 days: half again and
-      # 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
-      # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h,
-      # and the latest run must be slow too, so a fast one after it clears the alert.
+      # The median over a day's main runs (ci-runner/run-times/ci_times.py, `metrics`) against its 14 days: half again
+      # and 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
+      # At least 3 runs, so one cold run after a tool change is never the median.
       - alert: ci-slower
         expr: |
           (
             round(max by (workflow, ci_job, runner) (
-              quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d])
+              histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d])
+            ))
             ))
           )
-          > 1.5 * max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+          > 1.5 * max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d])
+            ))
+          )
           and
-          max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d]))
-          > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+          max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[1d])
+            ))
+          )
+          > 20 + max by (workflow, ci_job, runner) (
+            histogram_quantile(0.5, sum by (workflow, ci_job, runner, le) (
+              increase(homelab_ci_job_run_seconds_bucket{kind="main"}[14d])
+            ))
+          )
           and
-          max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind="main"})
-          > 1.5 * max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
-        for: 6h
+          sum by (workflow, ci_job, runner) (increase(homelab_ci_job_run_seconds_count{kind="main"}[1d])) >= 3
+        for: 1h
         keep_firing_for: 10m
         labels:
           level: week

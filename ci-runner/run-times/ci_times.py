@@ -3,8 +3,8 @@
 Each finished run attempt becomes one trace in the trace store: the run, its jobs and steps, and,
 for Colin's own runs, the slowest tests and the job log's phases to the millisecond (each step, each
 mise task and command). GitHub's API times steps only to the second. The latest
-successful run's job seconds, by kind (main or pr), go to ci-times.prom for Prometheus and the
-ci-slower alert.
+successful run's job seconds, and every run's in a histogram, by kind (main or pr), go to
+ci-times.prom for Prometheus and the ci-slower alert.
 
 Neither CI host can reach the observability stack, so this asks GitHub, with the CI supervisor's
 token. Installed by ci-runner/install_host.py and run every 5 minutes by homelab-ci-times.timer.
@@ -49,6 +49,9 @@ TASK_LINE = re.compile(r"^\[([\w:.-]+)\] (?:\$ (.*)|Finished in ([\d.]+)(ms|s)$)
 LOG_MAX = 2_000_000
 # A job unseen this long (renamed, removed) drops out of the metrics.
 ROW_DAYS = 30
+# Upper bounds of the run-time histogram, in seconds: each 15% above the last, so a median read
+# inside one is within a few percent of ci-slower's 1.5 times at any job length.
+BUCKETS = tuple(sorted({round(10 * 1.15**k) for k in range(43)}))
 
 log = logging.getLogger("ci-times")
 Get = Callable[[str], Any]
@@ -248,10 +251,13 @@ def trace(
 
 
 def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
-    """Each recent job's latest seconds. Jobs only: step names change with each pinned action's
-    version, so their series would pile up; steps are in the traces. `ci_job`, as the scrape sets
-    `job` itself."""
+    """Each recent job's latest seconds, and its runs' seconds as a histogram: a median over time of
+    the latest counts a run by how long it stayed the latest, so one slow run before a quiet night
+    outweighs a day of fast ones. Jobs only: step names change with each pinned action's version,
+    so their series would pile up; steps are in the traces. `ci_job`, as the scrape sets `job`
+    itself."""
     lines: list[str] = []
+    runs_lines: list[str] = []
     for row in latest.values():
         if row["at"] < now - ROW_DAYS * 86400:
             continue
@@ -260,7 +266,32 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
         )
         keys += f'ci_job="{telemetry.label(row["job"])}",runner="{telemetry.label(row["runner"])}"'
         lines.append(f"homelab_ci_job_seconds{{{keys}}} {row['seconds']:.0f}")
-    return "\n".join(lines) + "\n"
+        runs = row.get("runs", {})
+        for bound in BUCKETS:
+            count = runs.get(str(bound), 0)
+            runs_lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="{bound}"}} {count}')
+        count = runs.get("count", 0)
+        runs_lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="+Inf"}} {count}')
+        runs_lines.append(f"homelab_ci_job_run_seconds_sum{{{keys}}} {runs.get('sum', 0):.0f}")
+        runs_lines.append(f"homelab_ci_job_run_seconds_count{{{keys}}} {count}")
+    # Each metric family together, as the text format asks.
+    if not lines:
+        return "\n"
+    types = ["# TYPE homelab_ci_job_seconds gauge", "# TYPE homelab_ci_job_run_seconds histogram"]
+    return "\n".join([types[0], *lines, types[1], *runs_lines]) + "\n"
+
+
+def counted(latest: Mapping[str, Json], new: Mapping[str, Json]) -> dict[str, Json]:
+    """The latest rows, each new run's seconds added to its job's histogram counts."""
+    rows = dict(latest)
+    for key, row in new.items():
+        runs = dict(latest.get(key, {}).get("runs", {}))
+        for bound in BUCKETS:
+            runs[str(bound)] = runs.get(str(bound), 0) + (row["seconds"] <= bound)
+        runs["count"] = runs.get("count", 0) + 1
+        runs["sum"] = runs.get("sum", 0) + row["seconds"]
+        rows[key] = row | {"runs": runs}
+    return rows
 
 
 def latest_rows(run: Mapping[str, Any], jobs: list[Mapping[str, Any]]) -> dict[str, Json]:
@@ -319,7 +350,7 @@ def poll(
             return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
         if own and run.get("conclusion") == "success":
             # A job this run did not have (deploy, skipped) keeps its row from the last that did.
-            latest |= latest_rows(run, jobs)
+            latest = counted(latest, latest_rows(run, jobs))
         sent.append(key)
         keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
     return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": True}
