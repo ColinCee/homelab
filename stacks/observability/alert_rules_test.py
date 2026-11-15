@@ -70,6 +70,14 @@ def test_a_metrics_files_age_is_watched_only_by_its_promise() -> None:
     assert "node_textfile_mtime_seconds" not in text
 
 
+def test_a_median_counts_events_not_how_long_each_stayed_the_latest() -> None:
+    # A metric that holds an event's value until the next one (a run's seconds) gives
+    # quantile_over_time one sample per scrape, so one event before a quiet night outweighs a busy
+    # day's. Event values are histograms, read with histogram_quantile.
+    files = [*slos.RULE_FILES, *(STACK / "grafana/dashboards").glob("*.json")]
+    assert not [f.name for f in files if "quantile_over_time" in f.read_text(encoding="utf-8")]
+
+
 def test_a_rule_names_only_the_labels_that_tell_its_series_apart() -> None:
     # The post's title prints every label but alertname and level, so a rule aggregates.
     for name, rule in RULES.items():
@@ -105,7 +113,25 @@ def at(minutes: int, name: str, *firing: dict[str, Any]) -> dict[str, Any]:
 
 
 CHECK_LABELS = {"workflow": "CI", "ci_job": "check", "runner": "vm"}
-CHECK = 'homelab_ci_job_seconds{kind="main",workflow="CI",ci_job="check",runner="vm"}'
+CHECK = 'kind="main",workflow="CI",ci_job="check",runner="vm"'
+
+
+def ci_runs(*hours: tuple[int, list[int]]) -> list[tuple[str, str]]:
+    """ci_times.py's run-time histogram, one sample an hour: each (n, runs) is n hours, each with
+    those runs' seconds."""
+    every = [runs for n, runs in hours for _ in range(n)]
+    series = []
+    for bound in (15, 20, 25, 30, 40, 50, 60, math.inf):
+        counts = itertools.accumulate(sum(s <= bound for s in runs) for runs in every)
+        le = "+Inf" if bound == math.inf else str(bound)
+        series.append(
+            (f'homelab_ci_job_run_seconds_bucket{{{CHECK},le="{le}"}}', " ".join(map(str, counts)))
+        )
+    counts = itertools.accumulate(len(runs) for runs in every)
+    series.append((f"homelab_ci_job_run_seconds_count{{{CHECK}}}", " ".join(map(str, counts))))
+    return series
+
+
 # Alloy's own series, as config.alloy's scrape of itself labels them.
 RECEIVER_ID = "otelcol.receiver.otlp.programs"
 RECEIVER = f'job="alloy",instance="beelink",component_id="{RECEIVER_ID}"'
@@ -467,23 +493,32 @@ CASES = {
             at(12, "beelink-metrics-stopped", posts("beelink-metrics-stopped", "1")),
         ],
     ),
-    # Hourly: 14 days at 20 s, then 30 hours at 50 s, then back.
+    # Three runs an hour: 14 days at 20 s, then 30 hours at 50 s, then back.
     "CI half again and 20 s slower for most of a day fires, and clears once it is fast again": (
-        [(CHECK, "20x336 50x30 20x60")],
+        ci_runs((336, [20] * 3), (30, [50] * 3), (60, [20] * 3)),
         [
-            at(354 * 60, "ci-slower"),
-            at(357 * 60, "ci-slower", posts("ci-slower", "50", **CHECK_LABELS)),
+            at(345 * 60, "ci-slower"),
+            at(364 * 60, "ci-slower", posts("ci-slower", "45", **CHECK_LABELS)),
             at(382 * 60, "ci-slower"),
         ],
         "1h",
     ),
-    "one slow run held through a quiet night stays quiet once the next runs are fast": (
-        [(CHECK, "20x336 46x12 24x4 29x8")],
-        [at(t * 60, "ci-slower") for t in range(349, 362)],
+    # Three runs a day; then a cold run, 12 quiet hours, and fast runs.
+    "one slow run among a day's fast ones stays quiet": (
+        ci_runs(
+            *[(1, [20]), (7, [])] * 42, (1, [46]), (12, []), (1, [24]), (4, []), (1, [29]), (8, [])
+        ),
+        [at(t * 60, "ci-slower") for t in range(337, 363)],
+        "1h",
+    ),
+    # A run a day, then two slow ones.
+    "two slow runs in a day are too few to fire": (
+        ci_runs(*[(1, [20]), (23, [])] * 14, (1, [60]), (1, [60]), (30, [])),
+        [at(t * 60, "ci-slower") for t in range(337, 368)],
         "1h",
     ),
     "CI half again slower but under 20 s more stays quiet": (
-        [(CHECK, "20x336 35x48")],
+        ci_runs((336, [20] * 3), (48, [35] * 3)),
         [at(370 * 60, "ci-slower")],
         "1h",
     ),
