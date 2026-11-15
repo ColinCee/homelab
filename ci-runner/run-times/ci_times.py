@@ -49,8 +49,9 @@ TASK_LINE = re.compile(r"^\[([\w:.-]+)\] (?:\$ (.*)|Finished in ([\d.]+)(ms|s)$)
 LOG_MAX = 2_000_000
 # A job unseen this long (renamed, removed) drops out of the metrics.
 ROW_DAYS = 30
-# Upper bounds of the run-time histogram, in seconds: steps fine enough for ci-slower's 1.5 times.
-BUCKETS = (10, 15, 20, 25, 30, 40, 50, 60, 75, 90, 120, 180, 300, 600, 1200, 1800, 3600)
+# Upper bounds of the run-time histogram, in seconds: each 15% above the last, so a median read
+# inside one is within a few percent of ci-slower's 1.5 times at any job length.
+BUCKETS = tuple(sorted({round(10 * 1.15**k) for k in range(43)}))
 
 log = logging.getLogger("ci-times")
 Get = Callable[[str], Any]
@@ -256,6 +257,7 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
     so their series would pile up; steps are in the traces. `ci_job`, as the scrape sets `job`
     itself."""
     lines: list[str] = []
+    runs_lines: list[str] = []
     for row in latest.values():
         if row["at"] < now - ROW_DAYS * 86400:
             continue
@@ -267,12 +269,16 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
         runs = row.get("runs", {})
         for bound in BUCKETS:
             count = runs.get(str(bound), 0)
-            lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="{bound}"}} {count}')
+            runs_lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="{bound}"}} {count}')
         count = runs.get("count", 0)
-        lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="+Inf"}} {count}')
-        lines.append(f"homelab_ci_job_run_seconds_sum{{{keys}}} {runs.get('sum', 0):.0f}")
-        lines.append(f"homelab_ci_job_run_seconds_count{{{keys}}} {count}")
-    return "\n".join(lines) + "\n"
+        runs_lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="+Inf"}} {count}')
+        runs_lines.append(f"homelab_ci_job_run_seconds_sum{{{keys}}} {runs.get('sum', 0):.0f}")
+        runs_lines.append(f"homelab_ci_job_run_seconds_count{{{keys}}} {count}")
+    # Each metric family together, as the text format asks.
+    if not lines:
+        return "\n"
+    types = ["# TYPE homelab_ci_job_seconds gauge", "# TYPE homelab_ci_job_run_seconds histogram"]
+    return "\n".join([types[0], *lines, types[1], *runs_lines]) + "\n"
 
 
 def counted(latest: Mapping[str, Json], new: Mapping[str, Json]) -> dict[str, Json]:
