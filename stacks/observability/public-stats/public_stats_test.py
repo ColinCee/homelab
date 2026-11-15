@@ -1,6 +1,7 @@
 import io
 import json
 import logging
+import re
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from conftest import stacks as compose_stacks
 NOW = 1_800_000_000.0
 
 
-def results(running: tuple[str, ...] = STACKS) -> dict[str, Any]:
+def results(running: tuple[str, ...] = tuple(STACKS)) -> dict[str, Any]:
     return {
         "running": [
             {"metric": {"container_label_com_docker_compose_project": s}, "value": [NOW, "1"]}
@@ -28,21 +29,68 @@ def results(running: tuple[str, ...] = STACKS) -> dict[str, Any]:
 KPIS = {"trackedAircraft": 237, "throughputLast60Min": 107, "apiHealth": "live"}
 
 
+def deployed(stack: Path, spec: dict[str, Any]) -> tuple[str, ...]:
+    """A stack's services a deploy runs: those with no profile, or one its settings.env turns on."""
+    settings = stack / "settings.env"
+    lines = settings.read_text(encoding="utf-8").splitlines() if settings.exists() else []
+    on = {
+        profile.strip()
+        for line in lines
+        if line.startswith("COMPOSE_PROFILES=")
+        for profile in line.removeprefix("COMPOSE_PROFILES=").split(",")
+    }
+    return tuple(
+        str(name)
+        for name, service in spec["services"].items()
+        if not service.get("profiles") or on & set(service["profiles"])
+    )
+
+
 def test_stacks_match_the_repository() -> None:
-    assert [stack.name for stack in compose_stacks()] == list(STACKS)
+    repo = {stack.name: deployed(stack, spec) for stack, spec in compose_stacks().items()}
+    # On a failure, paste this into public_stats.py's STACKS.
+    assert repo == STACKS, f"STACKS = {repo!r}"
 
 
-def test_body_holds_only_named_numbers() -> None:
+# The blog's Worker (worker/index.ts in ColinCee/astro-blog) refuses a body past these.
+NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+
+
+def test_stacks_fit_what_the_blog_accepts() -> None:
+    assert len(STACKS) <= 16
+    for stack, services in STACKS.items():
+        assert NAME.fullmatch(stack), stack
+        assert 1 <= len(services) <= 32, stack
+        assert all(NAME.fullmatch(service) for service in services), services
+
+
+def test_stacks_fit_the_blogs_home_lab_figure() -> None:
+    # The home page draws a row a stack in a box sized for seven
+    # (min-height in src/components/home/window/Figures.astro); an eighth
+    # would make it taller than the other projects. Raise that first.
+    assert len(STACKS) <= 7
+
+
+def test_the_largest_body_fits_what_the_blog_accepts() -> None:
+    # Its byte limit (MAX_BYTES in worker/stacks.ts), with every number at
+    # the most digits the Worker takes.
+    body = {**build_body(results(), KPIS, NOW), "tracking": 9_999_999, "londonHour": 9_999_999}
+    data, _ = signed(Ed25519PrivateKey.generate(), body)
+    assert len(data) <= 1024
+
+
+def test_body_holds_only_named_fields() -> None:
     assert build_body(results(), KPIS, NOW) == {
         "at": int(NOW),
         "allUp": True,
         "tracking": 237,
         "londonHour": 107,
+        "stacks": [{"id": stack, "services": list(services)} for stack, services in STACKS.items()],
     }
 
 
 def test_one_stack_down_clears_all_up() -> None:
-    assert build_body(results(STACKS[1:]), KPIS, NOW)["allUp"] is False
+    assert build_body(results(tuple(STACKS)[1:]), KPIS, NOW)["allUp"] is False
 
 
 def test_nothing_reported_is_not_published_as_down() -> None:
