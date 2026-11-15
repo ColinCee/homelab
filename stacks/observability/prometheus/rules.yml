@@ -383,7 +383,8 @@ groups:
           value: '{{ $value }}'
       # The latest main run's seconds (ci-runner/run-times/ci_times.py), median over a day against its 14 days: half again and
       # 20 s more, so a GitHub runner's few seconds either way never fire it. Per runner kind, whose speeds differ.
-      # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h.
+      # The value holds until the next run, so one slow run before a quiet night counts for hours: `for` is 6 h,
+      # and the latest run must be slow too, so a fast one after it clears the alert.
       - alert: ci-slower
         expr: |
           (
@@ -395,6 +396,9 @@ groups:
           and
           max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[1d]))
           > 20 + max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
+          and
+          max by (workflow, ci_job, runner) (homelab_ci_job_seconds{kind="main"})
+          > 1.5 * max by (workflow, ci_job, runner) (quantile_over_time(0.5, homelab_ci_job_seconds{kind="main"}[14d]))
         for: 6h
         keep_firing_for: 10m
         labels:

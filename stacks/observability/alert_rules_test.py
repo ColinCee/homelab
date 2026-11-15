@@ -477,6 +477,11 @@ CASES = {
         ],
         "1h",
     ),
+    "one slow run held through a quiet night stays quiet once the next runs are fast": (
+        [(CHECK, "20x336 46x12 24x4 29x8")],
+        [at(t * 60, "ci-slower") for t in range(349, 362)],
+        "1h",
+    ),
     "CI half again slower but under 20 s more stays quiet": (
         [(CHECK, "20x336 35x48")],
         [at(370 * 60, "ci-slower")],
