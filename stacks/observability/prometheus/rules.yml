@@ -143,11 +143,17 @@ groups:
             `mem_limit` in its compose.yaml.
           dashboard: *home
           value: '{{ $value }}'
+      # Still restarting: a crash loop starts again within Docker's minute of backoff, so its newest start stays under
+      # 5 minutes old through the whole `for`; a few restarts by hand minutes apart do not.
       - alert: restart-loop
         expr: |
           (
             max by (name) (changes(container_start_time_seconds{job="docker",name!=""}[30m]))
           ) > 2
+          and on (name)
+          (
+            min by (name) (time() - container_start_time_seconds{job="docker",name!=""})
+          ) < 300
         for: 10m
         keep_firing_for: 10m
         labels:

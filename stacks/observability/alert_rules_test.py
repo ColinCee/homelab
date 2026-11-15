@@ -183,7 +183,8 @@ CASES = {
     ),
     "each container is its own alert": (
         [
-            ('container_start_time_seconds{job="docker",name="web",id="/a"}', "1+1x40"),
+            # web starts again each minute; db never.
+            ('container_start_time_seconds{job="docker",name="web",id="/a"}', "0+60x40"),
             ('container_start_time_seconds{job="docker",name="db",id="/b"}', "1x40"),
         ],
         [
@@ -191,6 +192,16 @@ CASES = {
             at(12, "restart-loop"),
             at(13, "restart-loop", posts("restart-loop", "13", name="web")),
         ],
+    ),
+    "restarts by hand minutes apart are not a loop": (
+        # Three `docker restart`s 6 and 12 minutes apart: 3 starts in 30 min, but it stays up.
+        [
+            (
+                'container_start_time_seconds{job="docker",name="web",id="/a"}',
+                "0x9 600x5 960x11 1680x20",
+            )
+        ],
+        [at(m, "restart-loop") for m in (30, 35, 40, 45)],
     ),
     "a container outside Compose fires after 15 minutes, one in a project never": (
         [
