@@ -2,8 +2,10 @@
 mentions Colin only for a firing `now` alert, starts the on-call agent once, clears the same post,
 survives a restart and passes the watchdog on to Healthchecks.io."""
 
+import email.message
 import json
 import re
+import urllib.error
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,6 +26,7 @@ class FakeDiscord:
         self.threads = 0
         self.fail_open = False
         self.fail_patch = False
+        self.deleted: set[str] = set()
 
     def __call__(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
         self.calls.append((method, path, body))
@@ -31,6 +34,10 @@ class FakeDiscord:
             return TAGS
         if method == "PATCH" and self.fail_patch:
             raise OSError("discord down")
+        if any(path.startswith(f"/channels/{t}") for t in self.deleted):
+            raise urllib.error.HTTPError(
+                path, 404, "Unknown Channel", email.message.Message(), None
+            )
         if path.endswith("/threads"):
             if self.fail_open:
                 raise OSError("discord down")
@@ -151,6 +158,15 @@ def test_a_failed_clear_is_sent_again(parts: Parts) -> None:
     discord.fail_patch = False
     assert r.handle(alert("resolved")) == 200
     assert discord.said("thread-1")[-1].startswith("Cleared")
+
+
+def test_a_deleted_post_clears_and_a_return_opens_a_new_one(parts: Parts) -> None:
+    r, discord, fire = parts
+    r.handle(alert())
+    discord.deleted.add("thread-1")
+    assert r.handle(alert("resolved")) == 200
+    assert r.handle(alert()) == 200
+    assert discord.threads == 2 and len(fire.texts) == 2
 
 
 def test_a_restart_opens_nothing_again(parts: Parts, tmp_path: Path) -> None:
