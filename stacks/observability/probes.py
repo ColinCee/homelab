@@ -66,10 +66,13 @@ def resolves(name: str, server: str, address: str, port: int = 53, timeout: floa
     )
 
 
-def answers(server: str, port: int = 53, timeout: float = DOCKER_DNS_TIMEOUT) -> bool:
-    """Whether `server` answers a name no cache holds, so the query goes all the way upstream,
-    in the time Docker's resolver waits. "No such name" is an answer."""
-    asked = ask(f"probe-{secrets.token_hex(6)}.{FRESH_ZONE}", server, port, timeout)
+def answers(
+    server: str, name: str | None = None, port: int = 53, timeout: float = DOCKER_DNS_TIMEOUT
+) -> bool:
+    """Whether `server` answers `name` in the time Docker's resolver waits; by default a name no
+    cache holds, so the query goes all the way upstream. "No such name" is an answer."""
+    name = name or f"probe-{secrets.token_hex(6)}.{FRESH_ZONE}"
+    asked = ask(name, server, port, timeout)
     return asked is not None and asked[1][3] & 0x0F in (0, 3)
 
 
@@ -89,7 +92,9 @@ def checks() -> dict[str, bool]:
         # Caddy refuses the Beelink's own address with 403 (stacks/internal-names), which still
         # shows it up and serving the site; a name it does not serve gets an empty 200.
         "names-proxy": http_status(f"http://{ADDRESS}/", host="home.internal") == 403,
-        "dns-stub": answers(STUB),
+        # A name that exists: the stub waits for every server before saying a name does not
+        # (beelink/dns/homelab-dns.conf), so one lost packet would fail a made-up name's check.
+        "dns-stub": answers(STUB, FRESH_ZONE),
         **{f"dns-{server}": answers(server) for server in upstreams()},
     }
 

@@ -382,14 +382,14 @@ def install_locked(
         install(host, "0644", here / "fstrim-hourly.conf", trim, parents=True)
         systemctl(host, "daemon-reload")
         systemctl(host, "restart", "fstrim.timer")
-    # The host's DNS servers (the reason is in the file). SIGHUP reloads resolved, which has no
-    # reload job; a restart would drop the servers Tailscale set on its link. The network rules
-    # allow DNS only to resolved's servers (setup_net.py, resolvers), so they are set again below.
+    # The host's DNS servers (the reason is in the file). resolved has no reload; Tailscale sets
+    # its link's servers again after a restart. The network rules allow DNS only to resolved's
+    # servers (setup_net.py, resolvers), so they are set again below.
     dns = "/etc/systemd/resolved.conf.d/homelab-dns.conf"
     dns_changed = differs(here.parent / "beelink/dns/homelab-dns.conf", host.path(dns))
     if dns_changed:
         install(host, "0644", here.parent / "beelink/dns/homelab-dns.conf", dns, parents=True)
-        systemctl(host, "kill", "-s", "HUP", "systemd-resolved")
+        systemctl(host, "restart", "systemd-resolved")
     # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to
     # write into another user's folder (cap_drop ALL); sticky and open to all, as Colin's user
     # timers (PC backups) write here too.
