@@ -61,9 +61,23 @@ def test_every_container_label_read_is_sent() -> None:
 
 
 def test_the_config_loads() -> None:
-    command = [tool("alloy"), "validate", str(STACK / "config.alloy")]
+    # At the stability level compose.yaml runs it with, which the disk queues need.
+    alloy = stacks()[STACK]["services"]["alloy"]["command"]
+    level = re.search(r"--stability\.level=[\w-]+", alloy)
+    assert level
+    command = [tool("alloy"), "validate", level.group(0), str(STACK / "config.alloy")]
     ran = subprocess.run(command, capture_output=True, text=True, timeout=300)
     assert ran.returncode == 0, ran.stdout + ran.stderr
+
+
+def test_every_store_exporter_queues_on_disk() -> None:
+    # Docker stops every container at once, so a store can stop before Alloy sends what it holds;
+    # a queue in memory then loses it.
+    exporters = re.findall(r'\notelcol\.exporter\.otlphttp "(\w+)" \{', CONFIG)
+    assert exporters
+    for label in exporters:
+        queue = re.search(r"sending_queue \{[^}]*\}", block("otelcol.exporter.otlphttp", label))
+        assert queue and "otelcol.storage.file." in queue.group(0), label
 
 
 # A line in each format the containers write, a word found only in it, and the level it gets.
@@ -156,6 +170,18 @@ MAPPED = {
             '{"level":"error","msg":"could not fetch logs for container","err":"permission denied",'
             '"t":"m5"}',
             "m5",
+            "error",
+        ),
+        (
+            '{"level":"error","msg":"Exporting failed. Dropping data.","error":"interrupted due to'
+            ' shutdown: failed to make an HTTP request: connection refused","t":"mq1"}',
+            "mq1",
+            "warn",
+        ),
+        (
+            '{"level":"error","msg":"Exporting failed. Dropping data.","error":"no more retries'
+            ' left: connection refused","t":"mq2"}',
+            "mq2",
             "error",
         ),
     ],
@@ -360,7 +386,7 @@ def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -
         r"stage\.(static_labels|replace|labels)\s*\{[^}]*\blevel\s*=\s*\"(?!level\")", CONFIG
     )
     assert not re.search(r'stage\.replace\s*\{\s*source\s*=\s*"level"', CONFIG)
-    mappings = 0
+    mapped: set[str] = set()
     for i, line in enumerate(lines):
         if not re.fullmatch(r'\s*source\s*=\s*"level",?', line):
             continue
@@ -377,10 +403,11 @@ def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -
         assert template.group(1) in LOWER, lines[i + 1]
         match = next(j for j in range(i, 0, -1) if lines[j].strip() == "stage.match {")
         # One service's lines, and only those its line filters pick, never all it logs.
-        assert re.search(r'\{service_name="[\w-]+"\} \|[=~]', lines[match + 1]), lines[match + 1]
+        service = re.search(r'\{service_name="([\w-]+)"\} \|[=~]', lines[match + 1])
+        assert service, lines[match + 1]
         assert lines[match - 1].strip().startswith("//"), f"say why above line {match + 1}"
-        mappings += 1
-    assert mappings == sum(1 for lines in MAPPED.values() if any(m[2] in LOWER for m in lines))
+        mapped.add(service.group(1))
+    assert mapped == {s for s, lines in MAPPED.items() if any(m[2] in LOWER for m in lines)}
     # The journal's priorities keep their meaning too.
     journal = block("loki.relabel", "journal")
     for keyword, level in (("err", "error"), ("crit", "fatal"), ("emerg", "fatal")):
@@ -392,11 +419,14 @@ def test_an_error_is_mapped_below_error_only_for_one_service_with_its_reason() -
 
 
 # The error and fatal lines above by service and level: the containers' with no service, then the
-# one error each mapped service still logs.
+# errors each mapped service still logs.
 ERRORS_COUNTED = {
     '{level="error"}': 4.0,
     '{level="fatal"}': 1.0,
-    **{f'{{level="error",service_name="{s}"}}': 1.0 for s in MAPPED},
+    **{
+        f'{{level="error",service_name="{s}"}}': float(sum(m[2] == "error" for m in lines))
+        for s, lines in MAPPED.items()
+    },
 }
 
 

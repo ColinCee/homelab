@@ -332,6 +332,17 @@ loki.process "docker" {
     }
   }
 
+  // An exporter cut off by Alloy's own stop logs "Dropping data", but its queue is on disk, so the batch stays queued
+  // and is sent after the restart (the collector's persistent_queue.go, IsShutdownErr).
+  stage.match {
+    selector = `{service_name="alloy"} |= "Exporting failed. Dropping data." |= "interrupted due to shutdown"`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
+    }
+  }
+
   // Grafana logs each request the browser cancelled (leaving or refreshing a page) and its stop as errors. Its API
   // server answers one it left (the page history a closing tab reads or saves) with "Handler timeout" or "Timeout or
   // abort" lines, its storage's "context canceled;" and a 500; the same request not left answers 200. The timeout
@@ -555,15 +566,20 @@ otelcol.exporter.otlphttp "logs" {
       "VL-Stream-Fields" = "container_name",
     }
   }
-  // A store down for an outage or a deploy loses nothing while Alloy runs: it keeps trying for an hour, holding up to
-  // 10,000 batches.
+  // A store down for an outage or a deploy loses nothing: Alloy keeps trying for an hour, holding up to 10,000 batches
+  // on disk, so a stop of Alloy, Docker or the host keeps them too. Docker stops every container at once, so a store
+  // can go before Alloy has sent its last batches.
   retry_on_failure {
     max_elapsed_time = "1h"
   }
   sending_queue {
     queue_size = 10000
+    storage    = otelcol.storage.file.queues.handler
   }
 }
+
+// The exporters' queues, in Alloy's volume (compose.yaml, alloy-state).
+otelcol.storage.file "queues" {}
 
 // Its own metrics, for the rules that notice it down or no longer taking data (prometheus/rules.yml, group stores).
 prometheus.scrape "logs" {
@@ -715,6 +731,7 @@ otelcol.exporter.otlphttp "traces" {
   }
   sending_queue {
     queue_size = 10000
+    storage    = otelcol.storage.file.queues.handler
   }
 }
 
