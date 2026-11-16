@@ -102,6 +102,7 @@ def test_a_good_run_backs_up_without_the_live_database_and_records_success(
     excluded = [flags[i + 1] for i, flag in enumerate(flags) if flag == "--exclude"]
     assert "/data/home-assistant/home-assistant_v2.db*" in excluded
     assert "/data/home-assistant/*.log*" in excluded
+    assert "/data/home-assistant/backups" in excluded
     [dry_run] = [c for c in restic.calls if "--dry-run" in c]
     assert dry_run[: len(run)] == run  # the cap measures exactly what the backup would send
     assert restic.ran("forget") == [

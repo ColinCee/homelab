@@ -33,6 +33,8 @@ EXCLUDES = (
     "/data/home-assistant/.cache",
     "/data/home-assistant/deps",
     "/data/home-assistant/tts",
+    # Home Assistant's own backup archives: a second copy of the config backed up here.
+    "/data/home-assistant/backups",
 )
 # A run's numbers from restic's summary, logged as fields of "restic backup ran".
 SUMMARY_FIELDS = (
