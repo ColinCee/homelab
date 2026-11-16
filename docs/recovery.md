@@ -19,9 +19,15 @@ the same repository URL, R2 keys and password. Named volumes restore the same wa
 
 ## Backup store full
 
-Uploads stop at 8 GB and the lock deletes nothing, so start a new bucket: exclude what grew (`restic stats`, `restic
-diff`) in [`backup.py`](../stacks/backup/backup.py), lock `beelink-backups-<n>` alike (`npx wrangler r2 bucket lock
-add`), `restic copy` the snapshots to keep, and point `backup.py` at it. A month on, unlock and delete the old bucket.
+Uploads stop at 8 GB and the lock deletes nothing, so move to a new bucket, from the PC (both buckets' keys and the
+password):
+
+1. Exclude what grew (`restic stats`, `restic diff`) in [`backup.py`](../stacks/backup/backup.py).
+2. Create `beelink-backups-<n>`, a token scoped to it, and the same lock rules (`npx wrangler r2 bucket lock add`).
+3. `restic init` it, then `restic copy --from-repo <old>` only the snapshots to keep: both buckets count toward
+   R2's 10 GB.
+4. Point `backup.py` and the `r2_*` secrets at it. After its first good night, `wrangler r2 bucket lock remove` the
+   old rules, delete the old bucket and its token, then `wrangler logout`.
 
 ## Rebuilding the Beelink
 

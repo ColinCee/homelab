@@ -146,7 +146,8 @@ encrypted: Home Assistant's config and a consistent copy of its history, the fli
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
 ([`pc_backup.py`](../stacks/backup/pc_backup.py)). Everything else is in Git or disposable. It reads back every byte on
 Sundays and uploads nothing past 8 GB, since R2 bills past 10 GB. It deletes nothing: lock rules keep `data/`,
-`snapshots/`, `keys/` and `config` forever, so taking the host does not take the backups.
+`snapshots/`, `keys/` and `config` forever, so whoever takes the host can delete only `index/` and `locks/`, which
+`restic repair index` rebuilds.
 `RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Restoring: [recovery](recovery.md).
 
 ## Public stats
