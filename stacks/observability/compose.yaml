@@ -51,7 +51,8 @@ services:
     command:
       - -storageDataPath=/vlogs
       - -loggerFormat=json
-      - -retentionPeriod=30d
+      # 90 days, CIS Safeguard 8.10's minimum for audit logs, so an intrusion found late still has its trail.
+      - -retentionPeriod=90d
       # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
       - -inmemoryDataFlushInterval=1s
       # One heavy query must not take its memory: two at a time, a minute each, at most a month back. A 30-day count
