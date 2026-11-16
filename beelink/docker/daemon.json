@@ -1,3 +1,4 @@
 {
+  "live-restore": true,
   "log-driver": "local"
 }
