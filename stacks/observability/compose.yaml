@@ -51,7 +51,7 @@ services:
     command:
       - -storageDataPath=/vlogs
       - -loggerFormat=json
-      # 90 days, CIS Control 8's minimum for audit logs, so an intrusion found late still has its trail.
+      # 90 days, CIS Safeguard 8.10's minimum for audit logs, so an intrusion found late still has its trail.
       - -retentionPeriod=90d
       # A kill -9 lost about the last 5 s, its default save interval, of what it held in memory.
       - -inmemoryDataFlushInterval=1s
