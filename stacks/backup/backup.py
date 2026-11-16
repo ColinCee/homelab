@@ -33,6 +33,8 @@ EXCLUDES = (
     "/data/home-assistant/.cache",
     "/data/home-assistant/deps",
     "/data/home-assistant/tts",
+    # Home Assistant's own backup archives: a second copy of the config backed up here.
+    "/data/home-assistant/backups",
 )
 # A run's numbers from restic's summary, logged as fields of "restic backup ran".
 SUMMARY_FIELDS = (
@@ -46,6 +48,7 @@ SUMMARY_FIELDS = (
     "total_duration",
     "snapshot_id",
 )
+FORGET = ("--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "6")
 # R2 bills past 10 GB and has no server-side quota, so the cap is enforced here: a run that would
 # take the repository over this size uploads nothing.
 MAX_REPO_BYTES = 8_000_000_000
@@ -222,12 +225,11 @@ class Backup:
         return finished.returncode == 0
 
     def run_backup(self) -> str | None:
-        """The step that failed, so a failed run records where it stopped; None when all pass.
-        Nothing here forgets or prunes: R2's bucket lock refuses deleting packs and snapshots, so a
-        takeover of this host cannot wipe the backups (docs/architecture.md, "Backups")."""
+        """The step that failed, so a failed run records where it stopped; None when all pass."""
         steps: Sequence[tuple[str, Callable[[], bool]]] = (
             ("cap", self.within_cap),
             ("backup", self.back_up),
+            ("forget", lambda: self.restic("forget", "--host", HOST, "--prune", *FORGET) == 0),
             ("check", self.verify),
         )
         for step, passed in steps:
