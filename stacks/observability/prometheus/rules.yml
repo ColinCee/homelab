@@ -365,7 +365,7 @@ groups:
           measure: 'Backup storage'
           unit: ' GB'
           harm: 'Uploads stop at 8 GB, so backups stop; R2 bills past 10 GB.'
-          action: 'Find what grew with `docker exec backup restic stats`; see docs/architecture.md, "Backups".'
+          action: 'Find what grew with `docker exec backup restic stats`; see docs/recovery.md, "Backup store full".'
           dashboard: *home
           value: '{{ $value }}'
       - alert: ssd-worn
