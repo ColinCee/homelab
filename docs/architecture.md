@@ -74,7 +74,8 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 ## Monitoring and alerts
 
 Alloy collects metrics into Prometheus, and logs and [OBI's](../stacks/observability/obi/obi.yaml) container traces into
-VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only;
+VictoriaLogs and VictoriaTraces, 30 days each, stacks and host units only (Docker keeps 100 MB a container,
+[`daemon.json`](../beelink/docker/daemon.json));
 Grafana shows them at `http://grafana.internal` ([ADR 0001](adr/0001-observability-stack.md)). Readers reach the
 stores only through the read-only gateway ([`Caddyfile`](../stacks/observability/gateway/Caddyfile), port 5081),
 agents as `agents`. Dashboards: the building-dashboards skill.
