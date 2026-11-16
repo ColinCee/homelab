@@ -3,9 +3,9 @@
  ".github/skills/homelab-oncall/SKILL.md": 377,
  ".github/skills/reaching-homelab-devices/SKILL.md": 221,
  "AGENTS.md": 188,
- "README.md": 119,
  "docs/adr/0001-observability-stack/results.md": 1680,
- "docs/architecture.md": 1444,
- "docs/recovery.md": 382,
- "docs/secrets.md": 208
+ "docs/architecture.md": 1456,
+ "docs/recovery.md": 396,
+ "docs/secrets.md": 208,
+ "README.md": 119
 }

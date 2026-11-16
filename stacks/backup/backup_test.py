@@ -104,10 +104,8 @@ def test_a_good_run_backs_up_without_the_live_database_and_records_success(
     assert "/data/home-assistant/*.log*" in excluded
     [dry_run] = [c for c in restic.calls if "--dry-run" in c]
     assert dry_run[: len(run)] == run  # the cap measures exactly what the backup would send
-    assert restic.ran("forget") == [
-        ["restic", "forget", "--host", "beelink", "--prune",
-         "--keep-daily", "7", "--keep-weekly", "4", "--keep-monthly", "6"]
-    ]  # fmt: skip
+    # The bucket lock refuses deletes, so a forget or prune would fail every night.
+    assert not restic.ran("forget") and not restic.ran("prune")
     assert restic.ran("check") == [["restic", "check"]]  # Monday: metadata only
 
     now = int(MONDAY.timestamp())
@@ -125,7 +123,6 @@ def test_a_good_run_backs_up_without_the_live_database_and_records_success(
         pytest.param({}, {"MAX_REPO_BYTES": "1499"}, "cap", id="over-cap"),
         pytest.param({"stats": (1, "")}, {}, "cap", id="unmeasured"),
         pytest.param({"backup": (1, "")}, {}, "backup", id="backup"),
-        pytest.param({"forget": (1, "")}, {}, "forget", id="forget"),
         pytest.param({"check": (1, "")}, {}, "check", id="check"),
     ],
 )
@@ -287,7 +284,7 @@ def test_a_crashed_run_is_recorded_and_the_loop_keeps_going(tmp_path: Path) -> N
     def crashing(
         command: list[str], *, stdout: int | None = None, stderr: int | None = None
     ) -> subprocess.CompletedProcess[str]:
-        if command[1] == "forget":
+        if command[1] == "check":
             raise OSError("restic vanished")
         return restic(command, stdout=stdout, stderr=stderr)
 

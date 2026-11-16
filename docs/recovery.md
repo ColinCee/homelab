@@ -19,9 +19,9 @@ the same repository URL, R2 keys and password. Named volumes restore the same wa
 
 ## Backup store full
 
-Uploads stop at 8 GB, so every night fails until it shrinks: find what grew (`docker exec backup restic stats`, then
-`restic diff` between snapshots), exclude it in [`backup.py`](../stacks/backup/backup.py), and drop the oversized
-snapshots with `restic forget --prune <id>`.
+Uploads stop at 8 GB and the lock deletes nothing, so start a new bucket: exclude what grew (`restic stats`, `restic
+diff`) in [`backup.py`](../stacks/backup/backup.py), lock `beelink-backups-<n>` alike (`npx wrangler r2 bucket lock
+add`), `restic copy` the snapshots to keep, and point `backup.py` at it. A month on, unlock and delete the old bucket.
 
 ## Rebuilding the Beelink
 

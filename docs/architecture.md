@@ -144,8 +144,9 @@ Traps:
 [restic](../stacks/backup/backup.py) runs nightly at 02:30 UTC into the Cloudflare R2 bucket `beelink-backups`,
 encrypted: Home Assistant's config and a consistent copy of its history, the flight tracker's heatmap volume, and
 `~/pc-backups`, which PC projects fill by listing their data in a `backup.toml`
-([`pc_backup.py`](../stacks/backup/pc_backup.py)). Everything else is in Git or disposable. It keeps 7 daily, 4 weekly and
-6 monthly snapshots, reads back every byte on Sundays, and uploads nothing past 8 GB, since R2 bills past 10 GB.
+([`pc_backup.py`](../stacks/backup/pc_backup.py)). Everything else is in Git or disposable. It reads back every byte on
+Sundays and uploads nothing past 8 GB, since R2 bills past 10 GB. It deletes nothing: lock rules keep `data/`,
+`snapshots/`, `keys/` and `config` forever, so taking the host does not take the backups.
 `RESTIC_PASSWORD` is also in Bitwarden: without it nothing decrypts. A monthly upkeep test-restores a file. Restoring: [recovery](recovery.md).
 
 ## Public stats
