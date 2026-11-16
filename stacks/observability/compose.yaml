@@ -542,6 +542,8 @@ services:
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       # Read by Alloy's textfile collector.
       - /var/lib/homelab-metrics:/metrics
+      # The folder, not the file: resolved replaces the file, which a file mount would not follow.
+      - /run/systemd/resolve:/resolve:ro
 
   # Scrapes what runs on the host's network or publishes only to loopback, Caddy, CoreDNS and Home Assistant
   # (host-metrics/prometheus.yml), and writes to Prometheus. On the host's network for the probes' reason; the host may

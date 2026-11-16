@@ -382,6 +382,12 @@ def install_locked(
         install(host, "0644", here / "fstrim-hourly.conf", trim, parents=True)
         systemctl(host, "daemon-reload")
         systemctl(host, "restart", "fstrim.timer")
+    # The host's DNS servers (the reason is in the file). Reloaded, not restarted: a restart drops
+    # the servers Tailscale set on its link.
+    dns = "/etc/systemd/resolved.conf.d/homelab-dns.conf"
+    if differs(here.parent / "beelink/dns/homelab-dns.conf", host.path(dns)):
+        install(host, "0644", here.parent / "beelink/dns/homelab-dns.conf", dns, parents=True)
+        systemctl(host, "reload", "systemd-resolved")
     # Alloy's textfile metrics. Root owns it, as the backup container's root has no right to
     # write into another user's folder (cap_drop ALL); sticky and open to all, as Colin's user
     # timers (PC backups) write here too.
