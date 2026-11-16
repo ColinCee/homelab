@@ -50,6 +50,24 @@ def test_the_name_check_needs_the_beelinks_address(server: int, passes: bool) ->
     assert probes.resolves("home.internal", "127.0.0.1", "100.100.146.119", port=server) is passes
 
 
+@pytest.mark.parametrize(
+    ("server", "passes"),
+    [((0, "192.0.2.1"), True), ((3, None), True), ((2, None), False), ((5, None), False)],
+    indirect=["server"],
+)
+def test_a_dns_server_passes_on_any_answer_but_a_failure(server: int, passes: bool) -> None:
+    assert probes.answers("127.0.0.1", port=server) is passes
+
+
+def test_the_upstreams_are_the_resolv_conf_nameservers(tmp_path: Path) -> None:
+    resolv = tmp_path / "resolv.conf"
+    resolv.write_text(
+        "# nameserver 192.0.2.9\nnameserver 192.0.2.1\nnameserver 192.0.2.2\nsearch home\n"
+    )
+    assert probes.upstreams(resolv) == ["192.0.2.1", "192.0.2.2"]
+    assert probes.upstreams(tmp_path / "missing") == []
+
+
 def test_no_answer_fails() -> None:
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as quiet:
         quiet.bind(("127.0.0.1", 0))
