@@ -31,9 +31,10 @@ snapshots with `restic forget --prune <id>`.
 
    ```bash
    sudo install -D -m 644 beelink/docker/tailscale.conf /etc/systemd/system/docker.service.d/tailscale.conf
+   sudo install -m 644 beelink/docker/daemon.json /etc/docker/
    sudo install -m 644 beelink/auto-updates/52unattended-upgrades-local /etc/apt/apt.conf.d/
    sudo install -m 644 beelink/auto-updates/docker-major.pref /etc/apt/preferences.d/
-   sudo systemctl daemon-reload
+   sudo systemctl daemon-reload && sudo systemctl restart docker
    ```
 
 3. Copy each line of the Bitwarden note "Homelab secrets" into `secrets/<name>` ([list](secrets.md); folder 700, files 444), then
