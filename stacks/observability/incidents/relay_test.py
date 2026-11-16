@@ -64,9 +64,11 @@ class FakeFire:
 class FakePing:
     def __init__(self) -> None:
         self.count = 0
-        self.fail = False
+        self.fail: bool | OSError = False
 
     def __call__(self) -> None:
+        if isinstance(self.fail, OSError):
+            raise self.fail
         if self.fail:
             raise OSError("healthchecks down")
         self.count += 1
@@ -264,6 +266,28 @@ def test_a_failed_ping_is_not_a_relay_failure(parts: Parts, ping: FakePing) -> N
     r, _, _ = parts
     ping.fail = True
     assert r.handle(alert(alertname="watchdog", level="watchdog")) == 200
+
+
+@pytest.mark.parametrize(
+    ("failure", "level"),
+    [
+        (urllib.error.URLError("_ssl.c:1129: The handshake operation timed out"), "WARNING"),
+        (
+            urllib.error.HTTPError(
+                "https://hc-ping.com/x", 404, "Not Found", email.message.Message(), None
+            ),
+            "ERROR",
+        ),
+    ],
+)
+def test_only_a_refused_ping_logs_an_error(
+    parts: Parts, ping: FakePing, caplog: pytest.LogCaptureFixture, failure: OSError, level: str
+) -> None:
+    # Healthchecks.io pages pings that stay lost; one lost on a link blip posted errors-logged.
+    r, _, _ = parts
+    ping.fail = failure
+    r.handle(alert(alertname="watchdog", level="watchdog"))
+    assert [rec.levelname for rec in caplog.records] == [level]
 
 
 def errors_alert(service: str) -> dict[str, Any]:
