@@ -368,6 +368,7 @@ services:
       - ALL
     command: >-
       run --server.http.listen-addr=0.0.0.0:12345 --storage.path=/var/lib/alloy/data --disable-reporting
+      --stability.level=public-preview
       /etc/alloy/config.alloy
     # The `instance` label on every series; a container ID would change on each recreate.
     hostname: beelink
