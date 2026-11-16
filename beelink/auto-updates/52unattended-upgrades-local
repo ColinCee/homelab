@@ -8,9 +8,10 @@ Unattended-Upgrade::Allowed-Origins {
 
 // Docker, containerd and Tailscale are the host's attack surface, so their
 // repos update nightly too. The run starts around 06:00-07:00 UTC; a Docker
-// or containerd update restarts every container (no live-restore), and they
-// come back on their own. docker-major.pref holds Docker majors. Hold a broken
-// release with `sudo apt-mark hold <pkg>`.
+// or containerd update restarts those daemons but not the containers
+// (live-restore, daemon.json): Docker would stop them all at once, and a store
+// can go before its writers. docker-major.pref holds Docker majors. Hold a
+// broken release with `sudo apt-mark hold <pkg>`.
 // Origins from `apt-cache policy`; Docker's sets no codename, so archive.
 Unattended-Upgrade::Origins-Pattern {
 	"origin=Docker,archive=noble,label=Docker CE";
