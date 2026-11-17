@@ -418,6 +418,10 @@ def test_the_latest_vm_job_says_whether_it_failed_before_the_repo_s_checks(
     later = jobs_by_run([pr, run(2), run(3)], {1: failed, 2: cancelled, 3: PASSED})
     state = ci_times.poll(later, lambda body: None, state)
     assert setup_failed(state) == "0"
+    lost = vm_job(6, ("Install tools from the cache disk", "cancelled"))  # failed, no step named
+    lost_last = jobs_by_run([run(6)], {6: lost | {"completed_at": "2026-11-12T02:00:00Z"}})
+    broken = ci_times.poll(jobs_by_run([run(7)], {7: failed}), lambda body: None, {})
+    assert setup_failed(ci_times.poll(lost_last, lambda body: None, broken)) == expected
     cancelled_last = jobs_by_run(
         [run(5)], {5: cancelled | {"completed_at": "2026-11-12T01:00:00Z"}}
     )

@@ -471,7 +471,8 @@ groups:
           action: >-
             On Grafana's CI page (http://grafana.internal/d/ci), open the latest failed run from Recent runs and read
             the step it failed at (Set up job, Check out, or Install tools from the cache disk). If that pull request
-            changed `mise.toml`, the fault is its own; otherwise see docs/architecture.md, "CI runner".
+            changed `mise.toml`, the fault is its own; otherwise see docs/architecture.md, "CI runner". Once fixed,
+            re-run that job: the alert clears when a job passes setup.
           dashboard: *home
           value: '{{ $value }}'
       # unattended-upgrades installs security updates each morning (beelink/auto-updates/52unattended-upgrades-local), so some waiting

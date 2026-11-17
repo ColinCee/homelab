@@ -267,6 +267,8 @@ def setup_state(jobs: list[Mapping[str, Any]]) -> Json | None:
             continue
         steps = sorted(job.get("steps", []), key=lambda step: int(step.get("number", 0)))
         failed = next((st["name"] for st in steps if st.get("conclusion") == "failure"), "")
+        if job.get("conclusion") == "failure" and not failed:
+            continue  # a VM lost mid-step names no step: it neither breaks nor clears the state
         if latest is None or w[1] > latest["at"]:
             latest = {"at": w[1], "step": failed if failed in SETUP_STEPS else ""}
     return latest
