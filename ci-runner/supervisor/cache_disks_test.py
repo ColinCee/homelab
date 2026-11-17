@@ -353,4 +353,5 @@ def test_disks_built_before_they_kept_room_get_it_when_the_supervisor_starts(
     old_style_disk(tmp_path_factory.mktemp("old"), 300 * 1024**2).replace(image)
     cache_disks.give_disks_room()  # also passes octo__widgets.ext4, which is not ext4
     assert cache_disks.room(image) >= cache_disks.CACHE_ROOM_BYTES
+    assert image.stat().st_blocks * 512 < 256 * 1024**2
     assert sorted(p.name for p in caches.iterdir()) == ["octo__agent.ext4", "octo__widgets.ext4"]

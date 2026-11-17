@@ -153,8 +153,8 @@ def vm_tools() -> int:
         f.writelines(f"{k}={v}\n" for k, v in env.items())
     # Versions mise.toml no longer names leave first, so a bump reuses their space and the
     # cache saved from this disk holds only today's tools, not every version since it began.
-    prune = subprocess.run(["mise", "prune", "--tools"], env=os.environ | env).returncode
-    return prune or subprocess.run(["mise", "install"], env=os.environ | env).returncode
+    subprocess.run(["mise", "prune", "--tools"], env=os.environ | env, check=False)
+    return subprocess.run(["mise", "install"], env=os.environ | env).returncode
 
 
 def annotation(text: str) -> str:

@@ -193,7 +193,7 @@ def give_disks_room() -> None:
                 give_room(staged)
                 staged.chmod(0o644)
                 staged.replace(image)
-        except (OSError, subprocess.CalledProcessError) as e:
+        except (OSError, subprocess.CalledProcessError, KeyError, ValueError) as e:
             log(f"cache disk {image.name} kept as it was: {type(e).__name__}: {e}")
             continue
         log(f"cache disk {image.name} now has room for installs")
