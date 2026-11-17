@@ -542,7 +542,11 @@ CASES = {
         ],
     ),
     "metrics stopping is one alert with no labels": (
-        [('up{job="integrations/unix"}', "1x5"), ('up{job="docker"}', "1x5")],
+        [
+            ('up{job="integrations/unix"}', "1x5"),
+            ('up{job="docker"}', "1x5"),
+            ('container_last_seen{job="docker",name="app-web-1"}', "1x5"),
+        ],
         [
             at(5, "beelink-metrics-stopped"),
             at(12, "beelink-metrics-stopped", posts("beelink-metrics-stopped", "1")),
