@@ -60,6 +60,18 @@
   <rect class="box" x="470" y="126" width="180" height="40" rx="6"/>
   <text class="t" x="560" y="151">deploy-main</text>
 
+  <!-- Every stack in stacks/, as a deck: deploy-main applies them; each is drawn below by what it does -->
+  <text class="g" x="806" y="59">Stacks</text>
+  <g font-size="12" fill="#1f2328">
+    <rect class="box" x="806" y="66" width="116" height="40" rx="5"/><text x="815" y="79">backup</text>
+    <rect class="box" x="809" y="83" width="116" height="40" rx="5"/><text x="818" y="96">deploy</text>
+    <rect class="box" x="812" y="100" width="116" height="40" rx="5"/><text x="821" y="113">flight-tracker</text>
+    <rect class="box" x="815" y="117" width="116" height="40" rx="5"/><text x="824" y="130">home-assistant</text>
+    <rect class="box" x="818" y="134" width="116" height="40" rx="5"/><text x="827" y="147">internal-names</text>
+    <rect class="box" x="821" y="151" width="116" height="40" rx="5"/><text x="830" y="164">observability</text>
+    <rect class="box" x="824" y="168" width="116" height="30" rx="5"/><text x="833" y="188">tunnel</text>
+  </g>
+
   <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
   <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
   <use href="#i-docker" x="660" y="257" width="16" height="16" fill="#2496ED"/>
