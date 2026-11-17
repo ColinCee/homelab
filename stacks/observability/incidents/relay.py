@@ -50,10 +50,16 @@ LINE_MAX = 500
 LISTED_MAX = 15
 # errors-logged reads the last 24 clock hours, so its first line came at most 25 hours before it.
 LINES_SINCE = timedelta(hours=25)
+# The newest messages a cleared post's agent report is looked for in.
+REPORT_WITHIN = 50
+# The agent's report line (homelab-oncall, "Report"), however its Markdown dresses it.
+NEEDS_YOU = re.compile(r"^[\s>*_-]*needs you\b[\s*_:-]+(.*)$", re.IGNORECASE | re.MULTILINE)
+NOT_STARTED = "On-call agent not started:"
 EXPLORE = "http://grafana.internal/explore?schemaVersion=1&orgId=1&panes="
 GATEWAY = "http://gateway:5080/logs/select/logsql/query"
 
-Discord = Callable[[str, str, dict[str, Any] | None], dict[str, Any]]
+# Discord's answer: an object, or a list for a post's messages.
+Discord = Callable[[str, str, dict[str, Any] | None], Any]
 Fire = Callable[[str], str]
 Ping = Callable[[], None]
 # The first line a LogsQL query finds, "" for none.
@@ -151,12 +157,36 @@ class Relay:
             text = (
                 "Cleared: the number is back within bounds; that does not mean the cause is fixed."
             )
-            if self._retag(post["thread"], "Cleared", text) is False:
+            marked = self._retag(post["thread"], "Cleared", text)
+            if marked is False:
                 return False
             post["cleared"] = _now().isoformat()
             log.info("cleared a post", extra={"post": post["thread"]})
+            if marked:
+                self._archive_unless_waiting(post["thread"], post.get("agent", True))
         self._save()
         return True
+
+    def _archive_unless_waiting(self, thread: str, agent: bool) -> None:
+        """Takes a cleared post out of the forum's list unless the on-call agent's report names a
+        step for Colin (homelab-oncall, "Report"), or its agent has not reported yet and archives
+        it itself: archived, it stays searchable."""
+        try:
+            messages = self.discord(
+                "GET", f"/channels/{thread}/messages?limit={REPORT_WITHIN}", None
+            )
+            step = _report(messages, thread)
+            if step or (step is None and agent):
+                why = "a step for Colin" if step else "no report yet"
+                log.info("a cleared post stays", extra={"post": thread, "why": why})
+                return
+            self.discord("PATCH", f"/channels/{thread}", {"archived": True})
+        except FAILED as e:
+            # The post stays in the list, which errs toward Colin seeing it.
+            level = self.discord_failures.level(e)
+            log.log(level, "cannot archive a post", extra={"post": thread, "error": str(e)})
+            return
+        log.info("archived a post", extra={"post": thread})
 
     def _open(self, rule: str, firing: list[dict[str, Any]]) -> bool:
         alert = firing[0]
@@ -200,14 +230,17 @@ class Relay:
         log.info(
             "opened a post", extra={"post": thread, "alertname": alert["labels"].get("alertname")}
         )
-        self._say(thread, self._start_agent(firing, thread))
+        started = self._start_agent(firing, thread)
+        self.state["posts"][rule]["agent"] = not started.startswith(NOT_STARTED)
+        self._save()
+        self._say(thread, started)
         return True
 
     def _retag(
         self, thread: str, tag: str, text: str, mentions: dict[str, list[str]] | None = None
     ) -> bool | None:
-        """Whether the post took the change; None when it is gone, deleted by hand as noise (the
-        on-call skill), so a return opens a new one."""
+        """Whether the post took the change; None when it is gone, deleted by hand, so a return
+        opens a new one."""
         try:
             # Discord archives an idle post, and an archived one takes no message or tag change.
             self.discord("PATCH", f"/channels/{thread}", {"archived": False, **self._tags_for(tag)})
@@ -242,7 +275,7 @@ class Relay:
         if runs["day"] != today:
             runs.update(day=today, count=0)
         if runs["count"] >= RUNS_PER_DAY:
-            return f"On-call agent not started: {RUNS_PER_DAY} runs today already."
+            return f"{NOT_STARTED} {RUNS_PER_DAY} runs today already."
         try:
             url = self.fire(
                 _snapshot(firing, f"https://discord.com/channels/{self.guild}/{thread}")
@@ -251,7 +284,7 @@ class Relay:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
             level = self.routine.level(e)
             log.log(level, "cannot start the on-call agent", extra={"error": str(e)})
-            return "On-call agent not started: the relay could not reach its routine (see its log)."
+            return f"{NOT_STARTED} the relay could not reach its routine (see its log)."
         runs["count"] += 1
         self._save()
         log.info("started the on-call agent", extra={"session": url})
@@ -333,6 +366,20 @@ def _is_alert(alert: object) -> bool:
         and isinstance(alert.get("labels"), dict)
         and isinstance(alert.get("annotations"), dict)
     )
+
+
+def _report(messages: object, thread: str) -> str | None:
+    """The step in the newest "Needs you" line in MESSAGES, newest first as Discord lists them:
+    "" for nothing, None when no report is there. The post's first message, which shares its id
+    and holds log text, is never one."""
+    for message in messages if isinstance(messages, list) else []:
+        if not isinstance(message, dict) or message.get("id") == thread:
+            continue
+        found = NEEDS_YOU.findall(str(message.get("content", "")))
+        if found:
+            step = str(found[-1]).strip(" *_.")
+            return "" if step.lower() in ("nothing", "none") else step
+    return None
 
 
 def _now() -> datetime:
@@ -442,9 +489,7 @@ def _snapshot(firing: list[dict[str, Any]], post: str) -> str:
     )
 
 
-def _request(
-    url: str, method: str, headers: dict[str, str], body: dict[str, Any] | None
-) -> dict[str, Any]:
+def _request(url: str, method: str, headers: dict[str, str], body: dict[str, Any] | None) -> Any:  # noqa: ANN401 - Discord's JSON, as its API documents it
     # Two tries at most: Alertmanager stops waiting after about a minute, and retries itself.
     answer = telemetry.http_json(
         url, method=method, body=body, headers=headers, timeout=10, tries=2
@@ -468,7 +513,7 @@ def main() -> None:
     reader = f"agents@homelab.internal:{telemetry.secret('agents_password')}"
     fire_url = FIRE.format(routine=routine)
 
-    def discord(method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
+    def discord(method: str, path: str, body: dict[str, Any] | None) -> Any:  # noqa: ANN401
         return _request(DISCORD + path, method, bot, body)
 
     def fire(text: str) -> str:

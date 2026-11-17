@@ -27,9 +27,15 @@ class FakeDiscord:
         self.fail_open = False
         self.fail_patch = False
         self.deleted: set[str] = set()
+        self.messages: list[dict[str, str]] = []
+        self.fail_read = False
 
-    def __call__(self, method: str, path: str, body: dict[str, Any] | None) -> dict[str, Any]:
+    def __call__(self, method: str, path: str, body: dict[str, Any] | None) -> Any:  # noqa: ANN401
         self.calls.append((method, path, body))
+        if method == "GET" and "/messages" in path:
+            if self.fail_read:
+                raise OSError("discord down")
+            return self.messages
         if method == "GET":
             return TAGS
         if method == "PATCH" and self.fail_patch:
@@ -150,6 +156,69 @@ def test_a_return_a_day_after_clearing_is_a_new_incident(parts: Parts) -> None:
     r.state["posts"]["disk-filling"]["cleared"] = ago(days=2)
     r.handle(alert())
     assert discord.threads == 2 and len(fire.texts) == 2
+
+
+ARCHIVE = ("PATCH", "/channels/thread-1", {"archived": True})
+REPORT = "Fixed: nothing to fix, a blip.\nNeeds you: {}"
+
+
+def said_by(*contents: str) -> list[dict[str, str]]:
+    """A post's messages, newest first as Discord lists them, the post's own first message last."""
+    return [{"id": f"m{i}", "content": c} for i, c in enumerate(contents)] + [
+        {"id": "thread-1", "content": "Needs you: nothing (a log line)"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("messages", "agent", "archived"),
+    [
+        (said_by(REPORT.format("nothing")), True, True),
+        (said_by("- **Needs you:** Nothing."), True, True),
+        (said_by(REPORT.format("approve the pull request")), True, False),
+        (said_by("**Needs you**: restart it"), True, False),
+        (said_by("> Needs you - restart it"), True, False),
+        (said_by(REPORT.format("nothing"), REPORT.format("restart it")), True, True),
+        # Its agent is still at work and archives the post itself if nothing waits.
+        (said_by(), True, False),
+        (said_by(), False, True),
+    ],
+)
+def test_a_cleared_post_is_archived_unless_its_agent_left_colin_a_step_or_has_not_reported(
+    parts: Parts, messages: list[dict[str, str]], agent: bool, archived: bool
+) -> None:
+    r, discord, fire = parts
+    fire.fail = not agent
+    r.handle(alert())
+    discord.messages = messages
+    assert r.handle(alert("resolved")) == 200
+    assert (ARCHIVE in discord.calls) is archived
+    if archived:  # after the Cleared tag, whose PATCH unarchives
+        assert discord.calls.index(ARCHIVE) > discord.calls.index(
+            ("PATCH", "/channels/thread-1", {"archived": False, "applied_tags": ["t-cleared"]})
+        )
+
+
+def test_an_unreadable_post_stays_open_and_still_clears(parts: Parts) -> None:
+    r, discord, _ = parts
+    r.handle(alert())
+    discord.fail_read = True
+    assert r.handle(alert("resolved")) == 200
+    assert ARCHIVE not in discord.calls
+    assert r.state["posts"]["disk-filling"]["cleared"]
+
+
+def test_an_archived_post_reopens_when_its_alert_returns(parts: Parts) -> None:
+    r, discord, fire = parts
+    r.handle(alert())
+    discord.messages = said_by(REPORT.format("nothing"))
+    r.handle(alert("resolved"))
+    assert r.handle(alert()) == 200
+    assert discord.calls[-2] == (
+        "PATCH",
+        "/channels/thread-1",
+        {"archived": False, "applied_tags": ["t-firing"]},
+    )
+    assert discord.threads == 1 and len(fire.texts) == 1
 
 
 def test_a_failed_clear_is_sent_again(parts: Parts) -> None:
