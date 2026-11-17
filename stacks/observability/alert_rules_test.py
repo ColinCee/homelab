@@ -25,6 +25,7 @@ HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
 COMPOSE = stacks()[STACK]
 HOME = "http://grafana.internal/d/home"
+DOCKER_LOGS = "loki.source.docker.containers"
 
 
 def flat(text: str) -> str:
@@ -54,6 +55,7 @@ SECURITY = "a security event: one is the harm"
 AT_ONCE = {
     "beelink-metrics-stopped": QUERY_WAITS,
     "host-metrics-stopped": QUERY_WAITS,
+    "logs-stopped": QUERY_WAITS,
     "errors-logged": QUERY_WAITS,
     "telemetry-dropped": "what Alloy lost is gone for good",
     "watchdog": "always firing; it pings Healthchecks.io and never posts",
@@ -262,6 +264,28 @@ CASES = {
             # Flat from 10 min, so the 15-minute rate is 0 from 24, then 15 min of `for`.
             at(38, "store-stopped"),
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
+        ],
+    ),
+    "a log source gone quiet is named, one still sending or never sending is not": (
+        [
+            # Container logs stop at 10 min, as when the Docker socket proxy lost the socket.
+            (
+                f'loki_source_docker_target_entries_total{{job="alloy",component_id="{DOCKER_LOGS}"}}',
+                "0+1000x10 10000x1600",
+            ),
+            (
+                'loki_source_journal_target_lines_total{job="alloy",component_id="loki.source.journal.host"}',
+                "0+12x1600",
+            ),
+            ('loki_source_docker_target_entries_total{job="alloy",component_id="never"}', "0x1600"),
+        ],
+        [
+            at(23, "logs-stopped"),
+            *[
+                at(m, "logs-stopped", posts("logs-stopped", "0", component_id=DOCKER_LOGS))
+                # Still firing once it has been quiet for over a day.
+                for m in (26, 1500)
+            ],
         ],
     ),
     "a disk full within a day posts after 30 minutes": (
