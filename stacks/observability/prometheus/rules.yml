@@ -14,11 +14,14 @@ groups:
   - name: homelab
     interval: 1m
     rules:
+      # Its containers' numbers count too: once Alloy loses the Docker API, which a Docker update does to the socket
+      # proxy, every container reads as stopped, and this one alert holds back the rest.
       - alert: beelink-metrics-stopped
         expr: |
           (
             max(
               absent_over_time(up{job="integrations/unix"}[5m]) or absent_over_time(up{job="docker"}[5m])
+              or absent_over_time(container_last_seen{job="docker",name!=""}[5m])
             )
           ) > 0
         for: 0m
@@ -35,7 +38,8 @@ groups:
           action: >-
             On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50
             observability-alloy-1`, then `docker compose up -d` in
-            /home/colin/code/homelab/stacks/observability.
+            /home/colin/code/homelab/stacks/observability. If every container still runs but none is counted,
+            Alloy has lost the Docker API: `docker restart observability-docker-socket-proxy-1`.
           dashboard: &home http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: flight-tracker-down
