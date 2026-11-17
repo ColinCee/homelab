@@ -291,6 +291,18 @@ CASES = {
             at(30, "store-flooded", posts("store-flooded", "1667", job="traces")),
         ],
     ),
+    "a failed setup step posts unless a job passes setup within 15 minutes": (
+        [
+            # A failure at 3 min that a re-run clears at 12, then one at 33 that lasts until 74.
+            ("homelab_ci_setup_failed", "0x2 1x8 0x20 1x40 0x20"),
+        ],
+        [
+            at(14, "ci-runner-broken"),
+            at(47, "ci-runner-broken"),
+            at(49, "ci-runner-broken", posts("ci-runner-broken", "1")),
+            at(90, "ci-runner-broken"),
+        ],
+    ),
     # Colin's and Renovate's never post.
     "another's CI-host install posts who and what, then clears": (
         [
