@@ -25,6 +25,7 @@ HOMELAB = {r["alert"]: r for r in GROUPS[0]["rules"]}
 ALERTMANAGER = yaml.safe_load((STACK / "alertmanager/alertmanager.yml").read_text(encoding="utf-8"))
 COMPOSE = stacks()[STACK]
 HOME = "http://grafana.internal/d/home"
+DOCKER_LOGS = "loki.source.docker.containers"
 
 
 def flat(text: str) -> str:
@@ -269,22 +270,22 @@ CASES = {
         [
             # Container logs stop at 10 min, as when the Docker socket proxy lost the socket.
             (
-                'loki_source_docker_target_entries_total{job="alloy",component_id="loki.source.docker.containers"}',
-                "0+1000x10 10000x30",
+                f'loki_source_docker_target_entries_total{{job="alloy",component_id="{DOCKER_LOGS}"}}',
+                "0+1000x10 10000x1600",
             ),
             (
                 'loki_source_journal_target_lines_total{job="alloy",component_id="loki.source.journal.host"}',
-                "0+12x40",
+                "0+12x1600",
             ),
-            ('loki_source_docker_target_entries_total{job="alloy",component_id="never"}', "0x40"),
+            ('loki_source_docker_target_entries_total{job="alloy",component_id="never"}', "0x1600"),
         ],
         [
             at(23, "logs-stopped"),
-            at(
-                26,
-                "logs-stopped",
-                posts("logs-stopped", "0", component_id="loki.source.docker.containers"),
-            ),
+            *[
+                at(m, "logs-stopped", posts("logs-stopped", "0", component_id=DOCKER_LOGS))
+                # Still firing once it has been quiet for over a day.
+                for m in (26, 1500)
+            ],
         ],
     ),
     "a disk full within a day posts after 30 minutes": (
