@@ -454,6 +454,26 @@ groups:
             `~/.local/state/homelab/last-deployed`. Retry with `systemctl --user start deploy-main`.
           dashboard: *home
           value: '{{ $value }}'
+      # ci_times.py: Colin's latest VM job failed at a step that does not depend on what it changed. Held while a
+      # re-run or the next push passes.
+      - alert: ci-runner-broken
+        expr: |
+          max(homelab_ci_setup_failed) > 0
+        for: 15m
+        keep_firing_for: 10m
+        labels:
+          level: now
+        annotations:
+          title: 'CI on the Beelink is broken'
+          measure: 'Latest job failed in setup (1 yes)'
+          unit: ''
+          harm: "Every pull request of Colin's fails its checks before they run, until the runner is fixed."
+          action: >-
+            On Grafana's CI page (http://grafana.internal/d/ci), open the latest failed run from Recent runs and read
+            the step it failed at (Set up job, Check out, or Install tools from the cache disk). If that pull request
+            changed `mise.toml`, the fault is its own; otherwise see docs/architecture.md, "CI runner".
+          dashboard: *home
+          value: '{{ $value }}'
       # unattended-upgrades installs security updates each morning (beelink/auto-updates/52unattended-upgrades-local), so some waiting
       # at every check for 3 days means it is failing. Written each minute (beelink/security/security_facts.py, host); the
       # offset keeps a series younger than the window quiet.

@@ -1697,6 +1697,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "ci-runner-broken"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d03b3b"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "main-not-deployed"
             },
             "properties": [

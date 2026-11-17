@@ -13,6 +13,7 @@ from typing import Any
 import ci_times
 import pytest
 import telemetry
+import yaml
 
 COLIN = {"id": ci_times.OWNER_ID, "login": "ColinCee"}
 OTHER = {"id": 1, "login": "someone"}
@@ -176,7 +177,7 @@ def test_metrics_are_the_latest_trusted_runs_by_kind_and_runner_and_drop_old_job
     series = 'homelab_ci_job_seconds{{kind="{}",workflow="CI",ci_job="check",runner="vm"}} 30'
     assert series.format("main") in text and series.format("pr") in text
     assert "feature" not in text  # the branch is the trace's, not a series of its own
-    assert ci_times.metrics(state["latest"], now + 31 * 86400).strip() == ""
+    assert "homelab_ci_job" not in ci_times.metrics(state["latest"], now + 31 * 86400)
 
 
 def test_every_run_counts_once_in_its_job_s_histogram_across_passes() -> None:
@@ -352,3 +353,94 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
     assert logs(3) == ""  # a skipped job's link to a log never written
     with pytest.raises(OSError):
         logs(4)  # failing twice stops the pass
+
+
+def vm_job(n: int, *steps: tuple[str, str], conclusion: str = "failure") -> dict[str, Any]:
+    """A VM job with its steps in order, each (name, conclusion)."""
+    one = job(n) | {"conclusion": conclusion, "completed_at": f"2026-11-12T00:{n % 60:02d}:40Z"}
+    one["steps"] = [
+        {"number": i, "name": name, "conclusion": c} for i, (name, c) in enumerate(steps)
+    ]
+    return one
+
+
+INSTALL_FAILED = vm_job(
+    1,
+    ("Set up job", "success"),
+    ("Check out", "success"),
+    ("Install tools from the cache disk", "failure"),
+    # Runs anyway (`!cancelled()`) and fails for want of the tools.
+    ("Run checks (lint + typecheck + test + validate)", "failure"),
+)
+CHECKS_FAILED = vm_job(
+    2,
+    ("Set up job", "success"),
+    ("Install tools from the cache disk", "success"),
+    ("Run checks (lint + typecheck + test + validate)", "failure"),
+)
+PASSED = vm_job(3, ("Install tools from the cache disk", "success"), conclusion="success")
+
+
+def jobs_by_run(runs: list[dict[str, Any]], jobs: dict[int, dict[str, Any]]) -> ci_times.Get:
+    def get(path: str) -> dict[str, Any] | list[dict[str, Any]]:
+        if "/annotations" in path:
+            return []
+        if path.endswith("/jobs?per_page=100"):
+            return {"jobs": [jobs[int(path.split("/runs/")[1].split("/")[0])]]}
+        return {"workflow_runs": runs}
+
+    return get
+
+
+def setup_failed(state: dict[str, Any]) -> str:
+    text = ci_times.metrics(
+        state["latest"], ci_times.seconds("2026-11-13T00:00:00Z"), state["setup"]
+    )
+    (line,) = [line for line in text.splitlines() if line.startswith("homelab_ci_setup_failed")]
+    return line.split()[1]
+
+
+@pytest.mark.parametrize(
+    ("failed", "expected"),
+    [(INSTALL_FAILED, "1"), (CHECKS_FAILED, "0")],
+    ids=["at the tool install", "at the repo's own checks"],
+)
+def test_the_latest_vm_job_says_whether_it_failed_before_the_repo_s_checks(
+    failed: dict[str, Any], expected: str
+) -> None:
+    pr = run(1, event="pull_request", branch="feature")
+    state = ci_times.poll(jobs_by_run([pr], {1: failed}), lambda body: None, {})
+    assert setup_failed(state) == expected
+    # The next job whose setup passes clears it; one cancelled says nothing.
+    cancelled = vm_job(
+        4, ("Install tools from the cache disk", "cancelled"), conclusion="cancelled"
+    )
+    later = jobs_by_run([pr, run(2), run(3)], {1: failed, 2: cancelled, 3: PASSED})
+    state = ci_times.poll(later, lambda body: None, state)
+    assert setup_failed(state) == "0"
+    cancelled_last = jobs_by_run(
+        [run(5)], {5: cancelled | {"completed_at": "2026-11-12T01:00:00Z"}}
+    )
+    assert setup_failed(ci_times.poll(cancelled_last, lambda body: None, state)) == "0"
+
+
+def test_others_runs_and_a_cut_short_pass_leave_the_setup_state_as_it_was() -> None:
+    renovate = run(1, actor=OTHER, event="pull_request", branch="renovate/x")
+    state = ci_times.poll(jobs_by_run([renovate], {1: INSTALL_FAILED}), lambda body: None, {})
+    assert setup_failed(state) == "0"  # written before any job is seen, too
+    state = ci_times.poll(jobs_by_run([run(2)], {2: INSTALL_FAILED}), lambda body: None, state)
+
+    def drops(path: str) -> dict[str, Any] | list[dict[str, Any]]:
+        if path.endswith("/runs/4/attempts/1/jobs?per_page=100"):
+            raise ConnectionResetError("dropped")
+        return jobs_by_run([run(2), run(4)], {2: INSTALL_FAILED})(path)
+
+    state = ci_times.poll(drops, lambda body: None, state)
+    assert state["done"] is False and setup_failed(state) == "1"
+
+
+def test_each_setup_step_is_a_step_of_the_vm_job() -> None:
+    workflow = (Path(__file__).parents[2] / ".github/workflows/ci.yaml").read_text(encoding="utf-8")
+    steps = {step.get("name") for step in yaml.safe_load(workflow)["jobs"]["homelab"]["steps"]}
+    # GitHub's own first step is not in the workflow.
+    assert set(ci_times.SETUP_STEPS) - {"Set up job"} <= steps

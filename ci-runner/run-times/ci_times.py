@@ -4,7 +4,8 @@ Each finished run attempt becomes one trace in the trace store: the run, its job
 for Colin's own runs, the slowest tests and the job log's phases to the millisecond (each step, each
 mise task and command). GitHub's API times steps only to the second. The latest
 successful run's job seconds, and every run's in a histogram, by kind (main or pr), go to
-ci-times.prom for Prometheus and the ci-slower alert.
+ci-times.prom for Prometheus and the ci-slower alert; so does whether Colin's latest VM job failed
+before the repo's own checks, for the ci-runner-broken alert.
 
 Neither CI host can reach the observability stack, so this asks GitHub, with the CI supervisor's
 token. Installed by ci-runner/install_host.py and run every 5 minutes by homelab-ci-times.timer.
@@ -49,6 +50,9 @@ TASK_LINE = re.compile(r"^\[([\w:.-]+)\] (?:\$ (.*)|Finished in ([\d.]+)(ms|s)$)
 LOG_MAX = 2_000_000
 # A job unseen this long (renamed, removed) drops out of the metrics.
 ROW_DAYS = 30
+# The VM job's steps that fail when the runner is broken (a full cache disk fails every branch's
+# tool install), not for what a pull request changed: GitHub's own first step, then ci.yaml's.
+SETUP_STEPS = ("Set up job", "Check out", "Install tools from the cache disk")
 # Upper bounds of the run-time histogram, in seconds: each 15% above the last, so a median read
 # inside one is within a few percent of ci-slower's 1.5 times at any job length.
 BUCKETS = tuple(sorted({round(10 * 1.15**k) for k in range(43)}))
@@ -250,7 +254,27 @@ def trace(
     return telemetry.otlp_traces(by_service, repository=REPO)
 
 
-def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
+def setup_state(jobs: list[Mapping[str, Any]]) -> Json | None:
+    """The run's last finished VM job: when it ended, and the setup step it failed at ("" if its
+    setup passed). Steps after a failed one that run anyway (`!cancelled()`) fail too, so only
+    the first failed step counts. Cancelled and skipped jobs say nothing."""
+    latest: Json | None = None
+    for job in jobs:
+        w = window(job)
+        if not w or runner_kind(job.get("labels", [])) != "vm":
+            continue
+        if job.get("conclusion") not in ("success", "failure"):
+            continue
+        steps = sorted(job.get("steps", []), key=lambda step: int(step.get("number", 0)))
+        failed = next((st["name"] for st in steps if st.get("conclusion") == "failure"), "")
+        if latest is None or w[1] > latest["at"]:
+            latest = {"at": w[1], "step": failed if failed in SETUP_STEPS else ""}
+    return latest
+
+
+def metrics(
+    latest: Mapping[str, Mapping[str, Any]], now: float, setup: Mapping[str, Any] | None = None
+) -> str:
     """Each recent job's latest seconds, and its runs' seconds as a histogram: a median over time of
     the latest counts a run by how long it stayed the latest, so one slow run before a quiet night
     outweighs a day of fast ones. Jobs only: step names change with each pinned action's version,
@@ -274,11 +298,14 @@ def metrics(latest: Mapping[str, Mapping[str, Any]], now: float) -> str:
         runs_lines.append(f'homelab_ci_job_run_seconds_bucket{{{keys},le="+Inf"}} {count}')
         runs_lines.append(f"homelab_ci_job_run_seconds_sum{{{keys}}} {runs.get('sum', 0):.0f}")
         runs_lines.append(f"homelab_ci_job_run_seconds_count{{{keys}}} {count}")
+    # Always written, so the alert has a 0 before its first 1.
+    broken = int(bool((setup or {}).get("step")))
+    setup_lines = ["# TYPE homelab_ci_setup_failed gauge", f"homelab_ci_setup_failed {broken}"]
     # Each metric family together, as the text format asks.
     if not lines:
-        return "\n"
+        return "\n".join(setup_lines) + "\n"
     types = ["# TYPE homelab_ci_job_seconds gauge", "# TYPE homelab_ci_job_run_seconds histogram"]
-    return "\n".join([types[0], *lines, types[1], *runs_lines]) + "\n"
+    return "\n".join([types[0], *lines, types[1], *runs_lines, *setup_lines]) + "\n"
 
 
 def counted(latest: Mapping[str, Json], new: Mapping[str, Json]) -> dict[str, Json]:
@@ -322,6 +349,11 @@ def poll(
     `keep` saves the state after each run, so a pass cut short loses nothing."""
     sent: list[str] = list(state.get("sent", []))
     latest: dict[str, Json] = dict(state.get("latest", {}))
+    setup: Json | None = state.get("setup")
+
+    def kept(done: bool) -> Json:
+        return {"sent": sent[-SENT_KEEP:], "latest": latest, "setup": setup, "done": done}
+
     path = f"/repos/{REPO}/actions/runs?status=completed&per_page=30"
     runs = get(path).get("workflow_runs", [])
     for run in sorted(runs, key=lambda r: (r["id"], r.get("run_attempt", 1))):
@@ -339,21 +371,23 @@ def poll(
         except urllib.error.HTTPError as e:
             if not 400 <= e.code < 500:
                 log.warning("stopped at a run", extra={"run": key, "status": e.code})
-                return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
+                return kept(False)
             # Refused for what it is (too big, say): skipped, so it cannot hold up newer runs.
             log.warning("skipped a run", extra={"run": key, "status": e.code})
             sent.append(key)
-            keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
+            keep(kept(False))
             continue
         except OSError as e:
             log.warning("stopped at a run", extra={"run": key, "error": f"{type(e).__name__}: {e}"})
-            return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": False}
+            return kept(False)
         if own and run.get("conclusion") == "success":
             # A job this run did not have (deploy, skipped) keeps its row from the last that did.
             latest = counted(latest, latest_rows(run, jobs))
+        if own and (ended := setup_state(jobs)) and (not setup or ended["at"] >= setup["at"]):
+            setup = ended
         sent.append(key)
-        keep({"sent": sent[-SENT_KEEP:], "latest": latest, "done": False})
-    return {"sent": sent[-SENT_KEEP:], "latest": latest, "done": True}
+        keep(kept(False))
+    return kept(True)
 
 
 def github(token: str) -> Get:
@@ -399,7 +433,7 @@ def main() -> int:
     if not state["done"]:
         return 1
     # Rewritten only after a whole pass, so its age is ci-times-stale's measure.
-    telemetry.replace_file(OUT, metrics(state["latest"], time.time()))
+    telemetry.replace_file(OUT, metrics(state["latest"], time.time(), state.get("setup")))
     return 0
 
 
