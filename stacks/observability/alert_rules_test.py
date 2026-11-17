@@ -527,8 +527,8 @@ CASES = {
         [at(49 * 60, "reboot-waiting")],
         "1h",
     ),
-    # 17 November 2026: a Docker update left the socket proxy on the old daemon's socket, Alloy saw no container, and
-    # every service posted as stopped.
+    # 17 November 2026: a Docker update left the socket proxy on the old daemon's socket, Alloy
+    # saw no container, and every service posted as stopped.
     "Alloy losing every container is one alert, not one per service": (
         [
             ('up{job="integrations/unix"}', "1x15"),
