@@ -54,6 +54,7 @@ SECURITY = "a security event: one is the harm"
 AT_ONCE = {
     "beelink-metrics-stopped": QUERY_WAITS,
     "host-metrics-stopped": QUERY_WAITS,
+    "logs-stopped": QUERY_WAITS,
     "errors-logged": QUERY_WAITS,
     "telemetry-dropped": "what Alloy lost is gone for good",
     "watchdog": "always firing; it pings Healthchecks.io and never posts",
@@ -262,6 +263,28 @@ CASES = {
             # Flat from 10 min, so the 15-minute rate is 0 from 24, then 15 min of `for`.
             at(38, "store-stopped"),
             at(40, "store-stopped", posts("store-stopped", "0", job="logs")),
+        ],
+    ),
+    "a log source gone quiet is named, one still sending or never sending is not": (
+        [
+            # Container logs stop at 10 min, as when the Docker socket proxy lost the socket.
+            (
+                'loki_source_docker_target_entries_total{job="alloy",component_id="loki.source.docker.containers"}',
+                "0+1000x10 10000x30",
+            ),
+            (
+                'loki_source_journal_target_lines_total{job="alloy",component_id="loki.source.journal.host"}',
+                "0+12x40",
+            ),
+            ('loki_source_docker_target_entries_total{job="alloy",component_id="never"}', "0x40"),
+        ],
+        [
+            at(23, "logs-stopped"),
+            at(
+                26,
+                "logs-stopped",
+                posts("logs-stopped", "0", component_id="loki.source.docker.containers"),
+            ),
         ],
     ),
     "a disk full within a day posts after 30 minutes": (

@@ -827,6 +827,34 @@ groups:
           dashboard: *home
           value: '{{ $value }}'
 
+      # Per source, where "A store stopped taking data" sees only the total: a dead Docker socket proxy stops container
+      # logs while the journal's still arrive. Alloy's own counts reach Prometheus past the proxy.
+      - alert: logs-stopped
+        expr: |
+          sum by (component_id) (
+            rate({__name__=~"loki_source_docker_target_entries_total|loki_source_journal_target_lines_total"}[15m])
+          ) == 0
+          and on (component_id) sum by (component_id) (
+            increase({__name__=~"loki_source_docker_target_entries_total|loki_source_journal_target_lines_total"}[1d])
+          ) > 0
+        for: 0m
+        keep_firing_for: 10m
+        labels:
+          level: week
+        annotations:
+          title: 'Logs stopped arriving'
+          measure: 'Lines in the last 15 min, a second'
+          unit: ''
+          harm: >-
+            Errors and crashes in that source's logs go unseen until they arrive again; Alloy catches up container
+            logs once it reaches Docker.
+          action: >-
+            For loki.source.docker, if `docker ps --filter name=docker-socket-proxy` shows it unhealthy, `docker
+            restart observability-docker-socket-proxy-1`, then once healthy `docker restart observability-alloy-1`.
+            For loki.source.journal, read `docker logs --tail 100 observability-alloy-1`.
+          dashboard: *home
+          value: '{{ $value }}'
+
   # Who changed the Beelink, and what should not be there: the facts the Beelink writes each minute
   # (beelink/security/security_facts.py, security.prom). An event stays in the file for an hour and fires for its first 10
   # minutes. A CI-host install by Colin or Renovate is every merge, so only another's posts. The install's author is

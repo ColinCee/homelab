@@ -1487,6 +1487,21 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "logs-stopped"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#fab219"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "unit-failed"
             },
             "properties": [
