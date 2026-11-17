@@ -49,49 +49,50 @@
   <text x="316" y="38" font-size="13" fill="#1f2328"><tspan font-weight="600" font-size="15">Beelink</tspan><tspan dx="8">accepts no connection from the internet</tspan></text>
   <text class="g" x="316" y="59">On the host</text>
 
-  <rect class="box" x="316" y="68" width="150" height="48" rx="6"/>
-  <use href="#i-githubactions" x="338.6" y="84" width="16" height="16" fill="#1f2328"/>
-  <text class="t" x="360.6" y="97" style="text-anchor:start">CI supervisor</text>
+  <rect class="box" x="332" y="68" width="150" height="48" rx="6"/>
+  <use href="#i-githubactions" x="354.6" y="84" width="16" height="16" fill="#1f2328"/>
+  <text class="t" x="376.6" y="97" style="text-anchor:start">CI supervisor</text>
 
-  <rect class="wall" x="516" y="68" width="170" height="48" rx="6"/>
-  <text class="t" x="601" y="88">Firecracker VM</text>
-  <text class="s" x="601" y="105">one job, then thrown away</text>
+  <rect class="wall" x="554" y="68" width="200" height="48" rx="6"/>
+  <text class="t" x="654" y="88">Firecracker VM</text>
+  <text class="s" x="654" y="105">one job, then thrown away</text>
 
-  <rect class="box" x="470" y="126" width="180" height="40" rx="6"/>
-  <text class="t" x="560" y="151">deploy-main</text>
+  <rect class="box" x="554" y="126" width="200" height="40" rx="6"/>
+  <text class="t" x="654" y="151">deploy-main</text>
 
   <!-- Every stack in stacks/, as a deck: deploy-main applies them; each is drawn below by what it does -->
-  <use href="#i-docker" x="740" y="46" width="16" height="16" fill="#2496ED"/>
-  <text x="761" y="59" font-size="13" font-weight="600" fill="#1f2328">Stacks</text>
-  <rect x="740" y="66" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="752" y="79" font-size="12" fill="#57606a">backup</text>
-  <rect x="746" y="82" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="758" y="95" font-size="12" fill="#57606a">deploy</text>
-  <rect x="752" y="98" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="764" y="111" font-size="12" fill="#57606a">flight-tracker</text>
-  <rect x="758" y="114" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="770" y="127" font-size="12" fill="#57606a">home-assistant</text>
-  <rect x="764" y="130" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="776" y="143" font-size="12" fill="#57606a">internal-names</text>
-  <rect x="770" y="146" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="782" y="159" font-size="12" fill="#57606a">observability</text>
-  <rect class="box" x="776" y="162" width="150" height="30" rx="5"/><text class="t" x="788" y="182" style="text-anchor:start">tunnel</text>
+  <use href="#i-docker" x="774" y="46" width="16" height="16" fill="#2496ED"/>
+  <text x="795" y="59" font-size="13" font-weight="600" fill="#1f2328">Stacks</text>
+  <rect x="774" y="66" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="786" y="79" font-size="12" fill="#57606a">backup</text>
+  <rect x="778" y="82" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="790" y="95" font-size="12" fill="#57606a">deploy</text>
+  <rect x="782" y="98" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="794" y="111" font-size="12" fill="#57606a">flight-tracker</text>
+  <rect x="786" y="114" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="798" y="127" font-size="12" fill="#57606a">home-assistant</text>
+  <rect x="790" y="130" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="802" y="143" font-size="12" fill="#57606a">internal-names</text>
+  <rect x="794" y="146" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="806" y="159" font-size="12" fill="#57606a">observability</text>
+  <rect class="box" x="798" y="162" width="128" height="30" rx="5"/><text class="t" x="810" y="182" style="text-anchor:start">tunnel</text>
 
   <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
   <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
-  <use href="#i-docker" x="660" y="257" width="16" height="16" fill="#2496ED"/>
-  <text x="682" y="270" font-size="13" font-weight="600" fill="#953800">Behind the wall</text>
-  <text class="g" x="660" y="288">containers and CI VMs reach the</text>
-  <text class="g" x="660" y="305">internet at most, never the host,</text>
-  <text class="g" x="660" y="322">home network or Tailscale</text>
+  <use href="#i-docker" x="774" y="235" width="16" height="16" fill="#2496ED"/>
+  <text x="795" y="248" font-size="13" font-weight="600" fill="#953800">Behind the wall</text>
+  <text class="g" x="774" y="268">containers and CI VMs</text>
+  <text class="g" x="774" y="285">reach the internet at</text>
+  <text class="g" x="774" y="302">most, never the host,</text>
+  <text class="g" x="774" y="319">home network or Tailscale</text>
 
-  <rect class="box" x="332" y="232" width="110" height="88" rx="6"/>
-  <use href="#i-cloudflare" x="355.6" y="268" width="16" height="16" fill="#F38020"/>
-  <text class="t" x="377.6" y="281" style="text-anchor:start">tunnel</text>
+  <rect class="box" x="332" y="232" width="150" height="88" rx="6"/>
+  <use href="#i-cloudflare" x="375.6" y="268" width="16" height="16" fill="#F38020"/>
+  <text class="t" x="397.6" y="281" style="text-anchor:start">tunnel</text>
 
-  <rect class="box" x="480" y="232" width="150" height="36" rx="6"/>
-  <text class="t" x="555" y="255">doorbell</text>
+  <rect class="box" x="554" y="232" width="200" height="36" rx="6"/>
+  <text class="t" x="654" y="255">doorbell</text>
 
-  <rect class="box" x="480" y="276" width="150" height="44" rx="6"/>
-  <text class="t" x="555" y="295">flight-tracker</text>
-  <text class="s" x="555" y="311">public API</text>
+  <rect class="box" x="554" y="276" width="200" height="44" rx="6"/>
+  <text class="t" x="654" y="295">flight-tracker</text>
+  <text class="s" x="654" y="311">public API</text>
 
-  <rect class="box" x="332" y="334" width="140" height="36" rx="6"/>
-  <text class="t" x="402" y="357">backup</text>
+  <rect class="box" x="332" y="334" width="150" height="36" rx="6"/>
+  <text class="t" x="407" y="357">backup</text>
 
   <rect class="box" x="332" y="384" width="580" height="216" rx="6"/>
   <text x="346" y="404" font-size="14" font-weight="600" fill="#1f2328">observability</text>
@@ -128,14 +129,14 @@
   <rect class="box" x="332" y="640" width="150" height="36" rx="6"/>
   <text class="t" x="407" y="663">internal-names</text>
 
-  <rect class="box" x="560" y="640" width="170" height="36" rx="6"/>
-  <use href="#i-homeassistant" x="585.7" y="650" width="16" height="16" fill="#18BCF2"/>
-  <text class="t" x="607.7" y="663" style="text-anchor:start">home-assistant</text>
+  <rect class="box" x="554" y="640" width="200" height="36" rx="6"/>
+  <use href="#i-homeassistant" x="594.7" y="650" width="16" height="16" fill="#18BCF2"/>
+  <text class="t" x="616.7" y="663" style="text-anchor:start">home-assistant</text>
 
-  <use href="#i-docker" x="746" y="638" width="16" height="16" fill="#2496ED"/>
-  <text x="768" y="651" font-size="13" font-weight="600" fill="#1f2328">Stacks on the host network</text>
-  <text class="g" x="746" y="668">reach the home network</text>
-  <text class="g" x="746" y="685">and Tailscale</text>
+  <use href="#i-docker" x="774" y="638" width="16" height="16" fill="#2496ED"/>
+  <text x="795" y="651" font-size="13" font-weight="600" fill="#1f2328">Host network</text>
+  <text class="g" x="774" y="668">reach the home network</text>
+  <text class="g" x="774" y="685">and Tailscale</text>
 
   <!-- Outside the Beelink, each level with the part it talks to -->
   <rect class="net" x="16" y="68" width="160" height="98" rx="8"/>
@@ -170,25 +171,25 @@
   <text class="l" x="76" y="210" style="text-anchor:start">on push to main</text>
   <path class="deploy" d="M176,276 H330" stroke-dasharray="6 4"/>
   <text class="l" x="238" y="261">tunnel (outbound)</text>
-  <path class="deploy" d="M442,250 H478"/>
-  <path class="deploy" d="M510,232 V168"/>
-  <text class="l" x="494" y="196" style="text-anchor:end">on ring</text>
-  <path class="deploy" d="M470,146 H178"/>
+  <path class="deploy" d="M482,250 H552"/>
+  <path class="deploy" d="M700,232 V168"/>
+  <text class="l" x="716" y="196" style="text-anchor:start">on ring</text>
+  <path class="deploy" d="M554,146 H178"/>
   <text class="l" x="238" y="132">fetches main</text>
-  <path class="deploy" d="M610,166 V206"/>
-  <text class="l" x="626" y="184" style="text-anchor:start">applies changed stacks</text>
+  <path class="deploy" d="M600,166 V206"/>
+  <text class="l" x="584" y="184" style="text-anchor:end">applies changed stacks</text>
   <g class="step"><circle cx="60" cy="206" r="9"/><text x="60" y="210">1</text></g>
   <g class="step"><circle cx="238" cy="276" r="9"/><text x="238" y="280">2</text></g>
-  <g class="step"><circle cx="510" cy="192" r="9"/><text x="510" y="196">3</text></g>
+  <g class="step"><circle cx="700" cy="192" r="9"/><text x="700" y="196">3</text></g>
   <g class="step"><circle cx="238" cy="146" r="9"/><text x="238" y="150">4</text></g>
-  <g class="step"><circle cx="610" cy="180" r="9"/><text x="610" y="184">5</text></g>
+  <g class="step"><circle cx="600" cy="180" r="9"/><text x="600" y="184">5</text></g>
 
   <!-- Everything else -->
-  <path class="arrow" d="M316,92 H178"/>
+  <path class="arrow" d="M332,92 H178"/>
   <text class="l" x="238" y="84">asks for jobs</text>
-  <path class="arrow" d="M466,92 H514"/>
-  <text class="l" x="490" y="84">boots</text>
-  <path class="arrow" d="M442,298 H478"/>
+  <path class="arrow" d="M482,92 H552"/>
+  <text class="l" x="518" y="84">boots</text>
+  <path class="arrow" d="M482,298 H552"/>
   <path class="arrow" d="M332,352 H178"/>
   <text class="l" x="238" y="344">nightly</text>
   <path class="arrow" d="M346,430 H178"/>
@@ -210,6 +211,6 @@
   <text class="l" x="238" y="650">opens admin pages</text>
   <path class="arrow" d="M411,640 V590"/>
   <text class="l" x="421" y="630" style="text-anchor:start">proxies</text>
-  <path class="arrow" d="M482,658 H558"/>
-  <text class="l" x="520" y="650">proxies</text>
+  <path class="arrow" d="M482,658 H552"/>
+  <text class="l" x="518" y="650">proxies</text>
 </svg>
