@@ -1,6 +1,7 @@
 import email.message
 import io
 import json
+import subprocess
 import tarfile
 import urllib.error
 from pathlib import Path
@@ -12,7 +13,7 @@ import github_api
 import pytest
 import vms
 
-from conftest import NoGitHub, linux_only
+from conftest import NoGitHub, linux_only, tool
 
 
 @pytest.fixture(autouse=True, name="outbox_dir")
@@ -314,3 +315,43 @@ def test_a_cache_label_naming_an_unserved_or_public_repo_gets_no_disk(caches: Pa
     private = ["octo/agent", "octo/nodisk"]
     assert cache_disks.cache_for("octo/agent", "fc-cache-octo--widgets", private) is None
     assert cache_disks.cache_for("octo/agent", "fc-cache-octo--nodisk", private) is None
+
+
+def old_style_disk(tmp_path: Path, size: int) -> Path:
+    """A disk as the supervisor built them before 17 Nov: contents x 1.3 + 256 MB, 5% kept
+    for root."""
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "tool").write_bytes(b"x" * 1024**2)
+    image = tmp_path / "cache.ext4"
+    with image.open("wb") as f:
+        f.truncate(size)
+    subprocess.run([tool("mkfs.ext4"), "-q", "-F", "-d", str(root), str(image)], check=True)
+    return image
+
+
+def test_a_cache_disk_keeps_room_for_any_cache_a_job_could_save(tmp_path: Path) -> None:
+    linux_only("ext4 images, made with e2fsprogs")
+    # As big as the homelab disk that was full on 17 Nov.
+    image = old_style_disk(tmp_path, 2 * 1024**3)
+    assert cache_disks.room(image) < cache_disks.CACHE_ROOM_BYTES
+    cache_disks.give_room(image)
+    assert cache_disks.room(image) >= cache_disks.CACHE_ROOM_BYTES
+    out = subprocess.run(
+        [tool("debugfs"), "-R", "cat /tool", str(image)], capture_output=True, check=True
+    ).stdout
+    assert out == b"x" * 1024**2
+    # Sparse: the room costs the host only what is written.
+    assert image.stat().st_blocks * 512 < 256 * 1024**2
+
+
+def test_disks_built_before_they_kept_room_get_it_when_the_supervisor_starts(
+    tmp_path_factory: pytest.TempPathFactory, caches: Path
+) -> None:
+    linux_only("ext4 images, made with e2fsprogs")
+    image = cache_disks.cache_image("octo/agent")
+    old_style_disk(tmp_path_factory.mktemp("old"), 300 * 1024**2).replace(image)
+    cache_disks.give_disks_room()  # also passes octo__widgets.ext4, which is not ext4
+    assert cache_disks.room(image) >= cache_disks.CACHE_ROOM_BYTES
+    assert image.stat().st_blocks * 512 < 256 * 1024**2
+    assert sorted(p.name for p in caches.iterdir()) == ["octo__agent.ext4", "octo__widgets.ext4"]

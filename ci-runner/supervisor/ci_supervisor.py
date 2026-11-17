@@ -507,6 +507,7 @@ def main(argv: list[str] | None = None) -> int:
     # Half-built caches from a supervisor that was killed mid-build.
     for leftover in cache_disks.CACHE_DIR.glob("tmp*"):
         subprocess.run(["rm", "-rf", "--one-file-system", str(leftover)], check=False)
+    cache_disks.give_disks_room()
     state = State(slots=load_testing.slot_count())
     vms.write_memory_metrics()
     # The standby waits where the last job before the restart ran, not on the first repo

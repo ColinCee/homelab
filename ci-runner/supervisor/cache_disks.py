@@ -32,6 +32,11 @@ log = logging.getLogger("ci-supervisor").info
 CACHE_DIR = Path("/var/lib/homelab-ci/caches")
 # / is shared with everything. run_vm.py sizes the outbox to this and its header.
 CACHE_MAX_UNPACKED_BYTES = 6 * 1024**3
+# Free space every cache disk keeps for a job's installs, however full the last job left it:
+# room for any cache the outbox could save, so no tool bump can fail on a full disk that only
+# a green job could rebuild (17 Nov: Alloy 1.22 needed 720 MB, the disk had 538). The image
+# is sparse, so the room costs the host nothing until a VM writes.
+CACHE_ROOM_BYTES = CACHE_MAX_UNPACKED_BYTES
 # Each VM's outbox (<runner name>.tar) and the repo it ran for (<runner name>.json), kept
 # after the VM until judged. Not through GitHub artifacts: they count against the account's
 # storage quota, and once it is full every upload fails.
@@ -147,9 +152,51 @@ def build_cache_image(stream: IO[bytes], image: Path) -> None:
             ],
             check=True,
         )
-        subprocess.run(["e2fsck", "-fp", str(staged)], check=False, capture_output=True)
+        give_room(staged)
         staged.chmod(0o644)
         staged.replace(image)
+
+
+def room(image: Path) -> int:
+    """The bytes a job can write to an ext4 image: its free blocks less those kept for root."""
+    out = subprocess.run(
+        ["dumpe2fs", "-h", str(image)], check=True, capture_output=True, text=True
+    ).stdout
+    fields = dict(line.split(":", 1) for line in out.splitlines() if ":" in line)
+    count = {k: int(fields[k]) for k in ("Free blocks", "Reserved block count", "Block size")}
+    return (count["Free blocks"] - count["Reserved block count"]) * count["Block size"]
+
+
+def give_room(image: Path) -> None:
+    """Grow an ext4 image, not in use, until a job can write CACHE_ROOM_BYTES to it."""
+    subprocess.run(["e2fsck", "-fp", str(image)], check=False, capture_output=True)
+    subprocess.run(["tune2fs", "-m", "0", str(image)], check=True, capture_output=True)
+    short = CACHE_ROOM_BYTES - room(image)
+    if short <= 0:
+        return
+    # A tenth more for the inode tables of the added block groups.
+    size = (image.stat().st_size + short + short // 10) // 4096 * 4096 + 4096
+    os.truncate(image, size)
+    subprocess.run(["resize2fs", str(image)], check=True, capture_output=True)
+
+
+def give_disks_room() -> None:
+    """give_room for each cache disk built before disks kept their room, through a copy, as
+    running VMs read the old file."""
+    for image in CACHE_DIR.glob("*.ext4"):
+        try:
+            if room(image) >= CACHE_ROOM_BYTES:
+                continue
+            with tempfile.TemporaryDirectory(dir=CACHE_DIR) as tmp:
+                staged = Path(tmp) / "cache.ext4"
+                subprocess.run(["cp", "--sparse=always", str(image), str(staged)], check=True)
+                give_room(staged)
+                staged.chmod(0o644)
+                staged.replace(image)
+        except (OSError, subprocess.CalledProcessError, KeyError, ValueError) as e:
+            log(f"cache disk {image.name} kept as it was: {type(e).__name__}: {e}")
+            continue
+        log(f"cache disk {image.name} now has room for installs")
 
 
 def take_outbox(gh: GitHubApi, tar: Path, branches: Mapping[str, str], now: float) -> bool:
