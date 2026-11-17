@@ -407,30 +407,63 @@ PASSING = [urllib.error.URLError("timed out"), ConnectionResetError(), _http(429
 LASTING = [_http(401), _http(404), KeyError("id"), ValueError("bad JSON")]
 
 
-@settings(derandomize=True, database=None, max_examples=300, deadline=None)
-@given(
-    st.lists(
-        st.tuples(
-            st.floats(0, 200, allow_nan=False),
-            st.sampled_from([None, None, *PASSING, *LASTING]),
-        ),
-        max_size=40,
-    )
-)
-def test_a_blip_never_logs_an_error_and_a_lasting_failure_always_does(
-    calls: list[tuple[float, BaseException | None]],
-) -> None:
-    """Over any run of calls (#1519): a row of failures a later try gets past, shorter than
-    AFTER_S, only warns, so a home internet drop posts nothing; one that lasts AFTER_S, a refusal
-    or a bug is an error."""
-    failures, now, row_start = telemetry.Failures(120), 1000.0, None
-    for gap, error in calls:
+AFTER_S = 120
+CHECKED = settings(derandomize=True, database=None, max_examples=200, deadline=None)
+# Seconds between tries, and a run of calls before, each ending in a success.
+GAPS = st.floats(0, AFTER_S / 4, allow_nan=False)
+BEFORE = st.lists(st.tuples(GAPS, st.sampled_from([*PASSING, *LASTING])), max_size=10)
+
+
+def _after(before: list[tuple[float, BaseException]]) -> tuple[telemetry.Failures, float]:
+    """A Failures that has seen BEFORE's failures, each ended by a success, and the time now."""
+    failures, now = telemetry.Failures(AFTER_S), 1000.0
+    for gap, error in before:
         now += gap
-        if error is None:
-            failures.ok()
-            row_start = None
-            continue
-        row_start = now if row_start is None else row_start
-        lasted = now - row_start >= 120
-        want = logging.ERROR if error in LASTING or lasted else logging.WARNING
-        assert failures.level(error, now) == want
+        failures.level(error, now)
+        failures.ok()
+    return failures, now + AFTER_S * 10
+
+
+@CHECKED
+@given(BEFORE, st.lists(st.tuples(GAPS, st.sampled_from(PASSING)), min_size=1, max_size=20))
+def test_a_drop_a_later_try_gets_past_within_after_s_only_warns(
+    before: list[tuple[float, BaseException]], drop: list[tuple[float, BaseException]]
+) -> None:
+    """#1519: a home internet drop shorter than AFTER_S posts nothing, whatever came before."""
+    failures, start = _after(before)
+    now = start - drop[0][0]
+    for gap, error in drop:
+        now += gap
+        if now - start >= AFTER_S:
+            break
+        assert failures.level(error, now) == logging.WARNING
+
+
+@CHECKED
+@given(BEFORE, st.lists(st.sampled_from(PASSING), min_size=1), st.floats(0, AFTER_S * 10))
+def test_a_drop_that_lasts_after_s_is_an_error(
+    before: list[tuple[float, BaseException]], drop: list[BaseException], past: float
+) -> None:
+    failures, start = _after(before)
+    for error in drop:
+        failures.level(error, start)
+    assert failures.level(drop[-1], start + AFTER_S + past) == logging.ERROR
+
+
+@CHECKED
+@given(
+    BEFORE,
+    st.lists(st.tuples(GAPS, st.sampled_from(PASSING)), max_size=5),
+    st.sampled_from(LASTING),
+)
+def test_a_refusal_or_a_bug_is_an_error_at_once(
+    before: list[tuple[float, BaseException]],
+    drop: list[tuple[float, BaseException]],
+    lasting: BaseException,
+) -> None:
+    """No wait mends a wrong key, a wrong address or a bug, however short the row so far."""
+    failures, now = _after(before)
+    for gap, error in drop:
+        now += gap
+        failures.level(error, now)
+    assert failures.level(lasting, now) == logging.ERROR

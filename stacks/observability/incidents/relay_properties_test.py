@@ -22,10 +22,21 @@ TAGS = {
     "available_tags": [{"name": "Firing", "id": "firing"}, {"name": "Cleared", "id": "cleared"}]
 }
 SERIES = [f"fp{n}" for n in range(4)]
-REPORTS = ["Needs you: nothing", "Needs you: restart it", "**Needs you:** None."]
-# Gaps between notifications: Alertmanager repeats a firing rule at least daily, so a rule that
-# keeps returning within the reopen window is one incident.
-GAPS = st.timedeltas(min_value=timedelta(0), max_value=relay.REOPEN_WITHIN - timedelta(minutes=1))
+# The agent's report lines (homelab-oncall, "Report"), by the step each leaves Colin.
+REPORTS = {
+    "Needs you: nothing": "",
+    "Needs you: restart it": "restart it",
+    "**Needs you:** None.": "",
+}
+# Gaps between notifications, mostly inside the reopen window, where a return is the same incident,
+# and some past it, where a return is a new one.
+GAPS = st.one_of(
+    st.timedeltas(min_value=timedelta(0), max_value=relay.REOPEN_WITHIN - timedelta(minutes=1)),
+    st.timedeltas(min_value=relay.REOPEN_WITHIN, max_value=relay.FORGET_AFTER * 2),
+)
+
+# Discord's calls that drop in a row, mostly none.
+DROPS = st.sampled_from([0, 0, 1, 2, 3])
 
 
 class Forum:
@@ -36,12 +47,14 @@ class Forum:
         self.posts: dict[str, dict[str, Any]] = {}
         self.deleted: set[str] = set()
         self.fails = 0
+        self.dropped: list[tuple[str, str, dict[str, Any] | None]] = []
 
     def __call__(self, method: str, path: str, body: dict[str, Any] | None) -> Any:  # noqa: ANN401
         if path == "/channels/forum":
             return TAGS
         if self.fails:
             self.fails -= 1
+            self.dropped.append((method, path, body))
             raise OSError("discord dropped the call")
         if path == "/channels/forum/threads":
             assert body
@@ -65,10 +78,6 @@ class Forum:
             post["tags"] = body.get("applied_tags", post["tags"])
         return {}
 
-    def report(self, thread: str) -> str | None:
-        """The step the agent's newest report in sight names, as homelab-oncall writes it."""
-        return relay._report(self.posts[thread]["said"][::-1][: relay.REPORT_WITHIN], thread)
-
 
 class Relay(RuleBasedStateMachine):
     def __init__(self) -> None:
@@ -81,6 +90,12 @@ class Relay(RuleBasedStateMachine):
         self.fired: list[str] = []
         self.fire_fails = False
         self.relay = self._start()
+        # The model: the posts the relay should have opened, the one in use, when it cleared, and
+        # each post's agent reports by the step they leave Colin.
+        self.opened = 0
+        self.thread: str | None = None
+        self.cleared_at: datetime | None = None
+        self.reports: dict[str, list[str]] = {}
         # The series the rule's last delivered notification said were firing.
         self.firing: list[str] = []
         self.deletes = 0
@@ -105,11 +120,18 @@ class Relay(RuleBasedStateMachine):
         return self.relay.state["posts"].get("disk-filling")
 
     @rule(
-        firing=st.lists(st.sampled_from(SERIES), unique=True),
+        firing=st.lists(st.sampled_from(SERIES), min_size=1, unique=True),
         gap=GAPS,
-        drops=st.integers(0, 3),
+        drops=DROPS,
         fire_fails=st.booleans(),
     )
+    def fires(self, firing: list[str], gap: timedelta, drops: int, fire_fails: bool) -> None:
+        self.notify(firing, gap, drops, fire_fails)
+
+    @rule(gap=GAPS, drops=DROPS)
+    def clears(self, gap: timedelta, drops: int) -> None:
+        self.notify([], gap, drops, False)
+
     def notify(self, firing: list[str], gap: timedelta, drops: int, fire_fails: bool) -> None:
         """Alertmanager sends the rule's series, all of them each time, again until a 200."""
         self.now += gap
@@ -117,7 +139,10 @@ class Relay(RuleBasedStateMachine):
         alerts = [_alert(s, "firing") for s in firing] + [_alert(s, "resolved") for s in resolved]
         before = self.post()
         was_cleared = before is None or before["cleared"] is not None
-        self.forum.fails, self.fire_fails = drops, fire_fails
+        self.forum.fails, self.fire_fails, self.forum.dropped = drops, fire_fails, []
+        if firing and self._new_incident():
+            self.opened += 1
+            self.thread = f"thread-{self.opened}"
         for _ in range(5):
             if self.relay.handle({"alerts": alerts}) == 200:
                 break
@@ -126,8 +151,18 @@ class Relay(RuleBasedStateMachine):
         self.fire_fails = False
         if not firing and not was_cleared:
             self.gone_while_firing = False
+            self.cleared_at = self.now
+        if firing:
+            self.cleared_at = None
         self.firing = firing
-        self._check(cleared_now=not firing and not was_cleared, blips=drops > 0)
+        self._check(cleared_now=not firing and not was_cleared)
+
+    def _new_incident(self) -> bool:
+        """A firing rule's own post holds every return until a day after it clears, unless Colin
+        deleted it."""
+        if self.thread is None or self.thread in self.forum.deleted:
+            return self.cleared_at is not None or self.thread is None
+        return self.cleared_at is not None and self.now - self.cleared_at >= relay.REOPEN_WITHIN
 
     @precondition(lambda self: self.post() is not None)
     @rule()
@@ -141,23 +176,25 @@ class Relay(RuleBasedStateMachine):
             self.gone_while_firing = post["cleared"] is None
 
     @precondition(lambda self: self.post() is not None)
-    @rule(text=st.sampled_from(REPORTS))
+    @rule(text=st.sampled_from(sorted(REPORTS)))
     def agent_reports(self, text: str) -> None:
         post = self.post()
         assert post
         if post["thread"] not in self.forum.deleted:
             said = self.forum.posts[post["thread"]]["said"]
             said.append({"id": f"m{len(said)}", "content": f"Fixed: a blip.\n{text}"})
+            self.reports.setdefault(post["thread"], []).append(REPORTS[text])
 
     @rule()
     def restart(self) -> None:
         self.relay = self._start()
 
-    def _check(self, cleared_now: bool, blips: bool) -> None:
+    def _check(self, cleared_now: bool) -> None:
         post = self.post()
         if self.firing:
             # The alert fires: its one post is open, and in Discord unless Colin deleted it since.
             assert post and post["cleared"] is None
+            assert post["thread"] == self.thread, "a return took the wrong post"
             if self.gone_while_firing:
                 return
             assert post["thread"] not in self.forum.deleted, "a return was lost to a deleted post"
@@ -169,19 +206,25 @@ class Relay(RuleBasedStateMachine):
                 return
             shown = self.forum.posts[post["thread"]]
             assert shown["tags"] == ["cleared"]
-            if blips:
-                return  # an unreadable post stays in the list, erring toward Colin seeing it
-            step = self.forum.report(post["thread"])
-            # A cleared post leaves the list unless the agent left Colin a step, or its agent is
-            # still at work and archives the post itself once it reports.
-            stays = bool(step) or (step is None and post["thread"] in self.fired)
-            assert shown["archived"] is not stays
+            thread = post["thread"]
+            steps = self.reports.get(thread)
+            # A cleared post leaves the list unless the agent's newest report left Colin a step, or
+            # its agent is still at work and archives the post itself once it reports.
+            stays = bool(steps[-1]) if steps else thread in self.fired
+            # A post Discord would not read or archive just now stays, erring toward Colin.
+            unread = any(
+                p.startswith(f"/channels/{thread}/messages?") for _, p, _ in self.forum.dropped
+            )
+            dropped = ("PATCH", f"/channels/{thread}", {"archived": True}) in self.forum.dropped
+            assert shown["archived"] is not (stays or unread or dropped)
 
     @invariant()
     def one_post_and_one_run_per_incident(self) -> None:
-        # Within the reopen window, only a deleted post makes a new one; each post starts at most
-        # one run, however many series fire and however often Alertmanager sends them again.
-        assert len(self.forum.posts) <= 1 + self.deletes
+        # A new post only for a return past the reopen window or after Colin deleted the post;
+        # each starts at most one run, however many series fire and however often Alertmanager
+        # sends them again.
+        assert len(self.forum.posts) == self.opened
+        assert all(len(p["said"]) <= relay.REPORT_WITHIN for p in self.forum.posts.values())
         assert len(self.fired) == len(set(self.fired)) <= len(self.forum.posts)
 
 
@@ -201,7 +244,8 @@ Relay.TestCase.settings = settings(
     derandomize=True,
     database=None,
     max_examples=100,
-    stateful_step_count=25,
+    # Under REPORT_WITHIN messages a post, so the agent's newest report is always in sight.
+    stateful_step_count=20,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )
