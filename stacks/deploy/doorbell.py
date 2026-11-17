@@ -9,25 +9,21 @@ from __future__ import annotations
 import logging
 import os
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import telemetry
 
 RING = Path(os.environ.get("RING_FILE", "/ring/rung"))
 PORT = 8080
-# GitHub's push payloads; read only so closing the socket does not reset the reply away.
-BODY_MAX = 1 << 20
 log = logging.getLogger("doorbell")
 
 
-class Doorbell(BaseHTTPRequestHandler):
+class Doorbell(telemetry.RequestHandler):
     # Strangers reach this through the tunnel: a slow client is cut off, not waited on.
     timeout = 5
 
     def do_POST(self) -> None:
-        length = min(int(self.headers.get("Content-Length") or 0), BODY_MAX)
-        self.rfile.read(length)
         if self.path != "/ring":
             self._answer(404)
             return

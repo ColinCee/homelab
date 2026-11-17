@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+import telemetry
 
 from conftest import STACKS, linux_only, tool
 
@@ -43,7 +44,7 @@ def free_port() -> int:
 def store(name: str) -> http.server.ThreadingHTTPServer:
     """Answers every request with its own name and the path it got."""
 
-    class Store(http.server.BaseHTTPRequestHandler):
+    class Store(telemetry.RequestHandler):
         def answer(self) -> None:
             body = json.dumps({"store": name, "path": self.path}).encode()
             self.send_response(200)

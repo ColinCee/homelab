@@ -12,6 +12,7 @@ from typing import Any
 
 import ci_times
 import pytest
+import telemetry
 
 COLIN = {"id": ci_times.OWNER_ID, "login": "ColinCee"}
 OTHER = {"id": 1, "login": "someone"}
@@ -306,7 +307,7 @@ def test_a_bad_or_unfinished_log_still_gives_its_phases() -> None:
     assert {"key": "ended", "value": {"stringValue": "no"}} in spans["task: test"]["attributes"]
 
 
-def serve(handler: type[http.server.BaseHTTPRequestHandler]) -> str:
+def serve(handler: type[telemetry.RequestHandler]) -> str:
     server = http.server.HTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://127.0.0.1:{server.server_port}"
@@ -317,7 +318,7 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
 ) -> None:
     seen: list[str | None] = []
 
-    class Store(http.server.BaseHTTPRequestHandler):
+    class Store(telemetry.RequestHandler):
         def do_GET(self) -> None:
             seen.append(self.headers.get("Authorization"))
             if self.path == "/never-written":
@@ -333,7 +334,7 @@ def test_a_log_is_read_through_its_signed_link_without_the_token(
     store = serve(Store)
     answers = iter([(302, "/signed"), (404, ""), (302, "/never-written"), (500, ""), (500, "")])
 
-    class GitHub(http.server.BaseHTTPRequestHandler):
+    class GitHub(telemetry.RequestHandler):
         def do_GET(self) -> None:
             code, path = next(answers)
             self.send_response(code)
