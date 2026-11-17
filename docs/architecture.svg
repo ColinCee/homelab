@@ -100,17 +100,17 @@
   <rect class="box" x="332" y="380" width="580" height="220" rx="6"/>
   <text x="348" y="403" font-size="14" font-weight="600" fill="#1f2328">observability</text>
 
-  <rect class="box" x="348" y="414" width="128" height="32" rx="5"/>
-  <text class="n" x="412" y="435">public-stats</text>
+  <rect class="box" x="348" y="414" width="140" height="32" rx="5"/>
+  <text class="n" x="418" y="435">public-stats</text>
 
-  <rect class="box" x="348" y="456" width="128" height="88" rx="5"/>
-  <use href="#i-prometheus" x="357.3" y="492" width="16" height="16" fill="#E6522C"/>
-  <text class="t" x="379.3" y="505" style="text-anchor:start">Alertmanager</text>
-  <text class="s" x="412" y="522">+ incidents relay</text>
+  <rect class="box" x="348" y="456" width="140" height="88" rx="5"/>
+  <use href="#i-prometheus" x="363.3" y="492" width="16" height="16" fill="#E6522C"/>
+  <text class="t" x="385.3" y="505" style="text-anchor:start">Alertmanager</text>
+  <text class="s" x="418" y="522">+ incidents relay</text>
 
-  <rect class="box" x="348" y="552" width="128" height="36" rx="5"/>
-  <use href="#i-grafana" x="376.1" y="562" width="16" height="16" fill="#F46800"/>
-  <text class="t" x="398.1" y="575" style="text-anchor:start">Grafana</text>
+  <rect class="box" x="348" y="552" width="140" height="36" rx="5"/>
+  <use href="#i-grafana" x="382.1" y="562" width="16" height="16" fill="#F46800"/>
+  <text class="t" x="404.1" y="575" style="text-anchor:start">Grafana</text>
 
   <rect x="554" y="408" width="200" height="136" rx="5" fill="#f6f8fa" stroke="#57606a" stroke-width="1.2"/>
   <rect class="box" x="560" y="414" width="188" height="32" rx="4"/>
@@ -158,8 +158,8 @@
   <text class="t" x="96" y="435">colincheung.dev</text>
 
   <rect class="net" x="16" y="458" width="160" height="36" rx="8"/>
-  <use href="#i-discord" x="27.2" y="468" width="16" height="16" fill="#5865F2"/>
-  <text class="t" x="49.2" y="481" style="text-anchor:start">Discord<tspan class="s" dx="5" style="text-anchor:start">#incidents</tspan></text>
+  <use href="#i-discord" x="29.7" y="468" width="16" height="16" fill="#5865F2"/>
+  <text class="t" x="51.7" y="481" style="text-anchor:start">Discord<tspan class="s" dx="5" style="text-anchor:start">#incidents</tspan></text>
 
   <rect class="net" x="16" y="524" width="160" height="36" rx="8"/>
   <text class="t" x="96" y="547">Healthchecks.io</text>
@@ -200,16 +200,16 @@
   <text class="s" x="238" y="447">numbers, stacks</text>
   <path class="arrow" d="M824,476 H756"/>
   <text class="l" x="790" y="468">writes</text>
-  <path class="arrow" d="M554,476 H478"/>
-  <text class="l" x="516" y="468">on alert</text>
+  <path class="arrow" d="M554,476 H490"/>
+  <text class="l" x="522" y="468">on alert</text>
   <path class="arrow" d="M348,476 H178"/>
   <text class="l" x="238" y="468">alerts</text>
   <path class="arrow" d="M348,536 H178"/>
   <text class="l" x="238" y="528">every minute</text>
   <path class="arrow" d="M48,524 V496"/>
   <text class="l" x="58" y="514" style="text-anchor:start">on missed ping</text>
-  <path class="arrow" d="M476,570 H552"/>
-  <text class="l" x="514" y="562">reads</text>
+  <path class="arrow" d="M488,570 H552"/>
+  <text class="l" x="520" y="562">reads</text>
   <path class="arrow" d="M176,658 H330"/>
   <text class="l" x="238" y="650">opens admin pages</text>
   <path class="arrow" d="M411,640 V590"/>
