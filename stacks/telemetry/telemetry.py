@@ -2,8 +2,8 @@
 reads its secrets and calls HTTP. Call `start()` once, when the program starts, then log through
 `logging.getLogger(name)` with values as `extra` fields. Write a metrics file for Alloy, or any
 file read while it changes, with `replace_file`; read a secret with `secret`; call a URL with
-`http` or `http_json`, answer one with a `RequestHandler`,
-and log a failed call at the level `Failures` gives; trace a job's run with `run` and its steps with `step`, or send spans timed after
+`http` or `http_json`, answer one with a `RequestHandler`, and log a failed call at the level
+`Failures` gives; trace a job's run with `run` and its steps with `step`, or send spans timed after
 the fact with `otlp_span` and `send_traces`. telemetry_test.py fails a second way to do these.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
