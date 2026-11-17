@@ -46,6 +46,8 @@ PLAIN = re.compile(r"[\w.:/@-]{0,64}")
 # An alert whose annotation `logs` is a LogsQL query (rules.yml: errors-logged) shows its first
 # line, cut to this, and a link to its lines in Grafana's Logs data source.
 LINE_MAX = 500
+# Series listed in a post; more are counted, so its advice and links fit.
+LISTED_MAX = 15
 # errors-logged reads the last 24 clock hours, so its first line came at most 25 hours before it.
 LINES_SINCE = timedelta(hours=25)
 EXPLORE = "http://grafana.internal/explore?schemaVersion=1&orgId=1&panes="
@@ -119,10 +121,9 @@ class Relay:
 
     def _handle_rule(self, rule: str, series: list[dict[str, Any]]) -> bool:
         firing = [a for a in series if a["status"] == "firing"]
-        ended = {a["fingerprint"] for a in series if a["status"] == "resolved"}
         post = self.state["posts"].get(rule)
         if post and not post["cleared"]:
-            return self._update(post, firing, ended)
+            return self._update(post, firing)
         return self._open(rule, firing) if firing else True
 
     def _watchdog(self, alert: dict[str, Any]) -> None:
@@ -137,12 +138,14 @@ class Relay:
                 self.healthchecks.level(e), "cannot ping Healthchecks.io", extra={"error": str(e)}
             )
 
-    def _update(self, post: dict[str, Any], firing: list[dict[str, Any]], ended: set[str]) -> bool:
-        """An open post: says the series that join it, and clears once none fires."""
+    def _update(self, post: dict[str, Any], firing: list[dict[str, Any]]) -> bool:
+        """An open post: says the series that join it, and clears once none fires. Each
+        notification carries every firing series but the inhibited, which never send their end,
+        so the series are those it carries."""
         joined = [a for a in firing if a["fingerprint"] not in post["series"]]
         if joined:
-            self._say(post["thread"], "Also firing: " + "; ".join(map(_where, joined)))
-        post["series"] = sorted((set(post["series"]) - ended) | {a["fingerprint"] for a in joined})
+            self._say(post["thread"], _listed("Also firing:", joined)[:2000])
+        post["series"] = sorted(a["fingerprint"] for a in firing)
         post["seen"] = _now().isoformat()
         if not post["series"]:
             text = (
@@ -369,6 +372,15 @@ def _where(alert: dict[str, Any]) -> str:
     return " · ".join([*_series(alert), f"**{_shown(alert)}**"])
 
 
+def _listed(head: str, series: list[dict[str, Any]]) -> str:
+    """HEAD and a line per series, the first LISTED_MAX, so the post's advice stays under
+    Discord's 2000 characters."""
+    lines = [f"- {_where(s)}" for s in series[:LISTED_MAX]]
+    if len(series) > LISTED_MAX:
+        lines.append(f"- and {len(series) - LISTED_MAX} more")
+    return "\n".join([head, *lines])
+
+
 def _title(firing: list[dict[str, Any]]) -> str:
     alert = firing[0]
     name = alert["annotations"].get("title") or _labels(alert).get("alertname", "alert")
@@ -381,10 +393,8 @@ def _post(firing: list[dict[str, Any]], line: str | None = None) -> str:
     alert = firing[0]
     a = alert["annotations"]
     measure = a.get("measure", "Value")
-    if len(firing) > 1:
-        head = f"{measure}:\n" + "\n".join(f"- {_where(s)}" for s in firing)
-    else:
-        head = f"{measure}: **{_shown(alert)}**"
+    one = f"{measure}: **{_shown(alert)}**"
+    head = _listed(f"{measure}:", firing) if len(firing) > 1 else one
     lines = [
         head,
         f"**Why it matters:** {a.get('harm', '')}",

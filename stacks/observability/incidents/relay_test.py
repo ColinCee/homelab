@@ -306,7 +306,8 @@ def test_many_series_of_one_rule_are_one_post_and_one_run(parts: Parts) -> None:
     assert discord.threads == 1 and len(fire.texts) == 1
     post = opened(discord)
     assert post["name"] == "Disk filling · 22 at once"
-    assert "svc0" in post["message"]["content"] and "svc21" in post["message"]["content"]
+    content = post["message"]["content"]
+    assert "svc0" in content and "- and 7 more" in content and "**Why it matters:**" in content
     assert '"svc21"' in fire.texts[0]
 
 
@@ -319,11 +320,20 @@ def test_a_series_joining_later_is_said_in_the_post_and_it_clears_with_the_last(
     r.handle(together(stopped(n=0), stopped(n=1)))
     assert discord.threads == 1 and len(fire.texts) == 1
     assert [t for t in discord.said("thread-1") if t.startswith("Also")] == [
-        "Also firing: svc1 · **5 h**"
+        "Also firing:\n- svc1 · **5 h**"
     ]
     r.handle(together(stopped("resolved", n=0), stopped(n=1)))
     assert not discord.said("thread-1")[-1].startswith("Cleared")
     r.handle(together(stopped("resolved", n=0), stopped("resolved", n=1)))
+    assert discord.said("thread-1")[-1].startswith("Cleared")
+
+
+def test_a_series_held_back_by_an_inhibit_does_not_keep_the_post_firing(parts: Parts) -> None:
+    # An inhibited series is left out of the notification and never sends its end.
+    r, discord, _ = parts
+    r.handle(together(stopped(n=0), stopped(n=1)))
+    r.handle(together(stopped(n=0)))
+    r.handle(together(stopped("resolved", n=0)))
     assert discord.said("thread-1")[-1].startswith("Cleared")
 
 
