@@ -63,25 +63,25 @@
   <!-- What deploy-main applies, one Compose project per folder in stacks/. A list, not a place: each stack's containers are drawn where they run, most behind the wall, some on the host network -->
   <use href="#i-docker" x="774" y="46" width="16" height="16" fill="#2496ED"/>
   <text x="795" y="59" font-size="13" font-weight="600" fill="#1f2328">Stacks</text>
-  <rect class="box" x="774" y="66" width="154" height="128" rx="6"/>
-  <text x="786" y="84" font-size="12.5" font-weight="600" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">stacks/</text>
-  <path d="M792,89 V186 M792,96 H802 M792,111 H802 M792,126 H802 M792,141 H802 M792,156 H802 M792,171 H802 M792,186 H802" fill="none" stroke="#8c959f" stroke-width="1"/>
-  <text x="806" y="100" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">backup</text>
-  <text x="806" y="115" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">deploy</text>
-  <text x="806" y="130" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">flight-tracker</text>
-  <text x="806" y="145" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">home-assistant</text>
-  <text x="806" y="160" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">internal-names</text>
-  <text x="806" y="175" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">observability</text>
-  <text x="806" y="190" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">tunnel</text>
+  <rect class="box" x="774" y="66" width="154" height="133" rx="6"/>
+  <text x="790" y="87" font-size="12.5" font-weight="600" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">stacks/</text>
+  <path d="M796,91 V182 M796,98 H806 M796,112 H806 M796,126 H806 M796,140 H806 M796,154 H806 M796,168 H806 M796,182 H806" fill="none" stroke="#8c959f" stroke-width="1"/>
+  <text x="810" y="102" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">backup</text>
+  <text x="810" y="116" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">deploy</text>
+  <text x="810" y="130" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">flight-tracker</text>
+  <text x="810" y="144" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">home-assistant</text>
+  <text x="810" y="158" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">internal-names</text>
+  <text x="810" y="172" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">observability</text>
+  <text x="810" y="186" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">tunnel</text>
 
   <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
   <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
   <use href="#i-docker" x="774" y="235" width="16" height="16" fill="#2496ED"/>
   <text x="795" y="248" font-size="13" font-weight="600" fill="#953800">Behind the wall</text>
   <text class="g" x="774" y="268">containers and CI VMs</text>
-  <text class="g" x="774" y="285">reach the internet at</text>
-  <text class="g" x="774" y="302">most, never the host,</text>
-  <text class="g" x="774" y="319">home network or Tailscale</text>
+  <text class="g" x="774" y="285">reach only the internet,</text>
+  <text class="g" x="774" y="302">never the host, home</text>
+  <text class="g" x="774" y="319">network or Tailscale</text>
 
   <rect class="box" x="332" y="232" width="150" height="88" rx="6"/>
   <use href="#i-cloudflare" x="375.6" y="268" width="16" height="16" fill="#F38020"/>
@@ -97,20 +97,20 @@
   <rect class="box" x="332" y="334" width="150" height="36" rx="6"/>
   <text class="t" x="407" y="357">backup</text>
 
-  <rect class="box" x="332" y="384" width="580" height="216" rx="6"/>
-  <text x="346" y="404" font-size="14" font-weight="600" fill="#1f2328">observability</text>
+  <rect class="box" x="332" y="380" width="580" height="220" rx="6"/>
+  <text x="348" y="403" font-size="14" font-weight="600" fill="#1f2328">observability</text>
 
-  <rect class="box" x="346" y="414" width="130" height="32" rx="5"/>
-  <text class="n" x="411" y="435">public-stats</text>
+  <rect class="box" x="348" y="414" width="128" height="32" rx="5"/>
+  <text class="n" x="412" y="435">public-stats</text>
 
-  <rect class="box" x="346" y="456" width="130" height="88" rx="5"/>
-  <use href="#i-prometheus" x="356.3" y="492" width="16" height="16" fill="#E6522C"/>
-  <text class="t" x="378.3" y="505" style="text-anchor:start">Alertmanager</text>
-  <text class="s" x="411" y="522">+ incidents relay</text>
+  <rect class="box" x="348" y="456" width="128" height="88" rx="5"/>
+  <use href="#i-prometheus" x="357.3" y="492" width="16" height="16" fill="#E6522C"/>
+  <text class="t" x="379.3" y="505" style="text-anchor:start">Alertmanager</text>
+  <text class="s" x="412" y="522">+ incidents relay</text>
 
-  <rect class="box" x="346" y="552" width="130" height="36" rx="5"/>
-  <use href="#i-grafana" x="375.1" y="562" width="16" height="16" fill="#F46800"/>
-  <text class="t" x="397.1" y="575" style="text-anchor:start">Grafana</text>
+  <rect class="box" x="348" y="552" width="128" height="36" rx="5"/>
+  <use href="#i-grafana" x="376.1" y="562" width="16" height="16" fill="#F46800"/>
+  <text class="t" x="398.1" y="575" style="text-anchor:start">Grafana</text>
 
   <rect x="554" y="408" width="200" height="136" rx="5" fill="#f6f8fa" stroke="#57606a" stroke-width="1.2"/>
   <rect class="box" x="560" y="414" width="188" height="32" rx="4"/>
@@ -125,8 +125,8 @@
   <rect class="box" x="554" y="544" width="200" height="44" rx="5"/>
   <text class="n" x="654" y="571">read-only gateway</text>
 
-  <rect class="box" x="826" y="456" width="72" height="40" rx="5"/>
-  <text class="t" x="862" y="481">Alloy</text>
+  <rect class="box" x="824" y="456" width="72" height="40" rx="5"/>
+  <text class="t" x="860" y="481">Alloy</text>
 
   <!-- Stacks on the host network, outside the wall -->
   <rect class="box" x="332" y="640" width="150" height="36" rx="6"/>
@@ -195,16 +195,16 @@
   <path class="arrow" d="M482,298 H552"/>
   <path class="arrow" d="M332,352 H178"/>
   <text class="l" x="238" y="344">nightly</text>
-  <path class="arrow" d="M346,430 H178"/>
+  <path class="arrow" d="M348,430 H178"/>
   <text class="l" x="238" y="422">every 5 min</text>
   <text class="s" x="238" y="447">numbers, stacks</text>
-  <path class="arrow" d="M826,476 H756"/>
-  <text class="l" x="791" y="468">writes</text>
+  <path class="arrow" d="M824,476 H756"/>
+  <text class="l" x="790" y="468">writes</text>
   <path class="arrow" d="M554,476 H478"/>
   <text class="l" x="516" y="468">on alert</text>
-  <path class="arrow" d="M346,476 H178"/>
+  <path class="arrow" d="M348,476 H178"/>
   <text class="l" x="238" y="468">alerts</text>
-  <path class="arrow" d="M346,536 H178"/>
+  <path class="arrow" d="M348,536 H178"/>
   <text class="l" x="238" y="528">every minute</text>
   <path class="arrow" d="M48,524 V496"/>
   <text class="l" x="58" y="514" style="text-anchor:start">on missed ping</text>
