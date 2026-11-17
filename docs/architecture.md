@@ -104,8 +104,8 @@ agents as `agents`. Dashboards: the building-dashboards skill.
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
 says what to do; anything else is a dashboard number. It waits out a blip (`for`, or its query's window) unless one
-occurrence is the harm (`AT_ONCE`, `alert_rules_test.py`). A post breaking it is a bug: fix the cause, then delete it
-and its "Cleared". [Rules](../stacks/observability/prometheus/) post through
+occurrence is the harm (`AT_ONCE`, `alert_rules_test.py`). A broken one is a bug: fix the cause. A cleared post is
+archived unless the agent's "Needs you" names a step. [Rules](../stacks/observability/prometheus/) post through
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) (no port: `docker exec observability-alertmanager-1
 amtool alert query --alertmanager.url=http://localhost:9093`) and the relay to Discord's #incidents.
 

@@ -52,6 +52,6 @@ Fixed: what changed and its pull request, merged or left for Colin; or what is u
 Needs you: Colin's one step, or nothing.
 ```
 
-Evidence stays in the pull request or this session. A post stays while its alert fires, its
-cause is unproven, or a step waits for Colin; then delete it (`DELETE /channels/<id>`), and send
-no push notification if nothing ever needed him.
+Evidence stays in the pull request or this session. Once the alert clears, the relay archives
+the post unless "Needs you" names a step; already cleared and nothing needed: archive it (PATCH
+`{"archived": true}`), with no push notification.
