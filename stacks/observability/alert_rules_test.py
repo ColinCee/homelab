@@ -527,6 +527,20 @@ CASES = {
         [at(49 * 60, "reboot-waiting")],
         "1h",
     ),
+    # 17 November 2026: a Docker update left the socket proxy on the old daemon's socket, Alloy saw no container, and
+    # every service posted as stopped.
+    "Alloy losing every container is one alert, not one per service": (
+        [
+            ('up{job="integrations/unix"}', "1x15"),
+            ('up{job="docker"}', "1x15"),
+            ('container_last_seen{job="docker",name="app-web-1"}', "1x5"),
+            ('container_last_seen{job="docker",id="/"}', "1x15"),
+        ],
+        [
+            at(9, "beelink-metrics-stopped"),
+            at(10, "beelink-metrics-stopped", posts("beelink-metrics-stopped", "1")),
+        ],
+    ),
     "metrics stopping is one alert with no labels": (
         [('up{job="integrations/unix"}', "1x5"), ('up{job="docker"}', "1x5")],
         [
