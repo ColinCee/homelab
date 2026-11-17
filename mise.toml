@@ -6,7 +6,7 @@ actionlint = "1.7.12"
 zizmor = "1.32.0"
 # promtool, alloy and caddy for the tests, at the versions compose.yaml runs (stacks/observability/observability_compose_test.py).
 "aqua:prometheus/prometheus" = "3.16.0"
-"aqua:grafana/alloy" = "1.21.3"
+"aqua:grafana/alloy" = "1.22.0"
 "aqua:caddyserver/caddy" = "2.11.9"
 
 [tasks.lint]
