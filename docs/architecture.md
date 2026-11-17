@@ -44,7 +44,7 @@ sections; hand steps after a failure are in [recovery](recovery.md).
 
 ## CI runner
 
-CI for Colin's own jobs, each in its own Firecracker VM, thrown away after one job. Why Firecracker,
+CI for Colin's own jobs, each in a Firecracker VM, thrown away after one job. Why Firecracker,
 and how fast: [ADR 0002](adr/0002-ci-runner.md).
 
 | `runs-on` | VM |
@@ -54,7 +54,7 @@ and how fast: [ADR 0002](adr/0002-ci-runner.md).
 
 - The image carries the usual tools ([`rootfs/`](../ci-runner/rootfs/), versions in
   [`versions.env`](../ci-runner/versions.env)), so a job needs no setup actions. Each VM gets its repo's cache disk
-  at `/cache`, from the last green push to the default branch; a job saves it with
+  at `/cache`, from the default branch's last green push, 6 GiB free; a job saves it with
   [`fc-cache`](../.github/actions/fc-cache/action.yml) as its last step. Do not also restore GitHub's caches.
 - Served, with no other writer: private repos the token sees, and `PUBLIC_REPOS`
   ([`github_api.py`](../ci-runner/supervisor/github_api.py)) while GitHub holds outside contributors' runs for approval. A

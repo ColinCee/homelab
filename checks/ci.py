@@ -151,7 +151,10 @@ def vm_tools() -> int:
     }
     with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as f:
         f.writelines(f"{k}={v}\n" for k, v in env.items())
-    return subprocess.run(["mise", "install"], env=os.environ | env).returncode
+    # Versions mise.toml no longer names leave first, so a bump reuses their space and the
+    # cache saved from this disk holds only today's tools, not every version since it began.
+    prune = subprocess.run(["mise", "prune", "--tools"], env=os.environ | env).returncode
+    return prune or subprocess.run(["mise", "install"], env=os.environ | env).returncode
 
 
 def annotation(text: str) -> str:
