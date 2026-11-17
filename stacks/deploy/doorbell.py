@@ -1,6 +1,6 @@
 """Answers GitHub's push webhook by ringing the deployer (docs/architecture.md, "Deploys").
 
-Any POST /ring writes the ring file, which deploy-main.path watches. It reads no header or body:
+Any POST /ring writes the ring file, which deploy-main.path watches. It uses no header or body:
 a ring only makes the deployer fetch main from GitHub, so a forged one deploys nothing new.
 """
 
