@@ -49,28 +49,27 @@
   <text x="316" y="38" font-size="13" fill="#1f2328"><tspan font-weight="600" font-size="15">Beelink</tspan><tspan dx="8">accepts no connection from the internet</tspan></text>
   <text class="g" x="316" y="59">On the host</text>
 
-  <rect class="box" x="316" y="68" width="170" height="48" rx="6"/>
-  <use href="#i-githubactions" x="348.6" y="84" width="16" height="16" fill="#1f2328"/>
-  <text class="t" x="370.6" y="97" style="text-anchor:start">CI supervisor</text>
+  <rect class="box" x="316" y="68" width="150" height="48" rx="6"/>
+  <use href="#i-githubactions" x="338.6" y="84" width="16" height="16" fill="#1f2328"/>
+  <text class="t" x="360.6" y="97" style="text-anchor:start">CI supervisor</text>
 
-  <rect class="wall" x="600" y="68" width="190" height="48" rx="6"/>
-  <text class="t" x="695" y="88">Firecracker VM</text>
-  <text class="s" x="695" y="105">one job, then thrown away</text>
+  <rect class="wall" x="516" y="68" width="170" height="48" rx="6"/>
+  <text class="t" x="601" y="88">Firecracker VM</text>
+  <text class="s" x="601" y="105">one job, then thrown away</text>
 
   <rect class="box" x="470" y="126" width="180" height="40" rx="6"/>
   <text class="t" x="560" y="151">deploy-main</text>
 
   <!-- Every stack in stacks/, as a deck: deploy-main applies them; each is drawn below by what it does -->
-  <text class="g" x="806" y="59">Stacks</text>
-  <g font-size="12" fill="#1f2328">
-    <rect class="box" x="806" y="66" width="116" height="40" rx="5"/><text x="815" y="79">backup</text>
-    <rect class="box" x="809" y="83" width="116" height="40" rx="5"/><text x="818" y="96">deploy</text>
-    <rect class="box" x="812" y="100" width="116" height="40" rx="5"/><text x="821" y="113">flight-tracker</text>
-    <rect class="box" x="815" y="117" width="116" height="40" rx="5"/><text x="824" y="130">home-assistant</text>
-    <rect class="box" x="818" y="134" width="116" height="40" rx="5"/><text x="827" y="147">internal-names</text>
-    <rect class="box" x="821" y="151" width="116" height="40" rx="5"/><text x="830" y="164">observability</text>
-    <rect class="box" x="824" y="168" width="116" height="30" rx="5"/><text x="833" y="188">tunnel</text>
-  </g>
+  <use href="#i-docker" x="740" y="46" width="16" height="16" fill="#2496ED"/>
+  <text x="761" y="59" font-size="13" font-weight="600" fill="#1f2328">Stacks</text>
+  <rect x="740" y="66" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="752" y="79" font-size="12" fill="#57606a">backup</text>
+  <rect x="746" y="82" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="758" y="95" font-size="12" fill="#57606a">deploy</text>
+  <rect x="752" y="98" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="764" y="111" font-size="12" fill="#57606a">flight-tracker</text>
+  <rect x="758" y="114" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="770" y="127" font-size="12" fill="#57606a">home-assistant</text>
+  <rect x="764" y="130" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="776" y="143" font-size="12" fill="#57606a">internal-names</text>
+  <rect x="770" y="146" width="150" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="782" y="159" font-size="12" fill="#57606a">observability</text>
+  <rect class="box" x="776" y="162" width="150" height="30" rx="5"/><text class="t" x="788" y="182" style="text-anchor:start">tunnel</text>
 
   <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
   <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
@@ -187,8 +186,8 @@
   <!-- Everything else -->
   <path class="arrow" d="M316,92 H178"/>
   <text class="l" x="238" y="84">asks for jobs</text>
-  <path class="arrow" d="M486,92 H598"/>
-  <text class="l" x="542" y="84">boots</text>
+  <path class="arrow" d="M466,92 H514"/>
+  <text class="l" x="490" y="84">boots</text>
   <path class="arrow" d="M442,298 H478"/>
   <path class="arrow" d="M332,352 H178"/>
   <text class="l" x="238" y="344">nightly</text>
