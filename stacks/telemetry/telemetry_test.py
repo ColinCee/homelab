@@ -49,8 +49,9 @@ def test_requests_are_answered_only_through_telemetry() -> None:
     for path in tracked(".py"):
         if path not in {MODULE, Path(__file__)}:
             text = path.read_text(encoding="utf-8")
-            assert "BaseHTTPRequestHandler" not in text, (
-                f"{path.relative_to(ROOT)}: telemetry.RequestHandler"
+            assert "HTTPRequestHandler" not in text, (
+                f"{path.relative_to(ROOT)}: answer HTTP with telemetry.RequestHandler, which reads "
+                "the body first, so closing does not reset the reply away"
             )
 
 

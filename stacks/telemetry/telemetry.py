@@ -159,7 +159,9 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not super().parse_request():
             return False
         length = self.headers.get("Content-Length") or "0"
-        self.body = self.rfile.read(min(int(length), self.body_max)) if length.isdigit() else b""
+        # isdigit alone passes digits such as "²", which int() refuses.
+        if length.isascii() and length.isdigit():
+            self.body = self.rfile.read(min(int(length), self.body_max))
         return True
 
 
