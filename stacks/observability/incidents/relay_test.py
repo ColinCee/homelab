@@ -1,4 +1,4 @@
-"""The incidents relay (stacks/observability/incidents/relay.py) opens one post per alert,
+"""The incidents relay (stacks/observability/incidents/relay.py) opens one post per alert rule,
 mentions Colin only for a firing `now` alert, starts the on-call agent once, clears the same post,
 survives a restart and passes the watchdog on to Healthchecks.io."""
 
@@ -147,7 +147,7 @@ def test_a_return_a_day_after_clearing_is_a_new_incident(parts: Parts) -> None:
     r, discord, fire = parts
     r.handle(alert())
     r.handle(alert("resolved"))
-    r.state["posts"]["fp1"]["cleared"] = ago(days=2)
+    r.state["posts"]["disk-filling"]["cleared"] = ago(days=2)
     r.handle(alert())
     assert discord.threads == 2 and len(fire.texts) == 2
 
@@ -202,7 +202,7 @@ def test_a_refused_fire_is_said_in_the_post_and_not_retried(parts: Parts) -> Non
 def test_runs_stop_at_the_daily_cap_but_posts_still_open(parts: Parts) -> None:
     r, discord, fire = parts
     for i in range(relay.RUNS_PER_DAY + 2):
-        r.handle(alert(fingerprint=f"fp{i}"))
+        r.handle(alert(fingerprint=f"fp{i}", alertname=f"rule-{i}"))
     assert discord.threads == relay.RUNS_PER_DAY + 2
     assert len(fire.texts) == relay.RUNS_PER_DAY
     assert "not started" in discord.said(f"thread-{relay.RUNS_PER_DAY + 2}")[0]
@@ -218,11 +218,11 @@ def test_labels_from_outside_never_reach_the_agent(parts: Parts) -> None:
 def test_a_long_firing_alert_keeps_its_post_and_an_unseen_one_is_forgotten(parts: Parts) -> None:
     r, discord, fire = parts
     r.handle(alert())
-    r.handle(alert(fingerprint="held"))
-    r.state["posts"]["fp1"]["seen"] = ago(days=2)
+    r.handle(alert(fingerprint="held", alertname="held"))
+    r.state["posts"]["disk-filling"]["seen"] = ago(days=2)
     r.state["posts"]["held"]["seen"] = ago(days=4)
     r.handle(alert())
-    assert "fp1" in r.state["posts"] and "held" not in r.state["posts"]
+    assert "disk-filling" in r.state["posts"] and "held" not in r.state["posts"]
     assert discord.threads == 2 and len(fire.texts) == 2
 
 
@@ -288,6 +288,43 @@ def test_only_a_refused_ping_logs_an_error(
     ping.fail = failure
     r.handle(alert(alertname="watchdog", level="watchdog"))
     assert [rec.levelname for rec in caplog.records] == [level]
+
+
+def together(*payloads: dict[str, Any]) -> dict[str, Any]:
+    """One rule's series in one notification, as Alertmanager groups them."""
+    return {"alerts": [a for p in payloads for a in p["alerts"]]}
+
+
+def stopped(status: str = "firing", n: int = 0) -> dict[str, Any]:
+    return alert(status, f"fp{n}", alertname="container-stopped", service=f"svc{n}")
+
+
+def test_many_series_of_one_rule_are_one_post_and_one_run(parts: Parts) -> None:
+    # 17 November 2026: 22 services read as stopped at once, and each opened a post and a run.
+    r, discord, fire = parts
+    assert r.handle(together(*(stopped(n=n) for n in range(22)))) == 200
+    assert discord.threads == 1 and len(fire.texts) == 1
+    post = opened(discord)
+    assert post["name"] == "Disk filling · 22 at once"
+    assert "svc0" in post["message"]["content"] and "svc21" in post["message"]["content"]
+    assert '"svc21"' in fire.texts[0]
+
+
+def test_a_series_joining_later_is_said_in_the_post_and_it_clears_with_the_last(
+    parts: Parts,
+) -> None:
+    r, discord, fire = parts
+    r.handle(together(stopped(n=0)))
+    r.handle(together(stopped(n=0), stopped(n=1)))
+    r.handle(together(stopped(n=0), stopped(n=1)))
+    assert discord.threads == 1 and len(fire.texts) == 1
+    assert [t for t in discord.said("thread-1") if t.startswith("Also")] == [
+        "Also firing: svc1 · **5 h**"
+    ]
+    r.handle(together(stopped("resolved", n=0), stopped(n=1)))
+    assert not discord.said("thread-1")[-1].startswith("Cleared")
+    r.handle(together(stopped("resolved", n=0), stopped("resolved", n=1)))
+    assert discord.said("thread-1")[-1].startswith("Cleared")
 
 
 def errors_alert(service: str) -> dict[str, Any]:

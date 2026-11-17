@@ -119,8 +119,8 @@ A wrong level is fixed in the program, else mapped for one service in
 | `now` | A service is down, data is being lost, or something is full within 24 h | Mentions Colin |
 | `week` | Something is running out or slipping | No mention |
 
-**Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert one #incidents post and
-starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)), which reads the
+**Incidents.** The [relay](../stacks/observability/incidents/relay.py) gives each alert rule one #incidents post, listing
+its series, and starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-oncall/SKILL.md)), which reads the
 gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin, merging only fixes that run
 no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes, not his login.
 

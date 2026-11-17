@@ -4,8 +4,9 @@
 
 route:
   receiver: incidents
-  # Every alert, and every series of a per-series rule, is its own post.
-  group_by: ["..."]
+  # One notification per rule, carrying all its series, so the relay gives a rule one post however many
+  # series fire (relay.py).
+  group_by: ["alertname"]
   group_wait: 30s
   group_interval: 1m
   # A repeat posts nothing; it tells the relay the alert still fires (relay.py, FORGET_AFTER).
