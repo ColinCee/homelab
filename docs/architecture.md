@@ -97,19 +97,21 @@ agents as `agents`. Dashboards: the building-dashboards skill.
 
 | Problem | Who warns |
 |---|---|
-| The Beelink off, or alerting stopped | `watchdog`: the relay pings Healthchecks.io each minute, which emails and posts when pings stop |
+| The Beelink off, or alerting stopped | `watchdog`: the relay pings Healthchecks.io, which emails and posts when pings stop |
 | A rule failing | "An alert rule is failing" |
 | Someone else on the Beelink | The `intrusion` rules, over what [`security_facts.py`](../beelink/security/security_facts.py) writes each minute |
 | A deploy failed | "Main not deployed" |
 
 **The alert standard.** An alert exists only if something is harmed now or soon, Colin can act on it, and the post
-says what to do; anything else is a dashboard number. A post breaking it is a bug: fix the cause, then delete it and
-its "Cleared". [Rules](../stacks/observability/prometheus/) post through
+says what to do; anything else is a dashboard number. It waits out a blip (`for`, or its query's window) unless one
+occurrence is the harm (`AT_ONCE`, `alert_rules_test.py`). A post breaking it is a bug: fix the cause, then delete it
+and its "Cleared". [Rules](../stacks/observability/prometheus/) post through
 [Alertmanager](../stacks/observability/alertmanager/alertmanager.yml) (no port: `docker exec observability-alertmanager-1
 amtool alert query --alertmanager.url=http://localhost:9093`) and the relay to Discord's #incidents.
 
-**Errors are bugs.** A healthy service logs no error or fatal line; one posts `errors-logged` with it. A wrong
-level is fixed in the program, else mapped for one service in
+**Errors are bugs.** A healthy service logs no error or fatal line; errors in two of the last 24 clock hours post
+`errors-logged`. A failed call warns until it lasts or is refused ([`Failures`](../stacks/telemetry/telemetry.py)).
+A wrong level is fixed in the program, else mapped for one service in
 [`config.alloy`](../stacks/observability/config.alloy) under its reason (`alloy_test.py` checks).
 
 | Level | When | Post |
@@ -122,9 +124,8 @@ starts a claude.ai routine on it ([`homelab-oncall`](../.github/skills/homelab-o
 gateway at `observe.colincheung.dev`; its environment adds the logins. It acts as Colin, merging only fixes that run
 no code ([`agent_scope.py`](../checks/agent_scope.py)): a guard against mistakes, not his login.
 
-- A rule fires after its `for` and clears after 10 clear minutes; a return inside them is the same alert.
-- Alerts are promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml), thresholds from their
-  normal ([`baseline.py`](../stacks/observability/prometheus/baseline.py));
+- A rule clears after 10 clear minutes; a return inside them is the same alert.
+- Promises in [`slos.yml`](../stacks/observability/prometheus/slos.yml) alert, thresholds from their normal ([`baseline.py`](../stacks/observability/prometheus/baseline.py));
   [`slos.py`](../stacks/observability/prometheus/slos.py) makes rules and tests; CI fails on unwatched metrics.
 - "Beelink metrics stopped" holds back every alert that reads Alloy's metrics.
 - Noise budget: at most one post a day over 14 days. Replay a new or looser rule:

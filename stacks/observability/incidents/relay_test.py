@@ -305,8 +305,8 @@ def test_an_error_alert_shows_its_first_line_and_links_its_lines(tmp_path: Path)
 
     r = relay.Relay(tmp_path / "s.json", "forum", "guild", discord, fire, FakePing(), first_line)
     assert r.handle(errors_alert("proxy")) == 200
-    # From 5 minutes before it started: its line came at most a scrape and a rule run earlier.
-    assert asked == ['_time:[2026-11-13T00:55:00Z, now] service_name:"proxy" level:in(error,fatal)']
+    # The day's first line: the rule reads the 24 clock hours before the one it fired in.
+    assert asked == ['_time:[2026-11-12T00:00:00Z, now] service_name:"proxy" level:in(error,fatal)']
     post = opened(discord)["message"]
     # The line stays in its code block, so it can mention or link no one.
     assert "```\npanic at ''' <@124> [x](http://evil)\n```" in post["content"]

@@ -47,6 +47,32 @@ def test_a_rule_says_its_level_what_broke_why_it_matters_and_what_to_do(name: st
     assert rule["keep_firing_for"] == "10m"
 
 
+# Alerts that post at their first sample (`for: 0m`), each with why (docs/architecture.md, "The
+# alert standard"); every other waits out a blip with its `for`.
+QUERY_WAITS = "its query waits out a blip"
+SECURITY = "a security event: one is the harm"
+AT_ONCE = {
+    "beelink-metrics-stopped": QUERY_WAITS,
+    "host-metrics-stopped": QUERY_WAITS,
+    "errors-logged": QUERY_WAITS,
+    "telemetry-dropped": "what Alloy lost is gone for good",
+    "watchdog": "always firing; it pings Healthchecks.io and never posts",
+    "ci-host-updated": SECURITY,
+    "tailscale-device-added": SECURITY,
+    "ssh-login-elsewhere": SECURITY,
+} | {s.alert: QUERY_WAITS for s in slos.catalogue()[0] if not s.fresh}
+
+
+@pytest.mark.parametrize("name", RULES)
+def test_a_rule_waits_out_a_blip_or_says_why_it_posts_at_once(name: str) -> None:
+    # 16 November 2026: errors-logged posted one error line from a 35 s drop of the home link.
+    at_once = slos.seconds(RULES[name]["for"]) == 0
+    assert at_once == (name in AT_ONCE), "give it a `for`, or its reason in AT_ONCE"
+    if AT_ONCE.get(name) == QUERY_WAITS:
+        windows = re.findall(r"\[(\d+)([mhd])[]:]", RULES[name]["expr"])
+        assert any(int(n) * {"m": 1, "h": 60, "d": 1440}[u] >= 5 for n, u in windows), name
+
+
 def test_beelink_metrics_stopped_holds_back_every_alert_that_reads_alloys_metrics() -> None:
     # The rules on Prometheus itself and the public probes read its own scrape, not
     # Alloy's; the store rules read Alloy's.
@@ -649,50 +675,39 @@ CASES = {
             ),
         ],
     ),
-    "a service's first error line posts at once, holds 10 minutes, then clears": (
-        [ALLOY_UP, (f'{ERRORS},service_name="grafana",level="error"}}', "_x5 1x30")],
-        [
-            at(4, "errors-logged"),
-            at(5, "errors-logged", errors_posted("grafana", "1")),
-            at(18, "errors-logged", errors_posted("grafana", "1")),
-            at(20, "errors-logged"),
-        ],
+    # 16 November 2026, 23:35: a 35 s drop of the home link made one error line, which posted.
+    "errors in one hour post nothing, however many": (
+        [ALLOY_UP, (f'{ERRORS},service_name="incidents",level="error"}}', "_x5 1x10 7x300")],
+        [at(60, "errors-logged"), at(120, "errors-logged"), at(300, "errors-logged")],
     ),
-    "a service's errors and fatal lines are one post, a line after a quiet hour another": (
+    "errors back in another hour post once that hour ends, errors and fatal lines as one": (
         [
-            # Scraped every 15 s, as Alloy's own metrics are: two more errors at 20 min, the first
-            # fatal line at 21, one more error at 40.
             ALLOY_UP,
-            (f'{ERRORS},service_name="proxy",level="error"}}', "1x80 3x80 4x160"),
-            (f'{ERRORS},service_name="proxy",level="fatal"}}', "_x84 1x240"),
+            (f'{ERRORS},service_name="grafana",level="error"}}', "_x5 1x300"),
+            (f'{ERRORS},service_name="grafana",level="fatal"}}', "_x150 1x150"),
         ],
         [
-            at(15, "errors-logged"),
-            at(22, "errors-logged", errors_posted("proxy", "3")),
-            at(37, "errors-logged"),
-            at(41, "errors-logged", errors_posted("proxy", "1")),
+            at(179, "errors-logged"),
+            at(180, "errors-logged", errors_posted("grafana", "2")),
+            at(290, "errors-logged", errors_posted("grafana", "2")),
         ],
-        "15s",
     ),
     # 14 November 2026, 01:03: Grafana's count stood at 2, Alloy restarted, and 2 lines 3 minutes
     # later brought it back at 2, so it read as unchanged and nothing posted.
-    "an error line after Alloy restarts posts, though its count is back where it was": (
-        [ALLOY_RESTARTED, (f'{ERRORS},service_name="grafana",level="error"}}', "2x160 _x12 2x200")],
+    "an error line after Alloy restarts counts, though its count is back where it was": (
         [
-            at(39, "errors-logged"),
-            at(42, "errors-logged"),
-            at(44, "errors-logged", errors_posted("grafana", "2")),
+            ('process_start_time_seconds{job="alloy",instance="beelink"}', "0x100 6030x300"),
+            (f'{ERRORS},service_name="grafana",level="error"}}', "_x10 2x90 _x2 2x200"),
         ],
-        "15s",
+        [at(119, "errors-logged"), at(120, "errors-logged", errors_posted("grafana", "2"))],
     ),
-    "a count back at 0 after Alloy restarts, or not back, posts nothing": (
+    "a count back at 0 after Alloy restarts, or not back, counts nothing": (
         [
-            ALLOY_RESTARTED,
-            (f'{ERRORS},service_name="grafana",level="error"}}', "2x160 _x12 0x200"),
-            (f'{ERRORS},service_name="proxy",level="error"}}', "3x160"),
+            ('process_start_time_seconds{job="alloy",instance="beelink"}', "0x100 6030x300"),
+            (f'{ERRORS},service_name="grafana",level="error"}}', "_x10 2x90 _x2 0x200"),
+            (f'{ERRORS},service_name="proxy",level="error"}}', "_x10 3x90"),
         ],
-        [at(39, "errors-logged"), at(42, "errors-logged"), at(50, "errors-logged")],
-        "15s",
+        [at(120, "errors-logged"), at(180, "errors-logged")],
     ),
 }
 
@@ -825,21 +840,25 @@ def test_rules_fire_hold_and_clear_as_the_standard_says(
     assert ran.returncode == 0, ran.stdout + ran.stderr
 
 
-def test_a_rule_over_log_lines_replays_from_them_for_its_window(
+def test_a_rule_over_log_lines_replays_from_them_as_its_query_reads_them(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from stacks.observability.prometheus import replay
 
-    query, by, window = replay.FROM_LOGS["errors-logged"]
+    query, by, hours = replay.FROM_LOGS["errors-logged"]
     expr = flat(RULES["errors-logged"]["expr"])
-    assert f"offset {window // 60}m" in expr
+    assert "[1d:1h]" in expr and expr.endswith(f">= {hours}")
     assert f"sum by ({by})" in expr
-    # The log store's count of lines a minute: one minute with lines at 01:00 on 1 Jan 1970.
-    answer = b'{"_time":"1970-01-01T01:00:00Z","service_name":"proxy","lines":"3"}\n'
+    # The log store's count of lines a minute: lines at 01:00 and 03:30 on 1 Jan 1970.
+    answer = (
+        b'{"_time":"1970-01-01T01:00:00Z","service_name":"proxy","lines":"3"}\n'
+        b'{"_time":"1970-01-01T03:30:00Z","service_name":"proxy","lines":"1"}\n'
+    )
     monkeypatch.setenv("GATEWAY_LOGIN", "agents:x")
     monkeypatch.setattr(replay.telemetry, "http", lambda *a, **k: answer)
-    returned = replay.log_history(query, by, window, 0, 7200)
-    assert returned == {"service_name=proxy": {3600 + 60 * m for m in range(1, 6)}}
+    returned = replay.log_history(query, by, hours, 0, 100_000)
+    # From the end of the second hour until the first leaves the last 24.
+    assert returned == {"service_name=proxy": set(range(4 * 3600, 2 * 3600 + 86400, 60))}
 
 
 def test_replay_posts_as_prometheus_and_alertmanager_would() -> None:

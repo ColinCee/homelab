@@ -517,42 +517,47 @@ groups:
             (`systemctl --user` for manager "user").
           dashboard: *home
           value: '{{ $value }}'
-      # Errors are bugs (docs/architecture.md): any error or fatal line a service logs, as Alloy counts them
-      # (config.alloy, loki.process "error_lines"), posts once per service. The lines in 5 minutes are the count now
-      # less the count then, where both come from the Alloy process running now; a count with no such sample 5
-      # minutes ago, or below it, counts whole, since it starts at 0 with each process and appears at its first line. Alloy pushes
-      # its own metrics, so a restart marks nothing stale: the old process's samples stay current for 5 minutes, and a
-      # new count back at the old value would look unchanged. Not a promise in slos.yml: it
-      # reads no metrics file and has no normal to set a threshold from, since the target is zero. The relay posts
-      # the service's first line from the log store and a link to its lines (`logs`, ../incidents/relay.py).
+      # Errors are bugs (docs/architecture.md): error or fatal lines, as Alloy counts them (config.alloy, loki.process
+      # "error_lines"), post once per service when they come back: in two of the last 24 clock hours. A blip, such as
+      # a drop of the home link, makes one hour of errors and posts nothing; a fault comes back, so it posts within a
+      # day. An hour's lines are the count at its end less the count at its start, where both come from the Alloy
+      # process running now; a count with no such sample an hour before, or below it, counts whole, since it starts at
+      # 0 with each process and appears at its first line. Alloy pushes its own metrics, so a restart marks nothing
+      # stale, and a new count back at the old value would look unchanged. Not a promise in slos.yml: it reads no
+      # metrics file and has no normal to set a threshold from, since the target is zero. The relay posts the
+      # service's first line of the day from the log store and a link to its lines (`logs`, ../incidents/relay.py).
       - alert: errors-logged
         expr: |
-          sum by (service_name) (
-            (
-              (
-                homelab_error_lines_total
-                and timestamp(homelab_error_lines_total)
-                  >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
-              )
-              - (
-                homelab_error_lines_total offset 5m
-                and timestamp(homelab_error_lines_total offset 5m)
-                  >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
-              )
-            ) >= 0
-            or (
-              homelab_error_lines_total
-              and timestamp(homelab_error_lines_total)
-                >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
-            )
-          ) > 0
+          max by (service_name) (
+            count_over_time((
+              sum by (service_name) (
+                (
+                  (
+                    homelab_error_lines_total
+                    and timestamp(homelab_error_lines_total)
+                      >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+                  )
+                  - (
+                    homelab_error_lines_total offset 1h
+                    and timestamp(homelab_error_lines_total offset 1h)
+                      >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+                  )
+                ) >= 0
+                or (
+                  homelab_error_lines_total
+                  and timestamp(homelab_error_lines_total)
+                    >= on (job, instance) group_left () process_start_time_seconds{job="alloy"}
+                )
+              ) > 0
+            )[1d:1h])
+          ) >= 2
         for: 0m
         keep_firing_for: 10m
         labels:
           level: week
         annotations:
-          title: 'A service logged errors'
-          measure: 'Error lines in 5 min'
+          title: 'A service keeps logging errors'
+          measure: 'Hours with errors in the last day'
           unit: ''
           harm: >-
             Each error line is a fault, or a line at the wrong level that hides the next real fault among the

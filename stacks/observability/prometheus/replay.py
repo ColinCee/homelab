@@ -30,20 +30,24 @@ from stacks.observability.prometheus import slos
 STEP = 60
 # A rule over a count Alloy makes of log lines has no history from before the count existed; the
 # log store keeps the lines, so it replays from them: the LogsQL query, the label its posts are by,
-# and how long one line keeps the rule's query returning (its `offset`).
-FROM_LOGS = {"errors-logged": ("level:in(error,fatal)", "service_name", 300)}
+# and in how many of the last 24 clock hours lines must come (rules.yml, errors-logged).
+FROM_LOGS = {"errors-logged": ("level:in(error,fatal)", "service_name", 2)}
+DAY = 86400
+HOUR = 3600
 
 
 def gateway() -> str:
     return os.environ.get("GATEWAY_URL", "http://beelink.tail4f465e.ts.net:5081")
 
 
-def log_history(query: str, by: str, window: int, start: int, end: int) -> dict[str, set[int]]:
-    """The minutes the rule would have returned for each value of BY, a day per request."""
-    series: dict[str, set[int]] = defaultdict(set)
-    while start < end:
-        stop = min(start + 86400, end)
-        span = f"_time:[{iso(start)}, {iso(stop)})"
+def log_history(query: str, by: str, hours: int, start: int, end: int) -> dict[str, set[int]]:
+    """The minutes the rule would have returned for each value of BY: those whose last 24 clock
+    hours, as its `[1d:1h]` subquery reads them, hold lines in at least HOURS. A day per request."""
+    lined: dict[str, set[int]] = defaultdict(set)
+    at = start - DAY
+    while at < end:
+        stop = min(at + DAY, end)
+        span = f"_time:[{iso(at)}, {iso(stop)})"
         logsql = f"{span} {query} | stats by (_time:1m, {by}) count() lines"
         raw = telemetry.http(
             f"{gateway()}/logs/select/logsql/query?" + urllib.parse.urlencode({"query": logsql}),
@@ -53,11 +57,17 @@ def log_history(query: str, by: str, window: int, start: int, end: int) -> dict[
         )
         for row in map(json.loads, raw.decode().splitlines()):
             minute = int(datetime.fromisoformat(row["_time"].replace("Z", "+00:00")).timestamp())
-            # Its lines came within the minute, so the rule returns from the next one on.
-            returned = range(minute + STEP, minute + window + 1, STEP)
-            series[f"{by}={row.get(by, '')}"] |= set(returned)
-        start = stop
-    return series
+            # Its hour counts at the hour's end, when the subquery reads it.
+            lined[f"{by}={row.get(by, '')}"].add(minute // HOUR * HOUR + HOUR)
+        at = stop
+    return {
+        key: {
+            t
+            for t in range(start - start % STEP, end, STEP)
+            if sum(t - DAY < closed <= t for closed in ends) >= hours
+        }
+        for key, ends in lined.items()
+    }
 
 
 def iso(t: int) -> str:

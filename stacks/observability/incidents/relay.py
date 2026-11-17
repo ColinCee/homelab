@@ -44,6 +44,8 @@ PLAIN = re.compile(r"[\w.:/@-]{0,64}")
 # An alert whose annotation `logs` is a LogsQL query (rules.yml: errors-logged) shows its first
 # line, cut to this, and a link to its lines in Grafana's Logs data source.
 LINE_MAX = 500
+# errors-logged reads the last 24 clock hours, so its first line came at most 25 hours before it.
+LINES_SINCE = timedelta(hours=25)
 EXPLORE = "http://grafana.internal/explore?schemaVersion=1&orgId=1&panes="
 GATEWAY = "http://gateway:5080/logs/select/logsql/query"
 
@@ -53,9 +55,23 @@ Ping = Callable[[], None]
 # The first line a LogsQL query finds, "" for none.
 FirstLine = Callable[[str], str]
 FAILED = (OSError, KeyError, ValueError, TypeError, AttributeError)
+# Calls to one service failing this long are an error, not a blip (telemetry.Failures): Alertmanager
+# sends a failed alert again within minutes, and the watchdog pings each minute.
+LASTING_S = 300
 
 
 log = logging.getLogger("incidents")
+
+
+def _tracked[**P, R](call: Callable[P, R], failures: telemetry.Failures) -> Callable[P, R]:
+    """CALL, ending FAILURES' run of failures each time it succeeds."""
+
+    def tracked(*args: P.args, **kwargs: P.kwargs) -> R:
+        result = call(*args, **kwargs)
+        failures.ok()
+        return result
+
+    return tracked
 
 
 class Relay:
@@ -72,9 +88,13 @@ class Relay:
         self.state_file = state_file
         self.forum = forum
         self.guild = guild
-        self.discord = discord
-        self.fire = fire
-        self.ping = ping
+        # Each is reached over the internet, so a drop of the home link fails a call or two.
+        self.discord_failures = telemetry.Failures(LASTING_S)
+        self.routine = telemetry.Failures(LASTING_S)
+        self.healthchecks = telemetry.Failures(LASTING_S)
+        self.discord = _tracked(discord, self.discord_failures)
+        self.fire = _tracked(fire, self.routine)
+        self.ping = _tracked(ping, self.healthchecks)
         self.first_line = first_line
         self._tags: dict[str, str] | None = None
         self.state = self._load()
@@ -101,12 +121,9 @@ class Relay:
         except FAILED as e:
             # Never a 502: Alertmanager would count the relay as failing and stop the watchdog
             # for an hour, which Healthchecks.io would page as alerting down.
-            if isinstance(e, OSError) and not isinstance(e, urllib.error.HTTPError):
-                # No answer: a lost ping on a link blip, and Healthchecks.io pages pings that
-                # stay lost. An answer refusing it is a fault in the relay's setup.
-                log.warning("cannot reach Healthchecks.io", extra={"error": str(e)})
-            else:
-                log.error("cannot ping Healthchecks.io", extra={"error": str(e)})
+            log.log(
+                self.healthchecks.level(e), "cannot ping Healthchecks.io", extra={"error": str(e)}
+            )
 
     def _open(self, alert: dict[str, Any]) -> bool:
         post = self.state["posts"].get(alert["fingerprint"])
@@ -136,7 +153,8 @@ class Relay:
                 },
             )["id"]
         except FAILED as e:
-            log.error(
+            log.log(
+                self.discord_failures.level(e),
                 "cannot open a post",
                 extra={"alertname": alert["labels"].get("alertname"), "error": str(e)},
             )
@@ -185,10 +203,16 @@ class Relay:
             if e.code == 404:
                 log.info("a post was deleted", extra={"post": thread})
                 return None
-            log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
+            level = self.discord_failures.level(e)
+            log.log(
+                level, "cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)}
+            )
             return False
         except FAILED as e:
-            log.error("cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)})
+            level = self.discord_failures.level(e)
+            log.log(
+                level, "cannot mark a post", extra={"post": thread, "tag": tag, "error": str(e)}
+            )
             return False
         return True
 
@@ -203,7 +227,8 @@ class Relay:
             url = self.fire(_snapshot(alert, f"https://discord.com/channels/{self.guild}/{thread}"))
         except FAILED as e:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
-            log.error("cannot start the on-call agent", extra={"error": str(e)})
+            level = self.routine.level(e)
+            log.log(level, "cannot start the on-call agent", extra={"error": str(e)})
             return "On-call agent not started: the relay could not reach its routine (see its log)."
         runs["count"] += 1
         self._save()
@@ -219,8 +244,7 @@ class Relay:
             starts = datetime.fromisoformat(str(alert.get("startsAt")).replace("Z", "+00:00"))
         except ValueError:
             starts = _now()
-        # Its line is counted within seconds, and the rule runs each minute.
-        since = (starts - timedelta(minutes=5)).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        since = (starts - LINES_SINCE).astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             return self.first_line(f"_time:[{since}, now] {query}")
         except FAILED as e:
@@ -236,7 +260,8 @@ class Relay:
                 {"content": text, "allowed_mentions": {"parse": []}},
             )
         except FAILED as e:
-            log.error("cannot post", extra={"post": thread, "error": str(e)})
+            level = self.discord_failures.level(e)
+            log.log(level, "cannot post", extra={"post": thread, "error": str(e)})
 
     def _tags_for(self, name: str) -> dict[str, list[str]]:
         """The tag to set, or none when the forum's tags cannot be read: never an empty list,
@@ -246,7 +271,8 @@ class Relay:
                 forum = self.discord("GET", f"/channels/{self.forum}", None)
                 self._tags = {t["name"]: t["id"] for t in forum.get("available_tags", [])}
             except FAILED as e:
-                log.error("cannot read the forum's tags", extra={"error": str(e)})
+                level = self.discord_failures.level(e)
+                log.log(level, "cannot read the forum's tags", extra={"error": str(e)})
                 return {}
         if name not in self._tags:
             log.error("the forum has no such tag", extra={"tag": name})

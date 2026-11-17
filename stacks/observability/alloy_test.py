@@ -155,6 +155,18 @@ MAPPED = {
             '{"connIndex":1,"error":"timeout","level":"error","message":"Connection terminated",'
             '"t":"m3"}',
             "m3",
+            "warn",
+        ),
+        (
+            '{"error":"lookup region1.v2.argotunnel.com: i/o timeout","level":"error",'
+            '"message":"Failed to refresh DNS local resolver","t":"m3d"}',
+            "m3d",
+            "warn",
+        ),
+        (
+            '{"error":"dial tcp: connection refused","level":"error",'
+            '"message":"Unable to reach the origin service","t":"m3o"}',
+            "m3o",
             "error",
         ),
     ],

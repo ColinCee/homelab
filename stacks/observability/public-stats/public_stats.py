@@ -62,7 +62,7 @@ EVERY_S = 300
 # readiness wait sees the container healthy.
 RETRY_S = 15
 # A deploy that restarts Prometheus or the gateway fails a push or two, and a try RETRY_S later
-# succeeds; only pushes failing this long are an error (docs/architecture.md: errors are bugs).
+# succeeds; only failures lasting this long are an error (telemetry.Failures).
 FAILING_S = 120
 TIMEOUT_S = 15
 HEARTBEAT = Path("/tmp/ready")
@@ -79,6 +79,8 @@ class StatsError(Exception):
 
 
 log = logging.getLogger("public-stats")
+# The flight tracker is reached through Cloudflare, so a blip on the way fails a read or two.
+FLIGHTS = telemetry.Failures(FAILING_S)
 
 
 def prometheus_login() -> str | None:
@@ -134,8 +136,10 @@ def gather(prometheus: str, flights: str) -> dict[str, Any]:
     results = {name: query(prometheus, promql) for name, promql in QUERIES.items()}
     try:
         kpis = telemetry.http_json(flights, timeout=TIMEOUT_S).get("kpis")
+        FLIGHTS.ok()
     except (OSError, ValueError, AttributeError) as error:
-        log.error("cannot read the flight tracker", extra={"error": str(error)})
+        level = FLIGHTS.level(error)
+        log.log(level, "cannot read the flight tracker", extra={"error": str(error)})
         kpis = None
     return build_body(results, kpis, time.time())
 
@@ -153,21 +157,6 @@ def push(url: str, key: Ed25519PrivateKey, body: dict[str, Any]) -> None:
     telemetry.http(url, method="PUT", data=data, headers=headers, timeout=TIMEOUT_S)
 
 
-class Failures:
-    """Pushes failing in a row: a warning until the first of them is FAILING_S old."""
-
-    def __init__(self) -> None:
-        self.since: float | None = None
-
-    def ok(self) -> None:
-        self.since = None
-
-    def level(self, now: float) -> int:
-        if self.since is None:
-            self.since = now
-        return logging.ERROR if now - self.since >= FAILING_S else logging.WARNING
-
-
 def main() -> None:
     prometheus = os.environ["PROMETHEUS_URL"]
     flights = os.environ["FLIGHTS_URL"]
@@ -175,7 +164,7 @@ def main() -> None:
     # Beelink's secrets/public_stats_key; its one other copy is in Bitwarden (public_stats_key.py).
     key_hex = telemetry.secret(os.environ["PUBLIC_STATS_KEY_FILE"])
     key = Ed25519PrivateKey.from_private_bytes(bytes.fromhex(key_hex))
-    failures = Failures()
+    failures = telemetry.Failures(FAILING_S)
     while True:
         with telemetry.run("public-stats", "push") as trace:
             try:
@@ -191,7 +180,7 @@ def main() -> None:
                 # Anything odd in a response skips one push, not the process.
                 # HTTPError's message says why the Worker refused.
                 trace.fail(type(e).__name__)
-                log.log(failures.level(time.monotonic()), "push failed", exc_info=True)
+                log.log(failures.level(e), "push failed", exc_info=True)
                 wait = RETRY_S
         time.sleep(wait)
 
