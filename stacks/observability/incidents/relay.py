@@ -1,11 +1,13 @@
-"""Gives each alert one post in Discord's #incidents forum and starts the cloud on-call agent on it
-(docs/architecture.md, "Monitoring and alerts").
+"""Gives each alert rule one post in Discord's #incidents forum and starts the cloud on-call agent
+on it (docs/architecture.md, "Monitoring and alerts").
 
-Alertmanager sends every alert here (alertmanager.yml), one alert per notification. A new alert
-opens a post tagged Firing, mentioning Colin if it is `now`, and fires the agent's routine; repeats
-change nothing; its end posts Cleared in the same post. The watchdog is passed on to Healthchecks.io
-as a ping, so a dead relay stops the pings, and a failing one stops the watchdog (rules.yml). Only
-Alertmanager reaches it, on a network of their own.
+Alertmanager sends each rule's firing series here together (alertmanager.yml). A rule's first
+series opens a post tagged Firing, mentioning Colin if it is `now`, listing every series firing with
+it, and fires the agent's routine once; a series that joins later is said in the same post, with no
+new run, so one cause behind many series (17 November 2026: 22 services at once) is one post and one
+run; repeats change nothing; the last series' end posts Cleared in the same post. The watchdog is
+passed on to Healthchecks.io as a ping, so a dead relay stops the pings, and a failing one stops the
+watchdog (rules.yml). Only Alertmanager reaches it, on a network of their own.
 """
 
 from __future__ import annotations
@@ -44,6 +46,8 @@ PLAIN = re.compile(r"[\w.:/@-]{0,64}")
 # An alert whose annotation `logs` is a LogsQL query (rules.yml: errors-logged) shows its first
 # line, cut to this, and a link to its lines in Grafana's Logs data source.
 LINE_MAX = 500
+# Series listed in a post; more are counted, so its advice and links fit.
+LISTED_MAX = 15
 # errors-logged reads the last 24 clock hours, so its first line came at most 25 hours before it.
 LINES_SINCE = timedelta(hours=25)
 EXPLORE = "http://grafana.internal/explore?schemaVersion=1&orgId=1&panes="
@@ -103,15 +107,24 @@ class Relay:
         alerts = payload.get("alerts") if isinstance(payload, dict) else None
         if not isinstance(alerts, list) or not alerts or not all(_is_alert(a) for a in alerts):
             return 400
+        rules: dict[str, list[dict[str, Any]]] = {}
         for alert in alerts:
             if alert["labels"].get("alertname") == "watchdog":
                 self._watchdog(alert)
                 continue
-            done = self._open(alert) if alert["status"] == "firing" else self._clear(alert)
-            if not done:
+            rules.setdefault(str(alert["labels"].get("alertname", "")), []).append(alert)
+        for rule, series in rules.items():
+            if not self._handle_rule(rule, series):
                 # Alertmanager sends it again; what was saved lets the retry finish the job.
                 return 502
         return 200
+
+    def _handle_rule(self, rule: str, series: list[dict[str, Any]]) -> bool:
+        firing = [a for a in series if a["status"] == "firing"]
+        post = self.state["posts"].get(rule)
+        if post and not post["cleared"]:
+            return self._update(post, firing)
+        return self._open(rule, firing) if firing else True
 
     def _watchdog(self, alert: dict[str, Any]) -> None:
         if alert["status"] != "firing":
@@ -125,18 +138,36 @@ class Relay:
                 self.healthchecks.level(e), "cannot ping Healthchecks.io", extra={"error": str(e)}
             )
 
-    def _open(self, alert: dict[str, Any]) -> bool:
-        post = self.state["posts"].get(alert["fingerprint"])
-        if post and not post["cleared"]:
-            post["seen"] = _now().isoformat()
-            self._save()
-            return True
+    def _update(self, post: dict[str, Any], firing: list[dict[str, Any]]) -> bool:
+        """An open post: says the series that join it, and clears once none fires. Each
+        notification carries every firing series but the inhibited, which never send their end,
+        so the series are those it carries."""
+        joined = [a for a in firing if a["fingerprint"] not in post["series"]]
+        if joined:
+            self._say(post["thread"], _listed("Also firing:", joined)[:2000])
+        post["series"] = sorted(a["fingerprint"] for a in firing)
+        post["seen"] = _now().isoformat()
+        if not post["series"]:
+            text = (
+                "Cleared: the number is back within bounds; that does not mean the cause is fixed."
+            )
+            if self._retag(post["thread"], "Cleared", text) is False:
+                return False
+            post["cleared"] = _now().isoformat()
+            log.info("cleared a post", extra={"post": post["thread"]})
+        self._save()
+        return True
+
+    def _open(self, rule: str, firing: list[dict[str, Any]]) -> bool:
+        alert = firing[0]
+        series = sorted(a["fingerprint"] for a in firing)
+        post = self.state["posts"].get(rule)
         if post and _now() - datetime.fromisoformat(post["cleared"]) < REOPEN_WITHIN:
             marked = self._retag(post["thread"], "Firing", "Firing again.", _mentions(alert))
             if marked is False:
                 return False
             if marked:
-                post.update(seen=_now().isoformat(), cleared=None)
+                post.update(seen=_now().isoformat(), cleared=None, series=series)
                 self._save()
                 return True
         try:
@@ -144,9 +175,9 @@ class Relay:
                 "POST",
                 f"/channels/{self.forum}/threads",
                 {
-                    "name": _title(alert)[:100],
+                    "name": _title(firing)[:100],
                     "message": {
-                        "content": _post(alert, self._line(alert)),
+                        "content": _post(firing, self._line(alert)),
                         "allowed_mentions": _mentions(alert),
                     },
                     **self._tags_for("Firing"),
@@ -159,28 +190,17 @@ class Relay:
                 extra={"alertname": alert["labels"].get("alertname"), "error": str(e)},
             )
             return False
-        self.state["posts"][alert["fingerprint"]] = {
+        self.state["posts"][rule] = {
             "thread": thread,
             "seen": _now().isoformat(),
             "cleared": None,
+            "series": series,
         }
         self._save()
         log.info(
             "opened a post", extra={"post": thread, "alertname": alert["labels"].get("alertname")}
         )
-        self._say(thread, self._start_agent(alert, thread))
-        return True
-
-    def _clear(self, alert: dict[str, Any]) -> bool:
-        post = self.state["posts"].get(alert["fingerprint"])
-        if post is None or post["cleared"]:
-            return True
-        text = "Cleared: the number is back within bounds; that does not mean the cause is fixed."
-        if self._retag(post["thread"], "Cleared", text) is False:
-            return False
-        post["cleared"] = _now().isoformat()
-        self._save()
-        log.info("cleared a post", extra={"post": post["thread"]})
+        self._say(thread, self._start_agent(firing, thread))
         return True
 
     def _retag(
@@ -216,7 +236,7 @@ class Relay:
             return False
         return True
 
-    def _start_agent(self, alert: dict[str, Any], thread: str) -> str:
+    def _start_agent(self, firing: list[dict[str, Any]], thread: str) -> str:
         runs = self.state["runs"]
         today = _now().date().isoformat()
         if runs["day"] != today:
@@ -224,7 +244,9 @@ class Relay:
         if runs["count"] >= RUNS_PER_DAY:
             return f"On-call agent not started: {RUNS_PER_DAY} runs today already."
         try:
-            url = self.fire(_snapshot(alert, f"https://discord.com/channels/{self.guild}/{thread}"))
+            url = self.fire(
+                _snapshot(firing, f"https://discord.com/channels/{self.guild}/{thread}")
+            )
         except FAILED as e:
             # No retry: a fire has no idempotency key, so a retry could start two runs.
             level = self.routine.level(e)
@@ -334,20 +356,47 @@ def _mention(mentions: dict[str, list[str]] | None) -> str:
     return "".join(f"<@{u}> " for u in (mentions or {}).get("users", []))
 
 
-def _title(alert: dict[str, Any]) -> str:
+def _series(alert: dict[str, Any]) -> list[str]:
+    """The label values that tell a rule's series apart."""
     labels = _labels(alert)
-    extra = [v for k, v in sorted(labels.items()) if k not in ("alertname", "level")]
-    return " · ".join(
-        [alert["annotations"].get("title") or labels.get("alertname", "alert"), *extra]
-    )
+    return [v for k, v in sorted(labels.items()) if k not in ("alertname", "level")]
 
 
-def _post(alert: dict[str, Any], line: str | None = None) -> str:
+def _shown(alert: dict[str, Any]) -> str:
     a = alert["annotations"]
     value = a.get("value", "")
-    shown = "no data" if re.fullmatch(r"-1(\.0*)?", value) else f"{value}{a.get('unit', '')}"
+    return "no data" if re.fullmatch(r"-1(\.0*)?", value) else f"{value}{a.get('unit', '')}"
+
+
+def _where(alert: dict[str, Any]) -> str:
+    return " · ".join([*_series(alert), f"**{_shown(alert)}**"])
+
+
+def _listed(head: str, series: list[dict[str, Any]]) -> str:
+    """HEAD and a line per series, the first LISTED_MAX, so the post's advice stays under
+    Discord's 2000 characters."""
+    lines = [f"- {_where(s)}" for s in series[:LISTED_MAX]]
+    if len(series) > LISTED_MAX:
+        lines.append(f"- and {len(series) - LISTED_MAX} more")
+    return "\n".join([head, *lines])
+
+
+def _title(firing: list[dict[str, Any]]) -> str:
+    alert = firing[0]
+    name = alert["annotations"].get("title") or _labels(alert).get("alertname", "alert")
+    if len(firing) > 1:
+        return f"{name} · {len(firing)} at once"
+    return " · ".join([name, *_series(alert)])
+
+
+def _post(firing: list[dict[str, Any]], line: str | None = None) -> str:
+    alert = firing[0]
+    a = alert["annotations"]
+    measure = a.get("measure", "Value")
+    one = f"{measure}: **{_shown(alert)}**"
+    head = _listed(f"{measure}:", firing) if len(firing) > 1 else one
     lines = [
-        f"{a.get('measure', 'Value')}: **{shown}**",
+        head,
         f"**Why it matters:** {a.get('harm', '')}",
         f"**What to do:** {a.get('action', '')}",
     ]
@@ -377,12 +426,14 @@ def _first_line(login: str, query: str) -> str:
     return str(found.get("_msg", ""))
 
 
-def _snapshot(alert: dict[str, Any], post: str) -> str:
+def _snapshot(firing: list[dict[str, Any]], post: str) -> str:
     # Not the first line: a log line holds text from outside, which the agent reads itself.
     keep = ("title", "measure", "value", "unit", "harm", "action", "dashboard", "logs")
+    alert = firing[0]
     return json.dumps(
         {
             "labels": _labels(alert),
+            "also_firing": [_labels(a) for a in firing[1:]],
             "annotations": {k: v for k, v in alert["annotations"].items() if k in keep},
             "startsAt": alert.get("startsAt"),
             "post": post,
