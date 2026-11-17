@@ -60,16 +60,19 @@
   <rect class="box" x="554" y="126" width="200" height="40" rx="6"/>
   <text class="t" x="654" y="151">deploy-main</text>
 
-  <!-- Every stack in stacks/, as a deck: deploy-main applies them; each is drawn below by what it does -->
+  <!-- What deploy-main applies, one Compose project per folder in stacks/. A list, not a place: each stack's containers are drawn where they run, most behind the wall, some on the host network -->
   <use href="#i-docker" x="774" y="46" width="16" height="16" fill="#2496ED"/>
   <text x="795" y="59" font-size="13" font-weight="600" fill="#1f2328">Stacks</text>
-  <rect x="774" y="66" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="786" y="79" font-size="12" fill="#57606a">backup</text>
-  <rect x="778" y="82" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="790" y="95" font-size="12" fill="#57606a">deploy</text>
-  <rect x="782" y="98" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="794" y="111" font-size="12" fill="#57606a">flight-tracker</text>
-  <rect x="786" y="114" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="798" y="127" font-size="12" fill="#57606a">home-assistant</text>
-  <rect x="790" y="130" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="802" y="143" font-size="12" fill="#57606a">internal-names</text>
-  <rect x="794" y="146" width="128" height="40" rx="5" fill="#ffffff" stroke="#8c959f"/><text x="806" y="159" font-size="12" fill="#57606a">observability</text>
-  <rect class="box" x="798" y="162" width="128" height="30" rx="5"/><text class="t" x="810" y="182" style="text-anchor:start">tunnel</text>
+  <rect class="box" x="774" y="66" width="154" height="128" rx="6"/>
+  <text x="786" y="84" font-size="12.5" font-weight="600" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">stacks/</text>
+  <path d="M792,89 V186 M792,96 H802 M792,111 H802 M792,126 H802 M792,141 H802 M792,156 H802 M792,171 H802 M792,186 H802" fill="none" stroke="#8c959f" stroke-width="1"/>
+  <text x="806" y="100" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">backup</text>
+  <text x="806" y="115" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">deploy</text>
+  <text x="806" y="130" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">flight-tracker</text>
+  <text x="806" y="145" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">home-assistant</text>
+  <text x="806" y="160" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">internal-names</text>
+  <text x="806" y="175" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">observability</text>
+  <text x="806" y="190" font-size="12" fill="#1f2328" font-family="ui-monospace, Consolas, monospace">tunnel</text>
 
   <!-- The wall: bridge containers, and the VM above, reach the internet at most -->
   <rect class="wall" x="316" y="208" width="612" height="404" rx="8"/>
