@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 import telemetry
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from conftest import ROOT, linux_only, programs, tracked, units
 
@@ -394,3 +396,74 @@ def test_a_failure_a_later_try_gets_past_warns_and_a_lasting_or_refused_one_is_a
     assert failures.level(limited, 4000) == logging.WARNING
     # A bug, not a blip.
     assert failures.level(KeyError("id"), 4001) == logging.ERROR
+
+
+def _http(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("https://x", code, "No", email.message.Message(), None)
+
+
+# A call's outcome: a success, a blip a later try may get past, or a refusal or bug no wait mends.
+PASSING = [urllib.error.URLError("timed out"), ConnectionResetError(), _http(429), _http(503)]
+LASTING = [_http(401), _http(404), KeyError("id"), ValueError("bad JSON")]
+
+
+AFTER_S = 120
+CHECKED = settings(derandomize=True, database=None, max_examples=200, deadline=None)
+# Seconds between tries, and a run of calls before, each ending in a success.
+GAPS = st.floats(0, AFTER_S / 4, allow_nan=False)
+BEFORE = st.lists(st.tuples(GAPS, st.sampled_from([*PASSING, *LASTING])), max_size=10)
+
+
+def _after(before: list[tuple[float, BaseException]]) -> tuple[telemetry.Failures, float]:
+    """A Failures that has seen BEFORE's failures, each ended by a success, and the time now."""
+    failures, now = telemetry.Failures(AFTER_S), 1000.0
+    for gap, error in before:
+        now += gap
+        failures.level(error, now)
+        failures.ok()
+    return failures, now + AFTER_S * 10
+
+
+@CHECKED
+@given(BEFORE, st.lists(st.tuples(GAPS, st.sampled_from(PASSING)), min_size=1, max_size=20))
+def test_a_drop_a_later_try_gets_past_within_after_s_only_warns(
+    before: list[tuple[float, BaseException]], drop: list[tuple[float, BaseException]]
+) -> None:
+    """#1519: a home internet drop shorter than AFTER_S posts nothing, whatever came before."""
+    failures, start = _after(before)
+    now = start - drop[0][0]
+    for gap, error in drop:
+        now += gap
+        if now - start >= AFTER_S:
+            break
+        assert failures.level(error, now) == logging.WARNING
+
+
+@CHECKED
+@given(BEFORE, st.lists(st.sampled_from(PASSING), min_size=1), st.floats(0, AFTER_S * 10))
+def test_a_drop_that_lasts_after_s_is_an_error(
+    before: list[tuple[float, BaseException]], drop: list[BaseException], past: float
+) -> None:
+    failures, start = _after(before)
+    for error in drop:
+        failures.level(error, start)
+    assert failures.level(drop[-1], start + AFTER_S + past) == logging.ERROR
+
+
+@CHECKED
+@given(
+    BEFORE,
+    st.lists(st.tuples(GAPS, st.sampled_from(PASSING)), max_size=5),
+    st.sampled_from(LASTING),
+)
+def test_a_refusal_or_a_bug_is_an_error_at_once(
+    before: list[tuple[float, BaseException]],
+    drop: list[tuple[float, BaseException]],
+    lasting: BaseException,
+) -> None:
+    """No wait mends a wrong key, a wrong address or a bug, however short the row so far."""
+    failures, now = _after(before)
+    for gap, error in drop:
+        now += gap
+        failures.level(error, now)
+    assert failures.level(lasting, now) == logging.ERROR

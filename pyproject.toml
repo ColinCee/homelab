@@ -12,6 +12,7 @@ dependencies = []
 [dependency-groups]
 dev = [
     "cryptography==50.0.2",
+    "hypothesis>=6.170.15",
     "pytest>=8",
     "ruff>=0.11",
     "ty>=0.0.1",
@@ -41,7 +42,8 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "ANN", "G", "EXE"]
 # Each test sits beside what it tests (AGENTS.md); the host checks in host-tests/ are not pytest.
 python_files = ["*_test.py"]
 # pytest's default skips every dot folder, .github's action tests too; .claude holds other checkouts.
-norecursedirs = [".git", ".venv", ".claude", ".mise", ".*_cache", "__pycache__", "node_modules"]
+# .hypothesis holds Hypothesis's caches.
+norecursedirs = [".git", ".venv", ".claude", ".mise", ".*_cache", ".hypothesis", "__pycache__", "node_modules"]
 # A test imports what sits beside it by name (pytest puts its folder on the path); beyond that,
 # checks/ and stacks/ as packages, the installer, the supervisor and telemetry.
 pythonpath = [".", "ci-runner", "ci-runner/supervisor", "stacks/telemetry"]
