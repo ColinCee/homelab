@@ -322,6 +322,17 @@ loki.process "docker" {
     }
   }
 
+  // cloudflared losing a connection to Cloudflare, or a DNS lookup, on a drop of the home link: it reconnects on its
+  // own, and a tunnel that stays down posts "site-down" (rules.yml).
+  stage.match {
+    selector = `{service_name="cloudflared"} |~ "\"message\":\"(Connection terminated|Failed to refresh DNS local resolver)\"" |~ "\"error\":"`
+
+    stage.template {
+      source   = "level"
+      template = "warn"
+    }
+  }
+
   // Alloy's log reader reconnecting to a container Docker is removing: its lines were read, and it stops tailing it.
   stage.match {
     selector = `{service_name="alloy"} |~ "can not get logs from container which is dead or marked for removal|could not inspect container info.*No such container"`

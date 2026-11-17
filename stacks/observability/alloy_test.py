@@ -108,7 +108,7 @@ LINES = [
     # cloudflared (zerolog)
     (
         '{"level":"error","time":"2026-11-13T14:42:00Z","message":"Unable to reach the origin"}',
-        "origin",
+        "2026-11-13T14:42:00Z",
         "error",
     ),
     # Alloy
@@ -155,6 +155,18 @@ MAPPED = {
             '{"connIndex":1,"error":"timeout","level":"error","message":"Connection terminated",'
             '"t":"m3"}',
             "m3",
+            "warn",
+        ),
+        (
+            '{"error":"lookup region1.v2.argotunnel.com: i/o timeout","level":"error",'
+            '"message":"Failed to refresh DNS local resolver","t":"mdns"}',
+            "mdns",
+            "warn",
+        ),
+        (
+            '{"error":"dial tcp: connection refused","level":"error",'
+            '"message":"Unable to reach the origin service","t":"morg"}',
+            "morg",
             "error",
         ),
     ],

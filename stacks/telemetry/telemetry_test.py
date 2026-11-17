@@ -3,6 +3,7 @@ http, RequestHandler), and every program importing the module can find it
 (stacks/telemetry/telemetry.py)."""
 
 import ast
+import email.message
 import http.server
 import json
 import logging
@@ -373,3 +374,23 @@ def test_spans_are_built_and_sent_only_through_telemetry() -> None:
     for path in python_files():
         text = path.read_text(encoding="utf-8")
         assert not re.search(r"resourceSpans|/v1/traces|:4318\b", text), path.relative_to(ROOT)
+
+
+def test_a_failure_a_later_try_gets_past_warns_and_a_lasting_or_refused_one_is_an_error() -> None:
+    # 16 November 2026: a 35 s drop of the home link lost one ping, logged as an error, and
+    # posted errors-logged though the next ping went through.
+    lost = urllib.error.URLError("_ssl.c:1129: The handshake operation timed out")
+    failures = telemetry.Failures(120)
+    assert failures.level(lost, 1000) == logging.WARNING
+    assert failures.level(lost, 1015) == logging.WARNING
+    failures.ok()
+    assert failures.level(lost, 2000) == logging.WARNING
+    assert failures.level(lost, 2120) == logging.ERROR
+    failures.ok()
+    refused = urllib.error.HTTPError("https://x", 401, "No", email.message.Message(), None)
+    assert failures.level(refused, 3000) == logging.ERROR
+    limited = urllib.error.HTTPError("https://x", 429, "Too Many", email.message.Message(), None)
+    failures.ok()
+    assert failures.level(limited, 4000) == logging.WARNING
+    # A bug, not a blip.
+    assert failures.level(KeyError("id"), 4001) == logging.ERROR

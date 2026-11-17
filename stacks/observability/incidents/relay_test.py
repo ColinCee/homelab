@@ -64,9 +64,11 @@ class FakeFire:
 class FakePing:
     def __init__(self) -> None:
         self.count = 0
-        self.fail = False
+        self.fail: bool | OSError = False
 
     def __call__(self) -> None:
+        if isinstance(self.fail, OSError):
+            raise self.fail
         if self.fail:
             raise OSError("healthchecks down")
         self.count += 1
@@ -266,6 +268,28 @@ def test_a_failed_ping_is_not_a_relay_failure(parts: Parts, ping: FakePing) -> N
     assert r.handle(alert(alertname="watchdog", level="watchdog")) == 200
 
 
+@pytest.mark.parametrize(
+    ("failure", "level"),
+    [
+        (urllib.error.URLError("_ssl.c:1129: The handshake operation timed out"), "WARNING"),
+        (
+            urllib.error.HTTPError(
+                "https://hc-ping.com/x", 404, "Not Found", email.message.Message(), None
+            ),
+            "ERROR",
+        ),
+    ],
+)
+def test_only_a_refused_ping_logs_an_error(
+    parts: Parts, ping: FakePing, caplog: pytest.LogCaptureFixture, failure: OSError, level: str
+) -> None:
+    # Healthchecks.io pages pings that stay lost; one lost on a link blip posted errors-logged.
+    r, _, _ = parts
+    ping.fail = failure
+    r.handle(alert(alertname="watchdog", level="watchdog"))
+    assert [rec.levelname for rec in caplog.records] == [level]
+
+
 def errors_alert(service: str) -> dict[str, Any]:
     errors = alert(alertname="errors-logged", level="week", service_name=service)
     errors["alerts"][0]["annotations"]["logs"] = f'service_name:"{service}" level:in(error,fatal)'
@@ -281,8 +305,8 @@ def test_an_error_alert_shows_its_first_line_and_links_its_lines(tmp_path: Path)
 
     r = relay.Relay(tmp_path / "s.json", "forum", "guild", discord, fire, FakePing(), first_line)
     assert r.handle(errors_alert("proxy")) == 200
-    # From 5 minutes before it started: its line came at most a scrape and a rule run earlier.
-    assert asked == ['_time:[2026-11-13T00:55:00Z, now] service_name:"proxy" level:in(error,fatal)']
+    # The day's first line: the rule reads the 24 clock hours before the one it fired in.
+    assert asked == ['_time:[2026-11-12T00:00:00Z, now] service_name:"proxy" level:in(error,fatal)']
     post = opened(discord)["message"]
     # The line stays in its code block, so it can mention or link no one.
     assert "```\npanic at ''' <@124> [x](http://evil)\n```" in post["content"]
