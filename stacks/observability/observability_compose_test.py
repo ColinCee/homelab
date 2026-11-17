@@ -194,7 +194,7 @@ def _braces(pattern: str) -> list[str]:
 
 
 def test_what_reads_the_docker_api_starts_once_the_proxy_answers() -> None:
-    # cAdvisor and OBI look for Docker only at start; started against a dead proxy, they stay blind.
+    # cAdvisor and OBI look for Docker only at start; started on an unhealthy proxy, they stay blind.
     readers = members("docker-api") - {"docker-socket-proxy"}
     assert readers
     for name in readers:

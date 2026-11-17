@@ -393,8 +393,8 @@ services:
       - /sys:/sys:ro
       - /var/log/journal:/var/log/journal:ro
       - /var/lib/homelab-metrics:/var/lib/homelab-metrics:ro
-    # The proxy healthy, not just started: its cAdvisor looks for Docker only at start, so an Alloy started against a
-    # dead proxy counts no container until it restarts.
+    # The proxy healthy, not just started: its cAdvisor looks for Docker only at start, so an Alloy started while the
+    # proxy is unhealthy counts no container until it restarts.
     depends_on:
       prometheus:
         condition: service_started
