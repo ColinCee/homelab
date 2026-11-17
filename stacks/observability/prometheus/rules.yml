@@ -39,7 +39,9 @@ groups:
             On the Beelink, check `docker ps -a --filter name=observability-` and `docker logs --tail 50
             observability-alloy-1`, then `docker compose up -d` in
             /home/colin/code/homelab/stacks/observability. If every container still runs but none is counted,
-            Alloy has lost the Docker API: `docker restart observability-docker-socket-proxy-1`.
+            Alloy has lost the Docker API: `docker restart observability-docker-socket-proxy-1`, then, once it
+            is healthy, `docker restart observability-alloy-1`, which never counts containers again if it
+            started while the proxy was down.
           dashboard: &home http://grafana.internal/d/home
           value: '{{ $value }}'
       - alert: flight-tracker-down

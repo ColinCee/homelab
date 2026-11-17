@@ -393,11 +393,17 @@ services:
       - /sys:/sys:ro
       - /var/log/journal:/var/log/journal:ro
       - /var/lib/homelab-metrics:/var/lib/homelab-metrics:ro
+    # The proxy healthy, not just started: its cAdvisor looks for Docker only at start, so an Alloy started against a
+    # dead proxy counts no container until it restarts.
     depends_on:
-      - prometheus
-      - logs
-      - traces
-      - docker-socket-proxy
+      prometheus:
+        condition: service_started
+      logs:
+        condition: service_started
+      traces:
+        condition: service_started
+      docker-socket-proxy:
+        condition: service_healthy
     # Every network internal: the only writer to the stores (ingest), the Docker API, and programs' traces on
     # observability-otlp and the host's on host-otlp, neither of which reaches a store.
     networks:
@@ -473,7 +479,8 @@ services:
       - docker-api
     # With no Docker API at start it matches nothing.
     depends_on:
-      - docker-socket-proxy
+      docker-socket-proxy:
+        condition: service_healthy
 
   # Read-only Docker API for Alloy and OBI; a raw socket mount would be root-equivalent.
   docker-socket-proxy:

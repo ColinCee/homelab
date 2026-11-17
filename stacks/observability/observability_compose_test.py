@@ -191,3 +191,13 @@ def _braces(pattern: str) -> list[str]:
         for part in found.group(1).split(",")
         for expanded in _braces(pattern[: found.start()] + part + pattern[found.end() :])
     ]
+
+
+def test_what_reads_the_docker_api_starts_once_the_proxy_answers() -> None:
+    # cAdvisor and OBI look for Docker only at start; started against a dead proxy, they stay blind.
+    readers = members("docker-api") - {"docker-socket-proxy"}
+    assert readers
+    for name in readers:
+        depends = SERVICES[name].get("depends_on", {})
+        assert isinstance(depends, dict), name
+        assert depends.get("docker-socket-proxy", {}).get("condition") == "service_healthy", name
