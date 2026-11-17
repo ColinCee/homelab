@@ -49,9 +49,9 @@
   <text x="316" y="38" font-size="13" fill="#1f2328"><tspan font-weight="600" font-size="15">Beelink</tspan><tspan dx="8">accepts no connection from the internet</tspan></text>
   <text class="g" x="316" y="59">On the host</text>
 
-  <rect class="box" x="332" y="68" width="150" height="48" rx="6"/>
-  <use href="#i-githubactions" x="354.6" y="84" width="16" height="16" fill="#1f2328"/>
-  <text class="t" x="376.6" y="97" style="text-anchor:start">CI supervisor</text>
+  <rect class="box" x="332" y="68" width="156" height="48" rx="6"/>
+  <use href="#i-githubactions" x="357.6" y="84" width="16" height="16" fill="#1f2328"/>
+  <text class="t" x="379.6" y="97" style="text-anchor:start">CI supervisor</text>
 
   <rect class="wall" x="554" y="68" width="200" height="48" rx="6"/>
   <text class="t" x="654" y="88">Firecracker VM</text>
@@ -83,9 +83,9 @@
   <text class="g" x="774" y="302">never the host, home</text>
   <text class="g" x="774" y="319">network or Tailscale</text>
 
-  <rect class="box" x="332" y="232" width="150" height="88" rx="6"/>
-  <use href="#i-cloudflare" x="375.6" y="268" width="16" height="16" fill="#F38020"/>
-  <text class="t" x="397.6" y="281" style="text-anchor:start">tunnel</text>
+  <rect class="box" x="332" y="232" width="156" height="88" rx="6"/>
+  <use href="#i-cloudflare" x="378.6" y="268" width="16" height="16" fill="#F38020"/>
+  <text class="t" x="400.6" y="281" style="text-anchor:start">tunnel</text>
 
   <rect class="box" x="554" y="232" width="200" height="36" rx="6"/>
   <text class="t" x="654" y="255">doorbell</text>
@@ -94,8 +94,8 @@
   <text class="t" x="654" y="295">flight-tracker</text>
   <text class="s" x="654" y="311">public API</text>
 
-  <rect class="box" x="332" y="334" width="150" height="36" rx="6"/>
-  <text class="t" x="407" y="357">backup</text>
+  <rect class="box" x="332" y="334" width="156" height="36" rx="6"/>
+  <text class="t" x="410" y="357">backup</text>
 
   <rect class="box" x="332" y="380" width="580" height="220" rx="6"/>
   <text x="348" y="403" font-size="14" font-weight="600" fill="#1f2328">observability</text>
@@ -129,8 +129,8 @@
   <text class="t" x="860" y="481">Alloy</text>
 
   <!-- Stacks on the host network, outside the wall -->
-  <rect class="box" x="332" y="640" width="150" height="36" rx="6"/>
-  <text class="t" x="407" y="663">internal-names</text>
+  <rect class="box" x="332" y="640" width="156" height="36" rx="6"/>
+  <text class="t" x="410" y="663">internal-names</text>
 
   <rect class="box" x="554" y="640" width="200" height="36" rx="6"/>
   <use href="#i-homeassistant" x="594.7" y="650" width="16" height="16" fill="#18BCF2"/>
@@ -174,7 +174,7 @@
   <text class="l" x="76" y="210" style="text-anchor:start">on push to main</text>
   <path class="deploy" d="M176,276 H330" stroke-dasharray="6 4"/>
   <text class="l" x="238" y="261">tunnel (outbound)</text>
-  <path class="deploy" d="M482,250 H552"/>
+  <path class="deploy" d="M488,250 H552"/>
   <path class="deploy" d="M700,232 V168"/>
   <text class="l" x="716" y="196" style="text-anchor:start">on ring</text>
   <path class="deploy" d="M554,146 H178"/>
@@ -190,9 +190,9 @@
   <!-- Everything else -->
   <path class="arrow" d="M332,92 H178"/>
   <text class="l" x="238" y="84">asks for jobs</text>
-  <path class="arrow" d="M482,92 H552"/>
-  <text class="l" x="518" y="84">boots</text>
-  <path class="arrow" d="M482,298 H552"/>
+  <path class="arrow" d="M488,92 H552"/>
+  <text class="l" x="520" y="84">boots</text>
+  <path class="arrow" d="M488,298 H552"/>
   <path class="arrow" d="M332,352 H178"/>
   <text class="l" x="238" y="344">nightly</text>
   <path class="arrow" d="M348,430 H178"/>
@@ -214,6 +214,6 @@
   <text class="l" x="238" y="650">opens admin pages</text>
   <path class="arrow" d="M411,640 V590"/>
   <text class="l" x="421" y="630" style="text-anchor:start">proxies</text>
-  <path class="arrow" d="M482,658 H552"/>
-  <text class="l" x="518" y="650">proxies</text>
+  <path class="arrow" d="M488,658 H552"/>
+  <text class="l" x="520" y="650">proxies</text>
 </svg>
