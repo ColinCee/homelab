@@ -392,3 +392,5 @@ def test_a_failure_a_later_try_gets_past_warns_and_a_lasting_or_refused_one_is_a
     limited = urllib.error.HTTPError("https://x", 429, "Too Many", email.message.Message(), None)
     failures.ok()
     assert failures.level(limited, 4000) == logging.WARNING
+    # A bug, not a blip.
+    assert failures.level(KeyError("id"), 4001) == logging.ERROR

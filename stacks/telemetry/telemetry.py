@@ -2,8 +2,8 @@
 reads its secrets and calls HTTP. Call `start()` once, when the program starts, then log through
 `logging.getLogger(name)` with values as `extra` fields. Write a metrics file for Alloy, or any
 file read while it changes, with `replace_file`; read a secret with `secret`; call a URL with
-`http` or `http_json`, logging its failures at the level `Failures` gives, and answer one with a
-`RequestHandler`; trace a job's run with `run` and its steps with `step`, or send spans timed after
+`http` or `http_json`, answer one with a `RequestHandler`,
+and log a failed call at the level `Failures` gives; trace a job's run with `run` and its steps with `step`, or send spans timed after
 the fact with `otlp_span` and `send_traces`. telemetry_test.py fails a second way to do these.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
@@ -189,9 +189,10 @@ def http_json(
 
 class Failures:
     """Calls to one service failing in a row, and the level to log each at (docs/architecture.md,
-    "Errors are bugs"): a warning while it may be a blip that a later try gets past, an error once
-    the first failure in a row is AFTER_S old, or at once for a refusal (an HTTP 4xx but 429: a
-    wrong key or address, which no wait mends). Call `ok` after each success."""
+    "Errors are bugs"): for an OSError, a warning while it may be a blip that a later try gets
+    past, an error once the first failure in a row is AFTER_S old; an error at once for a refusal
+    (an HTTP 4xx but 429: a wrong key or address, which no wait mends) or any other exception, a
+    bug. Call `ok` after each success: only a success ends a row."""
 
     def __init__(self, after_s: float) -> None:
         self.after_s = after_s
@@ -204,10 +205,15 @@ class Failures:
         now = time.monotonic() if now is None else now
         if self.since is None:
             self.since = now
-        refused = isinstance(error, urllib.error.HTTPError) and 400 <= error.code < 500
-        if (refused and error.code != 429) or now - self.since >= self.after_s:
+        if not isinstance(error, OSError):
             return logging.ERROR
-        return logging.WARNING
+        if (
+            isinstance(error, urllib.error.HTTPError)
+            and error.code != 429
+            and 400 <= error.code < 500
+        ):
+            return logging.ERROR
+        return logging.ERROR if now - self.since >= self.after_s else logging.WARNING
 
 
 # Alloy's OTLP receiver, at its fixed address on host-otlp for host programs; a container on

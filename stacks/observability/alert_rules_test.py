@@ -63,6 +63,10 @@ AT_ONCE = {
 } | {s.alert: QUERY_WAITS for s in slos.catalogue()[0] if not s.fresh}
 
 
+def test_each_rule_named_to_post_at_once_exists() -> None:
+    assert set(AT_ONCE) <= set(RULES)
+
+
 @pytest.mark.parametrize("name", RULES)
 def test_a_rule_waits_out_a_blip_or_says_why_it_posts_at_once(name: str) -> None:
     # 16 November 2026: errors-logged posted one error line from a 35 s drop of the home link.

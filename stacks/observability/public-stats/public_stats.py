@@ -74,8 +74,9 @@ QUERIES = {
 }
 
 
-class StatsError(Exception):
-    pass
+class StatsError(OSError):
+    """Prometheus answered without the data, as while a deploy restarts it or cAdvisor: an
+    OSError, so it warns until it lasts (telemetry.Failures)."""
 
 
 log = logging.getLogger("public-stats")
