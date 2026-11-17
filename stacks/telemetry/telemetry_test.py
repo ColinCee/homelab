@@ -20,6 +20,8 @@ from typing import Any
 
 import pytest
 import telemetry
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from conftest import ROOT, linux_only, programs, tracked, units
 
@@ -394,3 +396,41 @@ def test_a_failure_a_later_try_gets_past_warns_and_a_lasting_or_refused_one_is_a
     assert failures.level(limited, 4000) == logging.WARNING
     # A bug, not a blip.
     assert failures.level(KeyError("id"), 4001) == logging.ERROR
+
+
+def _http(code: int) -> urllib.error.HTTPError:
+    return urllib.error.HTTPError("https://x", code, "No", email.message.Message(), None)
+
+
+# A call's outcome: a success, a blip a later try may get past, or a refusal or bug no wait mends.
+PASSING = [urllib.error.URLError("timed out"), ConnectionResetError(), _http(429), _http(503)]
+LASTING = [_http(401), _http(404), KeyError("id"), ValueError("bad JSON")]
+
+
+@settings(derandomize=True, database=None, max_examples=300, deadline=None)
+@given(
+    st.lists(
+        st.tuples(
+            st.floats(0, 200, allow_nan=False),
+            st.sampled_from([None, None, *PASSING, *LASTING]),
+        ),
+        max_size=40,
+    )
+)
+def test_a_blip_never_logs_an_error_and_a_lasting_failure_always_does(
+    calls: list[tuple[float, BaseException | None]],
+) -> None:
+    """Over any run of calls (#1519): a row of failures a later try gets past, shorter than
+    AFTER_S, only warns, so a home internet drop posts nothing; one that lasts AFTER_S, a refusal
+    or a bug is an error."""
+    failures, now, row_start = telemetry.Failures(120), 1000.0, None
+    for gap, error in calls:
+        now += gap
+        if error is None:
+            failures.ok()
+            row_start = None
+            continue
+        row_start = now if row_start is None else row_start
+        lasted = now - row_start >= 120
+        want = logging.ERROR if error in LASTING or lasted else logging.WARNING
+        assert failures.level(error, now) == want
