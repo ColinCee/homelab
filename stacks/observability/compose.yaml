@@ -311,7 +311,7 @@ services:
   # only read paths (gateway/Caddyfile). Grafana and public stats on their own networks, agents on
   # Tailscale or, the on-call agent, through the tunnel.
   gateway:
-    image: caddy:2.11.9@sha256:4e2425f6009577e7c651010f16679c28f7d12df3e7b1914f941a7a3370746b3c
+    image: caddy:2.11.9@sha256:f971688b2aaf1a26d256de552f17fb13f64fc5ed2dee4cf40c7f9d70cea0e12d
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/etc/caddy/start.sh"]
     read_only: true
@@ -542,6 +542,8 @@ services:
       - ../telemetry/telemetry.py:/usr/local/lib/python3.15/site-packages/telemetry.py:ro
       # Read by Alloy's textfile collector.
       - /var/lib/homelab-metrics:/metrics
+      # The folder, not the file: resolved replaces the file, which a file mount would not follow.
+      - /run/systemd/resolve:/resolve:ro
 
   # Scrapes what runs on the host's network or publishes only to loopback, Caddy, CoreDNS and Home Assistant
   # (host-metrics/prometheus.yml), and writes to Prometheus. On the host's network for the probes' reason; the host may
