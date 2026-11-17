@@ -18,7 +18,7 @@ import urllib.error
 import urllib.parse
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import HTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +26,6 @@ import telemetry
 
 PORT = 8080
 COLIN = "124131392207454208"
-BODY_MAX = 1 << 20
 DISCORD = "https://discord.com/api/v10"
 # Anthropic's per-routine token starts runs only; the routine id is not a secret.
 FIRE = "https://api.anthropic.com/v1/claude_code/routines/{routine}/fire"
@@ -410,17 +409,15 @@ def main() -> None:
         lambda query: _first_line(reader, query),
     )
 
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(telemetry.RequestHandler):
         timeout = 10
 
         def do_POST(self) -> None:
-            length = self.headers.get("Content-Length") or "0"
-            raw = self.rfile.read(min(int(length), BODY_MAX)) if length.isdigit() else b""
             if self.path != "/alert":
                 code = 404
             else:
                 try:
-                    code = relay.handle(json.loads(raw))
+                    code = relay.handle(json.loads(self.body))
                 except ValueError:
                     code = 400
             self.send_response(code)

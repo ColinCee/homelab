@@ -2,9 +2,9 @@
 reads its secrets and calls HTTP. Call `start()` once, when the program starts, then log through
 `logging.getLogger(name)` with values as `extra` fields. Write a metrics file for Alloy, or any
 file read while it changes, with `replace_file`; read a secret with `secret`; call a URL with
-`http` or `http_json`; trace a job's run with `run` and its steps with `step`, or send spans
-timed after the fact with `otlp_span` and `send_traces`. telemetry_test.py fails a second
-way to do these.
+`http` or `http_json`, and answer one with a `RequestHandler`; trace a job's run with `run` and its
+steps with `step`, or send spans timed after the fact with `otlp_span` and `send_traces`.
+telemetry_test.py fails a second way to do these.
 
 Each container mounts this file into its Python's site-packages (compose.yaml, the service's
 volumes), so services run alone with `python -I` still import it; json_logs_test.py fails a
@@ -34,6 +34,7 @@ from collections.abc import Generator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from http.client import HTTPException
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +146,23 @@ def http(
                 raise OSError(f"{method}: {type(e).__name__}") from e
         time.sleep(wait)
     raise AssertionError("tries must be at least 1")
+
+
+class RequestHandler(BaseHTTPRequestHandler):
+    """Reads each request's body, up to `body_max` bytes, into `body` before any answer: a socket
+    closed with bytes unread is reset, and a client that gets the reset first loses the reply."""
+
+    body_max = 1 << 20
+    body = b""
+
+    def parse_request(self) -> bool:
+        if not super().parse_request():
+            return False
+        length = self.headers.get("Content-Length") or "0"
+        # isdigit alone passes digits such as "²", which int() refuses.
+        if length.isascii() and length.isdigit():
+            self.body = self.rfile.read(min(int(length), self.body_max))
+        return True
 
 
 def http_json(

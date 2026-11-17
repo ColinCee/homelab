@@ -1,5 +1,6 @@
 """Files read while they change, secrets and HTTP go only through telemetry (replace_file, secret,
-http), and every program importing the module can find it (stacks/telemetry/telemetry.py)."""
+http, RequestHandler), and every program importing the module can find it
+(stacks/telemetry/telemetry.py)."""
 
 import ast
 import http.server
@@ -19,7 +20,7 @@ from typing import Any
 import pytest
 import telemetry
 
-from conftest import ROOT, linux_only, programs, units
+from conftest import ROOT, linux_only, programs, tracked, units
 
 # Before conftest's sent_traces stands in for it.
 SEND_TRACES = telemetry.send_traces
@@ -41,6 +42,16 @@ def test_files_are_replaced_only_through_telemetry() -> None:
             text = path.read_text(encoding="utf-8")
             assert not re.search(r"os\.(replace|rename)\(|\.rename\(", text), (
                 f"{path.relative_to(ROOT)}: telemetry.replace_file"
+            )
+
+
+def test_requests_are_answered_only_through_telemetry() -> None:
+    for path in tracked(".py"):
+        if path not in {MODULE, Path(__file__)}:
+            text = path.read_text(encoding="utf-8")
+            assert "HTTPRequestHandler" not in text, (
+                f"{path.relative_to(ROOT)}: answer HTTP with telemetry.RequestHandler, which reads "
+                "the body first, so closing does not reset the reply away"
             )
 
 
@@ -199,7 +210,7 @@ SEEN: list[str | None] = []
 PATHS: list[str] = []
 
 
-class Server(http.server.BaseHTTPRequestHandler):
+class Server(telemetry.RequestHandler):
     def answer(self) -> None:
         SEEN.append(self.headers.get("Authorization"))
         PATHS.append(self.path)
