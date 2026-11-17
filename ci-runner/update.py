@@ -36,7 +36,14 @@ USAGE = "update.py: usage: update.py <commit> [reason] | --follow"
 # What install_host.py installs, and what goes into the image; tests sit beside the code they test
 # but are neither.
 NOT_TESTS = ":(glob,exclude)**/*_test.py"
-INSTALL_PATHS = ["beelink/security", "beelink/ssd-wear", "ci-runner", "stacks/telemetry", NOT_TESTS]
+INSTALL_PATHS = [
+    "beelink/docker",
+    "beelink/security",
+    "beelink/ssd-wear",
+    "ci-runner",
+    "stacks/telemetry",
+    NOT_TESTS,
+]
 IMAGE_INPUTS = [
     "ci-runner/build-rootfs.sh",
     "ci-runner/rootfs",

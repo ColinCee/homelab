@@ -409,6 +409,19 @@ def install_locked(
     install_timed_script(
         host, here.parent / "beelink/security/security_facts.py", "homelab-security-facts"
     )
+    # Restarts what mounts Docker's socket once Docker starts. Docker reads the drop-in at its next
+    # start, so it is not restarted here.
+    install(host, "0644", here.parent / "beelink/docker/socket_users.py", f"{DEST}/socket_users.py")
+    socket_users = "/etc/systemd/system/docker.service.d/socket-users.conf"
+    if differs(here.parent / "beelink/docker/socket-users.conf", host.path(socket_users)):
+        install(
+            host,
+            "0644",
+            here.parent / "beelink/docker/socket-users.conf",
+            socket_users,
+            parents=True,
+        )
+        systemctl(host, "daemon-reload")
     # CI and deploy run times, for the trace store and Prometheus.
     install_timed_script(host, here / "run-times/ci_times.py", "homelab-ci-times")
 
