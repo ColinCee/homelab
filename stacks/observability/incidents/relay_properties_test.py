@@ -1,7 +1,9 @@
 """The incidents relay's promises (relay.py; docs/architecture.md, "Incidents"), held over any
 run of Alertmanager notifications for one rule: series joining, leaving and repeating, Discord
 blips and Alertmanager's retries, Colin deleting the post, agent reports, restarts and time
-passing. Each promise was a bug fixed by hand once: #1495, #1497, #1528, #1532."""
+passing. Each promise was a bug fixed by hand once: #1495, #1497, #1528, #1532. The checks read
+the relay's own state (`relay.state`, its posts by rule as #1528 made it), so they cannot run
+against code from before #1528; none of the four bugs was replayed through them."""
 
 import email.message
 import re
@@ -219,10 +221,10 @@ class Relay(RuleBasedStateMachine):
             assert shown["archived"] is not (stays or unread or dropped)
 
     @invariant()
-    def one_post_and_one_run_per_incident(self) -> None:
+    def one_post_per_incident_and_at_most_one_run_per_post(self) -> None:
         # A new post only for a return past the reopen window or after Colin deleted the post;
-        # each starts at most one run, however many series fire and however often Alertmanager
-        # sends them again.
+        # each post starts at most one run, however many series fire and however often
+        # Alertmanager sends them again.
         assert len(self.forum.posts) == self.opened
         assert all(len(p["said"]) <= relay.REPORT_WITHIN for p in self.forum.posts.values())
         assert len(self.fired) == len(set(self.fired)) <= len(self.forum.posts)
@@ -239,14 +241,10 @@ def _alert(fingerprint: str, status: str) -> dict[str, Any]:
 
 
 Relay.TestCase.settings = settings(
-    # The same runs each time, so CI never fails on a run a pull request did not cause, and fast
-    # enough for conftest.py's TEST_LIMIT.
-    derandomize=True,
-    database=None,
+    # Fast enough for conftest.py's TEST_LIMIT.
     max_examples=100,
     # Under REPORT_WITHIN messages a post, so the agent's newest report is always in sight.
     stateful_step_count=20,
-    deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )
 TestRelay = Relay.TestCase
