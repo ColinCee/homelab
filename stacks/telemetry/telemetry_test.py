@@ -408,7 +408,7 @@ LASTING = [_http(401), _http(404), KeyError("id"), ValueError("bad JSON")]
 
 
 AFTER_S = 120
-CHECKED = settings(derandomize=True, database=None, max_examples=200, deadline=None)
+CHECKED = settings(max_examples=200)
 # Seconds between tries, and a run of calls before, each ending in a success.
 GAPS = st.floats(0, AFTER_S / 4, allow_nan=False)
 BEFORE = st.lists(st.tuples(GAPS, st.sampled_from([*PASSING, *LASTING])), max_size=10)

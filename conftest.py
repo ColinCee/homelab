@@ -12,6 +12,7 @@ from typing import Any, NamedTuple
 
 import pytest
 import yaml
+from hypothesis import settings
 
 from checks import test_shards
 
@@ -23,6 +24,11 @@ from checks import test_shards
 # a test that only computes gets up to about twice the limit before it fails.
 RUN_LIMIT = 30.0
 TEST_LIMIT = 5.0
+
+# Every Hypothesis test runs the same examples each time, so CI never fails on a run a pull
+# request did not cause; no deadline, since TEST_LIMIT bounds the whole test.
+settings.register_profile("homelab", derandomize=True, database=None, deadline=None)
+settings.load_profile("homelab")
 
 # Each test's wall-clock first start and its seconds over setup, call and teardown.
 TIMES: dict[str, list[float]] = {}
