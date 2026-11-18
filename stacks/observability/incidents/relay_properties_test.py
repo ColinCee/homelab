@@ -3,7 +3,7 @@ run of Alertmanager notifications for one rule: series joining, leaving and repe
 blips and Alertmanager's retries, Colin deleting the post, agent reports, restarts and time
 passing. Each promise was a bug fixed by hand once: #1495, #1497, #1528, #1532. The checks read
 the relay's own state (`relay.state`, its posts by rule as #1528 made it), so they cannot run
-against code from before #1528 and were not replayed on those bugs."""
+against code from before #1528; none of the four bugs was replayed through them."""
 
 import email.message
 import re
