@@ -93,7 +93,7 @@ jobs:
         if: "!cancelled() && steps.pins.outputs.only == 'true'"
         run: python3 checks/ci.py validate-changed-compose
 
-      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         if: "!cancelled() && steps.pins.outputs.only != 'true'"
 
       # Keeps the wheels uv builds from source (pyyaml has none for our Python),
