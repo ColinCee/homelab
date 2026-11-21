@@ -24,3 +24,10 @@ reach what, and policy changes: Colin's notes repo (`ColinCee/notes`, checked ou
 - `.internal` names come from `stacks/internal-names` in the homelab repo. A new one
   needs a site in its Caddyfile, the name in its Corefile, a row here, and a tailnet
   policy grant if a new device should reach it.
+- Control Home Assistant through its API over SSH, with the non-admin `agent-control`
+  token (`stacks/home-assistant/create-agent-token.sh`). Never print it. After a
+  timeout, read the state before retrying. List entities at `/api/states`:
+
+  ```bash
+  ssh -o ConnectTimeout=10 beelink 'printf "Authorization: Bearer %s\n" "$(cat ~/code/homelab/secrets/homeassistant_agent_token)" | curl -fsS --max-time 30 -H @- -H "Content-Type: application/json" -d "{\"entity_id\":\"<entity>\"}" http://127.0.0.1:8123/api/services/<domain>/<action>'
+  ```

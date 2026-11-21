@@ -23,5 +23,6 @@ Names are public; values live in Bitwarden's "Homelab secrets".
 | `restic_password` | backup | Decrypts every backup |
 | `stats_password` | observability | Public stats' gateway login |
 
-Elsewhere: the CI runner's `/etc/homelab-ci/github-token`, and the claude.ai Homelab environment's network secrets
+Elsewhere: `secrets/homeassistant_agent_token` (agents' Home Assistant control; not in Bitwarden, after a rebuild remake it
+with `stacks/home-assistant/create-agent-token.sh`), the CI runner's `/etc/homelab-ci/github-token`, and the claude.ai Homelab environment's network secrets
 for `observe.colincheung.dev` (the gateway login and a Cloudflare Access service token) and `discord.com` (the bot token).
