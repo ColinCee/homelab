@@ -10,7 +10,7 @@ Agents call its API on Beelink as the non-admin `agent-control` user. Never prin
 1. Find the entity and its options:
 
    ```bash
-   ssh -o ConnectTimeout=10 beelink 'printf "Authorization: Bearer %s\n" "$(cat ~/code/homelab/secrets/homeassistant_agent_token)" | curl -fsS --max-time 30 -H @- http://127.0.0.1:8123/api/states | jq -c ".[] | {entity_id, state, name: .attributes.friendly_name}"'
+   ssh -o ConnectTimeout=10 beelink 'printf "Authorization: Bearer %s\n" "$(cat ~/code/homelab/secrets/homeassistant_agent_token)" | curl -fsS --max-time 30 -H @- http://127.0.0.1:8123/api/states | jq -c ".[] | {entity_id, state, name: .attributes.friendly_name, presets: .attributes.preset_modes}"'
    ```
 
 2. Call the action. A heating boost is `climate/set_preset_mode` with `preset_mode` `boost_1h`:
@@ -21,4 +21,4 @@ Agents call its API on Beelink as the non-admin `agent-control` user. Never prin
 
 3. Read `/api/states/<entity>` and report what it shows. After a timeout, read it before retrying: the action may still finish.
 
-Admin changes (users, integrations) wait for Colin. To replace the token, run `stacks/home-assistant/create-agent-token.sh` on Beelink from his own terminal with `ssh -t`.
+Admin changes (users, integrations) wait for Colin. To replace the token, he deletes `agent-control`'s `claude-code` token, then runs `stacks/home-assistant/create-agent-token.sh` on Beelink with `ssh -t`.
