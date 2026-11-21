@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:4f6fe2c1ca96ca49b56e5120a79b51ffc957b76a863150ae2992aa282f05e943
+    image: ghcr.io/colincee/flight-tracker-at-home/backend:latest@sha256:e73c1259029ac144a6cb1ee661112fcfcbc8e9569983628a6826421f8495854a
     restart: unless-stopped
     # Its new container serves before the old one stops (stacks/deploy/deploy.py, START_FIRST), so a
     # deploy fails no request through the tunnel.
